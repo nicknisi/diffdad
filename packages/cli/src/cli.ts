@@ -16,7 +16,8 @@ interface ParsedPr {
 const USAGE = `dad - GitHub PRs as narrated stories
 
 Usage:
-  dad review <pr-url-or-shorthand>   Review a PR
+  dad <pr>                           Review a PR (shorthand for dad review)
+  dad review <pr>                    Review a PR
   dad config                         Configure dad (interactive)
   dad cache clear                    Clear all cached narratives
   dad --help, -h                     Show this help
@@ -217,9 +218,7 @@ async function main(argv: string[]): Promise<number> {
       return 2;
     }
     default:
-      console.error(`error: unknown command: ${cmd}`);
-      console.error(USAGE);
-      return 2;
+      return await reviewCommand(cmd);
   }
 }
 
