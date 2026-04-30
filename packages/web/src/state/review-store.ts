@@ -98,7 +98,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
   activeChapterId: null,
   drafts: [],
   openLine: null,
-  theme: "dark",
+  theme: (localStorage.getItem("diffdad.theme") as Theme) || "dark",
   density: "normal",
   chapterDensity: {},
   view: "story",
@@ -179,7 +179,10 @@ export const useReviewStore = create<ReviewState>((set) => ({
 
   clearDrafts: () => set({ drafts: [] }),
 
-  setTheme: (theme) => set({ theme }),
+  setTheme: (theme) => {
+    localStorage.setItem("diffdad.theme", theme);
+    set({ theme });
+  },
 
   setDensity: (density) => set({ density }),
 

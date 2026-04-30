@@ -15,9 +15,16 @@ import { copy } from "./lib/microcopy";
 export default function App() {
   const theme = useReviewStore((s) => s.theme);
   const view = useReviewStore((s) => s.view);
+  const pr = useReviewStore((s) => s.pr);
   const shortcutsHelpOpen = useReviewStore((s) => s.shortcutsHelpOpen);
   const setShortcutsHelpOpen = useReviewStore((s) => s.setShortcutsHelpOpen);
   const { loading, error } = useNarrative();
+
+  useEffect(() => {
+    if (pr) {
+      document.title = `#${pr.number} ${pr.title} — Diff Dad`;
+    }
+  }, [pr]);
   useLiveStream();
   useKeyboardShortcuts();
   const [activityOpen, setActivityOpen] = useState(false);
