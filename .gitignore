@@ -7,3 +7,5 @@ bun.lock
 bun.lockb
 .env
 .env.local
+dad
+*.bun-build
