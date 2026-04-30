@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from "react";
+import { useCallback } from "react";
 import { useReviewStore } from "../state/review-store";
 import type { PRComment } from "../state/types";
 
@@ -8,8 +8,6 @@ type PostCommentOpts = {
   side?: string;
   inReplyToId?: number;
 };
-
-const POLL_INTERVAL_MS = 30_000;
 
 export function useComments() {
   const addComment = useReviewStore((s) => s.addComment);
@@ -22,7 +20,7 @@ export function useComments() {
       const comments = (await res.json()) as PRComment[];
       setComments(comments);
     } catch {
-      // ignore polling errors
+      // ignore fetch errors
     }
   }, [setComments]);
 
@@ -38,22 +36,10 @@ export function useComments() {
       }
       const comment = (await res.json()) as PRComment;
       addComment(comment);
-      void refreshComments();
       return comment;
     },
-    [addComment, refreshComments]
+    [addComment]
   );
 
   return { postComment, refreshComments };
-}
-
-export function useCommentPolling() {
-  const { refreshComments } = useComments();
-
-  useEffect(() => {
-    const id = setInterval(() => {
-      void refreshComments();
-    }, POLL_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [refreshComments]);
 }

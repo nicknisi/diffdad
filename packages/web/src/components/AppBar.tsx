@@ -1,4 +1,5 @@
 import { useReviewStore } from "../state/review-store";
+import { LivePill } from "./LivePill";
 
 function repoSlug(repoUrl: string | null): string | null {
   if (!repoUrl) return null;
@@ -6,7 +7,11 @@ function repoSlug(repoUrl: string | null): string | null {
   return m ? m[1] : null;
 }
 
-export function AppBar() {
+type AppBarProps = {
+  onOpenActivity: () => void;
+};
+
+export function AppBar({ onOpenActivity }: AppBarProps) {
   const pr = useReviewStore((s) => s.pr);
   const theme = useReviewStore((s) => s.theme);
   const setTheme = useReviewStore((s) => s.setTheme);
@@ -53,6 +58,9 @@ export function AppBar() {
       </div>
 
       <div className="ml-auto flex items-center gap-2">
+        {/* Live pill */}
+        <LivePill onClick={onOpenActivity} />
+
         {/* Theme toggle */}
         <button
           type="button"

@@ -28,6 +28,14 @@ type PostCommentBody = {
 
 export function createServer(ctx: ServerContext) {
   const app = new Hono();
+  type SseClient = (event: string, data: unknown) => void;
+  const sseClients = new Set<SseClient>();
+
+  function broadcast(event: string, data: unknown) {
+    for (const send of sseClients) {
+      send(event, data);
+    }
+  }
 
   app.get("/api/narrative", (c) => {
     return c.json({
@@ -60,6 +68,71 @@ export function createServer(ctx: ServerContext) {
     return c.json(mapCommentsToChapters(fresh, ctx.narrative));
   });
 
+  app.get("/api/events", (c) => {
+    const stream = new ReadableStream({
+      start(controller) {
+        const encoder = new TextEncoder();
+        const send = (event: string, data: unknown) => {
+          try {
+            controller.enqueue(
+              encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`),
+            );
+          } catch {
+            // controller closed
+          }
+        };
+
+        send("connected", { timestamp: Date.now() });
+        sseClients.add(send);
+
+        const interval = setInterval(async () => {
+          try {
+            const fresh = await ctx.github.getComments(
+              ctx.owner,
+              ctx.repo,
+              ctx.pr.number,
+            );
+            const newComments = fresh.filter(
+              (cm) => !ctx.comments.find((existing) => existing.id === cm.id),
+            );
+            for (const comment of newComments) {
+              send("comment", comment);
+            }
+            ctx.comments = fresh;
+
+            const freshChecks = await ctx.github.getCheckRuns(
+              ctx.owner,
+              ctx.repo,
+              ctx.headSha,
+            );
+            ctx.checkRuns = freshChecks;
+            send("checks", freshChecks);
+          } catch {
+            // swallow polling errors
+          }
+        }, 10000);
+
+        c.req.raw.signal.addEventListener("abort", () => {
+          clearInterval(interval);
+          sseClients.delete(send);
+          try {
+            controller.close();
+          } catch {
+            // already closed
+          }
+        });
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      },
+    });
+  });
+
   app.post("/api/comments", async (c) => {
     let payload: PostCommentBody;
     try {
@@ -87,6 +160,7 @@ export function createServer(ctx: ServerContext) {
         : undefined,
     );
     ctx.comments = [...ctx.comments, posted];
+    broadcast("comment", posted);
     return c.json(posted, 201);
   });
 
