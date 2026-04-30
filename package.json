@@ -2,5 +2,10 @@
   "name": "diffdad",
   "private": true,
   "version": "0.0.0",
-  "workspaces": ["packages/*"]
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "build": "bun run --filter '@diffdad/web' build",
+    "test": "bun test packages/cli/src/__tests__/",
+    "dev": "bun run --filter '@diffdad/web' dev"
+  }
 }
