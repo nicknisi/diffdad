@@ -95,15 +95,16 @@ export function useKeyboardShortcuts() {
         const firstDiff = chapter.sections.find((s) => s.type === "diff");
         if (!firstDiff || firstDiff.type !== "diff") return;
 
-        const flatHunks = files.flatMap((f) =>
-          f.hunks.map((h) => ({ hunk: h, file: f.file })),
-        );
-        const flat = flatHunks[firstDiff.hunkIndex];
-        if (!flat) return;
+        // Look up the hunk by both file and hunkIndex — hunkIndex is per-file,
+        // not a flat index across all files.
+        const diffFile = files.find((f) => f.file === firstDiff.file);
+        if (!diffFile) return;
+        const hunk = diffFile.hunks[firstDiff.hunkIndex];
+        if (!hunk) return;
 
-        const lineIdx = flat.hunk.lines.findIndex((l) => l.type !== "remove");
+        const lineIdx = hunk.lines.findIndex((l) => l.type !== "remove");
         const targetIdx = lineIdx >= 0 ? lineIdx : 0;
-        const lineKey = `${flat.file}:${firstDiff.hunkIndex}:${targetIdx}`;
+        const lineKey = `${diffFile.file}:${firstDiff.hunkIndex}:${targetIdx}`;
         setOpenLine(lineKey);
         return;
       }

@@ -81,17 +81,19 @@ export function createServer(ctx: ServerContext) {
     const chapter = ctx.narrative.chapters[chapterIndex];
     if (!chapter) return c.json({ error: "invalid chapter" }, 400);
 
-    const allHunks = ctx.files.flatMap((f) =>
-      f.hunks.map((h) => ({ hunk: h, file: f.file })),
-    );
+    // hunkIndex is per-file (index into DiffFile.hunks), not a flat index
+    // across all files. Look up by file + index.
+    const filesByPath = new Map(ctx.files.map((f) => [f.file, f]));
     const chapterDiff = chapter.sections
       .filter((s): s is Extract<typeof s, { type: "diff" }> => s.type === "diff")
       .map((s) => {
-        const flat = allHunks[s.hunkIndex];
-        if (!flat) return "";
+        const diffFile = filesByPath.get(s.file);
+        if (!diffFile) return "";
+        const hunk = diffFile.hunks[s.hunkIndex];
+        if (!hunk) return "";
         return (
-          `--- ${flat.file} ---\n` +
-          flat.hunk.lines
+          `--- ${diffFile.file} ---\n` +
+          hunk.lines
             .map((l) => {
               const prefix =
                 l.type === "add" ? "+" : l.type === "remove" ? "-" : " ";

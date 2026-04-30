@@ -25,14 +25,16 @@ const RISK_LABELS: Record<ChapterType["risk"], string> = {
 
 type FlatHunk = { hunk: DiffHunk; file: string; isNewFile: boolean };
 
-function flattenFiles(files: DiffFile[]): FlatHunk[] {
-  return files.flatMap((f) =>
-    f.hunks.map((h) => ({
-      hunk: h,
-      file: f.file,
-      isNewFile: f.isNewFile,
-    })),
-  );
+function findHunk(
+  files: DiffFile[],
+  file: string,
+  hunkIndex: number,
+): FlatHunk | null {
+  const diffFile = files.find((f) => f.file === file);
+  if (!diffFile) return null;
+  const hunk = diffFile.hunks[hunkIndex];
+  if (!hunk) return null;
+  return { hunk, file: diffFile.file, isNewFile: diffFile.isNewFile };
 }
 
 export function Chapter({ index, chapter }: Props) {
@@ -46,20 +48,37 @@ export function Chapter({ index, chapter }: Props) {
   const id = `ch-${index}`;
   const reviewed = chapterStates[id] === "reviewed";
 
-  const flatHunks = useMemo(() => flattenFiles(files), [files]);
-
-  // Map of hunkIndex -> first chapter index that uses that hunk via a diff section
+  // Map of `${file}:${hunkIndex}` -> first chapter index that uses that hunk via a diff section.
+  // Multiple files can share hunkIndex 0, so the key must include the file.
   const hunkOwners = useMemo(() => {
-    const owners = new Map<number, number>();
+    const owners = new Map<string, number>();
     if (!narrative) return owners;
     narrative.chapters.forEach((ch, ci) => {
       ch.sections.forEach((s) => {
-        if (s.type === "diff" && !owners.has(s.hunkIndex)) {
-          owners.set(s.hunkIndex, ci);
+        if (s.type === "diff") {
+          const key = `${s.file}:${s.hunkIndex}`;
+          if (!owners.has(key)) owners.set(key, ci);
         }
       });
     });
     return owners;
+  }, [narrative]);
+
+  // Resolve a reshow `ref` (a bare hunkIndex) to its file by scanning the
+  // narrative for a diff section with the matching hunkIndex. Returns the
+  // first match — ambiguous when two files share a hunkIndex, but the LLM's
+  // schema does not give us a file for reshow refs.
+  const refToFile = useMemo(() => {
+    const map = new Map<number, string>();
+    if (!narrative) return map;
+    narrative.chapters.forEach((ch) => {
+      ch.sections.forEach((s) => {
+        if (s.type === "diff" && !map.has(s.hunkIndex)) {
+          map.set(s.hunkIndex, s.file);
+        }
+      });
+    });
+    return map;
   }, [narrative]);
 
   // Outline: collapsed by default, except chapter 0
@@ -78,7 +97,7 @@ export function Chapter({ index, chapter }: Props) {
     let count = 0;
     for (const section of hunkSections) {
       if (section.type !== "diff") continue;
-      const flat = flatHunks[section.hunkIndex];
+      const flat = findHunk(files, section.file, section.hunkIndex);
       if (!flat) continue;
       const start = flat.hunk.newStart;
       const end = start + Math.max(flat.hunk.newCount - 1, 0);
@@ -89,7 +108,7 @@ export function Chapter({ index, chapter }: Props) {
       }
     }
     return count;
-  }, [hunkSections, flatHunks, comments]);
+  }, [hunkSections, files, comments]);
 
   const riskPill = (
     <span
@@ -143,7 +162,7 @@ export function Chapter({ index, chapter }: Props) {
             </div>
           );
         }
-        const flat = flatHunks[section.hunkIndex];
+        const flat = findHunk(files, section.file, section.hunkIndex);
         if (!flat) return null;
         return (
           <Hunk
@@ -156,9 +175,11 @@ export function Chapter({ index, chapter }: Props) {
         );
       })}
       {chapter.reshow?.map((entry, i) => {
-        const flat = flatHunks[entry.ref];
+        const refFile = refToFile.get(entry.ref);
+        if (!refFile) return null;
+        const flat = findHunk(files, refFile, entry.ref);
         if (!flat) return null;
-        const ownerIdx = hunkOwners.get(entry.ref);
+        const ownerIdx = hunkOwners.get(`${refFile}:${entry.ref}`);
         const ownerLabel =
           ownerIdx !== undefined && ownerIdx !== index
             ? `Chapter ${ownerIdx + 1}`
