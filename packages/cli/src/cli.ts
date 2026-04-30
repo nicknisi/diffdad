@@ -1,5 +1,9 @@
 #!/usr/bin/env bun
 import { resolveGitHubToken } from "./auth";
+import { readConfig } from "./config";
+import { GitHubClient } from "./github/client";
+import { generateNarrative } from "./narrative/engine";
+import { createServer } from "./server";
 
 interface ParsedPr {
   owner: string;
@@ -70,12 +74,41 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
     return 1;
   }
 
-  console.log(
-    `dad: reviewing ${parsed.owner}/${parsed.repo}#${parsed.number}`,
-  );
-  console.log(`dad: github token resolved (length ${token.length})`);
-  console.log("dad: fetch + narration not yet wired (Task 6)");
-  return 0;
+  const config = await readConfig();
+  const github = new GitHubClient(token);
+
+  console.log(`Fetching ${parsed.owner}/${parsed.repo}#${parsed.number}...`);
+  const [metadata, files, comments] = await Promise.all([
+    github.getPR(parsed.owner, parsed.repo, parsed.number),
+    github.getDiff(parsed.owner, parsed.repo, parsed.number),
+    github.getComments(parsed.owner, parsed.repo, parsed.number),
+  ]);
+
+  console.log(`${metadata.title} — ${files.length} files, +${metadata.additions} -${metadata.deletions}`);
+  console.log("Generating narrative...");
+
+  const narrative = await generateNarrative(metadata, files, [], config);
+  console.log(`${narrative.chapters.length} chapters generated. Starting server...`);
+
+  const app = createServer({ narrative, pr: metadata, files, comments, github, owner: parsed.owner, repo: parsed.repo });
+
+  // Check for --port=N flag
+  const portFlag = Bun.argv.find(a => a.startsWith("--port="));
+  const port = portFlag ? parseInt(portFlag.split("=")[1]) : 0;
+  const server = Bun.serve({ fetch: app.fetch, port });
+
+  const url = `http://localhost:${server.port}`;
+  console.log(`\n  Diff Dad — ${url}\n`);
+  console.log(`  Reviewing: ${parsed.owner}/${parsed.repo}#${parsed.number}`);
+  console.log(`  ${narrative.chapters.length} chapters · ${comments.length} comments\n`);
+
+  if (!Bun.argv.includes("--no-open")) {
+    const { default: open } = await import("open");
+    await open(url);
+  }
+
+  // Keep process alive
+  await new Promise(() => {});
 }
 
 function configCommand(): number {
