@@ -19,3 +19,12 @@ body {
 .font-serif, .font-em {
   font-family: "Source Serif 4", ui-serif, Georgia, serif;
 }
+
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.live-dot {
+  animation: live-pulse 2s ease-in-out infinite;
+}

@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import { useReviewStore } from "../state/review-store";
 import type { CheckRun } from "../state/types";
+import { SubmitDialog } from "./SubmitDialog";
+import { Toast } from "./Toast";
 
 type CheckSummary = {
   passing: number;
@@ -81,13 +83,35 @@ function checkIcon(c: CheckRun): { icon: string; color: string; label: string } 
   }
 }
 
+function timeAgo(iso: string | undefined | null): string {
+  if (!iso) return "";
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "";
+  const diff = Math.max(0, Date.now() - then);
+  const sec = Math.floor(diff / 1000);
+  if (sec < 60) return `${sec}s ago`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.floor(hr / 24);
+  if (day < 30) return `${day}d ago`;
+  const mo = Math.floor(day / 30);
+  if (mo < 12) return `${mo}mo ago`;
+  const yr = Math.floor(day / 365);
+  return `${yr}y ago`;
+}
+
 export function PRHeader() {
   const pr = useReviewStore((s) => s.pr);
   const repoUrl = useReviewStore((s) => s.repoUrl);
   const checkRuns = useReviewStore((s) => s.checkRuns);
   const view = useReviewStore((s) => s.view);
   const setView = useReviewStore((s) => s.setView);
+  const clearDrafts = useReviewStore((s) => s.clearDrafts);
   const [open, setOpen] = useState(false);
+  const [submitOpen, setSubmitOpen] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
 
   const summary = useMemo(() => summarizeChecks(checkRuns), [checkRuns]);
 
@@ -125,13 +149,34 @@ export function PRHeader() {
     }
   }
 
+  function handleSubmit() {
+    setSubmitOpen(false);
+    clearDrafts();
+    setToast("✓ Review submitted to GitHub");
+  }
+
+  const authorUrl = pr.author?.login
+    ? `https://github.com/${pr.author.login}`
+    : null;
+
   return (
     <section className="border-b border-gray-200 bg-white px-8 py-6 dark:border-gray-800 dark:bg-gray-900">
       <div className="flex items-start justify-between gap-4">
         <h1 className="text-2xl font-bold tracking-[-0.0125em] text-gray-900 dark:text-gray-50">
-          <span className="font-normal text-gray-400 dark:text-gray-500">
-            #{pr.number}
-          </span>{" "}
+          {prUrl ? (
+            <a
+              href={prUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-normal text-gray-400 hover:text-brand dark:text-gray-500"
+            >
+              #{pr.number}
+            </a>
+          ) : (
+            <span className="font-normal text-gray-400 dark:text-gray-500">
+              #{pr.number}
+            </span>
+          )}{" "}
           {pr.title}
         </h1>
         <div className="flex shrink-0 items-center gap-3">
@@ -159,25 +204,38 @@ export function PRHeader() {
               Files
             </button>
           </div>
-          {prUrl ? (
-            <a
-              href={prUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-            >
-              View on GitHub
-            </a>
-          ) : null}
+          <button
+            type="button"
+            onClick={() => setSubmitOpen(true)}
+            className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand/90"
+          >
+            Submit review
+          </button>
         </div>
       </div>
-      <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-gray-600 dark:text-gray-400">
-        <span className="rounded-md bg-gray-100 px-2 py-0.5 font-mono text-sm text-gray-700 dark:bg-gray-800 dark:text-gray-300">
-          {pr.branch} → {pr.base}
+      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-gray-600 dark:text-gray-400">
+        <span className="rounded-md border border-gray-200 bg-gray-100 px-2 py-0.5 font-mono text-[12px] text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
+          {pr.branch} <span className="text-gray-400 dark:text-gray-500">→</span>{" "}
+          {pr.base}
         </span>
-        <span>
-          {pr.author?.login ?? "unknown"}
+        {authorUrl ? (
+          <a
+            href={authorUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-bold text-gray-900 hover:text-brand dark:text-gray-100"
+          >
+            {pr.author.login}
+          </a>
+        ) : (
+          <span className="font-bold text-gray-900 dark:text-gray-100">
+            {pr.author?.login ?? "unknown"}
+          </span>
+        )}
+        <span className="text-gray-500 dark:text-gray-400">
+          opened {timeAgo(pr.createdAt)} · updated {timeAgo(pr.updatedAt)}
         </span>
+        <span className="text-gray-300 dark:text-gray-600">·</span>
         <span>
           <span className="font-medium text-green-700 dark:text-green-400">
             +{pr.additions}
@@ -263,6 +321,12 @@ export function PRHeader() {
           </div>
         ) : null}
       </div>
+      <SubmitDialog
+        open={submitOpen}
+        onClose={() => setSubmitOpen(false)}
+        onSubmit={handleSubmit}
+      />
+      {toast && <Toast message={toast} onDone={() => setToast(null)} />}
     </section>
   );
 }

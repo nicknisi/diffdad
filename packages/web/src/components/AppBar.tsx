@@ -1,36 +1,84 @@
 import { useReviewStore } from "../state/review-store";
 
+function repoSlug(repoUrl: string | null): string | null {
+  if (!repoUrl) return null;
+  const m = repoUrl.match(/github\.com\/([^/]+\/[^/]+)/);
+  return m ? m[1] : null;
+}
+
 export function AppBar() {
   const pr = useReviewStore((s) => s.pr);
   const theme = useReviewStore((s) => s.theme);
   const setTheme = useReviewStore((s) => s.setTheme);
+  const repoUrl = useReviewStore((s) => s.repoUrl);
+
+  const slug = repoSlug(repoUrl);
+  const prNum = pr ? pr.number : null;
 
   return (
-    <header className="sticky top-0 z-30 flex h-12 items-center gap-3 border-b border-gray-200 bg-white px-4 dark:border-gray-800 dark:bg-gray-900">
+    <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-gray-200 bg-white px-4 dark:border-gray-800 dark:bg-gray-900">
+      {/* Brand mark */}
       <div className="flex items-center gap-2">
-        <div className="flex h-6 w-6 items-center justify-center rounded-[4px] bg-brand text-sm font-bold text-white">
-          D
+        <div
+          className="flex items-center justify-center bg-brand text-white"
+          style={{ width: 22, height: 22, borderRadius: 6 }}
+        >
+          <span className="text-[13px] font-bold leading-none">D</span>
         </div>
-        <span className="text-base font-bold tracking-tight text-gray-900 dark:text-gray-50">
+        <span className="text-[15px] font-bold tracking-tight text-gray-900 dark:text-gray-50">
           Diff Dad
         </span>
       </div>
+
+      {/* Separator */}
       <div className="h-5 w-px bg-gray-200 dark:bg-gray-800" />
-      <div className="flex min-w-0 items-center gap-2 font-mono text-sm text-gray-500 dark:text-gray-400">
-        <span className="text-gray-400 dark:text-gray-500">$</span>
-        <span className="truncate">
-          dad review {pr ? pr.number : "—"}
+
+      {/* CLI framing */}
+      <div className="flex min-w-0 items-center gap-2 font-mono text-[13px] text-gray-600 dark:text-gray-300">
+        <span className="font-bold text-brand">$</span>
+        <span className="rounded-md border border-gray-200 bg-gray-100 px-2 py-0.5 text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
+          dad review {prNum ?? "—"}
+        </span>
+        <span className="text-gray-400 dark:text-gray-500">→</span>
+        <span className="truncate text-gray-600 dark:text-gray-300">
+          {slug ? (
+            <>
+              <span className="font-bold text-brand">{slug}</span>
+              {prNum != null ? `#${prNum}` : null}
+            </>
+          ) : (
+            <span className="text-gray-400">—</span>
+          )}
         </span>
       </div>
+
       <div className="ml-auto flex items-center gap-2">
+        {/* Live pill */}
+        <div className="flex items-center gap-1.5 rounded-full bg-green-100 px-2.5 py-1 text-[12px] font-medium text-green-700 dark:bg-green-950/40 dark:text-green-400">
+          <span className="live-dot inline-block h-1.5 w-1.5 rounded-full bg-green-500" />
+          <span>Connected · :4317</span>
+        </div>
+
+        {/* Theme toggle */}
         <button
           type="button"
           aria-label="Toggle theme"
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-          className="flex h-[30px] w-[30px] items-center justify-center rounded-md border border-gray-200 text-gray-600 hover:bg-gray-100 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800"
+          className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
         >
-          <span className="text-base">{theme === "dark" ? "☀" : "☾"}</span>
+          <span className="text-base leading-none">
+            {theme === "dark" ? "☀" : "☾"}
+          </span>
         </button>
+
+        {/* Avatar */}
+        <div
+          aria-label="User avatar"
+          className="flex items-center justify-center rounded-full bg-brand text-[11px] font-bold text-white"
+          style={{ width: 28, height: 28 }}
+        >
+          DD
+        </div>
       </div>
     </header>
   );
