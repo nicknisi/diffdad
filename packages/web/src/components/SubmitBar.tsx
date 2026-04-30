@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { copy } from "../lib/microcopy";
 import { useReviewStore } from "../state/review-store";
+import { ApprovalCelebration } from "./ApprovalCelebration";
 import { SubmitDialog } from "./SubmitDialog";
 import { Toast } from "./Toast";
 
@@ -12,6 +13,7 @@ export function SubmitBar() {
 
   const [open, setOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [celebrating, setCelebrating] = useState(false);
 
   if (!narrative) return null;
 
@@ -31,13 +33,15 @@ export function SubmitBar() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setOpen(false);
       clearDrafts();
-      const toastMsg =
-        resolution === "approve"
-          ? copy.approvalToast
-          : resolution === "request_changes"
+      if (resolution === "approve") {
+        setCelebrating(true);
+      } else {
+        const toastMsg =
+          resolution === "request_changes"
             ? copy.requestChangesToast
             : copy.commentToast;
-      setToast(toastMsg);
+        setToast(toastMsg);
+      }
     } catch {
       setToast(copy.errorGeneric);
     }
@@ -100,6 +104,9 @@ export function SubmitBar() {
         onSubmit={handleSubmit}
       />
       {toast && <Toast message={toast} onDone={() => setToast(null)} />}
+      {celebrating && (
+        <ApprovalCelebration onDone={() => setCelebrating(false)} />
+      )}
     </>
   );
 }
