@@ -23,20 +23,20 @@ const a = {
 
 const DAD_JOKES = [
   "I'm not mad, just diff-appointed.",
-  "Why do programmers prefer dark mode? Because light attracts bugs.",
+  'Why do programmers prefer dark mode? Because light attracts bugs.',
   "What did the merge conflict say? 'We need to resolve our differences.'",
   "I'd tell you a Git joke, but I'm afraid you'd rebase it.",
-  "Why did the developer go broke? Because he used up all his cache.",
-  "I reviewed your code. It was a-parent-ly good.",
-  "Measure twice, merge once.",
+  'Why did the developer go broke? Because he used up all his cache.',
+  'I reviewed your code. It was a-parent-ly good.',
+  'Measure twice, merge once.',
   "This PR? Son, I'm proud of you.",
-  "I used to hate rebasing. Then it grew on me.",
-  "What do you call a pull request from your kid? A chip off the old block.",
-  "Your code is like my lawn — time to review it.",
+  'I used to hate rebasing. Then it grew on me.',
+  'What do you call a pull request from your kid? A chip off the old block.',
+  'Your code is like my lawn — time to review it.',
   "I'm reading this diff so you don't have to. You're welcome.",
-  "A clean diff is a happy diff.",
+  'A clean diff is a happy diff.',
   "Don't worry about that force push, champ. We all make mistakes.",
-  "Back in my day, we reviewed diffs uphill both ways.",
+  'Back in my day, we reviewed diffs uphill both ways.',
   "Hi diff, I'm dad.",
 ];
 
@@ -152,7 +152,9 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
   const token = await resolveGitHubToken();
   if (!token) {
     console.error(`\n  ${a.red}${a.bold}error:${a.reset} no GitHub token found.`);
-    console.error(`  ${a.dim}set DIFFDAD_GITHUB_TOKEN, run ${a.cyan}gh auth login${a.reset}${a.dim}, or run ${a.cyan}dad config${a.reset}\n`);
+    console.error(
+      `  ${a.dim}set DIFFDAD_GITHUB_TOKEN, run ${a.cyan}gh auth login${a.reset}${a.dim}, or run ${a.cyan}dad config${a.reset}\n`,
+    );
     return 1;
   }
 
@@ -175,22 +177,31 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
   ]);
 
   const stateLabel =
-    metadata.state === 'merged' ? `${a.purple}merged${a.reset}` :
-    metadata.state === 'closed' ? `${a.red}closed${a.reset}` :
-    metadata.draft ? `${a.gray}draft${a.reset}` :
-    `${a.green}open${a.reset}`;
+    metadata.state === 'merged'
+      ? `${a.purple}merged${a.reset}`
+      : metadata.state === 'closed'
+        ? `${a.red}closed${a.reset}`
+        : metadata.draft
+          ? `${a.gray}draft${a.reset}`
+          : `${a.green}open${a.reset}`;
 
   console.log(`\n  ${a.bold}${metadata.title}${a.reset}`);
-  console.log(`  ${stateLabel}  ${a.green}+${metadata.additions}${a.reset} ${a.red}-${metadata.deletions}${a.reset}  ${a.dim}${files.length} files · ${comments.length} comments · ${checkRuns.length} checks${a.reset}`);
+  console.log(
+    `  ${stateLabel}  ${a.green}+${metadata.additions}${a.reset} ${a.red}-${metadata.deletions}${a.reset}  ${a.dim}${files.length} files · ${comments.length} comments · ${checkRuns.length} checks${a.reset}`,
+  );
 
   if (reviews.length > 0) {
-    const reviewLine = reviews.map((r) => {
-      const icon =
-        r.state === 'APPROVED' ? `${a.green}✓${a.reset}` :
-        r.state === 'CHANGES_REQUESTED' ? `${a.red}✗${a.reset}` :
-        `${a.gray}●${a.reset}`;
-      return `${icon} ${a.dim}${r.user}${a.reset}`;
-    }).join('  ');
+    const reviewLine = reviews
+      .map((r) => {
+        const icon =
+          r.state === 'APPROVED'
+            ? `${a.green}✓${a.reset}`
+            : r.state === 'CHANGES_REQUESTED'
+              ? `${a.red}✗${a.reset}`
+              : `${a.gray}●${a.reset}`;
+        return `${icon} ${a.dim}${r.user}${a.reset}`;
+      })
+      .join('  ');
     console.log(`  ${reviewLine}`);
   }
 
@@ -228,7 +239,9 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
   const joke = DAD_JOKES[Math.floor(Math.random() * DAD_JOKES.length)];
 
   console.log(`\n  ${a.purple}${a.bold}${url}${a.reset}`);
-  console.log(`  ${a.dim}${narrative.chapters.length} chapters · ${comments.length} comments · ${reviews.length} reviewers${a.reset}`);
+  console.log(
+    `  ${a.dim}${narrative.chapters.length} chapters · ${comments.length} comments · ${reviews.length} reviewers${a.reset}`,
+  );
   console.log(`\n  ${a.italic}${a.gray}"${joke}"${a.reset}\n`);
 
   if (!Bun.argv.includes('--no-open')) {
