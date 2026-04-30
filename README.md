@@ -1,6 +1,13 @@
-# Diff Dad
+<p align="center">
+  <img src="packages/web/public/diff-dad-mark.svg" width="120" height="120" alt="Diff Dad" />
+</p>
 
-> GitHub PRs as narrated stories. `dad review 139` turns a file-by-file diff into a semantic walkthrough with AI-generated chapters, inline comments, and live sync.
+<h1 align="center">Diff Dad</h1>
+
+<p align="center">
+  GitHub PRs as narrated stories.<br/>
+  <code>dad 139</code> turns a file-by-file diff into a semantic walkthrough with AI-generated chapters, inline comments, and live sync.
+</p>
 
 ## Install
 

@@ -7,6 +7,39 @@ import { generateNarrative } from './narrative/engine';
 import type { NarrativeResponse } from './narrative/types';
 import { createServer } from './server';
 
+const a = {
+  reset: '\x1b[0m',
+  bold: '\x1b[1m',
+  dim: '\x1b[2m',
+  italic: '\x1b[3m',
+  purple: '\x1b[38;5;99m',
+  green: '\x1b[38;5;78m',
+  red: '\x1b[38;5;204m',
+  yellow: '\x1b[38;5;221m',
+  cyan: '\x1b[38;5;117m',
+  gray: '\x1b[38;5;243m',
+  white: '\x1b[97m',
+};
+
+const DAD_JOKES = [
+  "I'm not mad, just diff-appointed.",
+  "Why do programmers prefer dark mode? Because light attracts bugs.",
+  "What did the merge conflict say? 'We need to resolve our differences.'",
+  "I'd tell you a Git joke, but I'm afraid you'd rebase it.",
+  "Why did the developer go broke? Because he used up all his cache.",
+  "I reviewed your code. It was a-parent-ly good.",
+  "Measure twice, merge once.",
+  "This PR? Son, I'm proud of you.",
+  "I used to hate rebasing. Then it grew on me.",
+  "What do you call a pull request from your kid? A chip off the old block.",
+  "Your code is like my lawn — time to review it.",
+  "I'm reading this diff so you don't have to. You're welcome.",
+  "A clean diff is a happy diff.",
+  "Don't worry about that force push, champ. We all make mistakes.",
+  "Back in my day, we reviewed diffs uphill both ways.",
+  "Hi diff, I'm dad.",
+];
+
 interface ParsedPr {
   owner: string;
   repo: string;
@@ -118,14 +151,18 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
 
   const token = await resolveGitHubToken();
   if (!token) {
-    console.error('error: no GitHub token found. set DIFFDAD_GITHUB_TOKEN, run `gh auth login`, or run `dad config`.');
+    console.error(`\n  ${a.red}${a.bold}error:${a.reset} no GitHub token found.`);
+    console.error(`  ${a.dim}set DIFFDAD_GITHUB_TOKEN, run ${a.cyan}gh auth login${a.reset}${a.dim}, or run ${a.cyan}dad config${a.reset}\n`);
     return 1;
   }
 
   const config = await readConfig();
   const github = new GitHubClient(token);
 
-  console.log(`Fetching ${parsed.owner}/${parsed.repo}#${parsed.number}...`);
+  const slug = `${parsed.owner}/${parsed.repo}#${parsed.number}`;
+  console.log(`\n  ${a.purple}${a.bold}Diff Dad${a.reset}  ${a.dim}—${a.reset}  ${a.white}${slug}${a.reset}`);
+  console.log(`  ${a.dim}Fetching PR data...${a.reset}`);
+
   const [metadata, files, comments] = await Promise.all([
     github.getPR(parsed.owner, parsed.repo, parsed.number),
     github.getDiff(parsed.owner, parsed.repo, parsed.number),
@@ -133,31 +170,42 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
   ]);
 
   const [checkRuns, reviews] = await Promise.all([
-    github.getCheckRuns(parsed.owner, parsed.repo, metadata.headSha).catch((err) => {
-      console.warn(`warn: failed to fetch check runs: ${err instanceof Error ? err.message : err}`);
-      return [];
-    }),
-    github.getReviews(parsed.owner, parsed.repo, parsed.number).catch((err) => {
-      console.warn(`warn: failed to fetch reviews: ${err instanceof Error ? err.message : err}`);
-      return [];
-    }),
+    github.getCheckRuns(parsed.owner, parsed.repo, metadata.headSha).catch(() => []),
+    github.getReviews(parsed.owner, parsed.repo, parsed.number).catch(() => []),
   ]);
 
-  console.log(`${metadata.title} — ${files.length} files, +${metadata.additions} -${metadata.deletions}`);
+  const stateLabel =
+    metadata.state === 'merged' ? `${a.purple}merged${a.reset}` :
+    metadata.state === 'closed' ? `${a.red}closed${a.reset}` :
+    metadata.draft ? `${a.gray}draft${a.reset}` :
+    `${a.green}open${a.reset}`;
+
+  console.log(`\n  ${a.bold}${metadata.title}${a.reset}`);
+  console.log(`  ${stateLabel}  ${a.green}+${metadata.additions}${a.reset} ${a.red}-${metadata.deletions}${a.reset}  ${a.dim}${files.length} files · ${comments.length} comments · ${checkRuns.length} checks${a.reset}`);
+
+  if (reviews.length > 0) {
+    const reviewLine = reviews.map((r) => {
+      const icon =
+        r.state === 'APPROVED' ? `${a.green}✓${a.reset}` :
+        r.state === 'CHANGES_REQUESTED' ? `${a.red}✗${a.reset}` :
+        `${a.gray}●${a.reset}`;
+      return `${icon} ${a.dim}${r.user}${a.reset}`;
+    }).join('  ');
+    console.log(`  ${reviewLine}`);
+  }
 
   const noCache = Bun.argv.includes('--no-cache');
   const cached = noCache ? null : await getCachedNarrative(parsed.owner, parsed.repo, parsed.number, metadata.headSha);
   let narrative: NarrativeResponse;
   if (cached) {
-    console.log('Using cached narrative (same commit SHA).');
+    console.log(`\n  ${a.dim}Using cached narrative ${a.gray}(${metadata.headSha.slice(0, 7)})${a.reset}`);
     narrative = cached;
   } else {
-    console.log('Generating narrative...');
+    console.log(`\n  ${a.yellow}Generating narrative...${a.reset}`);
     narrative = await generateNarrative(metadata, files, [], config);
     await cacheNarrative(parsed.owner, parsed.repo, parsed.number, metadata.headSha, narrative);
-    console.log(`${narrative.chapters.length} chapters generated.`);
+    console.log(`  ${a.green}✓${a.reset} ${narrative.chapters.length} chapters generated`);
   }
-  console.log('Starting server...');
 
   const app = createServer({
     narrative,
@@ -172,22 +220,22 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
     headSha: metadata.headSha,
   });
 
-  // Check for --port=N flag
-  const portFlag = Bun.argv.find((a) => a.startsWith('--port='));
+  const portFlag = Bun.argv.find((f) => f.startsWith('--port='));
   const port = portFlag ? parseInt(portFlag.split('=')[1]) : 0;
   const server = Bun.serve({ fetch: app.fetch, port });
 
   const url = `http://localhost:${server.port}`;
-  console.log(`\n  Diff Dad — ${url}\n`);
-  console.log(`  Reviewing: ${parsed.owner}/${parsed.repo}#${parsed.number}`);
-  console.log(`  ${narrative.chapters.length} chapters · ${comments.length} comments\n`);
+  const joke = DAD_JOKES[Math.floor(Math.random() * DAD_JOKES.length)];
+
+  console.log(`\n  ${a.purple}${a.bold}${url}${a.reset}`);
+  console.log(`  ${a.dim}${narrative.chapters.length} chapters · ${comments.length} comments · ${reviews.length} reviewers${a.reset}`);
+  console.log(`\n  ${a.italic}${a.gray}"${joke}"${a.reset}\n`);
 
   if (!Bun.argv.includes('--no-open')) {
     const { default: open } = await import('open');
     await open(url);
   }
 
-  // Keep process alive
   await new Promise(() => {});
 }
 
