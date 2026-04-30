@@ -1,5 +1,6 @@
 import { useReviewStore } from "../state/review-store";
 import { LivePill } from "./LivePill";
+import { IconGear, IconMoon, IconSun } from "./Icons";
 
 function repoSlug(repoUrl: string | null): string | null {
   if (!repoUrl) return null;
@@ -9,9 +10,10 @@ function repoSlug(repoUrl: string | null): string | null {
 
 type AppBarProps = {
   onOpenActivity: () => void;
+  onOpenTweaks: () => void;
 };
 
-export function AppBar({ onOpenActivity }: AppBarProps) {
+export function AppBar({ onOpenActivity, onOpenTweaks }: AppBarProps) {
   const pr = useReviewStore((s) => s.pr);
   const theme = useReviewStore((s) => s.theme);
   const setTheme = useReviewStore((s) => s.setTheme);
@@ -61,6 +63,16 @@ export function AppBar({ onOpenActivity }: AppBarProps) {
         {/* Live pill */}
         <LivePill onClick={onOpenActivity} />
 
+        {/* Tweaks */}
+        <button
+          type="button"
+          aria-label="Open tweaks"
+          onClick={onOpenTweaks}
+          className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+        >
+          <IconGear className="h-4 w-4" />
+        </button>
+
         {/* Theme toggle */}
         <button
           type="button"
@@ -68,9 +80,11 @@ export function AppBar({ onOpenActivity }: AppBarProps) {
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
           className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
         >
-          <span className="text-base leading-none">
-            {theme === "dark" ? "☀" : "☾"}
-          </span>
+          {theme === "dark" ? (
+            <IconSun className="h-4 w-4" />
+          ) : (
+            <IconMoon className="h-4 w-4" />
+          )}
         </button>
 
         {/* Avatar */}

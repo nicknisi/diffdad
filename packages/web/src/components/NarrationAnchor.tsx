@@ -1,6 +1,7 @@
 import { useState, type KeyboardEvent } from "react";
 import { useComments } from "../hooks/useComments";
 import { useReviewStore } from "../state/review-store";
+import { IconChat, IconRefresh, IconSpark, IconX } from "./Icons";
 
 type Density = "terse" | "normal" | "verbose";
 type Lens = "security" | "performance" | "API consumer" | null;
@@ -146,9 +147,10 @@ export function NarrationAnchor({ chapterIndex }: Props) {
           type="button"
           onClick={handleRenarrate}
           disabled={renarrating}
-          className="rounded-md px-2 py-1 text-sm font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-60 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-60 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
         >
-          {renarrating ? "Re-narrating..." : "↻ Re-narrate"}
+          <IconRefresh className="h-3.5 w-3.5" />
+          {renarrating ? "Re-narrating..." : "Re-narrate"}
         </button>
 
         <button
@@ -156,11 +158,12 @@ export function NarrationAnchor({ chapterIndex }: Props) {
           onClick={() => setAskOpen((v) => !v)}
           className={
             askOpen
-              ? "rounded-md bg-brand/10 px-2 py-1 text-sm font-medium text-brand"
-              : "rounded-md px-2 py-1 text-sm font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+              ? "inline-flex items-center gap-1 rounded-md bg-brand/10 px-2 py-1 text-sm font-medium text-brand"
+              : "inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
           }
         >
-          ✦ Ask AI
+          <IconSpark className="h-3.5 w-3.5" />
+          Ask AI
         </button>
 
         <button
@@ -168,11 +171,12 @@ export function NarrationAnchor({ chapterIndex }: Props) {
           onClick={() => setCommentOpen((v) => !v)}
           className={
             commentOpen
-              ? "rounded-md bg-gray-100 px-2 py-1 text-sm font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-200"
-              : "rounded-md px-2 py-1 text-sm font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+              ? "inline-flex items-center gap-1 rounded-md bg-gray-100 px-2 py-1 text-sm font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-200"
+              : "inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
           }
         >
-          💬 Comment on chapter
+          <IconChat className="h-3.5 w-3.5" />
+          Comment on chapter
         </button>
       </div>
 
@@ -197,9 +201,9 @@ export function NarrationAnchor({ chapterIndex }: Props) {
               type="button"
               onClick={closeAsk}
               aria-label="Close"
-              className="rounded-md px-2 py-1 text-sm text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
+              className="inline-flex items-center justify-center rounded-md px-2 py-1 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
             >
-              ✕
+              <IconX className="h-4 w-4" />
             </button>
             <button
               type="button"

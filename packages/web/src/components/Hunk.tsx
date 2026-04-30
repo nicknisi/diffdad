@@ -6,43 +6,16 @@ import { CommentThread } from "./CommentThread";
 import { Comment } from "./Comment";
 import { useHighlighter } from "../hooks/useHighlighter";
 import { guessLang } from "../lib/shiki";
+import { getAuthorInfo } from "../lib/authors";
+import { IconChat, IconCode, IconGitHub } from "./Icons";
 
 type Props = {
   file: string;
   hunk: DiffHunk;
   isNewFile?: boolean;
   hunkIndex: number;
+  highlight?: { from: number; to: number };
 };
-
-const BOT_AVATAR_PALETTE = [
-  "bg-brand",
-  "bg-emerald-500",
-  "bg-amber-500",
-  "bg-rose-500",
-  "bg-sky-500",
-  "bg-violet-500",
-  "bg-teal-500",
-  "bg-orange-500",
-];
-
-function botAvatarColor(author: string): string {
-  let hash = 0;
-  for (let i = 0; i < author.length; i++) {
-    hash = (hash * 31 + author.charCodeAt(i)) | 0;
-  }
-  return (
-    BOT_AVATAR_PALETTE[Math.abs(hash) % BOT_AVATAR_PALETTE.length] ?? "bg-brand"
-  );
-}
-
-function botInitials(author: string): string {
-  const cleaned = author.replace(/\[bot\]$/, "");
-  return cleaned.slice(0, 2).toUpperCase();
-}
-
-function botDisplayName(author: string): string {
-  return author.replace(/\[bot\]$/, "");
-}
 
 function CollapsibleThread({
   comments,
@@ -69,7 +42,7 @@ function CollapsibleThread({
         onClick={() => setCollapsed(false)}
         className="flex w-full items-center gap-2 border-l-2 border-brand/40 bg-gray-50 px-3 py-1.5 text-sm text-gray-500 hover:bg-gray-100 dark:bg-gray-900/40 dark:hover:bg-gray-800"
       >
-        <span className="text-brand">💬</span>
+        <IconChat className="h-3.5 w-3.5 text-brand" />
         {count} {count === 1 ? "comment" : "comments"} — click to expand
       </button>
     );
@@ -119,7 +92,9 @@ function BotCluster({
   }, [comments]);
 
   const avatarStack = uniqueAuthors.slice(0, 3);
-  const displayNames = uniqueAuthors.map(botDisplayName);
+  const displayNames = uniqueAuthors.map(
+    (a) => getAuthorInfo(a).displayName,
+  );
   const namesLabel =
     displayNames.length <= 2
       ? displayNames.join(", ")
@@ -130,16 +105,23 @@ function BotCluster({
     <div className="border-b border-gray-200 bg-brand/5 px-3 py-2 dark:border-gray-800 dark:bg-brand/10">
       <div className="flex items-center gap-2">
         <div className="flex">
-          {avatarStack.map((author, idx) => (
-            <div
-              key={author}
-              className={`flex h-6 w-6 items-center justify-center rounded-full border-2 border-white text-xs font-bold text-white dark:border-gray-900 ${botAvatarColor(author)}`}
-              style={{ marginLeft: idx === 0 ? 0 : -8, zIndex: 10 - idx }}
-              title={botDisplayName(author)}
-            >
-              {botInitials(author)}
-            </div>
-          ))}
+          {avatarStack.map((author, idx) => {
+            const info = getAuthorInfo(author);
+            return (
+              <div
+                key={author}
+                className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-white text-xs font-bold text-white dark:border-gray-900"
+                style={{
+                  marginLeft: idx === 0 ? 0 : -8,
+                  zIndex: 10 - idx,
+                  background: info.color,
+                }}
+                title={info.displayName}
+              >
+                {info.initials}
+              </div>
+            );
+          })}
         </div>
         <span className="text-sm">
           <span className="font-semibold text-brand">
@@ -176,7 +158,7 @@ function BotCluster({
   );
 }
 
-export function Hunk({ file, hunk, isNewFile, hunkIndex }: Props) {
+export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight }: Props) {
   const openLine = useReviewStore((s) => s.openLine);
   const comments = useReviewStore((s) => s.comments);
   const setOpenLine = useReviewStore((s) => s.setOpenLine);
@@ -218,6 +200,11 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex }: Props) {
             New
           </span>
         ) : null}
+        {highlight ? (
+          <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-bold uppercase tracking-wider text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+            focus L{highlight.from}–L{highlight.to}
+          </span>
+        ) : null}
         <div className="ml-auto flex items-center gap-3">
           {githubUrl && (
             <a
@@ -226,18 +213,18 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex }: Props) {
               rel="noopener noreferrer"
               title="View on GitHub"
               aria-label="View on GitHub"
-              className="text-xs text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+              className="inline-flex items-center text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
             >
-              GitHub
+              <IconGitHub className="h-4 w-4" />
             </a>
           )}
           <a
             href={editorUrl}
             title="Open in editor"
             aria-label="Open in editor"
-            className="text-xs text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+            className="inline-flex items-center text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
           >
-            Editor
+            <IconCode className="h-4 w-4" />
           </a>
         </div>
       </div>
@@ -256,9 +243,19 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex }: Props) {
               !/\[bot\]$/.test(c.author),
           );
           const hasThread = openLine === lineKey || lineComments.length > 0;
+          const dimmed =
+            highlight !== undefined &&
+            (line.lineNumber.new === undefined ||
+              line.lineNumber.new < highlight.from ||
+              line.lineNumber.new > highlight.to);
           return (
             <div key={lineKey}>
-              <CodeLine line={line} lineKey={lineKey} lang={lang} />
+              <CodeLine
+                line={line}
+                lineKey={lineKey}
+                lang={lang}
+                dimmed={dimmed}
+              />
               {hasThread && (
                 <CollapsibleThread
                   comments={lineComments}

@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useReviewStore } from "../state/review-store";
 import type { CheckRun } from "../state/types";
+import { IconCheck } from "./Icons";
 import { SubmitDialog } from "./SubmitDialog";
 import { Toast } from "./Toast";
 
@@ -142,7 +143,7 @@ export function PRHeader() {
       };
     } else {
       checksLabel = {
-        text: `✓ ${summary.passing} checks passing`,
+        text: `${summary.passing} checks passing`,
         className:
           "text-green-700 dark:text-green-400 border-green-300 dark:border-green-800/60 bg-green-50 dark:bg-green-950/30 hover:bg-green-100 dark:hover:bg-green-950/50",
       };
@@ -253,6 +254,9 @@ export function PRHeader() {
               aria-expanded={open}
               className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-sm font-medium transition-colors ${checksLabel.className}`}
             >
+              {summary.failing === 0 && summary.pending === 0 ? (
+                <IconCheck className="h-3.5 w-3.5" />
+              ) : null}
               <span>{checksLabel.text}</span>
               <span className="text-xs opacity-70">{open ? "▲" : "▼"}</span>
             </button>

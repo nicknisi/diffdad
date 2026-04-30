@@ -2,14 +2,16 @@ import { useMemo } from "react";
 import { useReviewStore } from "../state/review-store";
 import type { DiffLine } from "../state/types";
 import { highlightLine } from "../lib/shiki";
+import { IconPlus } from "./Icons";
 
 type Props = {
   line: DiffLine;
   lineKey: string;
   lang: string;
+  dimmed?: boolean;
 };
 
-export function CodeLine({ line, lineKey, lang }: Props) {
+export function CodeLine({ line, lineKey, lang, dimmed }: Props) {
   const setOpenLine = useReviewStore((s) => s.setOpenLine);
   const theme = useReviewStore((s) => s.theme);
 
@@ -45,7 +47,7 @@ export function CodeLine({ line, lineKey, lang }: Props) {
 
   return (
     <div
-      className={`group relative flex font-mono text-sm leading-snug ${rowBg}`}
+      className={`group relative flex font-mono text-sm leading-snug ${rowBg}${dimmed ? " opacity-40" : ""}`}
     >
       <div className={`w-12 select-none px-2 text-right ${lineNumColor}`}>
         {line.lineNumber.old ?? ""}
@@ -59,9 +61,9 @@ export function CodeLine({ line, lineKey, lang }: Props) {
           type="button"
           aria-label="Comment on line"
           onClick={() => setOpenLine(lineKey)}
-          className="invisible absolute -right-3 top-0 flex h-5 w-5 items-center justify-center rounded-[4px] bg-brand text-sm font-bold leading-none text-white shadow-sm group-hover:visible"
+          className="invisible absolute -right-3 top-0 flex h-5 w-5 items-center justify-center rounded-[4px] bg-brand text-white shadow-sm group-hover:visible"
         >
-          +
+          <IconPlus className="h-3 w-3" />
         </button>
       </div>
       {highlighted ? (

@@ -1,4 +1,5 @@
 import { useReviewStore } from "../state/review-store";
+import { IconSpark } from "./Icons";
 
 export function SuggestedStart() {
   const narrative = useReviewStore((s) => s.narrative);
@@ -20,7 +21,7 @@ export function SuggestedStart() {
   return (
     <div className="mb-4 flex gap-3 rounded-xl border border-brand/30 bg-brand/5 p-4 dark:bg-brand/10">
       <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md bg-brand text-white">
-        <span className="text-base">✦</span>
+        <IconSpark className="h-4 w-4" />
       </div>
       <div className="flex-1">
         <p className="text-base leading-relaxed text-gray-800 dark:text-gray-200">

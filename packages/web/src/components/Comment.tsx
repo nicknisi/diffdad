@@ -1,32 +1,10 @@
 import { useState } from "react";
+import { getAuthorInfo } from "../lib/authors";
 import type { PRComment } from "../state/types";
+import { IconSpark } from "./Icons";
 import { Markdown } from "./markdown/Markdown";
 
-const AVATAR_PALETTE = [
-  "bg-brand",
-  "bg-emerald-500",
-  "bg-amber-500",
-  "bg-rose-500",
-  "bg-sky-500",
-  "bg-violet-500",
-  "bg-teal-500",
-  "bg-orange-500",
-];
-
 const RECENT_SYNC_WINDOW_MS = 60_000;
-
-function avatarColor(author: string): string {
-  let hash = 0;
-  for (let i = 0; i < author.length; i++) {
-    hash = (hash * 31 + author.charCodeAt(i)) | 0;
-  }
-  return AVATAR_PALETTE[Math.abs(hash) % AVATAR_PALETTE.length] ?? "bg-brand";
-}
-
-function initials(author: string): string {
-  const cleaned = author.replace(/\[bot\]$/, "");
-  return cleaned.slice(0, 2).toUpperCase();
-}
 
 function relativeTime(iso: string): string {
   const t = new Date(iso).getTime();
@@ -63,7 +41,8 @@ function provenance(
 }
 
 export function Comment({ comment, replies = [], isReply = false }: Props) {
-  const isBot = /\[bot\]$/.test(comment.author);
+  const info = getAuthorInfo(comment.author);
+  const isBot = info.isBot;
   const { kind } = provenance(comment);
   const [collapsed, setCollapsed] = useState(false);
 
@@ -90,16 +69,18 @@ export function Comment({ comment, replies = [], isReply = false }: Props) {
     >
       <div className="flex items-center gap-2">
         <div
-          className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold text-white ${avatarColor(comment.author)}`}
+          className="flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold text-white"
+          style={{ background: info.color }}
         >
-          {initials(comment.author)}
+          {info.initials}
         </div>
         <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-          {comment.author}
+          {info.displayName}
         </span>
         {isBot && (
-          <span className="rounded-full bg-brand/10 px-2 py-0.5 text-xs font-bold uppercase tracking-wide text-brand">
-            ✦ bot
+          <span className="inline-flex items-center gap-1 rounded-full bg-brand/10 px-2 py-0.5 text-xs font-bold uppercase tracking-wide text-brand">
+            <IconSpark className="h-3 w-3" />
+            bot
           </span>
         )}
         <span className="text-sm text-gray-400 dark:text-gray-500">
