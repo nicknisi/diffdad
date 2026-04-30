@@ -88,7 +88,7 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex }: Props) {
           </span>
         ) : null}
       </div>
-      <div className="divide-y divide-transparent">
+      <div>
         {hunk.lines.map((line, i) => {
           const lineKey = `${file}:${hunkIndex}:${i}`;
           const lineComments: PRComment[] = comments.filter(
