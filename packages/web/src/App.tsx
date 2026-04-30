@@ -18,7 +18,7 @@ export default function App() {
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-gray-50 text-gray-600 dark:bg-gray-950 dark:text-gray-400">
-        <p className="text-[14.5px]">{copy.loading}</p>
+        <p className="text-base">{copy.loading}</p>
       </main>
     );
   }
@@ -27,8 +27,8 @@ export default function App() {
     return (
       <main className="flex min-h-screen items-center justify-center bg-gray-50 text-gray-600 dark:bg-gray-950 dark:text-gray-400">
         <div className="text-center">
-          <p className="text-[14.5px]">{copy.errorGeneric}</p>
-          <p className="mt-2 text-[12px] text-gray-400">{error}</p>
+          <p className="text-base">{copy.errorGeneric}</p>
+          <p className="mt-2 text-sm text-gray-400">{error}</p>
         </div>
       </main>
     );

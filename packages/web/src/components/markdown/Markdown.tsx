@@ -42,7 +42,7 @@ function renderMarkdown(src: string): string {
     if (para.length === 0) return;
     const joined = para.join(" ");
     out.push(
-      `<p class="mb-3 text-[15px] leading-[24px] text-gray-800 dark:text-gray-200">${renderInline(escapeHtml(joined))}</p>`,
+      `<p class="mb-3 text-base leading-relaxed text-gray-800 dark:text-gray-200">${renderInline(escapeHtml(joined))}</p>`,
     );
     para = [];
   }
@@ -61,10 +61,10 @@ function renderMarkdown(src: string): string {
       }
       i++;
       const langLabel = lang
-        ? `<div class="mb-1 text-[10.5px] font-mono uppercase text-gray-400">${escapeHtml(lang)}</div>`
+        ? `<div class="mb-1 text-xs font-mono uppercase text-gray-400">${escapeHtml(lang)}</div>`
         : "";
       out.push(
-        `<pre class="my-2 overflow-x-auto rounded-md border border-gray-200 bg-gray-50 p-3 font-mono text-[12.5px] leading-[18px] dark:border-gray-800 dark:bg-gray-900">${langLabel}<code>${escapeHtml(buf.join("\n"))}</code></pre>`,
+        `<pre class="my-2 overflow-x-auto rounded-md border border-gray-200 bg-gray-50 p-3 font-mono text-sm leading-snug dark:border-gray-800 dark:bg-gray-900">${langLabel}<code>${escapeHtml(buf.join("\n"))}</code></pre>`,
       );
       continue;
     }

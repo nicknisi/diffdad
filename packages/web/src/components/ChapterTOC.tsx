@@ -16,7 +16,7 @@ export function ChapterTOC() {
 
   return (
     <aside className="sticky top-16 self-start">
-      <div className="px-2.5 pb-2 text-[11px] font-bold uppercase tracking-[0.06em] text-gray-400 dark:text-gray-500">
+      <div className="px-2.5 pb-2 text-xs font-bold uppercase tracking-[0.06em] text-gray-400 dark:text-gray-500">
         Story
       </div>
       <ul className="space-y-1">
@@ -37,7 +37,7 @@ export function ChapterTOC() {
                 }`}
               >
                 <div
-                  className={`mt-0.5 flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center rounded-full font-mono text-[10.5px] font-bold ${
+                  className={`mt-0.5 flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center rounded-full font-mono text-xs font-bold ${
                     reviewed
                       ? "bg-green-600 text-white"
                       : "bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-200"
@@ -46,10 +46,10 @@ export function ChapterTOC() {
                   {reviewed ? "✓" : idx + 1}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-[13px] font-medium leading-[17px]">
+                  <div className="text-sm font-medium leading-snug">
                     {ch.title}
                   </div>
-                  <div className="text-[11.5px] leading-[14px] text-gray-400 dark:text-gray-500">
+                  <div className="text-xs leading-tight text-gray-400 dark:text-gray-500">
                     {hunkCount} {hunkCount === 1 ? "hunk" : "hunks"} · risk{" "}
                     {ch.risk}
                   </div>

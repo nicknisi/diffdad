@@ -43,14 +43,14 @@ export function Chapter({ index, chapter }: Props) {
       className={`mb-4 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900 ${reviewed ? "opacity-85" : ""}`}
     >
       <div className="flex items-center gap-3">
-        <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md bg-gray-900 font-mono text-[12px] font-bold text-white dark:bg-gray-200 dark:text-gray-900">
+        <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md bg-gray-900 font-mono text-sm font-bold text-white dark:bg-gray-200 dark:text-gray-900">
           {index + 1}
         </div>
         <h2 className="text-lg font-bold tracking-[-0.01em] text-gray-900 dark:text-gray-50">
           {chapter.title}
         </h2>
         <span
-          className={`rounded-full px-2 py-0.5 text-[10.5px] font-bold uppercase tracking-wider ${RISK_STYLES[chapter.risk]}`}
+          className={`rounded-full px-2 py-0.5 text-xs font-bold uppercase tracking-wider ${RISK_STYLES[chapter.risk]}`}
         >
           {chapter.risk}
         </span>
@@ -59,8 +59,8 @@ export function Chapter({ index, chapter }: Props) {
           onClick={() => toggleReviewed(index)}
           className={
             reviewed
-              ? "ml-auto rounded-md bg-green-100 px-3 py-1 text-[12px] font-medium text-green-700 dark:bg-green-900/40 dark:text-green-300"
-              : "ml-auto rounded-md border border-gray-200 px-3 py-1 text-[12px] font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800"
+              ? "ml-auto rounded-md bg-green-100 px-3 py-1 text-sm font-medium text-green-700 dark:bg-green-900/40 dark:text-green-300"
+              : "ml-auto rounded-md border border-gray-200 px-3 py-1 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800"
           }
         >
           {reviewed ? "✓ Reviewed" : "Mark reviewed"}

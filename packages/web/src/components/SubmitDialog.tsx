@@ -55,7 +55,7 @@ export function SubmitDialog({ open, onClose, onSubmit }: Props) {
         className="w-full max-w-[480px] rounded-2xl bg-white p-6 shadow-xl dark:bg-gray-900"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="text-[20px] font-bold text-gray-900 dark:text-gray-50">
+        <h2 className="text-xl font-bold text-gray-900 dark:text-gray-50">
           Submit your review
         </h2>
         <div className="mt-4 space-y-2">
@@ -64,7 +64,7 @@ export function SubmitDialog({ open, onClose, onSubmit }: Props) {
             return (
               <label
                 key={opt.value}
-                className={`block cursor-pointer rounded-md border p-3 text-[13.5px] ${
+                className={`block cursor-pointer rounded-md border p-3 text-sm ${
                   selected
                     ? "border-brand bg-brand/5"
                     : "border-gray-200 dark:border-gray-800"
@@ -83,7 +83,7 @@ export function SubmitDialog({ open, onClose, onSubmit }: Props) {
                     <div className="font-medium text-gray-900 dark:text-gray-100">
                       {opt.label}
                     </div>
-                    <div className="text-[12.5px] text-gray-500 dark:text-gray-400">
+                    <div className="text-sm text-gray-500 dark:text-gray-400">
                       {opt.desc}
                     </div>
                   </div>
@@ -96,20 +96,20 @@ export function SubmitDialog({ open, onClose, onSubmit }: Props) {
           value={summary}
           onChange={(e) => setSummary(e.target.value)}
           placeholder="Optional summary..."
-          className="mt-4 block min-h-[100px] w-full rounded-md border border-gray-200 bg-transparent px-3 py-2 text-[14.5px] outline-none focus:border-brand dark:border-gray-800"
+          className="mt-4 block min-h-[100px] w-full rounded-md border border-gray-200 bg-transparent px-3 py-2 text-base outline-none focus:border-brand dark:border-gray-800"
         />
         <div className="mt-4 flex justify-end gap-2">
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md px-3 py-1.5 text-[13px] text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+            className="rounded-md px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
           >
             Cancel
           </button>
           <button
             type="button"
             onClick={() => onSubmit(resolution, summary)}
-            className={`rounded-md px-4 py-1.5 text-[13px] font-medium text-white ${submitClasses}`}
+            className={`rounded-md px-4 py-1.5 text-sm font-medium text-white ${submitClasses}`}
           >
             {submitLabel}
           </button>

@@ -6,7 +6,7 @@ type Props = {
 
 export function NarrationBlock({ content }: Props) {
   return (
-    <div className="ml-[34px] text-[15px] leading-[24px] text-gray-700 dark:text-gray-300">
+    <div className="ml-[34px] text-base leading-relaxed text-gray-700 dark:text-gray-300">
       <Markdown source={content} />
     </div>
   );

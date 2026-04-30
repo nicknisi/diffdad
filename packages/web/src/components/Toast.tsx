@@ -28,7 +28,7 @@ export function Toast({ message, onDone }: Props) {
       aria-live="polite"
       className={`pointer-events-none fixed bottom-20 left-1/2 z-50 -translate-x-1/2 transform transition-all duration-200 ${opacity} ${translate}`}
     >
-      <div className="rounded-md bg-gray-900 px-4 py-2 text-[13px] font-medium text-white shadow-lg dark:bg-gray-100 dark:text-gray-900">
+      <div className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white shadow-lg dark:bg-gray-100 dark:text-gray-900">
         {message}
       </div>
     </div>

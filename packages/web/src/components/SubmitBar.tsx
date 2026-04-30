@@ -30,7 +30,7 @@ export function SubmitBar() {
     <>
       <div className="fixed inset-x-0 bottom-0 z-20 flex h-14 items-center justify-between border-t border-gray-200 bg-white px-8 shadow-md dark:border-gray-800 dark:bg-gray-900">
         <div className="min-w-0 flex-1">
-          <div className="text-[13px] text-gray-700 dark:text-gray-300">
+          <div className="text-sm text-gray-700 dark:text-gray-300">
             {reviewedCount} of {total} chapters reviewed · {drafts.length}{" "}
             pending {drafts.length === 1 ? "draft" : "drafts"}
           </div>
@@ -44,7 +44,7 @@ export function SubmitBar() {
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="rounded-md bg-brand px-4 py-2 text-[13px] font-medium text-white hover:bg-brand/90"
+          className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90"
         >
           Submit review
         </button>

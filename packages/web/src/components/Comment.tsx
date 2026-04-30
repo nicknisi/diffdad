@@ -50,22 +50,22 @@ export function Comment({ comment }: Props) {
     <div className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900">
       <div className="flex items-center gap-2">
         <div
-          className={`flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold text-white ${avatarColor(comment.author)}`}
+          className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold text-white ${avatarColor(comment.author)}`}
         >
           {initials(comment.author)}
         </div>
-        <span className="text-[13.5px] font-semibold text-gray-900 dark:text-gray-100">
+        <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
           {comment.author}
         </span>
         {isBot && (
-          <span className="rounded-full bg-brand/10 px-2 py-0.5 text-[10.5px] font-bold uppercase tracking-wide text-brand">
+          <span className="rounded-full bg-brand/10 px-2 py-0.5 text-xs font-bold uppercase tracking-wide text-brand">
             ✦ bot
           </span>
         )}
-        <span className="text-[12px] text-gray-400 dark:text-gray-500">
+        <span className="text-sm text-gray-400 dark:text-gray-500">
           {relativeTime(comment.createdAt)}
         </span>
-        <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[10.5px] font-medium text-green-700 dark:bg-green-900/40 dark:text-green-300">
+        <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900/40 dark:text-green-300">
           {isDraft ? "draft" : "from GitHub"}
         </span>
       </div>

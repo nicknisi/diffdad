@@ -36,7 +36,7 @@ function CollapsibleThread({
       <button
         type="button"
         onClick={() => setCollapsed(false)}
-        className="flex w-full items-center gap-2 border-l-2 border-brand/40 bg-gray-50 px-3 py-1.5 text-[12.5px] text-gray-500 hover:bg-gray-100 dark:bg-gray-900/40 dark:hover:bg-gray-800"
+        className="flex w-full items-center gap-2 border-l-2 border-brand/40 bg-gray-50 px-3 py-1.5 text-sm text-gray-500 hover:bg-gray-100 dark:bg-gray-900/40 dark:hover:bg-gray-800"
       >
         <span className="text-brand">💬</span>
         {count} {count === 1 ? "comment" : "comments"} — click to expand
@@ -50,7 +50,7 @@ function CollapsibleThread({
         <button
           type="button"
           onClick={() => setCollapsed(true)}
-          className="mb-2 text-[11.5px] font-medium text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+          className="mb-2 text-xs font-medium text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
         >
           Collapse {count} {count === 1 ? "comment" : "comments"}
         </button>
@@ -77,13 +77,13 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex }: Props) {
 
   return (
     <div className="my-3 overflow-hidden rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-      <div className="flex items-center gap-3 border-b border-gray-200 bg-gray-50 px-3 py-2 font-mono text-[13.5px] dark:border-gray-800 dark:bg-gray-900/60">
+      <div className="flex items-center gap-3 border-b border-gray-200 bg-gray-50 px-3 py-2 font-mono text-sm dark:border-gray-800 dark:bg-gray-900/60">
         <span className="font-semibold text-gray-800 dark:text-gray-200">
           {file}
         </span>
         <span className="text-gray-400 dark:text-gray-500">{range}</span>
         {isNewFile ? (
-          <span className="rounded bg-brand px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
+          <span className="rounded bg-brand px-1.5 py-0.5 text-xs font-bold uppercase tracking-wider text-white">
             New
           </span>
         ) : null}

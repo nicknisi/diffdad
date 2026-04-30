@@ -38,7 +38,7 @@ export function CodeLine({ line, lineKey, lang }: Props) {
 
   return (
     <div
-      className={`group relative flex font-mono text-[13.5px] leading-[21px] ${rowBg}`}
+      className={`group relative flex font-mono text-sm leading-snug ${rowBg}`}
     >
       <div className="w-12 select-none px-2 text-right text-gray-400 dark:text-gray-600">
         {line.lineNumber.old ?? ""}
@@ -52,7 +52,7 @@ export function CodeLine({ line, lineKey, lang }: Props) {
           type="button"
           aria-label="Comment on line"
           onClick={() => setOpenLine(lineKey)}
-          className="invisible absolute -right-3 top-0 flex h-5 w-5 items-center justify-center rounded-[4px] bg-brand text-[12px] font-bold leading-none text-white shadow-sm group-hover:visible"
+          className="invisible absolute -right-3 top-0 flex h-5 w-5 items-center justify-center rounded-[4px] bg-brand text-sm font-bold leading-none text-white shadow-sm group-hover:visible"
         >
           +
         </button>
