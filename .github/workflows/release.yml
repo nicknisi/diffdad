@@ -1,0 +1,66 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            target: bun-darwin-arm64
+            artifact: dad-darwin-arm64
+          - os: macos-13
+            target: bun-darwin-x64
+            artifact: dad-darwin-x86_64
+          - os: ubuntu-latest
+            target: bun-linux-x64
+            artifact: dad-linux-x86_64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build web frontend
+        run: bun run build
+
+      - name: Compile binary
+        run: bun build packages/cli/src/cli.ts --compile --target=${{ matrix.target }} --outfile dad
+
+      - name: Package tarball
+        run: |
+          mkdir -p dist/share/diffdad
+          cp dad dist/
+          cp -r packages/web/dist dist/share/diffdad/web
+          cd dist
+          tar czf ../${{ matrix.artifact }}.tar.gz .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}.tar.gz
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: "*.tar.gz"

@@ -1,6 +1,7 @@
+import { existsSync } from "fs";
 import { Hono } from "hono";
 import { serveStatic } from "hono/bun";
-import { resolve } from "path";
+import { dirname, resolve } from "path";
 import { readConfig } from "./config";
 import type { GitHubClient } from "./github/client";
 import { mapCommentsToChapters } from "./github/comments";
@@ -344,7 +345,9 @@ export function createServer(ctx: ServerContext) {
     return c.json({ ok: true });
   });
 
-  const webDist = resolve(import.meta.dir, "../../web/dist");
+  const devPath = resolve(import.meta.dir, "../../web/dist");
+  const installedPath = resolve(dirname(process.execPath), "..", "share", "diffdad", "web");
+  const webDist = existsSync(devPath) ? devPath : installedPath;
 
   app.use(
     "/*",
