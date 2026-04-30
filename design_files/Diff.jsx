@@ -2,24 +2,52 @@
 
 function CommentSourceBadge({ source, syncStatus }) {
   const Icon = window.Icons;
-  if (syncStatus === "syncing") {
-    return <span className="source syncing"><Icon.Refresh />syncing…</span>;
+  if (syncStatus === 'syncing') {
+    return (
+      <span className="source syncing">
+        <Icon.Refresh />
+        syncing…
+      </span>
+    );
   }
-  if (syncStatus === "pending") {
-    return <span className="source pending"><Icon.Dot />pending</span>;
+  if (syncStatus === 'pending') {
+    return (
+      <span className="source pending">
+        <Icon.Dot />
+        pending
+      </span>
+    );
   }
-  if (source === "github") {
-    return <span className="source synced"><Icon.Github />from GitHub</span>;
+  if (source === 'github') {
+    return (
+      <span className="source synced">
+        <Icon.Github />
+        from GitHub
+      </span>
+    );
   }
-  return <span className="source synced"><Icon.Check />synced to GitHub</span>;
+  return (
+    <span className="source synced">
+      <Icon.Check />
+      synced to GitHub
+    </span>
+  );
 }
 
-function Comment({ c, onReply }) {
-  const a = (window.AUTHORS && window.AUTHORS[c.author]) || { name: c.author, short: c.author, initials: "??", color: "#60646C", kind: "human" };
-  const isBot = a.kind === "bot";
+function Comment({ c, onReply: _onReply }) {
+  const a = (window.AUTHORS && window.AUTHORS[c.author]) || {
+    name: c.author,
+    short: c.author,
+    initials: '??',
+    color: '#60646C',
+    kind: 'human',
+  };
+  const isBot = a.kind === 'bot';
   return (
-    <div className={`comment ${isBot ? "bot" : ""}`}>
-      <span className="av" style={{ background: a.color }}>{a.initials}</span>
+    <div className={`comment ${isBot ? 'bot' : ''}`}>
+      <span className="av" style={{ background: a.color }}>
+        {a.initials}
+      </span>
       <div className="body">
         <div className="row1">
           <b>{a.short}</b>
@@ -27,17 +55,15 @@ function Comment({ c, onReply }) {
           <span className="when">{c.createdAt}</span>
           <CommentSourceBadge source={c.source} syncStatus={c.syncStatus} />
         </div>
-        <div className="text">
-          {window.Markdown ? <window.Markdown source={c.body} /> : c.body}
-        </div>
+        <div className="text">{window.Markdown ? <window.Markdown source={c.body} /> : c.body}</div>
       </div>
     </div>
   );
 }
 
-function Thread({ comments, onAddReply, autoOpen, onClose }) {
+function Thread({ comments, onAddReply, autoOpen: _autoOpen, onClose }) {
   const Icon = window.Icons;
-  const [reply, setReply] = React.useState("");
+  const [reply, setReply] = React.useState('');
   const baselineRef = React.useRef(comments.length);
   const [conflictedSince, setConflictedSince] = React.useState(0);
 
@@ -58,14 +84,16 @@ function Thread({ comments, onAddReply, autoOpen, onClose }) {
   };
 
   return (
-    <div className={`thread ${conflictedSince > 0 ? "has-conflict" : ""}`}>
+    <div className={`thread ${conflictedSince > 0 ? 'has-conflict' : ''}`}>
       {comments.map((c, idx) => {
         const isNewArrival = idx >= baselineRef.current && conflictedSince > 0;
         return (
           <React.Fragment key={c.id}>
-            <div className={isNewArrival ? "comment-new-arrival" : ""}>
+            <div className={isNewArrival ? 'comment-new-arrival' : ''}>
               <Comment c={c} />
-              {(c.replies || []).map(r => <Comment key={r.id} c={r} />)}
+              {(c.replies || []).map((r) => (
+                <Comment key={r.id} c={r} />
+              ))}
             </div>
           </React.Fragment>
         );
@@ -73,7 +101,12 @@ function Thread({ comments, onAddReply, autoOpen, onClose }) {
       {conflictedSince > 0 && (
         <div className="conflict-banner">
           <Icon.Refresh />
-          <span><b>{conflictedSince} new {conflictedSince === 1 ? "comment" : "comments"}</b> arrived while you were typing.</span>
+          <span>
+            <b>
+              {conflictedSince} new {conflictedSince === 1 ? 'comment' : 'comments'}
+            </b>{' '}
+            arrived while you were typing.
+          </span>
           <button onClick={acknowledgeConflict}>Got it</button>
         </div>
       )}
@@ -81,16 +114,26 @@ function Thread({ comments, onAddReply, autoOpen, onClose }) {
         <textarea
           placeholder="Reply… (this will sync to GitHub)"
           value={reply}
-          onChange={e => setReply(e.target.value)}
+          onChange={(e) => setReply(e.target.value)}
         />
         <div className="btnrow">
-          {onClose && <button className="btn ghost sm" onClick={onClose}>Cancel</button>}
+          {onClose && (
+            <button className="btn ghost sm" onClick={onClose}>
+              Cancel
+            </button>
+          )}
           <button className="btn surface sm">Save draft</button>
           <button
             className="btn primary sm"
-            onClick={() => { if (reply.trim()) { onAddReply && onAddReply(reply); setReply(""); }}}
+            onClick={() => {
+              if (reply.trim()) {
+                onAddReply && onAddReply(reply);
+                setReply('');
+              }
+            }}
           >
-            <Icon.Send />Comment
+            <Icon.Send />
+            Comment
           </button>
         </div>
       </div>
@@ -100,20 +143,16 @@ function Thread({ comments, onAddReply, autoOpen, onClose }) {
 
 function CodeLine({ line, comments, onAddComment, hasComment, onToggleComment, isOpen, dim }) {
   const Icon = window.Icons;
-  const cls = `line ${line.kind === "+" ? "add" : line.kind === "-" ? "rem" : ""} ${dim ? "dim" : ""}`;
+  const cls = `line ${line.kind === '+' ? 'add' : line.kind === '-' ? 'rem' : ''} ${dim ? 'dim' : ''}`;
   return (
     <>
       <div className={cls}>
-        <span className="ln">{line.n ?? ""}</span>
-        <span className="ln">{line.m ?? ""}</span>
-        <span className="sigil">{line.kind === "+" ? "+" : line.kind === "-" ? "−" : ""}</span>
+        <span className="ln">{line.n ?? ''}</span>
+        <span className="ln">{line.m ?? ''}</span>
+        <span className="sigil">{line.kind === '+' ? '+' : line.kind === '-' ? '−' : ''}</span>
         <span className="code">{line.code}</span>
         {line.m != null && (
-          <button
-            className="ln-comment"
-            title="Comment on this line"
-            onClick={() => onToggleComment(line.m)}
-          >
+          <button className="ln-comment" title="Comment on this line" onClick={() => onToggleComment(line.m)}>
             <Icon.Plus />
           </button>
         )}
@@ -129,19 +168,30 @@ function CodeLine({ line, comments, onAddComment, hasComment, onToggleComment, i
   );
 }
 
-function Hunk({ hunk, openLine, setOpenLine, addComment, reshown, framing, highlight, onJumpToOwner, clusterBots, justUpdated }) {
+function Hunk({
+  hunk,
+  openLine,
+  setOpenLine,
+  addComment,
+  reshown,
+  framing,
+  highlight,
+  onJumpToOwner,
+  clusterBots,
+  justUpdated,
+}) {
   const Icon = window.Icons;
   const AUTHORS = window.AUTHORS || {};
-  const isBot = (c) => (AUTHORS[c.author]?.kind === "bot");
+  const isBot = (c) => AUTHORS[c.author]?.kind === 'bot';
   const [botsExpanded, setBotsExpanded] = React.useState(false);
 
   const allComments = hunk.comments || [];
   const botComments = clusterBots ? allComments.filter(isBot) : [];
-  const visibleComments = clusterBots ? allComments.filter(c => !isBot(c)) : allComments;
+  const visibleComments = clusterBots ? allComments.filter((c) => !isBot(c)) : allComments;
 
   const grouped = React.useMemo(() => {
     const map = {};
-    visibleComments.forEach(c => {
+    visibleComments.forEach((c) => {
       const k = c.line;
       if (!map[k]) map[k] = [];
       map[k].push(c);
@@ -154,7 +204,7 @@ function Hunk({ hunk, openLine, setOpenLine, addComment, reshown, framing, highl
     return m >= highlight.from && m <= highlight.to;
   };
   return (
-    <div className={`hunk ${reshown ? "reshown" : ""} ${justUpdated ? "just-updated" : ""}`}>
+    <div className={`hunk ${reshown ? 'reshown' : ''} ${justUpdated ? 'just-updated' : ''}`}>
       {reshown && (
         <div className="reshow-frame">
           <div className="reshow-pill">
@@ -165,9 +215,7 @@ function Hunk({ hunk, openLine, setOpenLine, addComment, reshown, framing, highl
               {reshown.title} <Icon.ArrowRight />
             </button>
           </div>
-          {framing && (
-            <div className="reshow-framing" dangerouslySetInnerHTML={{ __html: framing }} />
-          )}
+          {framing && <div className="reshow-framing" dangerouslySetInnerHTML={{ __html: framing }} />}
         </div>
       )}
       <div className="hunk-head">
@@ -175,35 +223,47 @@ function Hunk({ hunk, openLine, setOpenLine, addComment, reshown, framing, highl
         <span className="file">{hunk.file}</span>
         <span className="range">{hunk.range}</span>
         {hunk.isNewFile && <span className="new">new file</span>}
-        {highlight && <span className="hl-pill">focus L{highlight.from}–L{highlight.to}</span>}
+        {highlight && (
+          <span className="hl-pill">
+            focus L{highlight.from}–L{highlight.to}
+          </span>
+        )}
         <span className="right">
-          <button className="ic" title="Open in editor"><Icon.ArrowRight /></button>
-          <button className="ic" title="View on GitHub"><Icon.Github /></button>
+          <button className="ic" title="Open in editor">
+            <Icon.ArrowRight />
+          </button>
+          <button className="ic" title="View on GitHub">
+            <Icon.Github />
+          </button>
         </span>
       </div>
 
       {clusterBots && botComments.length > 0 && (
-        <div className={`bot-cluster ${botsExpanded ? "open" : ""}`}>
-          <button className="bot-cluster-head" onClick={() => setBotsExpanded(v => !v)}>
+        <div className={`bot-cluster ${botsExpanded ? 'open' : ''}`}>
+          <button className="bot-cluster-head" onClick={() => setBotsExpanded((v) => !v)}>
             <span className="bot-stack">
-              {[...new Set(botComments.map(c => c.author))].slice(0, 3).map((a, i) => (
-                <span key={a} className="av sm" style={{ background: AUTHORS[a]?.color || "#888", zIndex: 3 - i }}>
-                  {AUTHORS[a]?.initials || "??"}
+              {[...new Set(botComments.map((c) => c.author))].slice(0, 3).map((a, i) => (
+                <span key={a} className="av sm" style={{ background: AUTHORS[a]?.color || '#888', zIndex: 3 - i }}>
+                  {AUTHORS[a]?.initials || '??'}
                 </span>
               ))}
             </span>
             <span className="bot-summary">
-              <b>{botComments.length} bot {botComments.length === 1 ? "suggestion" : "suggestions"}</b>
-              <span className="from">from {[...new Set(botComments.map(c => AUTHORS[c.author]?.short || c.author))].join(", ")}</span>
+              <b>
+                {botComments.length} bot {botComments.length === 1 ? 'suggestion' : 'suggestions'}
+              </b>
+              <span className="from">
+                from {[...new Set(botComments.map((c) => AUTHORS[c.author]?.short || c.author))].join(', ')}
+              </span>
             </span>
             <span className="bot-cluster-toggle">
-              {botsExpanded ? "Collapse" : "Expand"}
-              <Icon.ChevronRight style={{ transform: botsExpanded ? "rotate(90deg)" : "none" }} />
+              {botsExpanded ? 'Collapse' : 'Expand'}
+              <Icon.ChevronRight style={{ transform: botsExpanded ? 'rotate(90deg)' : 'none' }} />
             </span>
           </button>
           {botsExpanded && (
             <div className="bot-cluster-body">
-              {botComments.map(c => (
+              {botComments.map((c) => (
                 <div key={c.id} className="bot-cluster-item">
                   <div className="lref">L{c.line}</div>
                   <Comment c={c} />
@@ -216,7 +276,7 @@ function Hunk({ hunk, openLine, setOpenLine, addComment, reshown, framing, highl
 
       <div className="codelines">
         {hunk.lines.map((ln, i) => {
-          const commentsForLine = ln.m != null ? (grouped[ln.m] || []) : [];
+          const commentsForLine = ln.m != null ? grouped[ln.m] || [] : [];
           const hasComment = commentsForLine.length > 0;
           const isOpen = openLine === `${hunk.file}:${ln.m}`;
           const dim = highlight && !inHighlight(ln.m);

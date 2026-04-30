@@ -14,137 +14,157 @@
 const SCRIPTED_EVENTS = [
   {
     afterMs: 4000,
-    kind: "bot_comment",
-    chapterId: "ch3",
-    hunkId: "h-discovery-cache",
+    kind: 'bot_comment',
+    chapterId: 'ch3',
+    hunkId: 'h-discovery-cache',
     comment: {
-      id: "live-bot-1",
-      author: "coderabbit[bot]",
+      id: 'live-bot-1',
+      author: 'coderabbit[bot]',
       line: 11,
       body: "**Stale-while-revalidate looks correct**, but consider returning a `{ doc, stale: true }` shape so callers can log when they're serving stale data — useful for the new telemetry in chapter 5.",
-      createdAt: "just now",
-      syncStatus: "synced",
-      source: "github",
+      createdAt: 'just now',
+      syncStatus: 'synced',
+      source: 'github',
       replies: [],
     },
-    summary: "CodeRabbit commented on packages/sso/src/oidc/discovery-cache.ts",
+    summary: 'CodeRabbit commented on packages/sso/src/oidc/discovery-cache.ts',
   },
   {
     afterMs: 9000,
-    kind: "ci",
-    summary: "CI: lint + typecheck passing (12/12)",
+    kind: 'ci',
+    summary: 'CI: lint + typecheck passing (12/12)',
     detail: { passing: 12, failing: 0, pending: 0 },
   },
   {
     afterMs: 14000,
-    kind: "human_comment",
-    chapterId: "ch4",
-    hunkId: "h-setup-form",
+    kind: 'human_comment',
+    chapterId: 'ch4',
+    hunkId: 'h-setup-form',
     comment: {
-      id: "live-human-1",
-      author: "achen",
+      id: 'live-human-1',
+      author: 'achen',
       line: 134,
-      body: "Quick one — when discovery fails should we fall back to the manual fields automatically, or surface the error and let the customer decide? I lean toward the latter.",
-      createdAt: "just now",
-      syncStatus: "synced",
-      source: "github",
+      body: 'Quick one — when discovery fails should we fall back to the manual fields automatically, or surface the error and let the customer decide? I lean toward the latter.',
+      createdAt: 'just now',
+      syncStatus: 'synced',
+      source: 'github',
       replies: [],
     },
-    summary: "Adaeze commented on packages/admin-portal/src/sso/SetupFormOIDC.tsx",
+    summary: 'Adaeze commented on packages/admin-portal/src/sso/SetupFormOIDC.tsx',
   },
   {
     afterMs: 19000,
-    kind: "commit",
-    sha: "8a3d91c",
-    message: "Bump discovery timeout to 10s; add jitter retry",
-    author: "fbarber",
-    summary: "Frances pushed 1 new commit",
+    kind: 'commit',
+    sha: '8a3d91c',
+    message: 'Bump discovery timeout to 10s; add jitter retry',
+    author: 'fbarber',
+    summary: 'Frances pushed 1 new commit',
   },
   {
     afterMs: 24000,
-    kind: "bot_comment",
-    chapterId: "ch3",
-    hunkId: "h-discovery-cache",
+    kind: 'bot_comment',
+    chapterId: 'ch3',
+    hunkId: 'h-discovery-cache',
     comment: {
-      id: "live-bot-2",
-      author: "greptile[bot]",
+      id: 'live-bot-2',
+      author: 'greptile[bot]',
       line: 24,
       body: "The stale-while-revalidate fallback swallows the underlying error. Recommend logging it (with `discovery.cache.miss_serving_stale` metric) so we don't get a silent issuer outage.",
-      createdAt: "just now",
-      syncStatus: "synced",
-      source: "github",
+      createdAt: 'just now',
+      syncStatus: 'synced',
+      source: 'github',
       replies: [],
     },
-    summary: "Greptile commented on packages/sso/src/oidc/discovery-cache.ts",
+    summary: 'Greptile commented on packages/sso/src/oidc/discovery-cache.ts',
   },
   {
     afterMs: 30000,
-    kind: "title_edit",
-    title: "feat(sso): OIDC issuer discovery for Microsoft Entra (with cache)",
-    summary: "Frances renamed this PR",
+    kind: 'title_edit',
+    title: 'feat(sso): OIDC issuer discovery for Microsoft Entra (with cache)',
+    summary: 'Frances renamed this PR',
   },
 ];
 
 function useLiveStream(initialPR, { enabled = true, speed = 1 } = {}) {
   const [pr, setPr] = React.useState(initialPR);
   const [log, setLog] = React.useState([
-    { id: "boot-1", at: Date.now() - 8000, kind: "system", summary: "Connected to bunx diffappointment on :4317" },
-    { id: "boot-2", at: Date.now() - 7000, kind: "system", summary: "Subscribed to webhooks for workos/workos#1847" },
-    { id: "boot-3", at: Date.now() - 6500, kind: "system", summary: "Hydrated 5 chapters · 9 comments · 11 checks" },
+    { id: 'boot-1', at: Date.now() - 8000, kind: 'system', summary: 'Connected to bunx diffappointment on :4317' },
+    { id: 'boot-2', at: Date.now() - 7000, kind: 'system', summary: 'Subscribed to webhooks for workos/workos#1847' },
+    { id: 'boot-3', at: Date.now() - 6500, kind: 'system', summary: 'Hydrated 5 chapters · 9 comments · 11 checks' },
   ]);
   const [highlightedComment, setHighlightedComment] = React.useState(null);
   const [updatedHunks, setUpdatedHunks] = React.useState({}); // hunkId -> ts
-  const [status, setStatus] = React.useState("connected"); // connected | reconnecting | offline
+  const [status, setStatus] = React.useState('connected'); // connected | reconnecting | offline
   const [lastEventAt, setLastEventAt] = React.useState(Date.now() - 6500);
 
   const applyEvent = React.useCallback((ev) => {
     const at = Date.now();
     setLastEventAt(at);
-    setLog(l => [...l, { id: ev.comment?.id || `ev-${at}`, at, ...ev }]);
+    setLog((l) => [...l, { id: ev.comment?.id || `ev-${at}`, at, ...ev }]);
 
-    if (ev.kind === "bot_comment" || ev.kind === "human_comment") {
+    if (ev.kind === 'bot_comment' || ev.kind === 'human_comment') {
       const { chapterId, hunkId, comment } = ev;
-      setPr(p => ({
+      setPr((p) => ({
         ...p,
-        chapters: p.chapters.map(ch => ch.id !== chapterId ? ch : ({
-          ...ch,
-          hunks: ch.hunks.map(h => h.id !== hunkId ? h : ({
-            ...h,
-            comments: [...(h.comments || []), comment],
-          })),
-        })),
+        chapters: p.chapters.map((ch) =>
+          ch.id !== chapterId
+            ? ch
+            : {
+                ...ch,
+                hunks: ch.hunks.map((h) =>
+                  h.id !== hunkId
+                    ? h
+                    : {
+                        ...h,
+                        comments: [...(h.comments || []), comment],
+                      },
+                ),
+              },
+        ),
       }));
       setHighlightedComment({ id: comment.id, at });
-      setUpdatedHunks(u => ({ ...u, [hunkId]: at }));
-      setTimeout(() => setHighlightedComment(prev => prev?.id === comment.id ? null : prev), 6000);
-      setTimeout(() => setUpdatedHunks(u => {
-        const { [hunkId]: _drop, ...rest } = u; return rest;
-      }), 6000);
-    } else if (ev.kind === "ci") {
-      setPr(p => ({ ...p, checks: { ...p.checks, ...ev.detail } }));
-    } else if (ev.kind === "commit") {
-      setPr(p => ({
+      setUpdatedHunks((u) => ({ ...u, [hunkId]: at }));
+      setTimeout(() => setHighlightedComment((prev) => (prev?.id === comment.id ? null : prev)), 6000);
+      setTimeout(
+        () =>
+          setUpdatedHunks((u) => {
+            const { [hunkId]: _drop, ...rest } = u;
+            return rest;
+          }),
+        6000,
+      );
+    } else if (ev.kind === 'ci') {
+      setPr((p) => ({ ...p, checks: { ...p.checks, ...ev.detail } }));
+    } else if (ev.kind === 'commit') {
+      setPr((p) => ({
         ...p,
         stats: { ...p.stats, commits: (p.stats.commits || 0) + 1 },
-        updatedAt: "just now",
+        updatedAt: 'just now',
       }));
-    } else if (ev.kind === "title_edit") {
-      setPr(p => ({ ...p, title: ev.title, updatedAt: "just now" }));
+    } else if (ev.kind === 'title_edit') {
+      setPr((p) => ({ ...p, title: ev.title, updatedAt: 'just now' }));
     }
   }, []);
 
   React.useEffect(() => {
     if (!enabled) return;
-    const timers = SCRIPTED_EVENTS.map(ev =>
-      setTimeout(() => applyEvent(ev), ev.afterMs / speed)
-    );
+    const timers = SCRIPTED_EVENTS.map((ev) => setTimeout(() => applyEvent(ev), ev.afterMs / speed));
     return () => timers.forEach(clearTimeout);
   }, [enabled, applyEvent, speed]);
 
   // expose a manual fire for the activity drawer "replay" button
   const replayLastN = (n = 3) => {
     const recent = SCRIPTED_EVENTS.slice(-n);
-    recent.forEach((ev, i) => setTimeout(() => applyEvent({ ...ev, comment: ev.comment ? { ...ev.comment, id: `${ev.comment.id}-r${Date.now()}` } : undefined }), i * 800));
+    recent.forEach((ev, i) =>
+      setTimeout(
+        () =>
+          applyEvent({
+            ...ev,
+            comment: ev.comment ? { ...ev.comment, id: `${ev.comment.id}-r${Date.now()}` } : undefined,
+          }),
+        i * 800,
+      ),
+    );
   };
 
   return { livePR: pr, status, log, lastEventAt, highlightedComment, updatedHunks, replayLastN, setStatus };
@@ -160,8 +180,9 @@ function relTime(ts) {
 }
 
 function LivePill({ status, lastEventAt, eventCount, onOpenLog }) {
+  // oxlint-disable-next-line no-unused-vars
   const Icon = window.Icons;
-  const [, force] = React.useReducer(x => x + 1, 0);
+  const [, force] = React.useReducer((x) => x + 1, 0);
   React.useEffect(() => {
     const t = setInterval(force, 5000);
     return () => clearInterval(t);
@@ -170,7 +191,7 @@ function LivePill({ status, lastEventAt, eventCount, onOpenLog }) {
     <button className={`live-pill ${status}`} onClick={onOpenLog} title="Open activity log">
       <span className="dot" />
       <span className="label">
-        {status === "connected" ? "Live" : status === "reconnecting" ? "Reconnecting…" : "Offline"}
+        {status === 'connected' ? 'Live' : status === 'reconnecting' ? 'Reconnecting…' : 'Offline'}
       </span>
       <span className="meta">
         :4317 · {eventCount} events · last {relTime(lastEventAt)}
@@ -185,8 +206,12 @@ function CliFraming({ pr }) {
     <div className="cli-framing">
       <span className="cli-prompt">$</span>
       <code className="cli-cmd">bunx diffappointment {pr.number}</code>
-      <span className="cli-arrow"><Icon.ArrowRight /></span>
-      <span className="cli-target"><b>{pr.repo || "workos/workos"}</b>#{pr.number}</span>
+      <span className="cli-arrow">
+        <Icon.ArrowRight />
+      </span>
+      <span className="cli-target">
+        <b>{pr.repo || 'workos/workos'}</b>#{pr.number}
+      </span>
       <span className="cli-pid">pid 41278</span>
     </div>
   );
@@ -210,17 +235,25 @@ function ActivityDrawer({ open, onClose, log, status, replayLastN }) {
         <div className="ad-head">
           <div>
             <div className="ad-title">Activity</div>
-            <div className="ad-sub">webhooks streaming from <code>bunx diffappointment</code></div>
+            <div className="ad-sub">
+              webhooks streaming from <code>bunx diffappointment</code>
+            </div>
           </div>
-          <button className="ic-btn" onClick={onClose} title="Close"><Icon.X /></button>
+          <button className="ic-btn" onClick={onClose} title="Close">
+            <Icon.X />
+          </button>
         </div>
         <div className="ad-status">
           <span className={`live-dot ${status}`} />
-          <span><b>{status === "connected" ? "Connected" : status}</b> · port 4317</span>
-          <button className="lk" onClick={() => replayLastN(3)}>replay last 3</button>
+          <span>
+            <b>{status === 'connected' ? 'Connected' : status}</b> · port 4317
+          </span>
+          <button className="lk" onClick={() => replayLastN(3)}>
+            replay last 3
+          </button>
         </div>
         <div className="ad-log">
-          {[...log].reverse().map(e => (
+          {[...log].reverse().map((e) => (
             <div key={e.id + e.at} className={`ad-row k-${e.kind}`}>
               <span className="ad-icon">{ICONS[e.kind] || <Icon.Dot />}</span>
               <div className="ad-body">

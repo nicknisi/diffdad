@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useScrollTracker } from '../hooks/useScrollTracker';
 import { normalizePath } from '../lib/paths';
 import { useReviewStore } from '../state/review-store';
-import type { DiffFile, PRComment } from '../state/types';
+import type { DiffFile } from '../state/types';
 import { Chapter } from './Chapter';
 import { ChapterTOC } from './ChapterTOC';
 import { Comment } from './Comment';

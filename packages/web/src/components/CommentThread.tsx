@@ -81,7 +81,7 @@ export function CommentThread({ comments, path, line, chapterIndex, inReplyToId,
 
   // Track baseline comment count when typing started, for conflict detection.
   const baselineRef = useRef<number>(comments.length);
-  const [baseline, setBaseline] = useState<number>(comments.length);
+  const [_baseline, setBaseline] = useState<number>(comments.length);
   const [baselineIds, setBaselineIds] = useState<Set<number>>(() => new Set(comments.map((c) => c.id)));
   const typingStartedRef = useRef<boolean>(false);
 

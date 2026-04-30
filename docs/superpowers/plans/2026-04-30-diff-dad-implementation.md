@@ -15,6 +15,7 @@
 This plan is scoped as **Phase 1: CLI + Backend + Core UI**. It produces a working `dad review <url>` command that fetches a PR, narrates it, and serves the review UI with mock comment sync. Later phases (live webhook stream, full comment CRUD, tweaks panel, keyboard shortcuts) build on top.
 
 Phase 1 covers:
+
 1. Project scaffolding (monorepo structure, Bun + Vite + Tailwind)
 2. CLI entry point with auth resolution
 3. GitHub API client (fetch PR diff, metadata, comments)
@@ -99,6 +100,7 @@ tsconfig.base.json
 ## Task 1: Project Scaffolding
 
 **Files:**
+
 - Create: `package.json` (workspace root)
 - Create: `tsconfig.base.json`
 - Create: `packages/cli/package.json`
@@ -145,6 +147,7 @@ tsconfig.base.json
 - [ ] **Step 3: Create CLI package**
 
 `packages/cli/package.json`:
+
 ```json
 {
   "name": "@diffdad/cli",
@@ -174,6 +177,7 @@ tsconfig.base.json
 ```
 
 `packages/cli/tsconfig.json`:
+
 ```json
 {
   "extends": "../../tsconfig.base.json",
@@ -189,6 +193,7 @@ tsconfig.base.json
 - [ ] **Step 4: Create web package with Vite + Tailwind**
 
 `packages/web/package.json`:
+
 ```json
 {
   "name": "@diffdad/web",
@@ -222,41 +227,43 @@ tsconfig.base.json
 ```
 
 `packages/web/vite.config.ts`:
+
 ```ts
-import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
-import tailwindcss from "@tailwindcss/vite";
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
-  build: { outDir: "dist" },
+  build: { outDir: 'dist' },
   server: {
-    proxy: { "/api": "http://localhost:4317" },
+    proxy: { '/api': 'http://localhost:4317' },
   },
 });
 ```
 
 `packages/web/tailwind.config.ts`:
+
 ```ts
-import type { Config } from "tailwindcss";
+import type { Config } from 'tailwindcss';
 
 export default {
-  content: ["./index.html", "./src/**/*.{ts,tsx}"],
-  darkMode: "class",
+  content: ['./index.html', './src/**/*.{ts,tsx}'],
+  darkMode: 'class',
   theme: {
     extend: {
       colors: {
         brand: {
-          DEFAULT: "#6565EC",
-          hover: "#5151CD",
-          text: "#5753C6",
-          deep: "#272962",
+          DEFAULT: '#6565EC',
+          hover: '#5151CD',
+          text: '#5753C6',
+          deep: '#272962',
         },
       },
       fontFamily: {
-        sans: ["Untitled Sans", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "Helvetica", "Arial", "sans-serif"],
-        mono: ["IBM Plex Mono", "Menlo", "monospace"],
-        em: ["Source Serif 4", "Source Serif Pro", "Georgia", "serif"],
+        sans: ['Untitled Sans', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Helvetica', 'Arial', 'sans-serif'],
+        mono: ['IBM Plex Mono', 'Menlo', 'monospace'],
+        em: ['Source Serif 4', 'Source Serif Pro', 'Georgia', 'serif'],
       },
     },
   },
@@ -264,6 +271,7 @@ export default {
 ```
 
 `packages/web/index.html`:
+
 ```html
 <!DOCTYPE html>
 <html lang="en">
@@ -280,18 +288,20 @@ export default {
 ```
 
 `packages/web/src/index.css`:
+
 ```css
-@import "tailwindcss";
+@import 'tailwindcss';
 ```
 
 `packages/web/src/main.tsx`:
-```tsx
-import React from "react";
-import ReactDOM from "react-dom/client";
-import { App } from "./App";
-import "./index.css";
 
-ReactDOM.createRoot(document.getElementById("root")!).render(
+```tsx
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import { App } from './App';
+import './index.css';
+
+ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <App />
   </React.StrictMode>,
@@ -299,6 +309,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
 ```
 
 `packages/web/src/App.tsx`:
+
 ```tsx
 export function App() {
   return (
@@ -331,6 +342,7 @@ git commit -m "scaffold: monorepo with cli and web packages"
 ## Task 2: CLI Entry Point + Auth
 
 **Files:**
+
 - Create: `packages/cli/src/cli.ts`
 - Create: `packages/cli/src/auth.ts`
 - Create: `packages/cli/src/config.ts`
@@ -340,10 +352,10 @@ git commit -m "scaffold: monorepo with cli and web packages"
 
 ```ts
 // packages/cli/src/__tests__/auth.test.ts
-import { describe, it, expect, afterEach } from "vitest";
-import { resolveGitHubToken } from "../auth";
+import { describe, it, expect, afterEach } from 'vitest';
+import { resolveGitHubToken } from '../auth';
 
-describe("resolveGitHubToken", () => {
+describe('resolveGitHubToken', () => {
   const origEnv = process.env.DIFFDAD_GITHUB_TOKEN;
 
   afterEach(() => {
@@ -351,13 +363,13 @@ describe("resolveGitHubToken", () => {
     else delete process.env.DIFFDAD_GITHUB_TOKEN;
   });
 
-  it("returns env var when set", async () => {
-    process.env.DIFFDAD_GITHUB_TOKEN = "ghp_test123";
+  it('returns env var when set', async () => {
+    process.env.DIFFDAD_GITHUB_TOKEN = 'ghp_test123';
     const token = await resolveGitHubToken();
-    expect(token).toBe("ghp_test123");
+    expect(token).toBe('ghp_test123');
   });
 
-  it("returns null when no source available", async () => {
+  it('returns null when no source available', async () => {
     delete process.env.DIFFDAD_GITHUB_TOKEN;
     const token = await resolveGitHubToken({ skipGhCli: true, skipConfig: true });
     expect(token).toBeNull();
@@ -374,16 +386,16 @@ Expected: FAIL — `resolveGitHubToken` not found.
 
 ```ts
 // packages/cli/src/config.ts
-import { homedir } from "os";
-import { join } from "path";
-import { readFile, writeFile, mkdir } from "fs/promises";
+import { homedir } from 'os';
+import { join } from 'path';
+import { readFile, writeFile, mkdir } from 'fs/promises';
 
-const CONFIG_DIR = join(homedir(), ".config", "diffdad");
-const CONFIG_PATH = join(CONFIG_DIR, "config.json");
+const CONFIG_DIR = join(homedir(), '.config', 'diffdad');
+const CONFIG_PATH = join(CONFIG_DIR, 'config.json');
 
 export type DiffDadConfig = {
   githubToken?: string;
-  aiProvider?: "anthropic" | "openai" | "ollama";
+  aiProvider?: 'anthropic' | 'openai' | 'ollama';
   aiApiKey?: string;
   aiModel?: string;
   aiBaseUrl?: string;
@@ -391,7 +403,7 @@ export type DiffDadConfig = {
 
 export async function readConfig(): Promise<DiffDadConfig> {
   try {
-    const raw = await readFile(CONFIG_PATH, "utf-8");
+    const raw = await readFile(CONFIG_PATH, 'utf-8');
     return JSON.parse(raw);
   } catch {
     return {};
@@ -400,7 +412,7 @@ export async function readConfig(): Promise<DiffDadConfig> {
 
 export async function writeConfig(config: DiffDadConfig): Promise<void> {
   await mkdir(CONFIG_DIR, { recursive: true });
-  await writeFile(CONFIG_PATH, JSON.stringify(config, null, 2) + "\n");
+  await writeFile(CONFIG_PATH, JSON.stringify(config, null, 2) + '\n');
 }
 ```
 
@@ -408,7 +420,7 @@ export async function writeConfig(config: DiffDadConfig): Promise<void> {
 
 ```ts
 // packages/cli/src/auth.ts
-import { readConfig } from "./config";
+import { readConfig } from './config';
 
 type ResolveOptions = { skipGhCli?: boolean; skipConfig?: boolean };
 
@@ -418,7 +430,7 @@ export async function resolveGitHubToken(opts: ResolveOptions = {}): Promise<str
 
   if (!opts.skipGhCli) {
     try {
-      const proc = Bun.spawn(["gh", "auth", "token"], { stdout: "pipe", stderr: "pipe" });
+      const proc = Bun.spawn(['gh', 'auth', 'token'], { stdout: 'pipe', stderr: 'pipe' });
       const text = await new Response(proc.stdout).text();
       const token = text.trim();
       if (token) return token;
@@ -524,6 +536,7 @@ git commit -m "feat(cli): entry point with auth resolution and PR arg parsing"
 ## Task 3: GitHub API Client + Diff Parser
 
 **Files:**
+
 - Create: `packages/cli/src/github/types.ts`
 - Create: `packages/cli/src/github/client.ts`
 - Create: `packages/cli/src/github/diff-parser.ts`
@@ -533,8 +546,8 @@ git commit -m "feat(cli): entry point with auth resolution and PR arg parsing"
 
 ```ts
 // packages/cli/src/__tests__/diff-parser.test.ts
-import { describe, it, expect } from "vitest";
-import { parseDiff } from "../github/diff-parser";
+import { describe, it, expect } from 'vitest';
+import { parseDiff } from '../github/diff-parser';
 
 const SAMPLE_DIFF = `diff --git a/src/math.ts b/src/math.ts
 index abc1234..def5678 100644
@@ -548,18 +561,18 @@ index abc1234..def5678 100644
  }
 `;
 
-describe("parseDiff", () => {
-  it("parses a unified diff into structured hunks", () => {
+describe('parseDiff', () => {
+  it('parses a unified diff into structured hunks', () => {
     const files = parseDiff(SAMPLE_DIFF);
     expect(files).toHaveLength(1);
-    expect(files[0].file).toBe("src/math.ts");
+    expect(files[0].file).toBe('src/math.ts');
     expect(files[0].hunks).toHaveLength(1);
     const hunk = files[0].hunks[0];
-    expect(hunk.lines.some(l => l.type === "remove" && l.content.includes("return a + b"))).toBe(true);
-    expect(hunk.lines.some(l => l.type === "add" && l.content.includes("const result"))).toBe(true);
+    expect(hunk.lines.some((l) => l.type === 'remove' && l.content.includes('return a + b'))).toBe(true);
+    expect(hunk.lines.some((l) => l.type === 'add' && l.content.includes('const result'))).toBe(true);
   });
 
-  it("handles new files", () => {
+  it('handles new files', () => {
     const diff = `diff --git a/src/new.ts b/src/new.ts
 new file mode 100644
 index 0000000..abc1234
@@ -573,10 +586,10 @@ index 0000000..abc1234
     const files = parseDiff(diff);
     expect(files).toHaveLength(1);
     expect(files[0].isNewFile).toBe(true);
-    expect(files[0].hunks[0].lines.every(l => l.type === "add")).toBe(true);
+    expect(files[0].hunks[0].lines.every((l) => l.type === 'add')).toBe(true);
   });
 
-  it("parses multiple files", () => {
+  it('parses multiple files', () => {
     const diff = `diff --git a/a.ts b/a.ts
 index abc..def 100644
 --- a/a.ts
@@ -594,8 +607,8 @@ index abc..def 100644
 `;
     const files = parseDiff(diff);
     expect(files).toHaveLength(2);
-    expect(files[0].file).toBe("a.ts");
-    expect(files[1].file).toBe("b.ts");
+    expect(files[0].file).toBe('a.ts');
+    expect(files[1].file).toBe('b.ts');
   });
 });
 ```
@@ -613,7 +626,7 @@ export type PRMetadata = {
   number: number;
   title: string;
   body: string;
-  state: "open" | "closed" | "merged";
+  state: 'open' | 'closed' | 'merged';
   draft: boolean;
   author: { login: string; avatarUrl: string };
   branch: string;
@@ -635,7 +648,7 @@ export type PRComment = {
   updatedAt: string;
   path?: string;
   line?: number;
-  side?: "LEFT" | "RIGHT";
+  side?: 'LEFT' | 'RIGHT';
   inReplyToId?: number;
   diffHunk?: string;
 };
@@ -657,7 +670,7 @@ export type DiffHunk = {
 };
 
 export type DiffLine = {
-  type: "add" | "remove" | "context";
+  type: 'add' | 'remove' | 'context';
   content: string;
   lineNumber: { old?: number; new?: number };
 };
@@ -667,18 +680,18 @@ export type DiffLine = {
 
 ```ts
 // packages/cli/src/github/diff-parser.ts
-import type { DiffFile, DiffHunk, DiffLine } from "./types";
+import type { DiffFile, DiffHunk, DiffLine } from './types';
 
 export function parseDiff(raw: string): DiffFile[] {
   const files: DiffFile[] = [];
   const fileSections = raw.split(/^diff --git /m).filter(Boolean);
 
   for (const section of fileSections) {
-    const lines = section.split("\n");
+    const lines = section.split('\n');
     const pathMatch = lines[0]?.match(/b\/(.+)$/);
-    const file = pathMatch?.[1] ?? "unknown";
-    const isNewFile = section.includes("new file mode");
-    const isDeleted = section.includes("deleted file mode");
+    const file = pathMatch?.[1] ?? 'unknown';
+    const isNewFile = section.includes('new file mode');
+    const isDeleted = section.includes('deleted file mode');
 
     const hunks: DiffHunk[] = [];
     let currentHunk: DiffHunk | null = null;
@@ -691,9 +704,9 @@ export function parseDiff(raw: string): DiffFile[] {
         currentHunk = {
           header: line,
           oldStart: parseInt(hunkMatch[1]),
-          oldCount: parseInt(hunkMatch[2] ?? "1"),
+          oldCount: parseInt(hunkMatch[2] ?? '1'),
           newStart: parseInt(hunkMatch[3]),
-          newCount: parseInt(hunkMatch[4] ?? "1"),
+          newCount: parseInt(hunkMatch[4] ?? '1'),
           lines: [],
         };
         hunks.push(currentHunk);
@@ -704,14 +717,14 @@ export function parseDiff(raw: string): DiffFile[] {
 
       if (!currentHunk) continue;
 
-      if (line.startsWith("+")) {
-        currentHunk.lines.push({ type: "add", content: line.slice(1), lineNumber: { new: newLine } });
+      if (line.startsWith('+')) {
+        currentHunk.lines.push({ type: 'add', content: line.slice(1), lineNumber: { new: newLine } });
         newLine++;
-      } else if (line.startsWith("-")) {
-        currentHunk.lines.push({ type: "remove", content: line.slice(1), lineNumber: { old: oldLine } });
+      } else if (line.startsWith('-')) {
+        currentHunk.lines.push({ type: 'remove', content: line.slice(1), lineNumber: { old: oldLine } });
         oldLine++;
-      } else if (line.startsWith(" ")) {
-        currentHunk.lines.push({ type: "context", content: line.slice(1), lineNumber: { old: oldLine, new: newLine } });
+      } else if (line.startsWith(' ')) {
+        currentHunk.lines.push({ type: 'context', content: line.slice(1), lineNumber: { old: oldLine, new: newLine } });
         oldLine++;
         newLine++;
       }
@@ -733,11 +746,11 @@ Expected: PASS (3 tests)
 
 ```ts
 // packages/cli/src/github/client.ts
-import type { PRMetadata, PRComment, DiffFile } from "./types";
-import { parseDiff } from "./diff-parser";
+import type { PRMetadata, PRComment, DiffFile } from './types';
+import { parseDiff } from './diff-parser';
 
 export class GitHubClient {
-  private baseUrl = "https://api.github.com";
+  private baseUrl = 'https://api.github.com';
 
   constructor(private token: string) {}
 
@@ -746,12 +759,12 @@ export class GitHubClient {
       ...init,
       headers: {
         Authorization: `Bearer ${this.token}`,
-        Accept: "application/vnd.github.v3+json",
+        Accept: 'application/vnd.github.v3+json',
         ...init?.headers,
       },
     });
     if (!res.ok) {
-      const body = await res.text().catch(() => "");
+      const body = await res.text().catch(() => '');
       throw new Error(`GitHub API ${res.status}: ${path}\n${body}`);
     }
     return res;
@@ -761,62 +774,93 @@ export class GitHubClient {
     const res = await this.fetch(`/repos/${owner}/${repo}/pulls/${number}`);
     const d = await res.json();
     return {
-      number: d.number, title: d.title, body: d.body ?? "",
-      state: d.merged ? "merged" : d.state, draft: d.draft,
+      number: d.number,
+      title: d.title,
+      body: d.body ?? '',
+      state: d.merged ? 'merged' : d.state,
+      draft: d.draft,
       author: { login: d.user.login, avatarUrl: d.user.avatar_url },
-      branch: d.head.ref, base: d.base.ref,
+      branch: d.head.ref,
+      base: d.base.ref,
       labels: d.labels.map((l: any) => l.name),
-      createdAt: d.created_at, updatedAt: d.updated_at,
-      additions: d.additions, deletions: d.deletions,
-      changedFiles: d.changed_files, commits: d.commits,
+      createdAt: d.created_at,
+      updatedAt: d.updated_at,
+      additions: d.additions,
+      deletions: d.deletions,
+      changedFiles: d.changed_files,
+      commits: d.commits,
     };
   }
 
   async getDiff(owner: string, repo: string, number: number): Promise<DiffFile[]> {
     const res = await this.fetch(`/repos/${owner}/${repo}/pulls/${number}`, {
-      headers: { Accept: "application/vnd.github.v3.diff" },
+      headers: { Accept: 'application/vnd.github.v3.diff' },
     });
     return parseDiff(await res.text());
   }
 
   async getComments(owner: string, repo: string, number: number): Promise<PRComment[]> {
     const [review, issue] = await Promise.all([
-      this.fetch(`/repos/${owner}/${repo}/pulls/${number}/comments`).then(r => r.json()),
-      this.fetch(`/repos/${owner}/${repo}/issues/${number}/comments`).then(r => r.json()),
+      this.fetch(`/repos/${owner}/${repo}/pulls/${number}/comments`).then((r) => r.json()),
+      this.fetch(`/repos/${owner}/${repo}/issues/${number}/comments`).then((r) => r.json()),
     ]);
     return [
       ...review.map((c: any) => ({
-        id: c.id, author: c.user.login, body: c.body,
-        createdAt: c.created_at, updatedAt: c.updated_at,
-        path: c.path, line: c.line ?? c.original_line,
-        side: c.side, inReplyToId: c.in_reply_to_id, diffHunk: c.diff_hunk,
+        id: c.id,
+        author: c.user.login,
+        body: c.body,
+        createdAt: c.created_at,
+        updatedAt: c.updated_at,
+        path: c.path,
+        line: c.line ?? c.original_line,
+        side: c.side,
+        inReplyToId: c.in_reply_to_id,
+        diffHunk: c.diff_hunk,
       })),
       ...issue.map((c: any) => ({
-        id: c.id, author: c.user.login, body: c.body,
-        createdAt: c.created_at, updatedAt: c.updated_at,
+        id: c.id,
+        author: c.user.login,
+        body: c.body,
+        createdAt: c.created_at,
+        updatedAt: c.updated_at,
       })),
     ];
   }
 
   async postComment(
-    owner: string, repo: string, number: number, body: string,
-    opts?: { path?: string; line?: number; side?: "LEFT" | "RIGHT"; commitId?: string },
+    owner: string,
+    repo: string,
+    number: number,
+    body: string,
+    opts?: { path?: string; line?: number; side?: 'LEFT' | 'RIGHT'; commitId?: string },
   ): Promise<PRComment> {
     if (opts?.path && opts?.line && opts?.commitId) {
       const res = await this.fetch(`/repos/${owner}/${repo}/pulls/${number}/comments`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          body, path: opts.path, line: opts.line,
-          side: opts.side ?? "RIGHT", commit_id: opts.commitId,
+          body,
+          path: opts.path,
+          line: opts.line,
+          side: opts.side ?? 'RIGHT',
+          commit_id: opts.commitId,
         }),
       });
       const d = await res.json();
-      return { id: d.id, author: d.user.login, body: d.body, createdAt: d.created_at, updatedAt: d.updated_at, path: d.path, line: d.line, side: d.side };
+      return {
+        id: d.id,
+        author: d.user.login,
+        body: d.body,
+        createdAt: d.created_at,
+        updatedAt: d.updated_at,
+        path: d.path,
+        line: d.line,
+        side: d.side,
+      };
     }
     const res = await this.fetch(`/repos/${owner}/${repo}/issues/${number}/comments`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ body }),
     });
     const d = await res.json();
@@ -837,6 +881,7 @@ git commit -m "feat(cli): GitHub API client and diff parser"
 ## Task 4: Narrative Engine
 
 **Files:**
+
 - Create: `packages/cli/src/narrative/types.ts`
 - Create: `packages/cli/src/narrative/prompt.ts`
 - Create: `packages/cli/src/narrative/engine.ts`
@@ -846,33 +891,43 @@ git commit -m "feat(cli): GitHub API client and diff parser"
 
 ```ts
 // packages/cli/src/__tests__/prompt.test.ts
-import { describe, it, expect } from "vitest";
-import { buildNarrativePrompt } from "../narrative/prompt";
+import { describe, it, expect } from 'vitest';
+import { buildNarrativePrompt } from '../narrative/prompt';
 
-describe("buildNarrativePrompt", () => {
-  it("includes PR metadata and diff content", () => {
+describe('buildNarrativePrompt', () => {
+  it('includes PR metadata and diff content', () => {
     const { system, user } = buildNarrativePrompt({
-      title: "Add y constant",
-      description: "We need y.",
-      labels: ["enhancement"],
-      files: [{
-        file: "src/index.ts", isNewFile: false, isDeleted: false,
-        hunks: [{
-          header: "@@ -1,3 +1,4 @@", oldStart: 1, oldCount: 3, newStart: 1, newCount: 4,
-          lines: [
-            { type: "context", content: "const x = 1;", lineNumber: { old: 1, new: 1 } },
-            { type: "add", content: "const y = 2;", lineNumber: { new: 2 } },
+      title: 'Add y constant',
+      description: 'We need y.',
+      labels: ['enhancement'],
+      files: [
+        {
+          file: 'src/index.ts',
+          isNewFile: false,
+          isDeleted: false,
+          hunks: [
+            {
+              header: '@@ -1,3 +1,4 @@',
+              oldStart: 1,
+              oldCount: 3,
+              newStart: 1,
+              newCount: 4,
+              lines: [
+                { type: 'context', content: 'const x = 1;', lineNumber: { old: 1, new: 1 } },
+                { type: 'add', content: 'const y = 2;', lineNumber: { new: 2 } },
+              ],
+            },
           ],
-        }],
-      }],
-      fileTree: ["src/index.ts", "src/other.ts"],
+        },
+      ],
+      fileTree: ['src/index.ts', 'src/other.ts'],
     });
 
-    expect(system).toContain("semantic");
-    expect(system).toContain("chapters");
-    expect(user).toContain("Add y constant");
-    expect(user).toContain("src/index.ts");
-    expect(user).toContain("const y = 2;");
+    expect(system).toContain('semantic');
+    expect(system).toContain('chapters');
+    expect(user).toContain('Add y constant');
+    expect(user).toContain('src/index.ts');
+    expect(user).toContain('const y = 2;');
   });
 });
 ```
@@ -895,20 +950,20 @@ export type NarrativeResponse = {
 export type NarrativeChapter = {
   title: string;
   summary: string;
-  risk: "low" | "medium" | "high";
+  risk: 'low' | 'medium' | 'high';
   sections: NarrativeSection[];
 };
 
 export type NarrativeSection =
-  | { type: "narrative"; content: string }
-  | { type: "diff"; file: string; startLine: number; endLine: number; hunkIndex: number };
+  | { type: 'narrative'; content: string }
+  | { type: 'diff'; file: string; startLine: number; endLine: number; hunkIndex: number };
 ```
 
 - [ ] **Step 4: Implement narrative/prompt.ts**
 
 ```ts
 // packages/cli/src/narrative/prompt.ts
-import type { DiffFile } from "../github/types";
+import type { DiffFile } from '../github/types';
 
 type PromptInput = {
   title: string;
@@ -946,29 +1001,35 @@ Respond with valid JSON matching this schema:
 
 hunkIndex is zero-based into the flat list of hunks across all files (ordered as they appear in the diff).`;
 
-  const diffText = input.files.map(f => {
-    const header = f.isNewFile ? `--- /dev/null\n+++ ${f.file} (new file)` : `--- ${f.file}\n+++ ${f.file}`;
-    const hunks = f.hunks.map(h => {
-      const lines = h.lines.map(l => {
-        const prefix = l.type === "add" ? "+" : l.type === "remove" ? "-" : " ";
-        return `${prefix}${l.content}`;
-      }).join("\n");
-      return `${h.header}\n${lines}`;
-    }).join("\n");
-    return `${header}\n${hunks}`;
-  }).join("\n\n");
+  const diffText = input.files
+    .map((f) => {
+      const header = f.isNewFile ? `--- /dev/null\n+++ ${f.file} (new file)` : `--- ${f.file}\n+++ ${f.file}`;
+      const hunks = f.hunks
+        .map((h) => {
+          const lines = h.lines
+            .map((l) => {
+              const prefix = l.type === 'add' ? '+' : l.type === 'remove' ? '-' : ' ';
+              return `${prefix}${l.content}`;
+            })
+            .join('\n');
+          return `${h.header}\n${lines}`;
+        })
+        .join('\n');
+      return `${header}\n${hunks}`;
+    })
+    .join('\n\n');
 
   const user = `# PR: ${input.title}
 
 ## Description
-${input.description || "(no description)"}
+${input.description || '(no description)'}
 
 ## Labels
-${input.labels.length ? input.labels.join(", ") : "(none)"}
+${input.labels.length ? input.labels.join(', ') : '(none)'}
 
 ## Repository file tree
-${input.fileTree.slice(0, 200).join("\n")}
-${input.fileTree.length > 200 ? `\n... and ${input.fileTree.length - 200} more files` : ""}
+${input.fileTree.slice(0, 200).join('\n')}
+${input.fileTree.length > 200 ? `\n... and ${input.fileTree.length - 200} more files` : ''}
 
 ## Diff
 ${diffText}`;
@@ -986,39 +1047,46 @@ Expected: PASS
 
 ```ts
 // packages/cli/src/narrative/engine.ts
-import { generateText } from "ai";
-import { createAnthropic } from "@ai-sdk/anthropic";
-import { createOpenAI } from "@ai-sdk/openai";
-import { buildNarrativePrompt } from "./prompt";
-import type { NarrativeResponse } from "./types";
-import type { DiffFile, PRMetadata } from "../github/types";
-import type { DiffDadConfig } from "../config";
+import { generateText } from 'ai';
+import { createAnthropic } from '@ai-sdk/anthropic';
+import { createOpenAI } from '@ai-sdk/openai';
+import { buildNarrativePrompt } from './prompt';
+import type { NarrativeResponse } from './types';
+import type { DiffFile, PRMetadata } from '../github/types';
+import type { DiffDadConfig } from '../config';
 
 export async function generateNarrative(
-  pr: PRMetadata, files: DiffFile[], fileTree: string[], config: DiffDadConfig,
+  pr: PRMetadata,
+  files: DiffFile[],
+  fileTree: string[],
+  config: DiffDadConfig,
 ): Promise<NarrativeResponse> {
   const { system, user } = buildNarrativePrompt({
-    title: pr.title, description: pr.body, labels: pr.labels, files, fileTree,
+    title: pr.title,
+    description: pr.body,
+    labels: pr.labels,
+    files,
+    fileTree,
   });
   const model = getModel(config);
-  const result = await generateText({ model, system, messages: [{ role: "user", content: user }] });
+  const result = await generateText({ model, system, messages: [{ role: 'user', content: user }] });
   return JSON.parse(result.text) as NarrativeResponse;
 }
 
 function getModel(config: DiffDadConfig) {
-  const provider = config.aiProvider ?? "anthropic";
+  const provider = config.aiProvider ?? 'anthropic';
   switch (provider) {
-    case "anthropic": {
+    case 'anthropic': {
       const a = createAnthropic({ apiKey: config.aiApiKey });
-      return a(config.aiModel ?? "claude-sonnet-4-6");
+      return a(config.aiModel ?? 'claude-sonnet-4-6');
     }
-    case "openai": {
+    case 'openai': {
       const o = createOpenAI({ apiKey: config.aiApiKey });
-      return o(config.aiModel ?? "gpt-4o");
+      return o(config.aiModel ?? 'gpt-4o');
     }
-    case "ollama": {
-      const o = createOpenAI({ baseURL: config.aiBaseUrl ?? "http://localhost:11434/v1", apiKey: "ollama" });
-      return o(config.aiModel ?? "llama3.1");
+    case 'ollama': {
+      const o = createOpenAI({ baseURL: config.aiBaseUrl ?? 'http://localhost:11434/v1', apiKey: 'ollama' });
+      return o(config.aiModel ?? 'llama3.1');
     }
     default:
       throw new Error(`Unknown AI provider: ${provider}`);
@@ -1038,6 +1106,7 @@ git commit -m "feat(cli): narrative engine with provider-agnostic LLM support"
 ## Task 5: Hono Server + Line Mapper
 
 **Files:**
+
 - Create: `packages/cli/src/server.ts`
 - Create: `packages/cli/src/github/line-mapper.ts`
 - Create: `packages/cli/src/github/comments.ts`
@@ -1047,33 +1116,37 @@ git commit -m "feat(cli): narrative engine with provider-agnostic LLM support"
 
 ```ts
 // packages/cli/src/__tests__/line-mapper.test.ts
-import { describe, it, expect } from "vitest";
-import { absoluteToPosition, positionToAbsolute } from "../github/line-mapper";
-import type { DiffHunk } from "../github/types";
+import { describe, it, expect } from 'vitest';
+import { absoluteToPosition, positionToAbsolute } from '../github/line-mapper';
+import type { DiffHunk } from '../github/types';
 
 const hunk: DiffHunk = {
-  header: "@@ -10,6 +10,8 @@", oldStart: 10, oldCount: 6, newStart: 10, newCount: 8,
+  header: '@@ -10,6 +10,8 @@',
+  oldStart: 10,
+  oldCount: 6,
+  newStart: 10,
+  newCount: 8,
   lines: [
-    { type: "context", content: "a", lineNumber: { old: 10, new: 10 } },
-    { type: "context", content: "b", lineNumber: { old: 11, new: 11 } },
-    { type: "add", content: "c", lineNumber: { new: 12 } },
-    { type: "add", content: "d", lineNumber: { new: 13 } },
-    { type: "context", content: "e", lineNumber: { old: 12, new: 14 } },
-    { type: "context", content: "f", lineNumber: { old: 13, new: 15 } },
+    { type: 'context', content: 'a', lineNumber: { old: 10, new: 10 } },
+    { type: 'context', content: 'b', lineNumber: { old: 11, new: 11 } },
+    { type: 'add', content: 'c', lineNumber: { new: 12 } },
+    { type: 'add', content: 'd', lineNumber: { new: 13 } },
+    { type: 'context', content: 'e', lineNumber: { old: 12, new: 14 } },
+    { type: 'context', content: 'f', lineNumber: { old: 13, new: 15 } },
   ],
 };
 
-describe("line-mapper", () => {
-  it("converts absolute new-side line to diff position", () => {
+describe('line-mapper', () => {
+  it('converts absolute new-side line to diff position', () => {
     expect(absoluteToPosition(hunk, 12)).toBe(3);
     expect(absoluteToPosition(hunk, 10)).toBe(1);
   });
 
-  it("returns null for lines not in the hunk", () => {
+  it('returns null for lines not in the hunk', () => {
     expect(absoluteToPosition(hunk, 99)).toBeNull();
   });
 
-  it("converts diff position back to absolute line", () => {
+  it('converts diff position back to absolute line', () => {
     expect(positionToAbsolute(hunk, 3)).toEqual({ new: 12 });
     expect(positionToAbsolute(hunk, 1)).toEqual({ old: 10, new: 10 });
   });
@@ -1089,7 +1162,7 @@ Expected: FAIL
 
 ```ts
 // packages/cli/src/github/line-mapper.ts
-import type { DiffHunk } from "./types";
+import type { DiffHunk } from './types';
 
 export function absoluteToPosition(hunk: DiffHunk, absoluteNewLine: number): number | null {
   for (let i = 0; i < hunk.lines.length; i++) {
@@ -1114,8 +1187,8 @@ Expected: PASS
 
 ```ts
 // packages/cli/src/github/comments.ts
-import type { PRComment } from "./types";
-import type { NarrativeResponse } from "../narrative/types";
+import type { PRComment } from './types';
+import type { NarrativeResponse } from '../narrative/types';
 
 export type MappedComment = PRComment & {
   chapterIndices: number[];
@@ -1123,14 +1196,13 @@ export type MappedComment = PRComment & {
   narrativeChapter?: number;
 };
 
-export function mapCommentsToChapters(
-  comments: PRComment[], narrative: NarrativeResponse,
-): MappedComment[] {
-  return comments.map(comment => {
+export function mapCommentsToChapters(comments: PRComment[], narrative: NarrativeResponse): MappedComment[] {
+  return comments.map((comment) => {
     if (!comment.path || comment.line == null) {
       const match = comment.body.match(/\[diff\.dad: Chapter (\d+)\]/);
       return {
-        ...comment, chapterIndices: [],
+        ...comment,
+        chapterIndices: [],
         isNarrativeComment: !!match,
         narrativeChapter: match ? parseInt(match[1]) - 1 : undefined,
       };
@@ -1139,7 +1211,7 @@ export function mapCommentsToChapters(
     const chapterIndices: number[] = [];
     narrative.chapters.forEach((ch, idx) => {
       for (const section of ch.sections) {
-        if (section.type === "diff" && section.file === comment.path) {
+        if (section.type === 'diff' && section.file === comment.path) {
           chapterIndices.push(idx);
           break;
         }
@@ -1155,12 +1227,12 @@ export function mapCommentsToChapters(
 
 ```ts
 // packages/cli/src/server.ts
-import { Hono } from "hono";
-import { serveStatic } from "hono/bun";
-import { resolve } from "path";
-import type { NarrativeResponse } from "./narrative/types";
-import type { PRMetadata, PRComment, DiffFile } from "./github/types";
-import type { GitHubClient } from "./github/client";
+import { Hono } from 'hono';
+import { serveStatic } from 'hono/bun';
+import { resolve } from 'path';
+import type { NarrativeResponse } from './narrative/types';
+import type { PRMetadata, PRComment, DiffFile } from './github/types';
+import type { GitHubClient } from './github/client';
 
 type ServerContext = {
   narrative: NarrativeResponse;
@@ -1175,28 +1247,31 @@ type ServerContext = {
 export function createServer(ctx: ServerContext) {
   const app = new Hono();
 
-  app.get("/api/narrative", (c) =>
+  app.get('/api/narrative', (c) =>
     c.json({ narrative: ctx.narrative, pr: ctx.pr, files: ctx.files, comments: ctx.comments }),
   );
 
-  app.get("/api/comments", async (c) => {
+  app.get('/api/comments', async (c) => {
     ctx.comments = await ctx.github.getComments(ctx.owner, ctx.repo, ctx.pr.number);
     return c.json(ctx.comments);
   });
 
-  app.post("/api/comments", async (c) => {
+  app.post('/api/comments', async (c) => {
     const body = await c.req.json();
     const comment = await ctx.github.postComment(
-      ctx.owner, ctx.repo, ctx.pr.number, body.body,
+      ctx.owner,
+      ctx.repo,
+      ctx.pr.number,
+      body.body,
       body.path ? { path: body.path, line: body.line, side: body.side, commitId: body.commitId } : undefined,
     );
     ctx.comments.push(comment);
     return c.json(comment, 201);
   });
 
-  const webDistPath = resolve(import.meta.dir, "../../web/dist");
-  app.use("/*", serveStatic({ root: webDistPath }));
-  app.get("/*", serveStatic({ root: webDistPath, path: "index.html" }));
+  const webDistPath = resolve(import.meta.dir, '../../web/dist');
+  app.use('/*', serveStatic({ root: webDistPath }));
+  app.get('/*', serveStatic({ root: webDistPath, path: 'index.html' }));
 
   return app;
 }
@@ -1214,29 +1289,41 @@ git commit -m "feat(cli): Hono server with API routes and line mapper"
 ## Task 6: Wire CLI End-to-End
 
 **Files:**
+
 - Modify: `packages/cli/src/cli.ts`
 
 - [ ] **Step 1: Add imports and wire the review command**
 
 Add to the top of `cli.ts`:
+
 ```ts
-import { readConfig } from "./config";
-import { GitHubClient } from "./github/client";
-import { generateNarrative } from "./narrative/engine";
-import { createServer } from "./server";
+import { readConfig } from './config';
+import { GitHubClient } from './github/client';
+import { generateNarrative } from './narrative/engine';
+import { createServer } from './server';
 ```
 
 Replace the `if (command === "review")` block with the full pipeline:
+
 ```ts
-if (command === "review") {
+if (command === 'review') {
   const prArg = args[1];
-  if (!prArg) { console.error("Error: missing PR argument."); process.exit(1); }
+  if (!prArg) {
+    console.error('Error: missing PR argument.');
+    process.exit(1);
+  }
 
   const token = await resolveGitHubToken();
-  if (!token) { console.error("Error: no GitHub token found. Run `dad config` or set DIFFDAD_GITHUB_TOKEN."); process.exit(1); }
+  if (!token) {
+    console.error('Error: no GitHub token found. Run `dad config` or set DIFFDAD_GITHUB_TOKEN.');
+    process.exit(1);
+  }
 
   const pr = parsePrArg(prArg);
-  if (!pr) { console.error(`Error: could not parse "${prArg}".`); process.exit(1); }
+  if (!pr) {
+    console.error(`Error: could not parse "${prArg}".`);
+    process.exit(1);
+  }
 
   const config = await readConfig();
   const github = new GitHubClient(token);
@@ -1249,13 +1336,13 @@ if (command === "review") {
   ]);
 
   console.log(`${metadata.title} — ${files.length} files, +${metadata.additions} -${metadata.deletions}`);
-  console.log("Generating narrative...");
+  console.log('Generating narrative...');
 
   const narrative = await generateNarrative(metadata, files, [], config);
   console.log(`${narrative.chapters.length} chapters generated. Starting server...`);
 
   const app = createServer({ narrative, pr: metadata, files, comments, github, owner: pr.owner, repo: pr.repo });
-  const port = parseInt(args.find(a => a.startsWith("--port="))?.split("=")[1] ?? "0") || 0;
+  const port = parseInt(args.find((a) => a.startsWith('--port='))?.split('=')[1] ?? '0') || 0;
   const server = Bun.serve({ fetch: app.fetch, port });
 
   const url = `http://localhost:${server.port}`;
@@ -1263,8 +1350,8 @@ if (command === "review") {
   console.log(`  Reviewing: ${pr.owner}/${pr.repo}#${pr.number}`);
   console.log(`  ${narrative.chapters.length} chapters · ${comments.length} comments\n`);
 
-  if (!args.includes("--no-open")) {
-    const { default: open } = await import("open");
+  if (!args.includes('--no-open')) {
+    const { default: open } = await import('open');
     await open(url);
   }
 }
@@ -1292,6 +1379,7 @@ git commit -m "feat(cli): wire end-to-end review flow"
 ## Task 7: Frontend State + Hooks
 
 **Files:**
+
 - Create: `packages/web/src/state/types.ts`
 - Create: `packages/web/src/state/review-store.ts`
 - Create: `packages/web/src/hooks/useNarrative.ts`
@@ -1307,11 +1395,21 @@ git commit -m "feat(cli): wire end-to-end review flow"
 ```ts
 // packages/web/src/state/types.ts
 export type PRData = {
-  number: number; title: string; body: string; state: string; draft: boolean;
+  number: number;
+  title: string;
+  body: string;
+  state: string;
+  draft: boolean;
   author: { login: string; avatarUrl: string };
-  branch: string; base: string; labels: string[];
-  createdAt: string; updatedAt: string;
-  additions: number; deletions: number; changedFiles: number; commits: number;
+  branch: string;
+  base: string;
+  labels: string[];
+  createdAt: string;
+  updatedAt: string;
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+  commits: number;
 };
 
 export type NarrativeResponse = {
@@ -1321,24 +1419,44 @@ export type NarrativeResponse = {
 };
 
 export type Chapter = {
-  title: string; summary: string; risk: "low" | "medium" | "high";
+  title: string;
+  summary: string;
+  risk: 'low' | 'medium' | 'high';
   sections: Section[];
 };
 
 export type Section =
-  | { type: "narrative"; content: string }
-  | { type: "diff"; file: string; startLine: number; endLine: number; hunkIndex: number };
+  | { type: 'narrative'; content: string }
+  | { type: 'diff'; file: string; startLine: number; endLine: number; hunkIndex: number };
 
 export type DiffFile = { file: string; isNewFile: boolean; isDeleted: boolean; hunks: DiffHunk[] };
-export type DiffHunk = { header: string; oldStart: number; oldCount: number; newStart: number; newCount: number; lines: DiffLine[] };
-export type DiffLine = { type: "add" | "remove" | "context"; content: string; lineNumber: { old?: number; new?: number } };
-
-export type PRComment = {
-  id: number; author: string; body: string; createdAt: string; updatedAt: string;
-  path?: string; line?: number; side?: string; inReplyToId?: number;
+export type DiffHunk = {
+  header: string;
+  oldStart: number;
+  oldCount: number;
+  newStart: number;
+  newCount: number;
+  lines: DiffLine[];
+};
+export type DiffLine = {
+  type: 'add' | 'remove' | 'context';
+  content: string;
+  lineNumber: { old?: number; new?: number };
 };
 
-export type ChapterState = "reading" | "reviewing" | "replied" | "reviewed";
+export type PRComment = {
+  id: number;
+  author: string;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+  path?: string;
+  line?: number;
+  side?: string;
+  inReplyToId?: number;
+};
+
+export type ChapterState = 'reading' | 'reviewing' | 'replied' | 'reviewed';
 export type DraftComment = { id: string; body: string; path?: string; line?: number; chapterIndex?: number };
 ```
 
@@ -1346,14 +1464,20 @@ export type DraftComment = { id: string; body: string; path?: string; line?: num
 
 ```ts
 // packages/web/src/state/review-store.ts
-import { create } from "zustand";
-import type { NarrativeResponse, PRData, DiffFile, PRComment, ChapterState, DraftComment } from "./types";
+import { create } from 'zustand';
+import type { NarrativeResponse, PRData, DiffFile, PRComment, ChapterState, DraftComment } from './types';
 
 type ReviewState = {
-  pr: PRData | null; narrative: NarrativeResponse | null; files: DiffFile[];
-  comments: PRComment[]; chapterStates: Record<string, ChapterState>;
-  activeChapterId: string | null; drafts: DraftComment[];
-  openLine: string | null; theme: "light" | "dark"; density: "terse" | "normal" | "verbose";
+  pr: PRData | null;
+  narrative: NarrativeResponse | null;
+  files: DiffFile[];
+  comments: PRComment[];
+  chapterStates: Record<string, ChapterState>;
+  activeChapterId: string | null;
+  drafts: DraftComment[];
+  openLine: string | null;
+  theme: 'light' | 'dark';
+  density: 'terse' | 'normal' | 'verbose';
 
   setData: (pr: PRData, narrative: NarrativeResponse, files: DiffFile[], comments: PRComment[]) => void;
   setActiveChapter: (id: string) => void;
@@ -1363,28 +1487,43 @@ type ReviewState = {
   addDraft: (draft: DraftComment) => void;
   removeDraft: (id: string) => void;
   clearDrafts: () => void;
-  setTheme: (theme: "light" | "dark") => void;
-  setDensity: (d: "terse" | "normal" | "verbose") => void;
+  setTheme: (theme: 'light' | 'dark') => void;
+  setDensity: (d: 'terse' | 'normal' | 'verbose') => void;
 };
 
 export const useReviewStore = create<ReviewState>((set) => ({
-  pr: null, narrative: null, files: [], comments: [],
-  chapterStates: {}, activeChapterId: null, drafts: [],
-  openLine: null, theme: "dark", density: "normal",
+  pr: null,
+  narrative: null,
+  files: [],
+  comments: [],
+  chapterStates: {},
+  activeChapterId: null,
+  drafts: [],
+  openLine: null,
+  theme: 'dark',
+  density: 'normal',
 
-  setData: (pr, narrative, files, comments) => set({
-    pr, narrative, files, comments, activeChapterId: "ch-0",
-    chapterStates: Object.fromEntries(narrative.chapters.map((_, i) => [`ch-${i}`, "reading" as const])),
-  }),
+  setData: (pr, narrative, files, comments) =>
+    set({
+      pr,
+      narrative,
+      files,
+      comments,
+      activeChapterId: 'ch-0',
+      chapterStates: Object.fromEntries(narrative.chapters.map((_, i) => [`ch-${i}`, 'reading' as const])),
+    }),
   setActiveChapter: (id) => set({ activeChapterId: id }),
-  toggleReviewed: (idx) => set((s) => {
-    const key = `ch-${idx}`;
-    return { chapterStates: { ...s.chapterStates, [key]: s.chapterStates[key] === "reviewed" ? "reading" : "reviewed" } };
-  }),
+  toggleReviewed: (idx) =>
+    set((s) => {
+      const key = `ch-${idx}`;
+      return {
+        chapterStates: { ...s.chapterStates, [key]: s.chapterStates[key] === 'reviewed' ? 'reading' : 'reviewed' },
+      };
+    }),
   setOpenLine: (key) => set({ openLine: key }),
   addComment: (c) => set((s) => ({ comments: [...s.comments, c] })),
   addDraft: (d) => set((s) => ({ drafts: [...s.drafts, d] })),
-  removeDraft: (id) => set((s) => ({ drafts: s.drafts.filter(d => d.id !== id) })),
+  removeDraft: (id) => set((s) => ({ drafts: s.drafts.filter((d) => d.id !== id) })),
   clearDrafts: () => set({ drafts: [] }),
   setTheme: (theme) => set({ theme }),
   setDensity: (density) => set({ density }),
@@ -1395,19 +1534,28 @@ export const useReviewStore = create<ReviewState>((set) => ({
 
 ```ts
 // packages/web/src/hooks/useNarrative.ts
-import { useEffect, useState } from "react";
-import { useReviewStore } from "../state/review-store";
+import { useEffect, useState } from 'react';
+import { useReviewStore } from '../state/review-store';
 
 export function useNarrative() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const setData = useReviewStore(s => s.setData);
+  const setData = useReviewStore((s) => s.setData);
 
   useEffect(() => {
-    fetch("/api/narrative")
-      .then(r => { if (!r.ok) throw new Error(`${r.status}`); return r.json(); })
-      .then(d => { setData(d.pr, d.narrative, d.files, d.comments); setLoading(false); })
-      .catch(e => { setError(e.message); setLoading(false); });
+    fetch('/api/narrative')
+      .then((r) => {
+        if (!r.ok) throw new Error(`${r.status}`);
+        return r.json();
+      })
+      .then((d) => {
+        setData(d.pr, d.narrative, d.files, d.comments);
+        setLoading(false);
+      })
+      .catch((e) => {
+        setError(e.message);
+        setLoading(false);
+      });
   }, [setData]);
 
   return { loading, error };
@@ -1416,22 +1564,26 @@ export function useNarrative() {
 
 ```ts
 // packages/web/src/hooks/useComments.ts
-import { useCallback } from "react";
-import { useReviewStore } from "../state/review-store";
+import { useCallback } from 'react';
+import { useReviewStore } from '../state/review-store';
 
 export function useComments() {
-  const addComment = useReviewStore(s => s.addComment);
+  const addComment = useReviewStore((s) => s.addComment);
 
-  const postComment = useCallback(async (body: string, opts?: { path?: string; line?: number }) => {
-    const res = await fetch("/api/comments", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ body, ...opts }),
-    });
-    if (!res.ok) throw new Error("Failed to post comment");
-    const comment = await res.json();
-    addComment(comment);
-    return comment;
-  }, [addComment]);
+  const postComment = useCallback(
+    async (body: string, opts?: { path?: string; line?: number }) => {
+      const res = await fetch('/api/comments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ body, ...opts }),
+      });
+      if (!res.ok) throw new Error('Failed to post comment');
+      const comment = await res.json();
+      addComment(comment);
+      return comment;
+    },
+    [addComment],
+  );
 
   return { postComment };
 }
@@ -1440,16 +1592,16 @@ export function useComments() {
 ```ts
 // packages/web/src/lib/microcopy.ts
 export const copy = {
-  tagline: "Measure twice, merge once.",
+  tagline: 'Measure twice, merge once.',
   altTagline: "I'm not mad, just diff-appointed.",
-  emptyState: "Go make a diff-erence.",
-  inlineHint: "Use your comment sense.",
-  approvalToast: "Proud of you, champ. Approved.",
-  warning: "Not on my branch.",
-  blocker: "Grounded until tests pass.",
-  nudge: "Measure twice, commit once.",
+  emptyState: 'Go make a diff-erence.',
+  inlineHint: 'Use your comment sense.',
+  approvalToast: 'Proud of you, champ. Approved.',
+  warning: 'Not on my branch.',
+  blocker: 'Grounded until tests pass.',
+  nudge: 'Measure twice, commit once.',
   loading: "Reading the diff so you don't have to...",
-  errorGeneric: "Something went sideways. Try again?",
+  errorGeneric: 'Something went sideways. Try again?',
 } as const;
 ```
 
@@ -1473,6 +1625,7 @@ This is the largest task — each component is a focused file. Components should
 Create each of these files with the implementation matching the design spec. Reference `design_files/Review.jsx`, `design_files/Diff.jsx`, and `design_files/index.html` for the exact component structure and behavior. Use Tailwind classes matching the design tokens from `README.md`.
 
 Components to create (in dependency order):
+
 1. `AppBar.tsx` — brand mark, CLI framing, theme toggle
 2. `PRHeader.tsx` — title, branch, author, stats
 3. `CodeLine.tsx` — single diff line with hover comment button
@@ -1490,8 +1643,9 @@ Components to create (in dependency order):
 15. `markdown/Markdown.tsx` — GFM renderer (**must use DOMPurify**)
 
 **Critical: Markdown.tsx must sanitize all HTML:**
+
 ```ts
-import DOMPurify from "dompurify";
+import DOMPurify from 'dompurify';
 // ...
 const clean = DOMPurify.sanitize(html);
 // Then use clean in the rendered output
@@ -1518,45 +1672,66 @@ git commit -m "feat(web): core UI — app shell, chapters, hunks, comments, subm
 ## Task 9: Integration Test
 
 **Files:**
+
 - Test: `packages/cli/src/__tests__/server.test.ts`
 
 - [ ] **Step 1: Write server integration test**
 
 ```ts
 // packages/cli/src/__tests__/server.test.ts
-import { describe, it, expect } from "vitest";
-import { createServer } from "../server";
-import type { NarrativeResponse } from "../narrative/types";
-import type { PRMetadata } from "../github/types";
+import { describe, it, expect } from 'vitest';
+import { createServer } from '../server';
+import type { NarrativeResponse } from '../narrative/types';
+import type { PRMetadata } from '../github/types';
 
 const mockNarrative: NarrativeResponse = {
-  title: "Test PR",
-  chapters: [{
-    title: "Add feature", summary: "Adds a new feature", risk: "low",
-    sections: [
-      { type: "narrative", content: "This adds a feature." },
-      { type: "diff", file: "src/index.ts", startLine: 1, endLine: 5, hunkIndex: 0 },
-    ],
-  }],
+  title: 'Test PR',
+  chapters: [
+    {
+      title: 'Add feature',
+      summary: 'Adds a new feature',
+      risk: 'low',
+      sections: [
+        { type: 'narrative', content: 'This adds a feature.' },
+        { type: 'diff', file: 'src/index.ts', startLine: 1, endLine: 5, hunkIndex: 0 },
+      ],
+    },
+  ],
 };
 
 const mockPR: PRMetadata = {
-  number: 1, title: "Test PR", body: "", state: "open", draft: false,
-  author: { login: "test", avatarUrl: "" }, branch: "feat", base: "main",
-  labels: [], createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z",
-  additions: 10, deletions: 2, changedFiles: 1, commits: 1,
+  number: 1,
+  title: 'Test PR',
+  body: '',
+  state: 'open',
+  draft: false,
+  author: { login: 'test', avatarUrl: '' },
+  branch: 'feat',
+  base: 'main',
+  labels: [],
+  createdAt: '2026-01-01T00:00:00Z',
+  updatedAt: '2026-01-01T00:00:00Z',
+  additions: 10,
+  deletions: 2,
+  changedFiles: 1,
+  commits: 1,
 };
 
-describe("server", () => {
-  it("serves narrative at /api/narrative", async () => {
+describe('server', () => {
+  it('serves narrative at /api/narrative', async () => {
     const app = createServer({
-      narrative: mockNarrative, pr: mockPR, files: [], comments: [],
-      github: {} as any, owner: "test", repo: "test",
+      narrative: mockNarrative,
+      pr: mockPR,
+      files: [],
+      comments: [],
+      github: {} as any,
+      owner: 'test',
+      repo: 'test',
     });
-    const res = await app.request("/api/narrative");
+    const res = await app.request('/api/narrative');
     expect(res.status).toBe(200);
     const data = await res.json();
-    expect(data.narrative.title).toBe("Test PR");
+    expect(data.narrative.title).toBe('Test PR');
     expect(data.narrative.chapters).toHaveLength(1);
   });
 });
@@ -1590,6 +1765,7 @@ After completing all 9 tasks:
 - 5 test files covering core backend logic
 
 **Not in Phase 1** (future phases):
+
 - Full comment write + reply + thread CRUD
 - Live webhook stream + Activity Drawer
 - Keyboard shortcuts (j/k/r/c/?)

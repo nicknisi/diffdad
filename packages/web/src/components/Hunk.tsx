@@ -71,7 +71,7 @@ function CollapsibleThread({
   );
 }
 
-function BotCluster({ comments, file }: { comments: PRComment[]; file: string }) {
+function BotCluster({ comments }: { comments: PRComment[] }) {
   const [expanded, setExpanded] = useState(false);
 
   const uniqueAuthors = useMemo(() => {
@@ -187,7 +187,7 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight }: Props) {
     const normFile = normalizePath(file);
     return comments.filter((c) => {
       if (normalizePath(c.path) !== normFile) return false;
-      if (!/\[bot\]$/.test(c.author)) return false;
+      if (!c.author.endsWith('[bot]')) return false;
       if (c.line === undefined) return false;
       return c.line >= hunkStart && c.line <= hunkEnd;
     });
@@ -257,7 +257,7 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight }: Props) {
           )}
         </div>
       </div>
-      {clusterBots && botComments.length > 0 && <BotCluster comments={botComments} file={file} />}
+      {clusterBots && botComments.length > 0 && <BotCluster comments={botComments} />}
       <div>
         {hunk.lines.map((line, i) => {
           const lineKey = `${file}:${hunkIndex}:${i}`;
@@ -265,7 +265,7 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight }: Props) {
           const lineComments: PRComment[] = comments.filter((c) => {
             if (normalizePath(c.path) !== normFile) return false;
             if (c.line === undefined) return false;
-            if (clusterBots && /\[bot\]$/.test(c.author)) return false;
+            if (clusterBots && c.author.endsWith('[bot]')) return false;
             // GitHub review comments use `line` for the new-side line number
             // when side === "RIGHT" (or unset), and the old-side line number
             // when side === "LEFT". Match against the right axis on the diff

@@ -38,20 +38,21 @@ dad review owner/repo#1847
 
 ### Tech Stack
 
-| Layer | Choice | Rationale |
-|-------|--------|-----------|
-| Runtime | Bun | Fast startup, native TS, ships as npm package |
-| CLI framework | Minimal (Bun.argv or commander) | Few commands, low complexity |
-| Server | Hono | Lightweight, runs on Bun natively |
-| Frontend | React + Vite | Component model for comments, syntax highlighting, interactive narrative |
-| AI | Vercel AI SDK (provider-agnostic) | User picks Claude, OpenAI, Ollama, or custom |
-| Syntax highlighting | Shiki | VS Code-quality highlighting, every language |
-| Styling | Tailwind | Dark theme default, light toggle |
-| Design system | WorkOS design system (workds) on Radix Themes tokens | See design_files/ for reference |
+| Layer               | Choice                                               | Rationale                                                                |
+| ------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------ |
+| Runtime             | Bun                                                  | Fast startup, native TS, ships as npm package                            |
+| CLI framework       | Minimal (Bun.argv or commander)                      | Few commands, low complexity                                             |
+| Server              | Hono                                                 | Lightweight, runs on Bun natively                                        |
+| Frontend            | React + Vite                                         | Component model for comments, syntax highlighting, interactive narrative |
+| AI                  | Vercel AI SDK (provider-agnostic)                    | User picks Claude, OpenAI, Ollama, or custom                             |
+| Syntax highlighting | Shiki                                                | VS Code-quality highlighting, every language                             |
+| Styling             | Tailwind                                             | Dark theme default, light toggle                                         |
+| Design system       | WorkOS design system (workds) on Radix Themes tokens | See design_files/ for reference                                          |
 
 ### Input Source
 
 GitHub PRs only (v1). Auth resolution in priority order:
+
 1. `DIFFDAD_GITHUB_TOKEN` env var
 2. `gh auth token` (GitHub CLI)
 3. Prompt on first run, saved to `~/.config/diffdad/config.json`
@@ -82,29 +83,29 @@ type NarrativeResponse = {
   title: string;
   chapters: Chapter[];
   suggestedStart?: { chapter: number; reason: string };
-}
+};
 
 type Chapter = {
   title: string;
   summary: string;
-  risk: "low" | "medium" | "high";
+  risk: 'low' | 'medium' | 'high';
   sections: Section[];
-}
+};
 
 type Section =
-  | { type: "narrative"; content: string }
-  | { type: "diff"; file: string; startLine: number; endLine: number; hunks: DiffHunk[] }
+  | { type: 'narrative'; content: string }
+  | { type: 'diff'; file: string; startLine: number; endLine: number; hunks: DiffHunk[] };
 
 type DiffHunk = {
   header: string;
   lines: DiffLine[];
-}
+};
 
 type DiffLine = {
-  type: "add" | "remove" | "context";
+  type: 'add' | 'remove' | 'context';
   content: string;
   lineNumber: { old?: number; new?: number };
-}
+};
 ```
 
 ### Grouping Rules
@@ -113,17 +114,19 @@ type DiffLine = {
 - A chapter like "Add rate limiting" may pull hunks from multiple files
 - Chapters are ordered as a logical reading sequence (setup → core logic → wiring → tests)
 - **Hunks can appear in multiple chapters** when they're relevant to more than one story. A cross-reference indicator ("also in Chapter N") shows when a hunk appears elsewhere.
-- Narrative blocks explain the *intent*, referencing the code that follows
+- Narrative blocks explain the _intent_, referencing the code that follows
 
 ### Token Management
 
 For large PRs exceeding context:
+
 1. Pass 1: Summarize each file's changes independently
 2. Pass 2: Group summaries into chapters, request relevant hunks per chapter
 
 ### Prompt Strategy
 
 Single call with structured output. System prompt instructs the model to:
+
 1. Identify distinct behavioral changes in the diff
 2. Group hunks by behavior, not by file
 3. Order chapters as a logical reading sequence
@@ -142,6 +145,7 @@ Local web app served by the CLI. `dad review <url>` boots a Hono server and open
 Two-column grid. 280px sidebar (TOC) + 1fr main. Max-width 1280px centered.
 
 See `README.md` sections 2-12 and `design_files/` for pixel-level component specs including:
+
 - App Bar (persistent, 48px, brand mark + CLI framing + live pill + theme toggle)
 - PR Header (title, branch chip, author, stats, view toggle Story/Files)
 - Chapter TOC sidebar (sticky, reviewed state badges, active indicator)
@@ -156,6 +160,7 @@ See `README.md` sections 2-12 and `design_files/` for pixel-level component spec
 ### Narration Controls
 
 Per-chapter narration anchor with:
+
 - **Density toggle:** Terse (1 sentence) / Normal (2-3 sentences) / Verbose (short paragraph)
 - **Re-narrate:** Cycle through lenses (security / performance / API consumer)
 - **Ask AI:** Free-form question about the chapter's changes
@@ -176,11 +181,11 @@ Per-chapter narration anchor with:
 
 ### Mapping Rules
 
-| Comment placed on... | Becomes on GitHub... |
-|---|---|
-| A diff line | Inline review comment on that exact file + line |
-| A narrative block | PR comment prefixed with `[diff.dad: Chapter N]` + quote of narrative |
-| A reply to either | Reply on the same thread |
+| Comment placed on... | Becomes on GitHub...                                                  |
+| -------------------- | --------------------------------------------------------------------- |
+| A diff line          | Inline review comment on that exact file + line                       |
+| A narrative block    | PR comment prefixed with `[diff.dad: Chapter N]` + quote of narrative |
+| A reply to either    | Reply on the same thread                                              |
 
 ### GitHub → Diff Dad
 
@@ -213,14 +218,14 @@ Batched draft flow: comments accumulate as drafts, submitted together via Submit
 
 ### UI Microcopy
 
-| Context | Copy |
-|---------|------|
-| Empty state | "Go make a diff-erence." |
-| Inline hint | "Use your comment sense." |
-| Approval toast | "Proud of you, champ. Approved." |
-| Warning | "Not on my branch." |
-| Blocker (tests failing) | "Grounded until tests pass." |
-| Nudge | "Measure twice, commit once." |
+| Context                 | Copy                             |
+| ----------------------- | -------------------------------- |
+| Empty state             | "Go make a diff-erence."         |
+| Inline hint             | "Use your comment sense."        |
+| Approval toast          | "Proud of you, champ. Approved." |
+| Warning                 | "Not on my branch."              |
+| Blocker (tests failing) | "Grounded until tests pass."     |
+| Nudge                   | "Measure twice, commit once."    |
 
 ## Interactions & Behavior
 
@@ -236,6 +241,7 @@ Batched draft flow: comments accumulate as drafts, submitted together via Submit
 ### Chapter Review State Machine
 
 Each chapter: `reading → reviewing → replied → reviewed`
+
 - `reading` — in viewport
 - `reviewing` — has open drafts
 - `replied` — has synced comments
@@ -253,6 +259,7 @@ Each chapter: `reading → reviewing → replied → reviewed`
 ## Design Tokens
 
 See `README.md` "Design Tokens" section for complete token reference including:
+
 - Fonts: Untitled Sans / IBM Plex Mono / Source Serif 4
 - Brand purple: `#6565EC`
 - Full Radix Themes color scale
@@ -265,18 +272,18 @@ See `README.md` "Design Tokens" section for complete token reference including:
 
 The `design_files/` directory contains a high-fidelity HTML prototype:
 
-| File | Role |
-|------|------|
-| `index.html` | App shell, splash, app bar, tweaks mount |
-| `Review.jsx` | Main review screen — TOC, chapters, narration, submit flow |
-| `Diff.jsx` | Hunk, CodeLine, Thread, Comment, conflict UX |
-| `data.jsx` | Sample PR data (workos/workos#1847) |
-| `narrations.jsx` | Per-chapter narrations at three densities |
-| `live.jsx` | useLiveStream hook, LivePill, ActivityDrawer |
-| `md.jsx` | GitHub-flavored markdown renderer |
-| `icons.jsx` | Inline SVG icon library |
-| `tweaks-panel.jsx` | Design-time tweaks panel |
-| `app.css` | All styling (~1700 lines) |
+| File               | Role                                                       |
+| ------------------ | ---------------------------------------------------------- |
+| `index.html`       | App shell, splash, app bar, tweaks mount                   |
+| `Review.jsx`       | Main review screen — TOC, chapters, narration, submit flow |
+| `Diff.jsx`         | Hunk, CodeLine, Thread, Comment, conflict UX               |
+| `data.jsx`         | Sample PR data (workos/workos#1847)                        |
+| `narrations.jsx`   | Per-chapter narrations at three densities                  |
+| `live.jsx`         | useLiveStream hook, LivePill, ActivityDrawer               |
+| `md.jsx`           | GitHub-flavored markdown renderer                          |
+| `icons.jsx`        | Inline SVG icon library                                    |
+| `tweaks-panel.jsx` | Design-time tweaks panel                                   |
+| `app.css`          | All styling (~1700 lines)                                  |
 
 These are design references, not production code. The task is to recreate these in a proper React + Vite app using the established design system.
 
