@@ -28,12 +28,7 @@ export function AppBar({ onOpenActivity }: AppBarProps) {
       style={{ boxShadow: 'inset 0 -1px 0 var(--gray-a4)' }}
     >
       {/* Brand mark */}
-      <img
-        src="/diff-dad-mark.svg"
-        alt="Diff Dad"
-        title={copy.brandTooltip}
-        className="h-[26px] w-[26px]"
-      />
+      <img src="/diff-dad-mark.svg" alt="Diff Dad" title={copy.brandTooltip} className="h-[26px] w-[26px]" />
 
       {/* Separator */}
       <span aria-hidden className="mx-1 inline-block h-5 w-px" style={{ background: 'var(--gray-a4)' }} />
@@ -85,7 +80,6 @@ export function AppBar({ onOpenActivity }: AppBarProps) {
         >
           {theme === 'dark' ? <IconSun className="h-[15px] w-[15px]" /> : <IconMoon className="h-[15px] w-[15px]" />}
         </button>
-
       </div>
     </header>
   );

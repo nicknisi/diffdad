@@ -369,12 +369,7 @@ export function PRHeader() {
                       : r.state === 'COMMENTED'
                         ? { border: '2px solid var(--gray-9)' }
                         : { border: '2px solid var(--gray-a4)' };
-                const stateIcon =
-                  r.state === 'APPROVED'
-                    ? '✓'
-                    : r.state === 'CHANGES_REQUESTED'
-                      ? '✗'
-                      : null;
+                const stateIcon = r.state === 'APPROVED' ? '✓' : r.state === 'CHANGES_REQUESTED' ? '✗' : null;
                 const stateColor =
                   r.state === 'APPROVED'
                     ? 'var(--green-11)'
