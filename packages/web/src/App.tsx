@@ -10,7 +10,6 @@ import { PRHeader } from "./components/PRHeader";
 import { ShortcutsHelp } from "./components/ShortcutsHelp";
 import { StoryView } from "./components/StoryView";
 import { SubmitBar } from "./components/SubmitBar";
-import { TweaksPanel } from "./components/TweaksPanel";
 import { copy } from "./lib/microcopy";
 
 export default function App() {
@@ -22,7 +21,6 @@ export default function App() {
   useLiveStream();
   useKeyboardShortcuts();
   const [activityOpen, setActivityOpen] = useState(false);
-  const [tweaksOpen, setTweaksOpen] = useState(false);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
@@ -62,15 +60,11 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[var(--bg-page)] pb-20 text-[var(--fg-1)]">
-      <AppBar
-        onOpenActivity={() => setActivityOpen(true)}
-        onOpenTweaks={() => setTweaksOpen(true)}
-      />
+      <AppBar onOpenActivity={() => setActivityOpen(true)} />
       <PRHeader />
       {view === "story" ? <StoryView /> : <ClassicView />}
       <SubmitBar />
       <ActivityDrawer open={activityOpen} onClose={() => setActivityOpen(false)} />
-      <TweaksPanel open={tweaksOpen} onClose={() => setTweaksOpen(false)} />
       <ShortcutsHelp
         open={shortcutsHelpOpen}
         onClose={() => setShortcutsHelpOpen(false)}

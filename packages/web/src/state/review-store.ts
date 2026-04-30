@@ -19,6 +19,14 @@ type VisualStyle = "stripe" | "linear" | "github";
 type LayoutMode = "toc" | "linear";
 type DisplayDensity = "comfortable" | "compact";
 
+export type BackendConfig = {
+  storyStructure?: StoryStructure;
+  layoutMode?: LayoutMode;
+  displayDensity?: DisplayDensity;
+  defaultNarrationDensity?: Density;
+  clusterBots?: boolean;
+};
+
 type ReviewState = {
   pr: PRData | null;
   narrative: NarrativeResponse | null;
@@ -51,7 +59,8 @@ type ReviewState = {
     files: DiffFile[],
     comments: PRComment[],
     repoUrl?: string | null,
-    checkRuns?: CheckRun[]
+    checkRuns?: CheckRun[],
+    config?: BackendConfig | null
   ) => void;
   setActiveChapter: (id: string) => void;
   toggleReviewed: (idx: number) => void;
@@ -104,12 +113,20 @@ export const useReviewStore = create<ReviewState>((set) => ({
   collapseNarration: false,
   clusterBots: true,
 
-  setData: (pr, narrative, files, comments, repoUrl = null, checkRuns = []) => {
+  setData: (
+    pr,
+    narrative,
+    files,
+    comments,
+    repoUrl = null,
+    checkRuns = [],
+    config = null,
+  ) => {
     const chapterStates: Record<string, ChapterState> = {};
     narrative.chapters.forEach((_, idx) => {
       chapterStates[`ch-${idx}`] = "reading";
     });
-    set({
+    const next: Partial<ReviewState> = {
       pr,
       narrative,
       files,
@@ -119,7 +136,17 @@ export const useReviewStore = create<ReviewState>((set) => ({
       chapterStates,
       activeChapterId: narrative.chapters.length > 0 ? "ch-0" : null,
       chapterDensity: {},
-    });
+    };
+    if (config) {
+      if (config.storyStructure) next.storyStructure = config.storyStructure;
+      if (config.layoutMode) next.layoutMode = config.layoutMode;
+      if (config.displayDensity) next.displayDensity = config.displayDensity;
+      if (config.defaultNarrationDensity)
+        next.density = config.defaultNarrationDensity;
+      if (typeof config.clusterBots === "boolean")
+        next.clusterBots = config.clusterBots;
+    }
+    set(next);
   },
 
   setActiveChapter: (id) => set({ activeChapterId: id }),

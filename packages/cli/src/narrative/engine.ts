@@ -12,7 +12,7 @@ const DEFAULT_OPENAI_MODEL = "gpt-4o";
 const DEFAULT_OLLAMA_MODEL = "llama3.1";
 const DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434/v1";
 
-function resolveModel(config: DiffDadConfig): LanguageModelV1 {
+export function getModel(config: DiffDadConfig): LanguageModelV1 {
   const provider = config.aiProvider ?? "anthropic";
 
   switch (provider) {
@@ -75,7 +75,7 @@ export async function generateNarrative(
     fileTree,
   });
 
-  const model = resolveModel(config);
+  const model = getModel(config);
 
   const result = await generateText({
     model,

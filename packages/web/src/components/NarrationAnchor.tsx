@@ -2,12 +2,13 @@ import { useState, type KeyboardEvent } from "react";
 import { useComments } from "../hooks/useComments";
 import { useReviewStore } from "../state/review-store";
 import { IconChat, IconRefresh, IconSpark, IconX } from "./Icons";
+import { Markdown } from "./markdown/Markdown";
 
 type Density = "terse" | "normal" | "verbose";
-type Lens = "security" | "performance" | "API consumer" | null;
+type PerspectiveLens = "security" | "performance" | "API consumer";
 
 const DENSITIES: Density[] = ["terse", "normal", "verbose"];
-const LENS_CYCLE: Exclude<Lens, null>[] = [
+const LENS_CYCLE: PerspectiveLens[] = [
   "security",
   "performance",
   "API consumer",
@@ -17,6 +18,31 @@ type Props = {
   chapterIndex: number;
 };
 
+async function callAi(payload: {
+  action: "ask" | "renarrate";
+  chapterIndex: number;
+  question?: string;
+  lens?: string;
+}): Promise<string> {
+  const res = await fetch("/api/ai", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    let msg = `Request failed: ${res.status}`;
+    try {
+      const data = (await res.json()) as { error?: string };
+      if (data.error) msg = data.error;
+    } catch {
+      // ignore
+    }
+    throw new Error(msg);
+  }
+  const data = (await res.json()) as { text: string };
+  return data.text;
+}
+
 export function NarrationAnchor({ chapterIndex }: Props) {
   const chapterKey = `ch-${chapterIndex}`;
   const globalDensity = useReviewStore((s) => s.density);
@@ -25,11 +51,16 @@ export function NarrationAnchor({ chapterIndex }: Props) {
   const activeDensity = chapterDensityMap[chapterKey] ?? globalDensity;
 
   const [renarrating, setRenarrating] = useState(false);
-  const [lens, setLens] = useState<Lens>(null);
+  const [activeLens, setActiveLens] = useState<PerspectiveLens | null>(null);
+  const [overrideText, setOverrideText] = useState<string | null>(null);
+  const [renarrateError, setRenarrateError] = useState<string | null>(null);
+
   const [askOpen, setAskOpen] = useState(false);
   const [askPrompt, setAskPrompt] = useState("");
   const [askLoading, setAskLoading] = useState(false);
   const [askResponse, setAskResponse] = useState<string | null>(null);
+  const [askError, setAskError] = useState<string | null>(null);
+
   const [commentOpen, setCommentOpen] = useState(false);
   const [commentBody, setCommentBody] = useState("");
   const [commentSubmitting, setCommentSubmitting] = useState(false);
@@ -37,39 +68,73 @@ export function NarrationAnchor({ chapterIndex }: Props) {
 
   const { postComment } = useComments();
 
-  function handleRenarrate() {
+  async function runRenarrate(lens: string) {
     if (renarrating) return;
     setRenarrating(true);
-    // Cycle: null -> security -> performance -> API consumer -> null
-    const idx = lens === null ? 0 : LENS_CYCLE.indexOf(lens) + 1;
-    const next: Lens = idx >= LENS_CYCLE.length ? null : LENS_CYCLE[idx] ?? null;
-    window.setTimeout(() => {
-      setLens(next);
+    setRenarrateError(null);
+    try {
+      const text = await callAi({ action: "renarrate", chapterIndex, lens });
+      setOverrideText(text);
+    } catch (err) {
+      setRenarrateError(err instanceof Error ? err.message : "Failed");
+    } finally {
       setRenarrating(false);
-    }, 700);
+    }
+  }
+
+  async function handleRenarrate() {
+    if (renarrating) return;
+    // Cycle: null -> security -> performance -> API consumer -> null
+    const idx =
+      activeLens === null ? 0 : LENS_CYCLE.indexOf(activeLens) + 1;
+    const next: PerspectiveLens | null =
+      idx >= LENS_CYCLE.length ? null : LENS_CYCLE[idx] ?? null;
+    setActiveLens(next);
+    if (next === null) {
+      setOverrideText(null);
+      setRenarrateError(null);
+      return;
+    }
+    await runRenarrate(next);
   }
 
   function handleRestoreDefault() {
-    setLens(null);
+    setActiveLens(null);
+    setOverrideText(null);
+    setRenarrateError(null);
   }
 
-  function submitAsk() {
+  async function handleDensityChange(d: Density) {
+    setChapterDensity(chapterKey, d);
+    // Re-narrate at the requested density via the AI endpoint.
+    setActiveLens(null);
+    await runRenarrate(d);
+  }
+
+  async function submitAsk() {
     const trimmed = askPrompt.trim();
     if (!trimmed || askLoading) return;
     setAskLoading(true);
     setAskResponse(null);
-    window.setTimeout(() => {
-      setAskResponse(
-        "AI responses will be powered by your configured LLM provider.",
-      );
+    setAskError(null);
+    try {
+      const text = await callAi({
+        action: "ask",
+        chapterIndex,
+        question: trimmed,
+      });
+      setAskResponse(text);
+    } catch (err) {
+      setAskError(err instanceof Error ? err.message : "Failed");
+    } finally {
       setAskLoading(false);
-    }, 600);
+    }
   }
 
   function onAskKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
       e.preventDefault();
-      submitAsk();
+      void submitAsk();
     }
   }
 
@@ -77,6 +142,7 @@ export function NarrationAnchor({ chapterIndex }: Props) {
     setAskOpen(false);
     setAskPrompt("");
     setAskResponse(null);
+    setAskError(null);
   }
 
   async function submitComment() {
@@ -103,13 +169,21 @@ export function NarrationAnchor({ chapterIndex }: Props) {
     }
   }
 
+  const hasOverride = overrideText !== null || activeLens !== null;
+
   return (
     <div className="ml-[34px] mt-2">
-      {lens && !renarrating && (
+      {hasOverride && !renarrating && (
         <div className="mb-2 flex items-center gap-2 rounded-md border border-brand/30 bg-brand/5 px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300">
           <span>
-            Re-narrated for <span className="font-medium">{lens}</span>{" "}
-            reviewers
+            {activeLens ? (
+              <>
+                Re-narrated for{" "}
+                <span className="font-medium">{activeLens}</span> reviewers
+              </>
+            ) : (
+              <>Narration regenerated</>
+            )}
           </span>
           <span className="text-gray-400">·</span>
           <button
@@ -122,6 +196,18 @@ export function NarrationAnchor({ chapterIndex }: Props) {
         </div>
       )}
 
+      {overrideText && !renarrating && (
+        <div className="mb-2 rounded-md border border-[var(--border)] bg-[var(--bg-subtle)] p-3 text-sm">
+          <Markdown source={overrideText} />
+        </div>
+      )}
+
+      {renarrateError && (
+        <div className="mb-2 text-xs text-red-600 dark:text-red-400">
+          {renarrateError}
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center gap-1.5 text-[12px] font-medium text-[var(--fg-3)]">
         <div className="inline-flex items-center gap-0.5 rounded-md border border-[var(--border)] bg-[var(--bg-subtle)] p-[2px]">
           {DENSITIES.map((d) => {
@@ -130,7 +216,8 @@ export function NarrationAnchor({ chapterIndex }: Props) {
               <button
                 key={d}
                 type="button"
-                onClick={() => setChapterDensity(chapterKey, d)}
+                disabled={renarrating}
+                onClick={() => void handleDensityChange(d)}
                 className={
                   active
                     ? "rounded-[3px] bg-[var(--bg-panel)] px-2 py-0.5 text-[11px] font-medium capitalize text-[var(--fg-1)] shadow-sm"
@@ -145,7 +232,7 @@ export function NarrationAnchor({ chapterIndex }: Props) {
 
         <button
           type="button"
-          onClick={handleRenarrate}
+          onClick={() => void handleRenarrate()}
           disabled={renarrating}
           className="inline-flex items-center gap-1 rounded-[4px] px-1.5 py-1 text-[12px] font-medium text-[var(--fg-3)] hover:bg-[var(--bg-subtle)] hover:text-[var(--fg-1)] disabled:opacity-60"
         >
@@ -191,9 +278,19 @@ export function NarrationAnchor({ chapterIndex }: Props) {
             className="block w-full resize-y rounded-md border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--fg-1)] outline-none focus:border-[var(--brand)]"
             rows={2}
           />
-          {askResponse && (
-            <div className="mt-2 rounded-md bg-[var(--bg-subtle)] p-2 text-sm text-[var(--fg-1)]">
-              {askResponse}
+          {askLoading && (
+            <div className="mt-2 rounded-md bg-[var(--bg-subtle)] p-2 text-sm text-[var(--fg-2)]">
+              Thinking...
+            </div>
+          )}
+          {askError && !askLoading && (
+            <div className="mt-2 rounded-md bg-red-50 p-2 text-sm text-red-700 dark:bg-red-900/20 dark:text-red-300">
+              {askError}
+            </div>
+          )}
+          {askResponse && !askLoading && (
+            <div className="mt-2 rounded-md bg-[var(--bg-subtle)] p-3 text-sm text-[var(--fg-1)]">
+              <Markdown source={askResponse} />
             </div>
           )}
           <div className="mt-2 flex justify-end gap-2">
@@ -208,7 +305,7 @@ export function NarrationAnchor({ chapterIndex }: Props) {
             <button
               type="button"
               disabled={!askPrompt.trim() || askLoading}
-              onClick={submitAsk}
+              onClick={() => void submitAsk()}
               className="rounded-md bg-[var(--brand)] px-3 py-1 text-sm font-semibold text-white shadow-sm hover:bg-[var(--brand-hover)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {askLoading ? "Asking..." : "Ask"}

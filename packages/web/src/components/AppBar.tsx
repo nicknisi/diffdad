@@ -1,6 +1,6 @@
 import { useReviewStore } from "../state/review-store";
 import { LivePill } from "./LivePill";
-import { IconGear, IconMoon, IconSun } from "./Icons";
+import { IconMoon, IconSun } from "./Icons";
 
 function repoSlug(repoUrl: string | null): string | null {
   if (!repoUrl) return null;
@@ -10,10 +10,9 @@ function repoSlug(repoUrl: string | null): string | null {
 
 type AppBarProps = {
   onOpenActivity: () => void;
-  onOpenTweaks: () => void;
 };
 
-export function AppBar({ onOpenActivity, onOpenTweaks }: AppBarProps) {
+export function AppBar({ onOpenActivity }: AppBarProps) {
   const pr = useReviewStore((s) => s.pr);
   const theme = useReviewStore((s) => s.theme);
   const setTheme = useReviewStore((s) => s.setTheme);
@@ -61,16 +60,6 @@ export function AppBar({ onOpenActivity, onOpenTweaks }: AppBarProps) {
       <div className="ml-auto flex items-center gap-2">
         {/* Live pill */}
         <LivePill onClick={onOpenActivity} />
-
-        {/* Tweaks */}
-        <button
-          type="button"
-          aria-label="Open tweaks"
-          onClick={onOpenTweaks}
-          className="flex h-[30px] w-[30px] items-center justify-center rounded-[6px] border border-[var(--border-strong)] bg-[var(--bg-panel)] text-[var(--fg-2)] hover:bg-[var(--bg-subtle)] hover:text-[var(--fg-1)]"
-        >
-          <IconGear className="h-4 w-4" />
-        </button>
 
         {/* Theme toggle */}
         <button

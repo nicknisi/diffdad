@@ -1,9 +1,12 @@
 import { Hono } from "hono";
 import { serveStatic } from "hono/bun";
+import { generateText } from "ai";
 import { resolve } from "path";
+import { readConfig } from "./config";
 import type { GitHubClient } from "./github/client";
 import { mapCommentsToChapters } from "./github/comments";
 import type { CheckRun, DiffFile, PRComment, PRMetadata } from "./github/types";
+import { getModel } from "./narrative/engine";
 import type { NarrativeResponse } from "./narrative/types";
 
 export type ServerContext = {
@@ -37,7 +40,8 @@ export function createServer(ctx: ServerContext) {
     }
   }
 
-  app.get("/api/narrative", (c) => {
+  app.get("/api/narrative", async (c) => {
+    const config = await readConfig();
     return c.json({
       narrative: ctx.narrative,
       pr: ctx.pr,
@@ -45,7 +49,115 @@ export function createServer(ctx: ServerContext) {
       comments: mapCommentsToChapters(ctx.comments, ctx.narrative),
       checkRuns: ctx.checkRuns,
       repoUrl: `https://github.com/${ctx.owner}/${ctx.repo}`,
+      config: {
+        storyStructure: config.storyStructure ?? "chapters",
+        layoutMode: config.layoutMode ?? "toc",
+        displayDensity: config.displayDensity ?? "comfortable",
+        defaultNarrationDensity: config.defaultNarrationDensity ?? "normal",
+        clusterBots: config.clusterBots ?? true,
+      },
     });
+  });
+
+  app.post("/api/ai", async (c) => {
+    let body: {
+      action?: string;
+      chapterIndex?: number;
+      question?: string;
+      lens?: string;
+    };
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "invalid JSON body" }, 400);
+    }
+
+    const { action, chapterIndex, question, lens } = body;
+
+    if (typeof chapterIndex !== "number") {
+      return c.json({ error: "missing chapterIndex" }, 400);
+    }
+
+    const chapter = ctx.narrative.chapters[chapterIndex];
+    if (!chapter) return c.json({ error: "invalid chapter" }, 400);
+
+    const allHunks = ctx.files.flatMap((f) =>
+      f.hunks.map((h) => ({ hunk: h, file: f.file })),
+    );
+    const chapterDiff = chapter.sections
+      .filter((s): s is Extract<typeof s, { type: "diff" }> => s.type === "diff")
+      .map((s) => {
+        const flat = allHunks[s.hunkIndex];
+        if (!flat) return "";
+        return (
+          `--- ${flat.file} ---\n` +
+          flat.hunk.lines
+            .map((l) => {
+              const prefix =
+                l.type === "add" ? "+" : l.type === "remove" ? "-" : " ";
+              return prefix + l.content;
+            })
+            .join("\n")
+        );
+      })
+      .join("\n\n");
+
+    const config = await readConfig();
+    let model;
+    try {
+      model = getModel(config);
+    } catch (err) {
+      return c.json(
+        { error: `model unavailable: ${(err as Error).message}` },
+        500,
+      );
+    }
+
+    let systemPrompt: string;
+    let userPrompt: string;
+
+    if (action === "ask") {
+      if (!question || typeof question !== "string") {
+        return c.json({ error: "missing question" }, 400);
+      }
+      systemPrompt =
+        "You are a code review assistant. Answer questions about the code changes concisely. Use markdown.";
+      userPrompt = `Chapter: ${chapter.title}\n\nNarration: ${chapter.summary}\n\nDiff:\n${chapterDiff}\n\nQuestion: ${question}`;
+    } else if (action === "renarrate") {
+      if (!lens || typeof lens !== "string") {
+        return c.json({ error: "missing lens" }, 400);
+      }
+      const densityLenses = ["terse", "normal", "verbose"];
+      const isDensity = densityLenses.includes(lens);
+      if (isDensity) {
+        const sizing =
+          lens === "terse"
+            ? "One sentence max."
+            : lens === "verbose"
+              ? "One detailed paragraph."
+              : "Two to three sentences.";
+        systemPrompt = `You are a code review narrator. Rewrite this chapter narration in a ${lens} style. ${sizing} Use markdown.`;
+      } else {
+        systemPrompt = `You are a code review narrator. Re-narrate through a ${lens} lens. Focus on what matters from that perspective. 2-3 sentences, markdown.`;
+      }
+      userPrompt = `Chapter: ${chapter.title}\n\nOriginal: ${chapter.summary}\n\nDiff:\n${chapterDiff}`;
+    } else {
+      return c.json({ error: "unknown action" }, 400);
+    }
+
+    try {
+      const result = await generateText({
+        model,
+        system: systemPrompt,
+        messages: [{ role: "user", content: userPrompt }],
+      });
+      return c.json({ text: result.text });
+    } catch (err) {
+      return c.json(
+        { error: `AI request failed: ${(err as Error).message}` },
+        500,
+      );
+    }
   });
 
   app.get("/api/checks", async (c) => {

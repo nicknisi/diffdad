@@ -10,12 +10,22 @@ export type AiProvider =
   | "openai-compatible"
   | "ollama";
 
+export type StoryStructure = "chapters" | "linear" | "outline";
+export type LayoutMode = "toc" | "linear";
+export type DisplayDensity = "comfortable" | "compact";
+export type NarrationDensity = "terse" | "normal" | "verbose";
+
 export interface DiffDadConfig {
   githubToken?: string;
   aiProvider?: AiProvider;
   aiApiKey?: string;
   aiModel?: string;
   aiBaseUrl?: string;
+  storyStructure?: StoryStructure;
+  layoutMode?: LayoutMode;
+  displayDensity?: DisplayDensity;
+  defaultNarrationDensity?: NarrationDensity;
+  clusterBots?: boolean;
 }
 
 export function getConfigPath(): string {
@@ -162,11 +172,61 @@ export async function runConfig(): Promise<number> {
       }
     }
 
+    // --- Display Settings ---
+    process.stdout.write("\n  Display Settings\n");
+
+    const currentStoryStructure: StoryStructure =
+      existing.storyStructure ?? "chapters";
+    let storyStructure: StoryStructure = currentStoryStructure;
+    while (true) {
+      const answer = await ask(
+        `  Story structure [chapters/linear/outline] (current: ${currentStoryStructure}): `,
+      );
+      if (answer.length === 0) break;
+      if (answer === "chapters" || answer === "linear" || answer === "outline") {
+        storyStructure = answer;
+        break;
+      }
+      process.stdout.write("  Please enter chapters, linear, or outline.\n");
+    }
+
+    const currentLayoutMode: LayoutMode = existing.layoutMode ?? "toc";
+    let layoutMode: LayoutMode = currentLayoutMode;
+    while (true) {
+      const answer = await ask(
+        `  Layout [toc/linear] (current: ${currentLayoutMode}): `,
+      );
+      if (answer.length === 0) break;
+      if (answer === "toc" || answer === "linear") {
+        layoutMode = answer;
+        break;
+      }
+      process.stdout.write("  Please enter toc or linear.\n");
+    }
+
+    const currentNarrationDensity: NarrationDensity =
+      existing.defaultNarrationDensity ?? "normal";
+    let defaultNarrationDensity: NarrationDensity = currentNarrationDensity;
+    while (true) {
+      const answer = await ask(
+        `  Narration density [terse/normal/verbose] (current: ${currentNarrationDensity}): `,
+      );
+      if (answer.length === 0) break;
+      if (answer === "terse" || answer === "normal" || answer === "verbose") {
+        defaultNarrationDensity = answer;
+        break;
+      }
+      process.stdout.write("  Please enter terse, normal, or verbose.\n");
+    }
+
     // --- Persist ---
     const next: DiffDadConfig = {
       ...existing,
       aiProvider: provider,
       aiModel,
+      storyStructure,
+      layoutMode,
+      defaultNarrationDensity,
     };
     if (aiApiKey !== undefined) next.aiApiKey = aiApiKey;
     else delete next.aiApiKey;

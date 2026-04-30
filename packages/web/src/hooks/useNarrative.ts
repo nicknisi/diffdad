@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useReviewStore } from "../state/review-store";
+import { useReviewStore, type BackendConfig } from "../state/review-store";
 import type {
   CheckRun,
   DiffFile,
@@ -15,6 +15,7 @@ type NarrativeApiResponse = {
   comments: PRComment[];
   checkRuns?: CheckRun[];
   repoUrl?: string;
+  config?: BackendConfig;
 };
 
 export function useNarrative() {
@@ -42,6 +43,7 @@ export function useNarrative() {
           data.comments,
           data.repoUrl ?? null,
           data.checkRuns ?? [],
+          data.config ?? null,
         );
       } catch (err) {
         if (cancelled) return;
