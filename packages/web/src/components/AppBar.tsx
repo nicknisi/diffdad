@@ -61,18 +61,22 @@ export function AppBar({ onOpenActivity }: AppBarProps) {
         <span className="inline-flex text-[var(--fg-3)]">
           <IconArrowRight className="h-[11px] w-[11px]" />
         </span>
-        <span className="truncate text-[13px] font-medium text-[var(--fg-1)] font-sans">
-          {slug ? (
-            <>
-              <span className="font-semibold" style={{ color: "var(--purple-11)" }}>
-                {slug}
-              </span>
-              {prNum != null ? `#${prNum}` : null}
-            </>
-          ) : (
-            <span className="text-[var(--fg-3)]">—</span>
-          )}
-        </span>
+        {slug && repoUrl && prNum != null ? (
+          <a
+            href={`${repoUrl}/pull/${prNum}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="truncate text-[13px] font-medium font-sans hover:underline"
+            title="Open PR on GitHub"
+          >
+            <span className="font-semibold" style={{ color: "var(--purple-11)" }}>
+              {slug}
+            </span>
+            <span style={{ color: "var(--fg-1)" }}>#{prNum}</span>
+          </a>
+        ) : (
+          <span className="text-[var(--fg-3)]">—</span>
+        )}
         <span className="ml-auto font-mono text-[11px] font-medium text-[var(--fg-3)]">
           pid 41278
         </span>
