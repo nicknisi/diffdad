@@ -53,12 +53,6 @@ export function AppBar() {
       </div>
 
       <div className="ml-auto flex items-center gap-2">
-        {/* Live pill */}
-        <div className="flex items-center gap-1.5 rounded-full bg-green-100 px-2.5 py-1 text-[12px] font-medium text-green-700 dark:bg-green-950/40 dark:text-green-400">
-          <span className="live-dot inline-block h-1.5 w-1.5 rounded-full bg-green-500" />
-          <span>Connected · :4317</span>
-        </div>
-
         {/* Theme toggle */}
         <button
           type="button"
@@ -74,8 +68,8 @@ export function AppBar() {
         {/* Avatar */}
         <div
           aria-label="User avatar"
-          className="flex items-center justify-center rounded-full bg-brand text-[11px] font-bold text-white"
-          style={{ width: 28, height: 28 }}
+          className="flex items-center justify-center rounded-full text-xs font-bold text-white"
+          style={{ width: 28, height: 28, background: "#6565EC" }}
         >
           DD
         </div>

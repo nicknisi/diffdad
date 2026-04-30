@@ -1,4 +1,7 @@
 import DOMPurify from "dompurify";
+import { highlightLine } from "../../lib/shiki";
+import { useReviewStore } from "../../state/review-store";
+import { useHighlighter } from "../../hooks/useHighlighter";
 
 type Props = {
   source: string;
@@ -32,7 +35,14 @@ function renderInline(text: string): string {
   return out;
 }
 
-function renderMarkdown(src: string): string {
+function highlightBlock(code: string, lang: string, theme: "light" | "dark"): string {
+  const lines = code.split("\n");
+  return lines
+    .map((line) => highlightLine(line, lang, theme) ?? escapeHtml(line))
+    .join("\n");
+}
+
+function renderMarkdown(src: string, theme: "light" | "dark" = "light"): string {
   const lines = src.split(/\r?\n/);
   const out: string[] = [];
   let i = 0;
@@ -63,8 +73,11 @@ function renderMarkdown(src: string): string {
       const langLabel = lang
         ? `<div class="mb-1 text-xs font-mono uppercase text-gray-400">${escapeHtml(lang)}</div>`
         : "";
+      const codeContent = lang
+        ? highlightBlock(buf.join("\n"), lang, theme)
+        : escapeHtml(buf.join("\n"));
       out.push(
-        `<pre class="my-2 overflow-x-auto rounded-md border border-gray-200 bg-gray-50 p-3 font-mono text-sm leading-snug dark:border-gray-800 dark:bg-gray-900">${langLabel}<code>${escapeHtml(buf.join("\n"))}</code></pre>`,
+        `<pre class="my-2 overflow-x-auto rounded-md border border-gray-200 bg-gray-50 p-3 font-mono text-sm leading-snug dark:border-gray-800 dark:bg-gray-900">${langLabel}<code>${codeContent}</code></pre>`,
       );
       continue;
     }
@@ -101,13 +114,13 @@ function renderMarkdown(src: string): string {
 }
 
 export function Markdown({ source }: Props) {
-  // All HTML is generated from sanitize-friendly templates: every user-controlled
-  // string is run through escapeHtml() before substitution, and the final string
-  // is passed through DOMPurify before being injected. This is the standard
-  // sanitization path documented for DOMPurify.
-  const rawHtml = renderMarkdown(source);
+  const theme = useReviewStore((s) => s.theme);
+  useHighlighter();
+
+  const rawHtml = renderMarkdown(source, theme);
   const safeHtml = DOMPurify.sanitize(rawHtml, {
     USE_PROFILES: { html: true },
+    ADD_ATTR: ["style"],
   });
   return (
     <div
