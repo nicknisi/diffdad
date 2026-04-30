@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useReviewStore } from '../state/review-store';
-import type { CheckRun, LiveEvent, LiveEventKind, PRComment } from '../state/types';
+import type { CheckRun, LiveEvent, LiveEventKind, PRComment, PRReview } from '../state/types';
 
 function makeEventId(): string {
   return `ev-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -57,9 +57,20 @@ export function useLiveStream() {
       }
     };
 
+    const onReviews = (e: MessageEvent) => {
+      try {
+        const reviews = JSON.parse(e.data) as PRReview[];
+        useReviewStore.getState().setReviews(reviews);
+        setLastEventAt(Date.now());
+      } catch {
+        // ignore
+      }
+    };
+
     es.addEventListener('connected', onConnected);
     es.addEventListener('comment', onComment as EventListener);
     es.addEventListener('checks', onChecks as EventListener);
+    es.addEventListener('reviews', onReviews as EventListener);
 
     es.onopen = () => {
       setLiveStatus('connected');
@@ -73,6 +84,7 @@ export function useLiveStream() {
       es.removeEventListener('connected', onConnected);
       es.removeEventListener('comment', onComment as EventListener);
       es.removeEventListener('checks', onChecks as EventListener);
+      es.removeEventListener('reviews', onReviews as EventListener);
       es.close();
     };
   }, []);

@@ -108,6 +108,7 @@ export function PRHeader() {
   const pr = useReviewStore((s) => s.pr);
   const repoUrl = useReviewStore((s) => s.repoUrl);
   const checkRuns = useReviewStore((s) => s.checkRuns);
+  const reviews = useReviewStore((s) => s.reviews);
   const view = useReviewStore((s) => s.view);
   const setView = useReviewStore((s) => s.setView);
   const clearDrafts = useReviewStore((s) => s.clearDrafts);
@@ -241,6 +242,20 @@ export function PRHeader() {
         </div>
       </div>
       <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-2 text-[13px] text-[var(--fg-2)]">
+        <span
+          className="inline-flex items-center gap-1 rounded-full px-2 py-[2px] text-[11.5px] font-bold uppercase tracking-[0.04em]"
+          style={
+            pr.state === 'merged'
+              ? { background: 'var(--purple-3)', color: 'var(--purple-11)' }
+              : pr.state === 'closed'
+                ? { background: 'var(--red-3)', color: 'var(--red-11)' }
+                : pr.draft
+                  ? { background: 'var(--gray-3)', color: 'var(--fg-2)' }
+                  : { background: 'var(--green-3)', color: 'var(--green-11)' }
+          }
+        >
+          {pr.state === 'merged' ? 'Merged' : pr.state === 'closed' ? 'Closed' : pr.draft ? 'Draft' : 'Open'}
+        </span>
         <span className="rounded-[4px] bg-[var(--gray-3)] px-[7px] py-[2px] font-mono text-[12.5px] text-[var(--fg-2)]">
           <b className="font-medium text-[var(--fg-1)]">{pr.branch}</b> <span className="text-[var(--fg-3)]">→</span>{' '}
           <b className="font-medium text-[var(--fg-1)]">{pr.base}</b>
@@ -341,6 +356,62 @@ export function PRHeader() {
             ) : null}
           </div>
         ) : null}
+        {reviews.length > 0 && (
+          <>
+            <span className="text-[var(--fg-3)]">·</span>
+            <div className="inline-flex items-center gap-1.5">
+              {reviews.map((r) => {
+                const stateStyle =
+                  r.state === 'APPROVED'
+                    ? { border: '2px solid var(--green-9)' }
+                    : r.state === 'CHANGES_REQUESTED'
+                      ? { border: '2px solid var(--red-9)' }
+                      : r.state === 'COMMENTED'
+                        ? { border: '2px solid var(--gray-9)' }
+                        : { border: '2px solid var(--gray-a4)' };
+                const stateIcon =
+                  r.state === 'APPROVED'
+                    ? '✓'
+                    : r.state === 'CHANGES_REQUESTED'
+                      ? '✗'
+                      : null;
+                const stateColor =
+                  r.state === 'APPROVED'
+                    ? 'var(--green-11)'
+                    : r.state === 'CHANGES_REQUESTED'
+                      ? 'var(--red-11)'
+                      : 'var(--fg-3)';
+                return (
+                  <span key={r.id} className="relative" title={`${r.user}: ${r.state.toLowerCase().replace('_', ' ')}`}>
+                    {r.avatarUrl ? (
+                      <img
+                        src={r.avatarUrl}
+                        alt={r.user}
+                        className="h-[24px] w-[24px] rounded-full"
+                        style={stateStyle}
+                      />
+                    ) : (
+                      <span
+                        className="inline-flex h-[24px] w-[24px] items-center justify-center rounded-full bg-[var(--gray-3)] text-[10px] font-bold text-[var(--fg-2)]"
+                        style={stateStyle}
+                      >
+                        {r.user.slice(0, 2).toUpperCase()}
+                      </span>
+                    )}
+                    {stateIcon && (
+                      <span
+                        className="absolute -bottom-0.5 -right-0.5 flex h-[14px] w-[14px] items-center justify-center rounded-full bg-[var(--bg-panel)] text-[9px] font-bold"
+                        style={{ color: stateColor }}
+                      >
+                        {stateIcon}
+                      </span>
+                    )}
+                  </span>
+                );
+              })}
+            </div>
+          </>
+        )}
       </div>
       <SubmitDialog open={submitOpen} onClose={() => setSubmitOpen(false)} onSubmit={handleSubmit} />
       {toast && <Toast message={toast} onDone={() => setToast(null)} />}

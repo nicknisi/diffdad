@@ -5,7 +5,7 @@ import { dirname, resolve } from 'path';
 import { readConfig } from './config';
 import type { GitHubClient } from './github/client';
 import { mapCommentsToChapters } from './github/comments';
-import type { CheckRun, DiffFile, PRComment, PRMetadata } from './github/types';
+import type { CheckRun, DiffFile, PRComment, PRMetadata, PRReview } from './github/types';
 import { callAi } from './narrative/engine';
 import type { NarrativeResponse } from './narrative/types';
 
@@ -15,6 +15,7 @@ export type ServerContext = {
   files: DiffFile[];
   comments: PRComment[];
   checkRuns: CheckRun[];
+  reviews: PRReview[];
   github: GitHubClient;
   owner: string;
   repo: string;
@@ -57,6 +58,7 @@ export function createServer(ctx: ServerContext) {
       files: ctx.files,
       comments: mapCommentsToChapters(ctx.comments, ctx.narrative),
       checkRuns: ctx.checkRuns,
+      reviews: ctx.reviews,
       repoUrl: `https://github.com/${ctx.owner}/${ctx.repo}`,
       config: {
         storyStructure: config.storyStructure ?? 'chapters',
@@ -220,6 +222,10 @@ export function createServer(ctx: ServerContext) {
             const freshChecks = await ctx.github.getCheckRuns(ctx.owner, ctx.repo, ctx.headSha);
             ctx.checkRuns = freshChecks;
             send('checks', freshChecks);
+
+            const freshReviews = await ctx.github.getReviews(ctx.owner, ctx.repo, ctx.pr.number);
+            ctx.reviews = freshReviews;
+            send('reviews', freshReviews);
           } catch {
             // swallow polling errors
           }

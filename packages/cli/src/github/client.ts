@@ -1,5 +1,5 @@
 import { parseDiff } from './diff-parser';
-import type { CheckRun, DiffFile, PRComment, PRMetadata } from './types';
+import type { CheckRun, DiffFile, PRComment, PRMetadata, PRReview } from './types';
 
 const GITHUB_API = 'https://api.github.com';
 
@@ -225,6 +225,30 @@ export class GitHubClient {
       createdAt: data.created_at,
       updatedAt: data.updated_at,
     };
+  }
+
+  async getReviews(owner: string, repo: string, number: number): Promise<PRReview[]> {
+    const res = await this.fetch(`/repos/${owner}/${repo}/pulls/${number}/reviews?per_page=100`);
+    const data = (await res.json()) as Array<{
+      id: number;
+      user: { login: string; avatar_url: string } | null;
+      state: string;
+      submitted_at: string;
+    }>;
+    const validStates = new Set(['APPROVED', 'CHANGES_REQUESTED', 'COMMENTED', 'DISMISSED', 'PENDING']);
+    const latestByUser = new Map<string, PRReview>();
+    for (const r of data) {
+      const login = r.user?.login ?? '';
+      if (!login || !validStates.has(r.state)) continue;
+      latestByUser.set(login, {
+        id: r.id,
+        user: login,
+        avatarUrl: r.user?.avatar_url ?? '',
+        state: r.state as PRReview['state'],
+        submittedAt: r.submitted_at,
+      });
+    }
+    return [...latestByUser.values()];
   }
 
   async submitReview(

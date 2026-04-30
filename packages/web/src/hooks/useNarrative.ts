@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useReviewStore, type BackendConfig } from '../state/review-store';
-import type { CheckRun, DiffFile, NarrativeResponse, PRComment, PRData } from '../state/types';
+import type { CheckRun, DiffFile, NarrativeResponse, PRComment, PRData, PRReview } from '../state/types';
 
 type NarrativeApiResponse = {
   pr: PRData;
@@ -8,6 +8,7 @@ type NarrativeApiResponse = {
   files: DiffFile[];
   comments: PRComment[];
   checkRuns?: CheckRun[];
+  reviews?: PRReview[];
   repoUrl?: string;
   config?: BackendConfig;
 };
@@ -38,6 +39,7 @@ export function useNarrative() {
           data.repoUrl ?? null,
           data.checkRuns ?? [],
           data.config ?? null,
+          data.reviews ?? [],
         );
       } catch (err) {
         if (cancelled) return;

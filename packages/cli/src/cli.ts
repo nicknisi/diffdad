@@ -131,10 +131,16 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
     github.getComments(parsed.owner, parsed.repo, parsed.number),
   ]);
 
-  const checkRuns = await github.getCheckRuns(parsed.owner, parsed.repo, metadata.headSha).catch((err) => {
-    console.warn(`warn: failed to fetch check runs: ${err instanceof Error ? err.message : err}`);
-    return [];
-  });
+  const [checkRuns, reviews] = await Promise.all([
+    github.getCheckRuns(parsed.owner, parsed.repo, metadata.headSha).catch((err) => {
+      console.warn(`warn: failed to fetch check runs: ${err instanceof Error ? err.message : err}`);
+      return [];
+    }),
+    github.getReviews(parsed.owner, parsed.repo, parsed.number).catch((err) => {
+      console.warn(`warn: failed to fetch reviews: ${err instanceof Error ? err.message : err}`);
+      return [];
+    }),
+  ]);
 
   console.log(`${metadata.title} — ${files.length} files, +${metadata.additions} -${metadata.deletions}`);
 
@@ -158,6 +164,7 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
     files,
     comments,
     checkRuns,
+    reviews,
     github,
     owner: parsed.owner,
     repo: parsed.repo,

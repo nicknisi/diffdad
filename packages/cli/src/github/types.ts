@@ -52,6 +52,14 @@ export type DiffFile = {
   hunks: DiffHunk[];
 };
 
+export type PRReview = {
+  id: number;
+  user: string;
+  avatarUrl: string;
+  state: 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED' | 'DISMISSED' | 'PENDING';
+  submittedAt: string;
+};
+
 export type CheckRun = {
   id: number;
   name: string;

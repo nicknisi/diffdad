@@ -9,6 +9,7 @@ import type {
   NarrativeResponse,
   PRComment,
   PRData,
+  PRReview,
 } from './types';
 
 type Theme = 'light' | 'dark';
@@ -33,6 +34,7 @@ type ReviewState = {
   files: DiffFile[];
   comments: PRComment[];
   checkRuns: CheckRun[];
+  reviews: PRReview[];
   repoUrl: string | null;
   chapterStates: Record<string, ChapterState>;
   activeChapterId: string | null;
@@ -61,6 +63,7 @@ type ReviewState = {
     repoUrl?: string | null,
     checkRuns?: CheckRun[],
     config?: BackendConfig | null,
+    reviews?: PRReview[],
   ) => void;
   setActiveChapter: (id: string) => void;
   toggleReviewed: (idx: number) => void;
@@ -78,6 +81,7 @@ type ReviewState = {
   addLiveEvent: (event: LiveEvent) => void;
   setLastEventAt: (ts: number) => void;
   setCheckRuns: (checkRuns: CheckRun[]) => void;
+  setReviews: (reviews: PRReview[]) => void;
   setShortcutsHelpOpen: (open: boolean) => void;
   setStoryStructure: (s: StoryStructure) => void;
   setVisualStyle: (s: VisualStyle) => void;
@@ -93,6 +97,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
   files: [],
   comments: [],
   checkRuns: [],
+  reviews: [],
   repoUrl: null,
   chapterStates: {},
   activeChapterId: null,
@@ -114,7 +119,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
   clusterBots: true,
   narrationOverrides: {} as Record<string, string>,
 
-  setData: (pr, narrative, files, comments, repoUrl = null, checkRuns = [], config = null) => {
+  setData: (pr, narrative, files, comments, repoUrl = null, checkRuns = [], config = null, reviews = []) => {
     const storageKey = `diffdad.reviewed.${pr.number}`;
     let saved: Record<string, ChapterState> = {};
     try {
@@ -132,6 +137,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
       files,
       comments,
       checkRuns,
+      reviews,
       repoUrl,
       chapterStates,
       activeChapterId: narrative.chapters.length > 0 ? 'ch-0' : null,
@@ -203,6 +209,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
   setLastEventAt: (lastEventAt) => set({ lastEventAt }),
 
   setCheckRuns: (checkRuns) => set({ checkRuns }),
+  setReviews: (reviews) => set({ reviews }),
 
   setShortcutsHelpOpen: (shortcutsHelpOpen) => set({ shortcutsHelpOpen }),
 
