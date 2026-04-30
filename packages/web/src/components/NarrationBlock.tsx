@@ -26,7 +26,7 @@ export function NarrationBlock({ content }: Props) {
   return (
     <p
       className="m-0 ml-[34px] mb-[16px] text-[14.5px] leading-[22px] text-[var(--fg-1)] narration-prose"
-      style={{ maxWidth: "64ch", textWrap: "pretty" }}
+      style={{ textWrap: "pretty" }}
     >
       <Markdown source={content} />
     </p>
