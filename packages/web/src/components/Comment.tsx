@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { getAuthorInfo } from "../lib/authors";
 import type { PRComment } from "../state/types";
-import { IconCheck, IconSpark } from "./Icons";
+import { IconCheck, IconRefresh } from "./Icons";
 import { Markdown } from "./markdown/Markdown";
 
 const RECENT_SYNC_WINDOW_MS = 60_000;
@@ -25,95 +25,138 @@ type Props = {
   isReply?: boolean;
 };
 
-function provenance(
-  comment: PRComment
-): { kind: "draft" | "synced" | "github" } {
-  if (comment.id < 0) return { kind: "draft" };
+type Provenance = "draft" | "synced" | "github" | "syncing";
+
+function provenance(comment: PRComment): Provenance {
+  if (comment.id < 0) return "draft";
   const created = new Date(comment.createdAt).getTime();
   if (
     !Number.isNaN(created) &&
     Date.now() - created < RECENT_SYNC_WINDOW_MS &&
     comment.id > 0
   ) {
-    return { kind: "synced" };
+    return "synced";
   }
-  return { kind: "github" };
+  return "github";
+}
+
+function SourceBadge({ kind }: { kind: Provenance }) {
+  const baseStyle =
+    "inline-flex items-center gap-1 rounded-[3px] px-[5px] py-px text-[10.5px] font-medium tracking-[0.02em]";
+  if (kind === "syncing") {
+    return (
+      <span
+        className={baseStyle}
+        style={{ background: "var(--yellow-3)", color: "var(--yellow-11)" }}
+      >
+        <IconRefresh className="h-[9px] w-[9px] animate-spin" />
+        syncing…
+      </span>
+    );
+  }
+  if (kind === "draft") {
+    return (
+      <span
+        className={baseStyle}
+        style={{ background: "var(--gray-3)", color: "var(--fg-2)" }}
+      >
+        pending
+      </span>
+    );
+  }
+  if (kind === "github") {
+    return (
+      <span
+        className={baseStyle}
+        style={{ background: "var(--green-3)", color: "var(--green-11)" }}
+      >
+        from GitHub
+      </span>
+    );
+  }
+  return (
+    <span
+      className={baseStyle}
+      style={{ background: "var(--green-3)", color: "var(--green-11)" }}
+    >
+      <IconCheck className="h-[9px] w-[9px]" />
+      synced to GitHub
+    </span>
+  );
 }
 
 export function Comment({ comment, replies = [], isReply = false }: Props) {
   const info = getAuthorInfo(comment.author);
   const isBot = info.isBot;
-  const { kind } = provenance(comment);
+  const kind = provenance(comment);
   const [collapsed, setCollapsed] = useState(false);
 
-  const badgeText =
-    kind === "draft"
-      ? "draft"
-      : kind === "synced"
-        ? "synced to GitHub"
-        : "from GitHub";
-  const badgeClass =
-    kind === "draft"
-      ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
-      : "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300";
+  // Inline thread comment style: no card chrome, just an avatar+body row.
+  const containerClass = isReply
+    ? "flex gap-2.5 py-2"
+    : "flex gap-2.5 py-2";
 
   return (
-    <div
-      className={
-        isReply
-          ? "rounded-lg bg-[var(--bg-panel)] p-3"
-          : `rounded-lg border border-[var(--border)] bg-[var(--bg-panel)] p-3 ${isBot ? "ring-1 ring-inset ring-brand/20" : ""}`
-      }
-    >
-      <div className="flex items-center gap-2">
-        <div
-          className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
-          style={{ background: info.color }}
-        >
-          {info.initials}
-        </div>
-        <span className="text-sm font-semibold text-[var(--fg-1)]">
-          {info.displayName}
-        </span>
-        {isBot && (
-          <span className="inline-flex items-center gap-1 rounded-[3px] bg-brand/10 px-1.5 py-0.5 font-mono text-[9.5px] font-semibold uppercase tracking-[0.06em] text-brand">
-            <IconSpark className="h-2.5 w-2.5" />
-            bot
-          </span>
-        )}
-        <span className="text-sm text-[var(--fg-3)]">
-          {relativeTime(comment.createdAt)}
-        </span>
-        <span
-          className={`ml-auto inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${badgeClass}`}
-        >
-          {kind === "synced" && <IconCheck className="h-3 w-3" />}
-          {badgeText}
-        </span>
-      </div>
-      <div className="mt-2">
-        <Markdown source={comment.body} />
-      </div>
-      {replies.length > 0 && (
-        <div className="mt-3">
-          <button
-            type="button"
-            onClick={() => setCollapsed((c) => !c)}
-            className="text-xs font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-          >
-            {collapsed
-              ? `Show ${replies.length} ${replies.length === 1 ? "reply" : "replies"}`
-              : `Hide ${replies.length} ${replies.length === 1 ? "reply" : "replies"}`}
-          </button>
-          {!collapsed && (
-            <div className="mt-2 space-y-2 border-l-2 border-gray-200 pl-3 dark:border-gray-700">
-              {replies.map((r) => (
-                <Comment key={r.id} comment={r} isReply />
-              ))}
-            </div>
+    <div className={containerClass}>
+      <span
+        className="flex h-[22px] w-[22px] flex-shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
+        style={{
+          background: info.color,
+          ...(isBot
+            ? {
+                boxShadow:
+                  "0 0 0 1.5px var(--bg-panel), 0 0 0 2.5px var(--purple-a5)",
+              }
+            : null),
+        }}
+      >
+        {info.initials}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2 text-[12.5px] font-medium text-[var(--fg-1)]">
+          <b className="font-medium">{info.displayName}</b>
+          {isBot && (
+            <span
+              className="ml-1 rounded-[3px] px-[5px] py-px font-mono text-[9.5px] font-semibold uppercase tracking-[0.06em]"
+              style={{
+                background: "var(--purple-3)",
+                color: "var(--purple-11)",
+              }}
+            >
+              bot
+            </span>
           )}
+          <span className="font-normal text-[var(--fg-3)]">
+            {relativeTime(comment.createdAt)}
+          </span>
+          <span className="ml-auto">
+            <SourceBadge kind={kind} />
+          </span>
         </div>
-      )}
+        <div className="mt-[3px] text-[13.5px] leading-[19px] text-[var(--fg-1)]">
+          <Markdown source={comment.body} />
+        </div>
+        {replies.length > 0 && (
+          <div className="mt-3">
+            <button
+              type="button"
+              onClick={() => setCollapsed((c) => !c)}
+              className="text-[11px] font-medium text-[var(--fg-3)] hover:text-[var(--fg-1)]"
+            >
+              {collapsed
+                ? `Show ${replies.length} ${replies.length === 1 ? "reply" : "replies"}`
+                : `Hide ${replies.length} ${replies.length === 1 ? "reply" : "replies"}`}
+            </button>
+            {!collapsed && (
+              <div className="mt-2 space-y-2 border-l-2 pl-3" style={{ borderColor: "var(--gray-a4)" }}>
+                {replies.map((r) => (
+                  <Comment key={r.id} comment={r} isReply />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -172,24 +172,31 @@ export function NarrationAnchor({ chapterIndex }: Props) {
   const hasOverride = overrideText !== null || activeLens !== null;
 
   return (
-    <div className="ml-[34px] mt-2">
+    <div className="ml-[34px] mt-1 mb-[14px]">
       {hasOverride && !renarrating && (
-        <div className="mb-2 flex items-center gap-2 rounded-md border border-brand/30 bg-brand/5 px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300">
+        <div
+          className="mb-2 flex items-center gap-2 rounded-md px-3 py-1.5 text-[13px]"
+          style={{
+            background: "var(--purple-2)",
+            border: "1px solid var(--purple-a4)",
+            color: "var(--purple-11)",
+          }}
+        >
           <span>
             {activeLens ? (
               <>
                 Re-narrated for{" "}
-                <span className="font-medium">{activeLens}</span> reviewers
+                <b className="font-bold">{activeLens}</b> reviewers
               </>
             ) : (
               <>Narration regenerated</>
             )}
           </span>
-          <span className="text-gray-400">·</span>
           <button
             type="button"
             onClick={handleRestoreDefault}
-            className="font-medium text-brand hover:underline"
+            className="ml-auto bg-transparent text-[12px] font-medium underline underline-offset-2"
+            style={{ color: "var(--purple-11)" }}
           >
             Restore default
           </button>
@@ -197,19 +204,31 @@ export function NarrationAnchor({ chapterIndex }: Props) {
       )}
 
       {overrideText && !renarrating && (
-        <div className="mb-2 rounded-md border border-[var(--border)] bg-[var(--bg-subtle)] p-3 text-sm">
+        <div
+          className="mb-2 rounded-md p-3 text-sm"
+          style={{
+            background: "var(--bg-panel)",
+            boxShadow: "inset 0 0 0 1px var(--gray-a5)",
+          }}
+        >
           <Markdown source={overrideText} />
         </div>
       )}
 
       {renarrateError && (
-        <div className="mb-2 text-xs text-red-600 dark:text-red-400">
+        <div className="mb-2 text-xs" style={{ color: "var(--red-11)" }}>
           {renarrateError}
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-1.5 text-[12px] font-medium text-[var(--fg-3)]">
-        <div className="inline-flex items-center gap-0.5 rounded-md border border-[var(--border)] bg-[var(--bg-subtle)] p-[2px]">
+      <div className="flex flex-wrap items-center gap-2 text-[12px] font-medium text-[var(--fg-3)]">
+        <div
+          className="inline-flex items-center rounded-[4px] p-[1px]"
+          style={{
+            background: "var(--gray-2)",
+            boxShadow: "inset 0 0 0 1px var(--gray-a4)",
+          }}
+        >
           {DENSITIES.map((d) => {
             const active = d === activeDensity;
             return (
@@ -218,10 +237,15 @@ export function NarrationAnchor({ chapterIndex }: Props) {
                 type="button"
                 disabled={renarrating}
                 onClick={() => void handleDensityChange(d)}
-                className={
+                className="rounded-[3px] px-[7px] py-0.5 text-[11px] font-medium capitalize transition-colors"
+                style={
                   active
-                    ? "rounded-[3px] bg-[var(--bg-panel)] px-2 py-0.5 text-[11px] font-medium capitalize text-[var(--fg-1)] shadow-sm"
-                    : "rounded-[3px] px-2 py-0.5 text-[11px] font-medium capitalize text-[var(--fg-3)] hover:text-[var(--fg-1)]"
+                    ? {
+                        background: "var(--bg-panel)",
+                        color: "var(--fg-1)",
+                        boxShadow: "0 1px 1px rgba(3,2,13,0.05)",
+                      }
+                    : { color: "var(--fg-3)" }
                 }
               >
                 {d}
@@ -234,35 +258,37 @@ export function NarrationAnchor({ chapterIndex }: Props) {
           type="button"
           onClick={() => void handleRenarrate()}
           disabled={renarrating}
-          className="inline-flex items-center gap-1 rounded-[4px] px-1.5 py-1 text-[12px] font-medium text-[var(--fg-3)] hover:bg-[var(--bg-subtle)] hover:text-[var(--fg-1)] disabled:opacity-60"
+          className="inline-flex items-center gap-1 rounded-[4px] px-1.5 py-[3px] text-[12px] font-medium text-[var(--fg-3)] hover:bg-[var(--gray-a3)] hover:text-[var(--fg-2)] disabled:opacity-60"
         >
-          <IconRefresh className="h-3 w-3" />
+          <IconRefresh className="h-[11px] w-[11px]" />
           {renarrating ? "Re-narrating..." : "Re-narrate"}
         </button>
 
         <button
           type="button"
           onClick={() => setAskOpen((v) => !v)}
-          className={
+          className="inline-flex items-center gap-1 rounded-[4px] px-1.5 py-[3px] text-[12px] font-medium hover:bg-[var(--gray-a3)] hover:text-[var(--fg-2)]"
+          style={
             askOpen
-              ? "inline-flex items-center gap-1 rounded-[4px] bg-[var(--brand-soft)] px-1.5 py-1 text-[12px] font-medium text-[var(--brand)]"
-              : "inline-flex items-center gap-1 rounded-[4px] px-1.5 py-1 text-[12px] font-medium text-[var(--fg-3)] hover:bg-[var(--bg-subtle)] hover:text-[var(--fg-1)]"
+              ? { background: "var(--brand-soft)", color: "var(--brand)" }
+              : { color: "var(--fg-3)" }
           }
         >
-          <IconSpark className="h-3 w-3" />
+          <IconSpark className="h-[11px] w-[11px]" />
           Ask AI
         </button>
 
         <button
           type="button"
           onClick={() => setCommentOpen((v) => !v)}
-          className={
+          className="inline-flex items-center gap-1 rounded-[4px] px-1.5 py-[3px] text-[12px] font-medium hover:bg-[var(--gray-a3)] hover:text-[var(--fg-2)]"
+          style={
             commentOpen
-              ? "inline-flex items-center gap-1 rounded-[4px] bg-[var(--bg-subtle)] px-1.5 py-1 text-[12px] font-medium text-[var(--fg-1)]"
-              : "inline-flex items-center gap-1 rounded-[4px] px-1.5 py-1 text-[12px] font-medium text-[var(--fg-3)] hover:bg-[var(--bg-subtle)] hover:text-[var(--fg-1)]"
+              ? { background: "var(--gray-a3)", color: "var(--fg-1)" }
+              : { color: "var(--fg-3)" }
           }
         >
-          <IconChat className="h-3 w-3" />
+          <IconChat className="h-[11px] w-[11px]" />
           Comment on chapter
         </button>
       </div>

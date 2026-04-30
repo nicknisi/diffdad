@@ -121,9 +121,12 @@ export function PRHeader() {
   const prUrl = repoUrl ? `${repoUrl}/pull/${pr.number}` : null;
 
   const baseBtn =
-    "h-[26px] inline-flex items-center px-2.5 text-[12.5px] font-medium rounded-[5px] transition-colors";
-  const activeBtn =
-    "bg-[var(--bg-panel)] text-[var(--fg-1)] shadow-sm ring-1 ring-inset ring-[var(--border-strong)]";
+    "h-[26px] inline-flex items-center gap-1 px-2.5 text-[12.5px] font-medium rounded-[5px] transition-colors";
+  const activeBtn = "bg-[var(--bg-panel)] text-[var(--fg-1)]";
+  const activeBtnStyle: React.CSSProperties = {
+    boxShadow:
+      "0 1px 2px rgba(3,2,13,0.06), inset 0 0 0 1px var(--gray-a5)",
+  };
   const inactiveBtn =
     "bg-transparent text-[var(--fg-2)] hover:text-[var(--fg-1)]";
 
@@ -161,9 +164,12 @@ export function PRHeader() {
     : null;
 
   return (
-    <section className="border-b border-[var(--border)] bg-[var(--bg-panel)] px-6 pb-3.5 pt-[18px]">
-      <div className="flex items-start justify-between gap-3">
-        <h1 className="text-[22px] font-bold leading-[27px] tracking-[-0.0125em] text-[var(--fg-1)]">
+    <section
+      className="bg-[var(--bg-panel)] px-6 pt-[18px] pb-3.5"
+      style={{ boxShadow: "inset 0 -1px 0 var(--gray-a4)" }}
+    >
+      <div className="flex items-start gap-3">
+        <h1 className="m-0 flex-1 text-[22px] font-bold leading-[27px] tracking-[-0.0125em] text-[var(--fg-1)]">
           {prUrl ? (
             <a
               href={prUrl}
@@ -184,7 +190,8 @@ export function PRHeader() {
           <div
             role="tablist"
             aria-label="View mode"
-            className="flex items-center gap-0.5 rounded-[7px] border border-[var(--border)] bg-[var(--bg-subtle)] p-[2px]"
+            className="inline-flex items-center rounded-[7px] bg-[var(--gray-2)] p-[2px]"
+            style={{ boxShadow: "inset 0 0 0 1px var(--gray-a4)" }}
           >
             <button
               type="button"
@@ -192,6 +199,7 @@ export function PRHeader() {
               aria-selected={view === "story"}
               onClick={() => setView("story")}
               className={`${baseBtn} ${view === "story" ? activeBtn : inactiveBtn}`}
+              style={view === "story" ? activeBtnStyle : undefined}
             >
               Story
             </button>
@@ -201,6 +209,7 @@ export function PRHeader() {
               aria-selected={view === "files"}
               onClick={() => setView("files")}
               className={`${baseBtn} ${view === "files" ? activeBtn : inactiveBtn}`}
+              style={view === "files" ? activeBtnStyle : undefined}
             >
               Files
             </button>
@@ -208,14 +217,17 @@ export function PRHeader() {
           <button
             type="button"
             onClick={() => setSubmitOpen(true)}
-            className="h-[30px] rounded-[6px] bg-[var(--brand)] px-3 text-[12.5px] font-bold text-white shadow-sm hover:bg-[var(--brand-hover)]"
+            className="inline-flex h-[30px] items-center gap-1.5 whitespace-nowrap rounded-[6px] bg-[var(--bg-panel)] px-3 text-[12.5px] font-bold text-[var(--fg-1)] hover:bg-[var(--gray-2)]"
+            style={{ boxShadow: "inset 0 0 0 1px var(--gray-a6)" }}
           >
             Submit review
           </button>
         </div>
       </div>
       <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-2 text-[13px] text-[var(--fg-2)]">
-        <span className="rounded-[4px] bg-[var(--bg-subtle)] px-1.5 py-[2px] font-mono text-[12.5px] text-[var(--fg-2)]">
+        <span
+          className="rounded-[4px] bg-[var(--gray-3)] px-[7px] py-[2px] font-mono text-[12.5px] text-[var(--fg-2)]"
+        >
           <b className="font-medium text-[var(--fg-1)]">{pr.branch}</b>{" "}
           <span className="text-[var(--fg-3)]">→</span>{" "}
           <b className="font-medium text-[var(--fg-1)]">{pr.base}</b>
@@ -225,24 +237,24 @@ export function PRHeader() {
             href={authorUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="font-bold text-[var(--fg-1)] hover:text-[var(--brand)]"
+            className="font-medium text-[var(--fg-1)] hover:text-[var(--brand)]"
           >
             {pr.author.login}
           </a>
         ) : (
-          <span className="font-bold text-[var(--fg-1)]">
+          <span className="font-medium text-[var(--fg-1)]">
             {pr.author?.login ?? "unknown"}
           </span>
         )}
-        <span className="text-[var(--fg-3)]">
+        <span className="text-[var(--fg-2)]">
           opened {timeAgo(pr.createdAt)} · updated {timeAgo(pr.updatedAt)}
         </span>
         <span className="text-[var(--fg-3)]">·</span>
         <span>
-          <span className="font-medium text-green-600 dark:text-green-400">
+          <span className="font-medium" style={{ color: "var(--green-11)" }}>
             +{pr.additions}
           </span>{" "}
-          <span className="font-medium text-red-600 dark:text-red-400">
+          <span className="font-medium" style={{ color: "var(--red-11)" }}>
             −{pr.deletions}
           </span>{" "}
           <span className="text-[var(--fg-2)]">

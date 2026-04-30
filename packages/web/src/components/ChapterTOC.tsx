@@ -15,55 +15,92 @@ export function ChapterTOC() {
   }
 
   return (
-    <aside className="sticky top-16 self-start">
-      <div className="px-2.5 pb-2 text-[11px] font-bold uppercase tracking-[0.06em] text-[var(--fg-3)]">
+    <aside className="sticky top-4 self-start text-[13px] text-[var(--fg-2)]">
+      <div
+        className="px-2.5 pb-2 text-[11px] font-bold uppercase tracking-[0.06em] text-[var(--fg-3)]"
+      >
         Story
       </div>
-      <ul className="space-y-0.5">
+      <ul className="m-0 list-none p-0">
         {narrative.chapters.map((ch, idx) => {
           const id = `ch-${idx}`;
           const reviewed = chapterStates[id] === "reviewed";
           const active = activeChapterId === id;
           const hunkCount = ch.sections.filter((s) => s.type === "diff").length;
+          const hasComments = false; // TODO if needed
           return (
             <li key={id}>
               <button
                 type="button"
                 onClick={() => jump(id)}
-                className={`relative flex w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors ${
+                className={`relative flex w-full cursor-pointer items-start gap-2.5 rounded-md px-2.5 py-[9px] text-left transition-colors ${
                   active
-                    ? "bg-[var(--brand-soft)] text-[var(--brand)]"
-                    : "text-[var(--fg-2)] hover:bg-[var(--bg-subtle)] hover:text-[var(--fg-1)]"
+                    ? "text-[var(--purple-11)]"
+                    : "text-[var(--fg-2)]"
                 }`}
+                style={
+                  active
+                    ? { background: "var(--purple-a3)" }
+                    : undefined
+                }
+                onMouseEnter={(e) => {
+                  if (!active) {
+                    e.currentTarget.style.background = "var(--gray-a3)";
+                    e.currentTarget.style.color = "var(--fg-1)";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!active) {
+                    e.currentTarget.style.background = "";
+                    e.currentTarget.style.color = "";
+                  }
+                }}
               >
-                <div
-                  className={`mt-px flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center rounded-full font-mono text-[10.5px] font-bold ${
+                <span
+                  className="mt-[1px] inline-flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center rounded-full font-mono text-[10.5px] font-bold"
+                  style={
                     reviewed
-                      ? "bg-green-600 text-white"
+                      ? { background: "var(--green-9)", color: "#fff" }
                       : active
-                        ? "bg-[var(--brand)] text-white"
-                        : "bg-[var(--bg-subtle)] text-[var(--fg-2)]"
-                  }`}
+                        ? { background: "var(--purple-9)", color: "#fff" }
+                        : { background: "var(--gray-3)", color: "var(--fg-2)" }
+                  }
                 >
                   {reviewed ? (
-                    <svg viewBox="0 0 12 12" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M2.5 6.5l2.5 2.5 4.5-5" />
+                    <svg
+                      viewBox="0 0 12 12"
+                      className="h-3 w-3"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M2.5 6.5l2 2 4.5-5" />
                     </svg>
                   ) : (
                     idx + 1
                   )}
-                </div>
+                </span>
                 <div className="min-w-0 flex-1">
                   <div className="text-[13px] font-medium leading-[17px]">
                     {ch.title}
                   </div>
-                  <div className="text-[11.5px] leading-[14px] text-[var(--fg-3)] mt-0.5">
+                  <div
+                    className="mt-[2px] text-[11.5px] leading-[14px] text-[var(--fg-3)]"
+                    style={{ fontWeight: 400 }}
+                  >
                     {hunkCount} {hunkCount === 1 ? "hunk" : "hunks"} · risk{" "}
                     {ch.risk}
+                    {hasComments ? " · has comments" : ""}
                   </div>
                 </div>
                 {active && (
-                  <span className="absolute right-2.5 top-3.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-[var(--brand)]" />
+                  <span
+                    aria-hidden
+                    className="absolute right-2.5 top-[14px] h-1.5 w-1.5 flex-shrink-0 rounded-full"
+                    style={{ background: "var(--purple-9)" }}
+                  />
                 )}
               </button>
             </li>

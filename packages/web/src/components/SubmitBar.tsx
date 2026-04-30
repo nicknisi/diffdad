@@ -29,28 +29,40 @@ export function SubmitBar() {
   return (
     <>
       <div
-        className="fixed bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-3 rounded-[14px] border border-[var(--border-strong)] bg-[var(--bg-panel)] py-2 pl-[14px] pr-2 shadow-[var(--shadow-elevated)]"
+        className="fixed bottom-4 left-1/2 z-10 -translate-x-1/2 flex items-center gap-3 rounded-[14px] bg-[var(--bg-panel)]"
+        style={{
+          padding: "8px 8px 8px 14px",
+          boxShadow:
+            "0 12px 24px -4px rgba(3,2,13,0.18), 0 4px 8px -2px rgba(3,2,13,0.10), inset 0 0 0 1px var(--gray-a6)",
+        }}
       >
-        <div className="text-[12.5px] text-[var(--fg-2)]">
-          <span className="font-bold text-[var(--fg-1)]">
-            {reviewedCount} of {total}
-          </span>{" "}
-          chapters reviewed ·{" "}
-          <span className="font-bold text-[var(--fg-1)]">
-            {drafts.length}
-          </span>{" "}
-          pending {drafts.length === 1 ? "draft" : "drafts"}
-        </div>
-        <div className="h-1.5 w-[90px] overflow-hidden rounded-full bg-[var(--bg-subtle)]">
+        <div>
+          <div className="text-[12.5px] font-normal text-[var(--fg-2)]">
+            <b className="font-bold text-[var(--fg-1)]">
+              {reviewedCount} of {total}
+            </b>{" "}
+            chapters reviewed ·{" "}
+            <b className="font-bold text-[var(--fg-1)]">{drafts.length}</b>{" "}
+            pending {drafts.length === 1 ? "draft" : "drafts"}
+          </div>
           <div
-            className="h-full rounded-full bg-green-500 transition-all"
-            style={{ width: `${progress}%` }}
-          />
+            className="mt-1 h-[6px] w-[90px] overflow-hidden rounded-full"
+            style={{ background: "var(--gray-3)" }}
+          >
+            <div
+              className="h-full rounded-full transition-all"
+              style={{
+                width: `${progress}%`,
+                background: "var(--green-9)",
+              }}
+            />
+          </div>
         </div>
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="h-[30px] rounded-[8px] bg-[var(--brand)] px-3 text-[12.5px] font-bold text-white shadow-sm hover:bg-[var(--brand-hover)]"
+          className="inline-flex h-[30px] items-center gap-1.5 rounded-[6px] bg-[var(--brand)] px-3 text-[12.5px] font-bold text-white hover:bg-[var(--brand-hover)]"
+          style={{ boxShadow: "0 1px 2px rgba(3,2,13,0.08)" }}
         >
           Submit review
         </button>

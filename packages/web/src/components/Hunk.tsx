@@ -21,14 +21,12 @@ function CollapsibleThread({
   comments,
   file,
   lineNumber,
-  lineKey,
   isNewThread,
   onClose,
 }: {
   comments: PRComment[];
   file: string;
   lineNumber: number | undefined;
-  lineKey: string;
   isNewThread: boolean;
   onClose: () => void;
 }) {
@@ -40,21 +38,31 @@ function CollapsibleThread({
       <button
         type="button"
         onClick={() => setCollapsed(false)}
-        className="flex w-full items-center gap-2 border-l-2 border-brand/40 bg-gray-50 px-3 py-1.5 text-sm text-gray-500 hover:bg-gray-100 dark:bg-gray-900/40 dark:hover:bg-gray-800"
+        className="flex w-full items-center gap-2 bg-[var(--gray-2)] px-[12px] py-[6px] pl-[78px] text-[12px] text-[var(--fg-3)] hover:text-[var(--fg-1)]"
+        style={{
+          boxShadow:
+            "inset 0 1px 0 var(--gray-a4), inset 0 -1px 0 var(--gray-a4)",
+        }}
       >
-        <IconChat className="h-3.5 w-3.5 text-brand" />
+        <IconChat className="h-3.5 w-3.5" style={{ color: "var(--purple-11)" }} />
         {count} {count === 1 ? "comment" : "comments"} — click to expand
       </button>
     );
   }
 
   return (
-    <div className="border-l-2 border-brand bg-gray-50 px-3 py-3 dark:bg-gray-900/60">
+    <div
+      className="bg-[var(--gray-2)] px-[12px] pt-[10px] pb-[12px] pl-[78px]"
+      style={{
+        boxShadow:
+          "inset 0 1px 0 var(--gray-a4), inset 0 -1px 0 var(--gray-a4)",
+      }}
+    >
       {count > 0 && (
         <button
           type="button"
           onClick={() => setCollapsed(true)}
-          className="mb-2 text-xs font-medium text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+          className="mb-1 text-[11px] font-medium text-[var(--fg-3)] hover:text-[var(--fg-1)]"
         >
           Collapse {count} {count === 1 ? "comment" : "comments"}
         </button>
@@ -102,53 +110,78 @@ function BotCluster({
   const count = comments.length;
 
   return (
-    <div className="border-b border-gray-200 bg-brand/5 px-3 py-2 dark:border-gray-800 dark:bg-brand/10">
-      <div className="flex items-center gap-2">
-        <div className="flex">
+    <div
+      className="mx-3 my-1.5 overflow-hidden rounded-[6px] border border-dashed transition-colors"
+      style={{
+        borderColor: "var(--purple-a5)",
+        background: expanded ? "var(--bg-panel)" : "var(--purple-2)",
+      }}
+    >
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex w-full items-center gap-3 px-3 py-2 text-left text-[var(--fg-1)] hover:bg-[var(--purple-3)]"
+      >
+        <span className="relative inline-flex">
           {avatarStack.map((author, idx) => {
             const info = getAuthorInfo(author);
             return (
-              <div
+              <span
                 key={author}
-                className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-white text-xs font-bold text-white dark:border-gray-900"
+                className="inline-flex h-[22px] w-[22px] items-center justify-center rounded-full text-[9.5px] font-bold text-white"
                 style={{
                   marginLeft: idx === 0 ? 0 : -8,
                   zIndex: 10 - idx,
                   background: info.color,
+                  boxShadow: "0 0 0 2px var(--bg-panel)",
                 }}
                 title={info.displayName}
               >
                 {info.initials}
-              </div>
+              </span>
             );
           })}
-        </div>
-        <span className="text-sm">
-          <span className="font-semibold text-brand">
+        </span>
+        <span className="flex flex-col text-[13px] leading-tight">
+          <b className="font-medium">
             {count} bot {count === 1 ? "suggestion" : "suggestions"}
-          </span>
-          <span className="text-gray-500 dark:text-gray-400"> from </span>
-          <span className="text-gray-600 dark:text-gray-300">
-            {namesLabel}
+          </b>
+          <span className="text-[11.5px] font-normal text-[var(--fg-3)]">
+            from {namesLabel}
           </span>
         </span>
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          className="ml-auto text-xs font-medium text-brand hover:underline"
+        <span
+          className="ml-auto inline-flex items-center gap-1 text-[12px] font-medium"
+          style={{ color: "var(--purple-11)" }}
         >
           {expanded ? "Collapse" : "Expand"}
-        </button>
-      </div>
+          <svg
+            className={`h-[11px] w-[11px] transition-transform ${expanded ? "rotate-90" : ""}`}
+            viewBox="0 0 15 15"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.4"
+          >
+            <path d="M5.5 3L10 7.5 5.5 12" />
+          </svg>
+        </span>
+      </button>
       {expanded && (
-        <div className="mt-3 space-y-2">
+        <div
+          className="border-t border-dashed bg-[var(--bg-panel)] py-1.5"
+          style={{ borderColor: "var(--purple-a5)" }}
+        >
           {comments.map((c) => (
-            <div key={c.id} className="space-y-1">
-              {c.line !== undefined && (
-                <div className="text-xs font-mono text-gray-500 dark:text-gray-400">
-                  {file}:L{c.line}
-                </div>
-              )}
+            <div
+              key={c.id}
+              className="grid grid-cols-[56px_1fr] items-start gap-2.5 px-3 py-1.5"
+            >
+              <div
+                className="pt-1.5 text-right font-mono text-[11.5px] font-medium"
+                style={{ color: "var(--fg-3)" }}
+              >
+                L{c.line ?? ""}
+              </div>
               <Comment comment={c} />
             </div>
           ))}
@@ -192,18 +225,37 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight }: Props) {
   const editorUrl = `vscode://file/${file}:${hunk.newStart}`;
 
   return (
-    <div className="my-3 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--bg-panel)] shadow-[var(--shadow-card)]">
-      <div className="flex items-center gap-2 border-b border-[var(--border)] bg-[var(--bg-subtle)] px-3 py-2 font-mono text-[12.5px]">
+    <div
+      className="ml-[34px] mb-[14px] overflow-hidden rounded-[8px] bg-[var(--bg-panel)]"
+      style={{ boxShadow: "inset 0 0 0 1px var(--gray-a5)" }}
+    >
+      <div
+        className="flex items-center gap-2 bg-[var(--gray-2)] px-3 py-2 font-mono text-[12.5px] text-[var(--fg-2)]"
+        style={{ boxShadow: "inset 0 -1px 0 var(--gray-a4)" }}
+      >
         <IconFile className="h-[12px] w-[12px] flex-shrink-0 text-[var(--fg-3)]" />
         <span className="font-semibold text-[var(--fg-1)]">{file}</span>
         <span className="text-[var(--fg-3)]">{range}</span>
         {isNewFile ? (
-          <span className="ml-1 rounded-[4px] bg-green-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.06em] text-green-700 dark:bg-green-900/40 dark:text-green-300">
-            New
+          <span
+            className="ml-1.5 rounded-[4px] px-1.5 py-0.5 font-sans text-[10px] font-bold uppercase tracking-[0.06em]"
+            style={{
+              background: "var(--green-3)",
+              color: "var(--green-11)",
+            }}
+          >
+            New file
           </span>
         ) : null}
         {highlight ? (
-          <span className="ml-1 rounded-[4px] bg-[var(--brand-soft)] px-1.5 py-0.5 text-[10.5px] font-medium font-mono text-[var(--brand)]">
+          <span
+            className="ml-1.5 rounded-[3px] px-1.5 py-px font-mono text-[10.5px] font-medium"
+            style={{
+              background: "var(--purple-3)",
+              color: "var(--purple-11)",
+              boxShadow: "inset 0 0 0 1px var(--purple-a4)",
+            }}
+          >
             focus L{highlight.from}–L{highlight.to}
           </span>
         ) : null}
@@ -212,7 +264,7 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight }: Props) {
             href={editorUrl}
             title="Open in editor"
             aria-label="Open in editor"
-            className="inline-flex h-[22px] w-[22px] items-center justify-center rounded-[4px] text-[var(--fg-3)] hover:bg-[var(--border)] hover:text-[var(--fg-1)]"
+            className="inline-flex h-[22px] w-[22px] items-center justify-center rounded-[4px] text-[var(--fg-3)] hover:bg-[var(--gray-a3)] hover:text-[var(--fg-1)]"
           >
             <IconArrowRight className="h-[11px] w-[11px]" />
           </a>
@@ -223,7 +275,7 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight }: Props) {
               rel="noopener noreferrer"
               title="View on GitHub"
               aria-label="View on GitHub"
-              className="inline-flex h-[22px] w-[22px] items-center justify-center rounded-[4px] text-[var(--fg-3)] hover:bg-[var(--border)] hover:text-[var(--fg-1)]"
+              className="inline-flex h-[22px] w-[22px] items-center justify-center rounded-[4px] text-[var(--fg-3)] hover:bg-[var(--gray-a3)] hover:text-[var(--fg-1)]"
             >
               <IconGitHub className="h-[11px] w-[11px]" />
             </a>
@@ -263,7 +315,6 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight }: Props) {
                   comments={lineComments}
                   file={file}
                   lineNumber={line.lineNumber.new}
-                  lineKey={lineKey}
                   isNewThread={openLine === lineKey && lineComments.length === 0}
                   onClose={() =>
                     openLine === lineKey ? setOpenLine(null) : undefined

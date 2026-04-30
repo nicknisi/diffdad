@@ -10,35 +10,155 @@
 }
 
 :root {
+  /* Brand */
   --brand: #6565EC;
   --brand-hover: #5151CD;
   --brand-soft: rgba(101, 101, 236, 0.10);
+
+  /* Page surfaces */
   --bg-page: #f8f8fa;
   --bg-panel: #ffffff;
   --bg-subtle: #f3f3f6;
+
+  /* Foreground */
   --fg-1: #1a1523;
   --fg-2: #60646c;
   --fg-3: #8b8d98;
+
+  /* Borders */
   --border: rgba(0, 0, 20, 0.08);
   --border-strong: rgba(0, 0, 20, 0.12);
+
+  /* Shadows */
   --shadow-card: 0 1px 2px rgba(3, 2, 13, 0.06), 0 3px 6px -1px rgba(3, 2, 13, 0.10);
   --shadow-elevated: 0 12px 24px -4px rgba(3, 2, 13, 0.18), 0 4px 8px -2px rgba(3, 2, 13, 0.10);
+
+  /* Radix-style scale tokens used by the design */
+  --gray-1: #fcfcfd;
+  --gray-2: #f9f9fb;
+  --gray-3: #eff0f3;
+  --gray-4: #e7e8ec;
+  --gray-9: #8b8d98;
+  --gray-11: #60646c;
+  --gray-12: #1a1523;
+  --gray-a3: rgba(0, 0, 51, 0.06);
+  --gray-a4: rgba(0, 0, 41, 0.09);
+  --gray-a5: rgba(0, 0, 38, 0.13);
+  --gray-a6: rgba(0, 0, 28, 0.16);
+
+  --purple-2: #f6f5ff;
+  --purple-3: #ede9fe;
+  --purple-4: #dfd9fb;
+  --purple-9: #6565EC;
+  --purple-10: #5151CD;
+  --purple-11: #4f46e5;
+  --purple-12: #2c2167;
+  --purple-a3: rgba(101, 101, 236, 0.12);
+  --purple-a4: rgba(101, 101, 236, 0.20);
+  --purple-a5: rgba(101, 101, 236, 0.28);
+  --purple-a8: rgba(101, 101, 236, 0.55);
+
+  --green-2: #ecfdf3;
+  --green-3: #d6f5e1;
+  --green-4: #c1ecd0;
+  --green-9: #29a383;
+  --green-10: #1f8f72;
+  --green-11: #1a7a5f;
+  --green-a3: rgba(41, 163, 131, 0.18);
+  --green-a5: rgba(41, 163, 131, 0.30);
+  --green-a8: rgba(41, 163, 131, 0.55);
+
+  --red-2: #fff4f5;
+  --red-3: #ffe1e6;
+  --red-9: #e54666;
+  --red-10: #d23a5b;
+  --red-11: #b8244a;
+
+  --amber-2: #fff8e6;
+  --amber-3: #ffe9b8;
+  --amber-9: #e8b339;
+  --amber-10: #d29c1d;
+  --amber-11: #946800;
+  --amber-a5: rgba(232, 179, 57, 0.32);
+
+  --yellow-3: #fff3c2;
+  --yellow-11: #946800;
+
+  --blue-3: #d6e4ff;
+  --blue-11: #1f4ea8;
 }
 
 .dark {
   --brand: #7c7cf2;
   --brand-hover: #9595f5;
   --brand-soft: rgba(124, 124, 242, 0.14);
+
   --bg-page: #111113;
   --bg-panel: #1a1a1e;
   --bg-subtle: #222226;
+
   --fg-1: #ededef;
   --fg-2: #a0a0ab;
   --fg-3: #6e6e7a;
+
   --border: rgba(255, 255, 255, 0.08);
   --border-strong: rgba(255, 255, 255, 0.12);
+
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.30), 0 3px 6px -1px rgba(0, 0, 0, 0.40);
   --shadow-elevated: 0 12px 24px -4px rgba(0, 0, 0, 0.50), 0 4px 8px -2px rgba(0, 0, 0, 0.30);
+
+  --gray-1: #18181a;
+  --gray-2: #1c1c1f;
+  --gray-3: #232326;
+  --gray-4: #2a2a2d;
+  --gray-9: #6e6e7a;
+  --gray-11: #a0a0ab;
+  --gray-12: #ededef;
+  --gray-a3: rgba(255, 255, 255, 0.06);
+  --gray-a4: rgba(255, 255, 255, 0.09);
+  --gray-a5: rgba(255, 255, 255, 0.13);
+  --gray-a6: rgba(255, 255, 255, 0.18);
+
+  --purple-2: rgba(124, 124, 242, 0.10);
+  --purple-3: rgba(124, 124, 242, 0.18);
+  --purple-4: rgba(124, 124, 242, 0.26);
+  --purple-9: #7c7cf2;
+  --purple-10: #9595f5;
+  --purple-11: #c4b5fd;
+  --purple-12: #ddd6ff;
+  --purple-a3: rgba(124, 124, 242, 0.18);
+  --purple-a4: rgba(124, 124, 242, 0.28);
+  --purple-a5: rgba(124, 124, 242, 0.36);
+  --purple-a8: rgba(124, 124, 242, 0.65);
+
+  --green-2: rgba(41, 163, 131, 0.10);
+  --green-3: rgba(41, 163, 131, 0.20);
+  --green-4: rgba(41, 163, 131, 0.30);
+  --green-9: #29a383;
+  --green-10: #3eb593;
+  --green-11: #56ba9f;
+  --green-a3: rgba(41, 163, 131, 0.22);
+  --green-a5: rgba(41, 163, 131, 0.35);
+  --green-a8: rgba(41, 163, 131, 0.55);
+
+  --red-2: rgba(229, 70, 102, 0.08);
+  --red-3: rgba(229, 70, 102, 0.18);
+  --red-9: #e54666;
+  --red-10: #ec5d7a;
+  --red-11: #efacb8;
+
+  --amber-2: rgba(232, 179, 57, 0.08);
+  --amber-3: rgba(232, 179, 57, 0.20);
+  --amber-9: #e8b339;
+  --amber-10: #f0c45a;
+  --amber-11: #f5cf6f;
+  --amber-a5: rgba(232, 179, 57, 0.30);
+
+  --yellow-3: rgba(232, 179, 57, 0.20);
+  --yellow-11: #f5cf6f;
+
+  --blue-3: rgba(70, 122, 230, 0.20);
+  --blue-11: #95b3ee;
 }
 
 html {
@@ -63,11 +183,77 @@ body {
   font-family: "Source Serif 4", ui-serif, Georgia, serif;
 }
 
+/* Animations */
 @keyframes live-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
 }
 
+@keyframes live-ping {
+  0%   { box-shadow: 0 0 0 0 var(--green-a8); }
+  70%  { box-shadow: 0 0 0 6px rgba(0,0,0,0); }
+  100% { box-shadow: 0 0 0 0 rgba(0,0,0,0); }
+}
+
+@keyframes drawer-in {
+  from { transform: translateX(20px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes hunk-flash {
+  0%   { box-shadow: inset 0 0 0 1px var(--gray-a5), 0 0 0 3px var(--purple-a8); }
+  100% { box-shadow: inset 0 0 0 1px var(--gray-a5), 0 0 0 0 transparent; }
+}
+
 .live-dot {
   animation: live-pulse 2s ease-in-out infinite;
+}
+
+.live-ping-dot {
+  animation: live-ping 2.4s ease-out infinite;
+}
+
+.hunk-just-updated {
+  animation: hunk-flash 1800ms ease-out;
+}
+
+/* Hover-reveal comment plus button on code lines */
+.code-line .ln-comment {
+  opacity: 0;
+  transition: opacity 100ms ease;
+}
+.code-line:hover .ln-comment {
+  opacity: 1;
+}
+
+/* Chapter card with subtle hover */
+.chapter-card {
+  transition: box-shadow 160ms ease;
+}
+
+/* Narration prose: serif italic em, bold b, mono code on gray chip */
+.narration-prose em {
+  font-family: "Source Serif 4", ui-serif, Georgia, serif;
+  font-style: italic;
+  font-size: 1.05em;
+}
+.narration-prose b,
+.narration-prose strong {
+  font-weight: 700;
+}
+.narration-prose code {
+  font: 400 0.9em "IBM Plex Mono", ui-monospace, monospace;
+  background: var(--gray-a3);
+  color: var(--fg-1);
+  padding: 1px 5px 2px;
+  border-radius: 4px;
+}
+.dark .narration-prose code {
+  background: var(--gray-a4);
+  color: var(--gray-12);
 }

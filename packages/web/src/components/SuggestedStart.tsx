@@ -19,26 +19,62 @@ export function SuggestedStart() {
   }
 
   return (
-    <div className="mb-6 flex items-start gap-2.5 rounded-[10px] border border-brand/30 bg-brand/5 p-4 dark:bg-brand/10">
-      <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-[7px] bg-brand text-white shadow-sm">
-        <IconSpark className="h-3.5 w-3.5" />
+    <div
+      className="mb-6 flex items-start gap-2.5 rounded-[10px] px-4 py-3.5"
+      style={{
+        background: "linear-gradient(180deg, var(--purple-2), var(--purple-3))",
+        boxShadow: "inset 0 0 0 1px var(--purple-a5)",
+      }}
+    >
+      <div
+        className="flex h-[26px] w-[26px] flex-shrink-0 items-center justify-center rounded-[7px] text-white"
+        style={{
+          background: "var(--purple-9)",
+          boxShadow: "0 1px 2px rgba(3,2,13,0.10)",
+        }}
+      >
+        <IconSpark className="h-[14px] w-[14px]" />
       </div>
-      <div className="flex-1 text-[13.5px] leading-[19px] text-[var(--fg-1)]">
-        <span className="font-bold">Suggested place to start:</span> Chapter{" "}
-        {chapter} —{" "}
-        <span className="font-serif italic">{target.title}</span>. {reason}
+      <div
+        className="flex-1 text-[13.5px] leading-[19px]"
+        style={{ color: "var(--purple-12)" }}
+      >
+        <b className="font-bold">Suggested place to start:</b> Chapter {chapter}{" "}
+        — <span className="font-serif italic">{target.title}</span>. {reason}
         <div className="mt-2 flex gap-2">
           <button
             type="button"
             onClick={() => scrollToChapter(chapter - 1)}
-            className="inline-flex h-6 items-center rounded-[5px] border border-brand/30 bg-white/70 px-2 text-[11.5px] font-bold text-brand hover:bg-white dark:bg-[var(--bg-panel)]/70 dark:hover:bg-[var(--bg-panel)]"
+            className="inline-flex h-6 cursor-pointer items-center rounded-[5px] px-2 text-[11.5px] font-bold transition-colors"
+            style={{
+              background: "rgba(255,255,255,0.7)",
+              color: "var(--purple-12)",
+              boxShadow: "inset 0 0 0 1px var(--purple-a5)",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "#fff";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "rgba(255,255,255,0.7)";
+            }}
           >
             Jump to chapter {chapter}
           </button>
           <button
             type="button"
             onClick={() => scrollToChapter(0)}
-            className="inline-flex h-6 items-center rounded-[5px] border border-brand/30 bg-white/70 px-2 text-[11.5px] font-bold text-brand hover:bg-white dark:bg-[var(--bg-panel)]/70 dark:hover:bg-[var(--bg-panel)]"
+            className="inline-flex h-6 cursor-pointer items-center rounded-[5px] px-2 text-[11.5px] font-bold transition-colors"
+            style={{
+              background: "rgba(255,255,255,0.7)",
+              color: "var(--purple-12)",
+              boxShadow: "inset 0 0 0 1px var(--purple-a5)",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "#fff";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "rgba(255,255,255,0.7)";
+            }}
           >
             Start from chapter 1
           </button>

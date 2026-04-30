@@ -1,28 +1,39 @@
 import { useState } from "react";
 import { copy } from "../lib/microcopy";
+import { IconArrowRight } from "./Icons";
 
 type Props = {
   onContinue: () => void;
 };
 
-const STEPS: { num: number; text: string }[] = [
-  { num: 1, text: "CLI fetches the PR and generates a narrative" },
-  { num: 2, text: "Browser opens with story-laid-out diff" },
-  { num: 3, text: "Comments sync bidirectionally with GitHub" },
+const STEPS: { num: number; text: string; code?: string }[] = [
+  {
+    num: 1,
+    text: "CLI subscribes to ",
+    code: "GitHub webhooks",
+  },
+  {
+    num: 2,
+    text: "Browser opens with story-laid-out diff",
+  },
+  {
+    num: 3,
+    text: "Comments, commits, CI all stream in live",
+  },
 ];
 
-const CLI_COMMAND = "$ dad review <pr-number>";
+const CLI_COMMAND = "dad review <pr-number>";
 
 export function Splash({ onContinue }: Props) {
   const [copied, setCopied] = useState(false);
 
   async function handleCopy() {
     try {
-      await navigator.clipboard.writeText(CLI_COMMAND.replace(/^\$\s*/, ""));
+      await navigator.clipboard.writeText(CLI_COMMAND);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
-      // ignore clipboard errors
+      // ignore
     }
   }
 
@@ -31,75 +42,140 @@ export function Splash({ onContinue }: Props) {
       role="dialog"
       aria-modal="true"
       aria-labelledby="splash-title"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 grid place-items-center px-5"
+      style={{
+        background:
+          "radial-gradient(circle at 20% 0%, var(--purple-3), transparent 50%), radial-gradient(circle at 80% 100%, var(--green-3), transparent 50%), var(--bg-page)",
+        padding: "40px 20px",
+      }}
     >
-      <div className="w-full max-w-[520px] rounded-2xl bg-white p-8 shadow-2xl dark:bg-gray-900">
-        <div className="flex items-center gap-4">
+      <div
+        className="w-full rounded-[16px] bg-[var(--bg-panel)] text-left"
+        style={{
+          maxWidth: 560,
+          padding: "44px 44px 32px",
+          boxShadow:
+            "0 1px 0 var(--gray-a4), 0 30px 80px -20px rgba(0,0,0,0.18)",
+        }}
+      >
+        <div
+          className="grid h-12 w-12 place-items-center rounded-[12px] text-white"
+          style={{
+            background: "var(--purple-9)",
+            font: "800 22px var(--font-sans)",
+            marginBottom: 18,
+          }}
+        >
+          D
+        </div>
+        <div
+          id="splash-title"
+          className="text-[28px] font-bold tracking-[-0.02em] text-[var(--fg-1)]"
+        >
+          Diff Dad
+        </div>
+        <p
+          className="mb-6 mt-1.5 text-[15px] leading-[22px] text-[var(--fg-2)]"
+          style={{ maxWidth: "42ch" }}
+        >
+          A per-PR review tool that opens the diff as a story.
+        </p>
+
+        <div
+          className="mb-6 rounded-[10px] px-4 py-3.5"
+          style={{
+            background: "var(--gray-2)",
+            boxShadow: "inset 0 0 0 1px var(--gray-a4)",
+          }}
+        >
           <div
-            className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-xl bg-brand font-mono text-3xl font-bold text-white"
+            className="mb-2 text-[11px] font-medium uppercase tracking-[0.06em] text-[var(--fg-3)]"
+          >
+            Run from your terminal
+          </div>
+          <div
+            className="flex items-center gap-2.5 rounded-[6px] px-3 py-2.5 text-[14px] font-medium"
             style={{
-              boxShadow:
-                "0 8px 16px -4px rgba(91,33,182,0.35), 0 4px 8px -2px rgba(3,2,13,0.10)",
+              background: "var(--gray-1)",
+              boxShadow: "inset 0 0 0 1px var(--gray-a4)",
+              fontFamily:
+                '"IBM Plex Mono", ui-monospace, SFMono-Regular, monospace',
+              color: "var(--fg-1)",
             }}
           >
-            D
-          </div>
-          <div>
-            <h1
-              id="splash-title"
-              className="text-[28px] font-bold leading-tight tracking-[-0.02em] text-gray-900 dark:text-gray-50"
+            <span
+              className="font-bold"
+              style={{ color: "var(--purple-10)" }}
             >
-              Diff Dad
-            </h1>
-            <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-              A per-PR review tool that opens the diff as a story.
-            </p>
-          </div>
-        </div>
-
-        <div className="mt-6 rounded-lg bg-gray-100 p-4 dark:bg-gray-800/60">
-          <div className="flex items-center justify-between gap-3">
-            <code className="font-mono text-sm text-gray-800 dark:text-gray-200">
-              {CLI_COMMAND}
+              $
+            </span>
+            <code className="flex-1">
+              dad review <span style={{ color: "var(--purple-11)" }}>&lt;pr-number&gt;</span>
             </code>
             <button
               type="button"
               onClick={handleCopy}
-              className="rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
+              className="inline-flex h-[26px] items-center rounded-[5px] px-2 text-[11.5px] font-medium text-[var(--fg-2)] hover:bg-[var(--gray-3)] hover:text-[var(--fg-1)]"
+              style={{ boxShadow: "inset 0 0 0 1px var(--gray-a5)" }}
             >
               {copied ? "Copied" : "Copy"}
             </button>
           </div>
-          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-            e.g. <span className="font-mono">dad review 1847</span> opens this
-            PR with a live event stream.
-          </p>
+          <div className="mt-2 text-[12.5px] text-[var(--fg-3)]">
+            e.g.{" "}
+            <code
+              className="rounded-[3px] px-[5px] py-px font-mono text-[12px] font-medium"
+              style={{ background: "var(--gray-3)", color: "var(--fg-1)" }}
+            >
+              dad review 1847
+            </code>{" "}
+            opens this PR with a live event stream.
+          </div>
         </div>
 
-        <ol className="mt-6 space-y-3">
+        <div className="mb-6 flex flex-col gap-2">
           {STEPS.map((step) => (
-            <li key={step.num} className="flex items-start gap-3">
-              <div className="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-brand/10 font-mono text-xs font-bold text-brand">
+            <div
+              key={step.num}
+              className="flex items-center gap-3 text-[13.5px] text-[var(--fg-2)]"
+            >
+              <span
+                className="grid h-[22px] w-[22px] flex-shrink-0 place-items-center rounded-full font-mono text-[11px] font-semibold"
+                style={{ background: "var(--gray-3)", color: "var(--fg-2)" }}
+              >
                 {step.num}
-              </div>
-              <p className="text-sm leading-snug text-gray-700 dark:text-gray-300">
+              </span>
+              <span>
                 {step.text}
-              </p>
-            </li>
+                {step.code ? (
+                  <code
+                    className="rounded-[3px] px-[5px] py-px font-mono text-[12.5px] font-medium"
+                    style={{
+                      background: "var(--gray-3)",
+                      color: "var(--fg-1)",
+                    }}
+                  >
+                    {step.code}
+                  </code>
+                ) : null}
+              </span>
+            </div>
           ))}
-        </ol>
+        </div>
 
         <button
           type="button"
           onClick={onContinue}
-          className="mt-7 block w-full rounded-lg bg-brand px-4 py-3 text-sm font-medium text-white hover:bg-brand/90"
+          className="inline-flex items-center gap-2 rounded-[6px] bg-[var(--brand)] px-[18px] py-[10px] text-[14px] font-bold text-white hover:bg-[var(--brand-hover)]"
+          style={{ boxShadow: "0 1px 2px rgba(3,2,13,0.08)" }}
         >
-          Continue to review →
+          Continue with demo PR
+          <IconArrowRight className="h-[13px] w-[13px]" />
         </button>
 
-        <p className="mt-4 text-center text-xs text-gray-400 dark:text-gray-500">
+        <div className="mt-3.5 text-center text-[12px] text-[var(--fg-3)]">
           {copy.tagline}
-        </p>
+        </div>
       </div>
     </div>
   );

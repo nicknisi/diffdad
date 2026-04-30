@@ -8,9 +8,6 @@ type Props = {
 
 export function NarrationBlock({ content }: Props) {
   const collapseNarration = useReviewStore((s) => s.collapseNarration);
-  const displayDensity = useReviewStore((s) => s.displayDensity);
-  const compact = displayDensity === "compact";
-  const margin = compact ? "ml-[28px]" : "ml-[34px]";
 
   const [expanded, setExpanded] = useState(false);
 
@@ -19,7 +16,7 @@ export function NarrationBlock({ content }: Props) {
       <button
         type="button"
         onClick={() => setExpanded(true)}
-        className={`${margin} block text-sm italic text-[var(--fg-3)] hover:text-[var(--fg-1)]`}
+        className="ml-[34px] block text-sm italic text-[var(--fg-3)] hover:text-[var(--fg-1)]"
       >
         AI narration (click to expand)
       </button>
@@ -27,11 +24,11 @@ export function NarrationBlock({ content }: Props) {
   }
 
   return (
-    <div
-      className={`${margin} max-w-prose text-[14.5px] leading-[22px] text-[var(--fg-1)]`}
-      style={{ textWrap: "pretty" }}
+    <p
+      className="m-0 ml-[34px] mb-[16px] text-[14.5px] leading-[22px] text-[var(--fg-1)] narration-prose"
+      style={{ maxWidth: "64ch", textWrap: "pretty" }}
     >
       <Markdown source={content} />
-    </div>
+    </p>
   );
 }

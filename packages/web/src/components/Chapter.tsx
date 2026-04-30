@@ -11,11 +11,10 @@ type Props = {
   chapter: ChapterType;
 };
 
-const RISK_STYLES: Record<ChapterType["risk"], string> = {
-  low: "bg-[var(--bg-subtle)] text-[var(--fg-2)]",
-  medium:
-    "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300",
-  high: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+const RISK_STYLES: Record<ChapterType["risk"], React.CSSProperties> = {
+  low: { background: "var(--gray-3)", color: "var(--fg-2)" },
+  medium: { background: "var(--yellow-3)", color: "var(--yellow-11)" },
+  high: { background: "var(--red-3)", color: "var(--red-11)" },
 };
 
 const RISK_LABELS: Record<ChapterType["risk"], string> = {
@@ -94,7 +93,8 @@ export function Chapter({ index, chapter }: Props) {
 
   const riskPill = (
     <span
-      className={`rounded-full px-[7px] py-[2px] text-[10.5px] font-bold uppercase tracking-[0.06em] ${RISK_STYLES[chapter.risk]}`}
+      className="inline-flex items-center rounded-full px-[7px] py-[2px] text-[10.5px] font-bold uppercase tracking-[0.06em]"
+      style={RISK_STYLES[chapter.risk]}
     >
       {RISK_LABELS[chapter.risk]}
     </span>
@@ -107,10 +107,18 @@ export function Chapter({ index, chapter }: Props) {
         e.stopPropagation();
         toggleReviewed(index);
       }}
-      className={
+      className="ml-auto inline-flex flex-shrink-0 cursor-pointer items-center gap-1.5 rounded-[5px] px-2 py-1 text-[12px] font-medium"
+      style={
         reviewed
-          ? "ml-auto inline-flex flex-shrink-0 items-center gap-1.5 rounded-[5px] bg-green-100 px-2 py-1 text-xs font-medium text-green-700 ring-1 ring-inset ring-green-200/60 dark:bg-green-900/40 dark:text-green-300 dark:ring-green-700/40"
-          : "ml-auto inline-flex flex-shrink-0 items-center gap-1.5 rounded-[5px] bg-[var(--bg-panel)] px-2 py-1 text-xs font-medium text-[var(--fg-2)] ring-1 ring-inset ring-[var(--border-strong)] hover:bg-[var(--bg-subtle)] hover:text-[var(--fg-1)]"
+          ? {
+              background: "var(--green-3)",
+              color: "var(--green-11)",
+              boxShadow: "inset 0 0 0 1px var(--green-a3)",
+            }
+          : {
+              color: "var(--fg-2)",
+              boxShadow: "inset 0 0 0 1px var(--gray-a5)",
+            }
       }
     >
       {reviewed ? (
@@ -125,7 +133,7 @@ export function Chapter({ index, chapter }: Props) {
   );
 
   const body = (
-    <div className={compact ? "mt-3 space-y-3" : "mt-4 space-y-4"}>
+    <div className={compact ? "space-y-3" : "space-y-4"}>
       {chapter.sections.map((section, i) => {
         if (section.type === "narrative") {
           return (
@@ -158,19 +166,38 @@ export function Chapter({ index, chapter }: Props) {
         return (
           <div
             key={`reshow-${i}`}
-            className="rounded-lg border border-dashed border-amber-300 bg-amber-50/40 p-3 dark:border-amber-700/60 dark:bg-amber-950/20"
+            className="ml-[34px] mb-[14px] overflow-hidden rounded-[8px]"
+            style={{
+              boxShadow: "inset 0 0 0 1px var(--gray-a5)",
+              borderLeft: "2px solid var(--purple-9)",
+              background:
+                "linear-gradient(180deg, var(--purple-2), transparent)",
+            }}
           >
-            <div className="mb-2 flex items-center gap-2">
-              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold uppercase tracking-wider text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+            <div
+              className="px-4 pt-3.5 pb-3"
+              style={{ borderBottom: "1px dashed var(--gray-a5)" }}
+            >
+              <span
+                className="inline-flex items-center gap-1.5 rounded-full px-2 py-[3px] text-[11px] font-medium tracking-[0.02em]"
+                style={{
+                  background: "var(--purple-3)",
+                  color: "var(--purple-11)",
+                  boxShadow: "inset 0 0 0 1px var(--purple-a5)",
+                }}
+              >
                 <span aria-hidden>↻</span>
                 Showing again from {ownerLabel}
               </span>
+              {entry.framing ? (
+                <div
+                  className="mt-2 text-[14px] leading-[22px]"
+                  style={{ color: "var(--fg-2)", maxWidth: "70ch" }}
+                >
+                  <NarrationBlock content={entry.framing} />
+                </div>
+              ) : null}
             </div>
-            {entry.framing ? (
-              <div className="mb-2">
-                <NarrationBlock content={entry.framing} />
-              </div>
-            ) : null}
             <Hunk
               file={flat.file}
               hunk={flat.hunk}
@@ -184,20 +211,22 @@ export function Chapter({ index, chapter }: Props) {
     </div>
   );
 
+  const badgeStyle: React.CSSProperties = reviewed
+    ? { background: "var(--green-9)", color: "#fff" }
+    : { background: "var(--gray-12)", color: "#fff" };
+
   // OUTLINE STRUCTURE
   if (storyStructure === "outline") {
-    const padding = compact ? "p-3" : "p-4";
-    const margin = compact ? "mb-3" : "mb-4";
     return (
       <section
         data-chid={id}
-        className={`${margin} rounded-[14px] border border-[var(--border)] bg-[var(--bg-panel)] shadow-[var(--shadow-card)] ${reviewed ? "opacity-85" : ""}`}
+        className={compact ? "mb-[18px]" : "mb-[28px]"}
       >
         <button
           type="button"
           onClick={() => setOutlineOpen((v) => !v)}
           aria-expanded={outlineOpen}
-          className={`flex w-full items-start gap-2.5 ${padding} text-left`}
+          className="flex w-full cursor-pointer items-start gap-2.5 rounded-lg p-2 text-left hover:bg-[var(--gray-2)]"
         >
           <span
             className={`mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center text-[var(--fg-3)] transition-transform ${
@@ -206,60 +235,78 @@ export function Chapter({ index, chapter }: Props) {
           >
             <IconChevron className="h-3.5 w-3.5" />
           </span>
-          <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-[7px] bg-[var(--fg-1)] font-mono text-[12px] font-bold text-[var(--bg-panel)]">
+          <div
+            className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-[7px] font-mono text-[12px] font-bold"
+            style={badgeStyle}
+          >
             {index + 1}
           </div>
           <div className="min-w-0 flex-1">
-            <h2 className="flex flex-wrap items-center gap-2 text-[18px] font-bold leading-6 tracking-[-0.01em] text-[var(--fg-1)]">
+            <h2 className="m-0 flex flex-wrap items-center gap-2 text-[18px] font-bold leading-6 tracking-[-0.01em] text-[var(--fg-1)]">
               <span>{chapter.title}</span>
               {riskPill}
             </h2>
-            <span className="mt-1 block text-xs text-[var(--fg-3)]">
+            <span className="mt-[2px] block text-[12px] text-[var(--fg-3)]">
               {hunkCount} {hunkCount === 1 ? "hunk" : "hunks"} · {commentCount}{" "}
               {commentCount === 1 ? "comment" : "comments"}
             </span>
           </div>
         </button>
-        {outlineOpen && <div className={`${padding} pt-0`}>{body}</div>}
+        {outlineOpen && <div className="mt-[14px]">{body}</div>}
       </section>
     );
   }
 
   // LINEAR STRUCTURE
   if (storyStructure === "linear") {
-    const margin = compact ? "mb-5" : "mb-7";
     return (
-      <section data-chid={id} className={margin}>
-        <div className="mb-3 flex items-center gap-3">
-          <hr className="w-8 flex-shrink-0 border-[var(--border-strong)]" />
-          <div className="flex h-5 flex-shrink-0 items-center justify-center rounded-md bg-[var(--fg-1)] px-1.5 font-mono text-xs font-bold text-[var(--bg-panel)]">
-            Ch {index + 1}
-          </div>
-          <h2 className="flex flex-wrap items-center gap-2 text-[18px] font-bold leading-6 tracking-[-0.01em] text-[var(--fg-1)]">
-            <span>{chapter.title}</span>
-            {riskPill}
+      <section data-chid={id} className={compact ? "mb-[18px]" : "mb-[32px]"}>
+        <div className="mb-[16px] mt-[32px] grid grid-cols-[1fr_auto_1fr] items-center gap-4">
+          <span className="h-px" style={{ background: "var(--gray-a4)" }} />
+          <h2 className="m-0 inline-flex items-center gap-[10px] whitespace-nowrap text-[17px] font-semibold tracking-[-0.005em] text-[var(--fg-1)]">
+            <span
+              className="rounded-full px-2 py-0.5 font-mono text-[11px] font-medium uppercase tracking-[0.06em] text-[var(--fg-3)]"
+              style={{ background: "var(--gray-3)" }}
+            >
+              Ch {index + 1}
+            </span>
+            {chapter.title}
+            <span
+              className="font-mono text-[10.5px] uppercase tracking-[0.05em]"
+              style={{
+                color:
+                  chapter.risk === "high"
+                    ? "var(--red-11)"
+                    : chapter.risk === "medium"
+                      ? "var(--amber-11)"
+                      : "var(--green-11)",
+              }}
+            >
+              {chapter.risk}
+            </span>
           </h2>
-          {reviewedButton}
+          <span className="h-px" style={{ background: "var(--gray-a4)" }} />
         </div>
-        <div className="border-t border-[var(--border)] pt-4">{body}</div>
+        {body}
       </section>
     );
   }
 
-  // CHAPTERS (default)
-  const padding = compact ? "p-5" : "p-7";
-  const margin = compact ? "mb-4" : "mb-7";
+  // CHAPTERS (default) — no card chrome, just spacing.
   return (
     <section
       data-chid={id}
-      className={`${margin} rounded-[14px] border border-[var(--border)] bg-[var(--bg-panel)] ${padding} shadow-[var(--shadow-card)] ${reviewed ? "opacity-85" : ""}`}
+      className={compact ? "mb-[18px]" : "mb-[28px]"}
     >
-      <div className="flex items-start gap-2.5">
-        <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-[7px] bg-[var(--fg-1)] font-mono text-[12px] font-bold text-[var(--bg-panel)]">
+      <div className="mb-[14px] flex items-start gap-2.5">
+        <div
+          className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-[7px] font-mono text-[12px] font-bold"
+          style={badgeStyle}
+        >
           {index + 1}
         </div>
         <div className="min-w-0 flex-1">
-          <h2 className="flex flex-wrap items-center gap-2 text-[18px] font-bold leading-6 tracking-[-0.01em] text-[var(--fg-1)]">
+          <h2 className="m-0 flex flex-wrap items-center gap-2 text-[18px] font-bold leading-6 tracking-[-0.01em] text-[var(--fg-1)]">
             <span>{chapter.title}</span>
             {riskPill}
           </h2>

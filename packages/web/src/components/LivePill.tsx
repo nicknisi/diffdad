@@ -27,36 +27,68 @@ export function LivePill({ onClick }: Props) {
   }, []);
 
   let label: string;
-  let bgClass: string;
-  let dotClass: string;
-  let textClass: string;
+  let dotColor: string;
+  let containerStyle: React.CSSProperties;
+  let labelColor: string;
+  let metaColor: string;
+  let animateDot = true;
 
   if (status === "connected") {
-    label = `Live · ${eventCount} event${eventCount === 1 ? "" : "s"} · last ${formatRelative(now - lastEventAt)}`;
-    bgClass = "bg-green-100 dark:bg-green-950/40";
-    dotClass = "bg-green-500 animate-pulse";
-    textClass = "text-green-800 dark:text-green-300";
+    label = "Live";
+    dotColor = "var(--green-10)";
+    containerStyle = {
+      background: "var(--green-3)",
+      color: "var(--green-11)",
+      boxShadow: "inset 0 0 0 1px var(--green-a5)",
+    };
+    labelColor = "var(--green-11)";
+    metaColor = "var(--green-11)";
   } else if (status === "connecting") {
-    label = "Connecting...";
-    bgClass = "bg-amber-100 dark:bg-amber-950/40";
-    dotClass = "bg-amber-500 animate-pulse";
-    textClass = "text-amber-800 dark:text-amber-300";
+    label = "Reconnecting…";
+    dotColor = "var(--amber-10)";
+    containerStyle = {
+      background: "var(--amber-3)",
+      color: "var(--amber-11)",
+      boxShadow: "inset 0 0 0 1px var(--amber-a5)",
+    };
+    labelColor = "var(--amber-11)";
+    metaColor = "var(--amber-11)";
   } else {
     label = "Offline";
-    bgClass = "bg-gray-100 dark:bg-gray-800";
-    dotClass = "bg-gray-400";
-    textClass = "text-gray-700 dark:text-gray-300";
+    dotColor = "var(--gray-9)";
+    containerStyle = {
+      background: "var(--gray-3)",
+      color: "var(--fg-2)",
+      boxShadow: "inset 0 0 0 1px var(--gray-a5)",
+    };
+    labelColor = "var(--fg-2)";
+    metaColor = "var(--fg-3)";
+    animateDot = false;
   }
+
+  const meta = `:4317 · ${eventCount} event${eventCount === 1 ? "" : "s"} · last ${formatRelative(now - lastEventAt)}`;
 
   return (
     <button
       type="button"
       onClick={onClick}
       aria-label="Open activity drawer"
-      className={`flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium transition hover:brightness-95 ${bgClass} ${textClass}`}
+      className="inline-flex items-center gap-2 rounded-full py-1 pl-2 pr-2.5 text-[12px] font-medium transition-colors"
+      style={containerStyle}
     >
-      <span className={`inline-block h-2 w-2 rounded-full ${dotClass}`} />
-      <span className="whitespace-nowrap">{label}</span>
+      <span
+        className={`inline-block h-2 w-2 rounded-full ${animateDot ? "live-ping-dot" : ""}`}
+        style={{ background: dotColor }}
+      />
+      <span className="font-semibold" style={{ color: labelColor }}>
+        {label}
+      </span>
+      <span
+        className="font-mono text-[11.5px]"
+        style={{ color: metaColor, opacity: 0.78 }}
+      >
+        {meta}
+      </span>
     </button>
   );
 }

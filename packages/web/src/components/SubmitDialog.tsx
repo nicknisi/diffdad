@@ -12,80 +12,96 @@ const OPTIONS: { value: Resolution; label: string; desc: string }[] = [
   {
     value: "comment",
     label: "Comment",
-    desc: "Submit general feedback without explicit approval.",
+    desc: "General feedback without explicit approval.",
   },
   {
     value: "approve",
     label: "Approve",
-    desc: "Submit feedback approving these changes.",
+    desc: "Mark as ready to merge once any feedback is addressed.",
   },
   {
     value: "request_changes",
     label: "Request changes",
-    desc: "Submit feedback that must be addressed before merging.",
+    desc: "Block merge until your concerns are resolved.",
   },
 ];
 
 export function SubmitDialog({ open, onClose, onSubmit }: Props) {
-  const [resolution, setResolution] = useState<Resolution>("approve");
+  const [resolution, setResolution] = useState<Resolution>("comment");
   const [summary, setSummary] = useState("");
 
   if (!open) return null;
 
   const submitLabel =
     resolution === "approve"
-      ? "Approve PR"
+      ? "Approve"
       : resolution === "request_changes"
         ? "Request changes"
         : "Submit comment";
 
-  const submitClasses =
-    resolution === "request_changes"
-      ? "bg-red-600 hover:bg-red-700"
-      : "bg-[var(--brand)] hover:bg-[var(--brand-hover)]";
+  const isDanger = resolution === "request_changes";
 
   return (
     <div
       role="dialog"
       aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+      className="fixed inset-0 z-50 flex items-center justify-center px-4"
+      style={{ background: "rgba(0,0,0,0.4)" }}
       onClick={onClose}
     >
       <div
-        className="w-full max-w-[480px] rounded-2xl bg-[var(--bg-panel)] p-6 shadow-[var(--shadow-elevated)]"
+        className="w-full bg-[var(--bg-panel)]"
+        style={{
+          maxWidth: 480,
+          borderRadius: 12,
+          padding: 22,
+          boxShadow:
+            "0 24px 48px -8px rgba(3,2,13,0.20), 0 8px 16px -4px rgba(3,2,13,0.10)",
+        }}
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="text-xl font-bold tracking-[-0.01em] text-[var(--fg-1)]">
+        <h3 className="m-0 mb-[6px] text-[18px] font-bold tracking-[-0.01em] text-[var(--fg-1)]">
           Submit your review
-        </h2>
-        <div className="mt-4 space-y-2">
+        </h3>
+        <p className="m-0 mb-4 text-[13.5px] text-[var(--fg-2)]">
+          Inline comments will be posted to GitHub along with this summary.
+        </p>
+        <div className="mb-3.5 flex flex-col gap-2">
           {OPTIONS.map((opt) => {
             const selected = resolution === opt.value;
             return (
               <label
                 key={opt.value}
-                className={`block cursor-pointer rounded-md border p-3 text-sm ${
+                className="flex cursor-pointer items-start gap-2.5 rounded-[8px] px-3 py-2.5 transition-colors"
+                style={
                   selected
-                    ? "border-[var(--brand)] bg-[var(--brand-soft)]"
-                    : "border-[var(--border)] hover:bg-[var(--bg-subtle)]"
-                }`}
+                    ? {
+                        background: "var(--purple-2)",
+                        boxShadow: "inset 0 0 0 1.5px var(--purple-9)",
+                      }
+                    : { boxShadow: "inset 0 0 0 1px var(--gray-a5)" }
+                }
               >
-                <div className="flex items-start gap-2">
-                  <input
-                    type="radio"
-                    name="resolution"
-                    value={opt.value}
-                    checked={selected}
-                    onChange={() => setResolution(opt.value)}
-                    className="mt-1 accent-[var(--brand)]"
-                  />
-                  <div>
-                    <div className="font-semibold text-[var(--fg-1)]">
-                      {opt.label}
-                    </div>
-                    <div className="text-[12.5px] leading-[17px] text-[var(--fg-2)]">
-                      {opt.desc}
-                    </div>
+                <input
+                  type="radio"
+                  name="resolution"
+                  value={opt.value}
+                  checked={selected}
+                  onChange={() => setResolution(opt.value)}
+                  className="mt-[3px]"
+                  style={{ accentColor: "var(--purple-9)" }}
+                />
+                <div>
+                  <div
+                    className="text-[13.5px] font-semibold"
+                    style={{
+                      color: selected ? "var(--purple-12)" : "var(--fg-1)",
+                    }}
+                  >
+                    {opt.label}
+                  </div>
+                  <div className="mt-px text-[12.5px] leading-[17px] text-[var(--fg-2)]">
+                    {opt.desc}
                   </div>
                 </div>
               </label>
@@ -95,21 +111,42 @@ export function SubmitDialog({ open, onClose, onSubmit }: Props) {
         <textarea
           value={summary}
           onChange={(e) => setSummary(e.target.value)}
-          placeholder="Optional summary..."
-          className="mt-4 block min-h-[80px] w-full rounded-lg border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--fg-1)] outline-none focus:border-[var(--brand)]"
+          placeholder="Leave a summary comment (optional)…"
+          className="block w-full resize-y px-3 py-2.5 text-[13.5px] leading-[19px] text-[var(--fg-1)] outline-none"
+          style={{
+            minHeight: 80,
+            border: 0,
+            borderRadius: 8,
+            boxShadow: "inset 0 0 0 1px var(--gray-a5)",
+            background: "transparent",
+          }}
         />
-        <div className="mt-4 flex justify-end gap-2">
+        <div className="mt-3.5 flex justify-end gap-2">
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md border border-[var(--border)] px-3 py-1.5 text-sm font-medium text-[var(--fg-1)] hover:bg-[var(--bg-subtle)]"
+            className="inline-flex h-[30px] items-center rounded-[6px] px-3 text-[12.5px] font-bold text-[var(--fg-2)] hover:bg-[var(--gray-a3)] hover:text-[var(--fg-1)]"
           >
             Cancel
           </button>
           <button
             type="button"
             onClick={() => onSubmit(resolution, summary)}
-            className={`rounded-md px-4 py-1.5 text-sm font-bold text-white shadow-sm ${submitClasses}`}
+            className="inline-flex h-[30px] items-center rounded-[6px] px-3 text-[12.5px] font-bold text-white"
+            style={{
+              background: isDanger ? "var(--red-9)" : "var(--brand)",
+              boxShadow: "0 1px 2px rgba(3,2,13,0.08)",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = isDanger
+                ? "var(--red-10)"
+                : "var(--brand-hover)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = isDanger
+                ? "var(--red-9)"
+                : "var(--brand)";
+            }}
           >
             {submitLabel}
           </button>
