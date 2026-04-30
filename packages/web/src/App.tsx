@@ -28,6 +28,17 @@ export default function App() {
   useLiveStream();
   useKeyboardShortcuts();
   const [activityOpen, setActivityOpen] = useState(false);
+  const [loadingMsgIndex, setLoadingMsgIndex] = useState(0);
+
+  useEffect(() => {
+    if (!loading) return;
+    const t = setInterval(
+      () =>
+        setLoadingMsgIndex((i) => (i + 1) % copy.loadingMessages.length),
+      2500,
+    );
+    return () => clearInterval(t);
+  }, [loading]);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
@@ -49,16 +60,20 @@ export default function App() {
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[var(--bg-page)] text-[var(--fg-2)]">
-        <p className="text-base">{copy.loading}</p>
+        <p className="text-base">{copy.loadingMessages[loadingMsgIndex]}</p>
       </main>
     );
   }
 
   if (error) {
+    const lower = error.toLowerCase();
+    const isOffline =
+      lower.includes("fetch") || lower.includes("network");
+    const headline = isOffline ? copy.offline : copy.errorGeneric;
     return (
       <main className="flex min-h-screen items-center justify-center bg-[var(--bg-page)] text-[var(--fg-2)]">
         <div className="text-center">
-          <p className="text-base">{copy.errorGeneric}</p>
+          <p className="text-base">{headline}</p>
           <p className="mt-2 text-sm text-[var(--fg-3)]">{error}</p>
         </div>
       </main>

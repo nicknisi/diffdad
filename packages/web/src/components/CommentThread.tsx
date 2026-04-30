@@ -6,6 +6,7 @@ import {
   type KeyboardEvent,
 } from "react";
 import { useComments } from "../hooks/useComments";
+import { copy } from "../lib/microcopy";
 import { useReviewStore } from "../state/review-store";
 import type { PRComment } from "../state/types";
 import { Comment } from "./Comment";
@@ -246,7 +247,7 @@ export function CommentThread({
           value={body}
           onChange={(e) => setBody(e.target.value)}
           onKeyDown={onKeyDown}
-          placeholder="Leave a comment. Cmd/Ctrl+Enter to submit."
+          placeholder={copy.commentPlaceholder}
           className="block w-full resize-y rounded-md border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--fg-1)] outline-none focus:border-[var(--brand)]"
           rows={3}
         />

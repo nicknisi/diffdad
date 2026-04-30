@@ -1,5 +1,6 @@
 import { useState, type KeyboardEvent } from "react";
 import { useComments } from "../hooks/useComments";
+import { copy } from "../lib/microcopy";
 import { useReviewStore } from "../state/review-store";
 import { IconChat, IconRefresh, IconSpark, IconX } from "./Icons";
 import { Markdown } from "./markdown/Markdown";
@@ -300,7 +301,7 @@ export function NarrationAnchor({ chapterIndex }: Props) {
             value={askPrompt}
             onChange={(e) => setAskPrompt(e.target.value)}
             onKeyDown={onAskKeyDown}
-            placeholder="e.g. Why this timeout? What does this Zod schema cover?"
+            placeholder={copy.askAiPlaceholder}
             className="block w-full resize-y rounded-md border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--fg-1)] outline-none focus:border-[var(--brand)]"
             rows={2}
           />

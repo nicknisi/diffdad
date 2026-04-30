@@ -1,3 +1,4 @@
+import { copy } from "../lib/microcopy";
 import { useReviewStore } from "../state/review-store";
 import { LivePill } from "./LivePill";
 import { IconMoon, IconSun, IconArrowRight } from "./Icons";
@@ -29,6 +30,7 @@ export function AppBar({ onOpenActivity }: AppBarProps) {
       {/* Brand mark */}
       <div className="flex items-center gap-2 text-[14px] font-bold tracking-[-0.01em]">
         <div
+          title={copy.brandTooltip}
           className="flex h-[22px] w-[22px] items-center justify-center rounded-[6px] bg-[var(--brand)] text-white"
           style={{
             boxShadow:

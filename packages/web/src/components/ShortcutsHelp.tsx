@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { copy } from "../lib/microcopy";
 
 type Props = {
   open: boolean;
@@ -69,6 +70,9 @@ export function ShortcutsHelp({ open, onClose }: Props) {
             </li>
           ))}
         </ul>
+        <p className="mt-4 italic text-xs text-gray-500 dark:text-gray-400">
+          {copy.shortcutsFooter}
+        </p>
       </div>
     </div>
   );

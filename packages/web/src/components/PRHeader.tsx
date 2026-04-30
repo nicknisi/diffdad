@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { copy } from "../lib/microcopy";
 import { useReviewStore } from "../state/review-store";
 import type { CheckRun } from "../state/types";
 import { IconCheck } from "./Icons";
@@ -165,13 +166,13 @@ export function PRHeader() {
       clearDrafts();
       const toastMsg =
         resolution === "approve"
-          ? "Proud of you, champ. Approved."
+          ? copy.approvalToast
           : resolution === "request_changes"
-            ? "Changes requested on GitHub"
-            : "Review submitted to GitHub";
+            ? copy.requestChangesToast
+            : copy.commentToast;
       setToast(toastMsg);
     } catch {
-      setToast("Failed to submit review");
+      setToast(copy.errorGeneric);
     }
   }
 
@@ -283,6 +284,7 @@ export function PRHeader() {
               type="button"
               onClick={() => setOpen((v) => !v)}
               aria-expanded={open}
+              title={summary.failing > 0 ? copy.blocker : undefined}
               className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-sm font-medium transition-colors ${checksLabel.className}`}
             >
               {summary.failing === 0 && summary.pending === 0 ? (

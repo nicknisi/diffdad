@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { copy } from "../lib/microcopy";
 import { useReviewStore } from "../state/review-store";
 import { SubmitDialog } from "./SubmitDialog";
 import { Toast } from "./Toast";
@@ -32,13 +33,13 @@ export function SubmitBar() {
       clearDrafts();
       const toastMsg =
         resolution === "approve"
-          ? "Proud of you, champ. Approved."
+          ? copy.approvalToast
           : resolution === "request_changes"
-            ? "Changes requested on GitHub"
-            : "Review submitted to GitHub";
+            ? copy.requestChangesToast
+            : copy.commentToast;
       setToast(toastMsg);
     } catch {
-      setToast("Failed to submit review");
+      setToast(copy.errorGeneric);
     }
   }
 
@@ -54,12 +55,22 @@ export function SubmitBar() {
       >
         <div>
           <div className="text-[12.5px] font-normal text-[var(--fg-2)]">
-            <b className="font-bold text-[var(--fg-1)]">
-              {reviewedCount} of {total}
-            </b>{" "}
-            chapters reviewed ·{" "}
-            <b className="font-bold text-[var(--fg-1)]">{drafts.length}</b>{" "}
-            pending {drafts.length === 1 ? "draft" : "drafts"}
+            {total > 0 && reviewedCount === total && drafts.length === 0 ? (
+              <b className="font-bold text-[var(--fg-1)]">
+                {copy.allReviewed}
+              </b>
+            ) : (
+              <>
+                <b className="font-bold text-[var(--fg-1)]">
+                  {reviewedCount} of {total}
+                </b>{" "}
+                chapters reviewed ·{" "}
+                <b className="font-bold text-[var(--fg-1)]">
+                  {drafts.length}
+                </b>{" "}
+                pending {drafts.length === 1 ? "draft" : "drafts"}
+              </>
+            )}
           </div>
           <div
             className="mt-1 h-[6px] w-[90px] overflow-hidden rounded-full"
