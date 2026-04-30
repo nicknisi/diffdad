@@ -77,18 +77,28 @@ export async function generateNarrative(
 
   const model = getModel(config);
 
-  const result = await generateText({
-    model,
-    system,
-    messages: [{ role: "user", content: user }],
-  });
+  const MAX_RETRIES = 2;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const result = await generateText({
+      model,
+      system,
+      messages: [{ role: "user", content: user }],
+      maxTokens: 16384,
+    });
 
-  const json = extractJson(result.text);
-  try {
-    return JSON.parse(json) as NarrativeResponse;
-  } catch (err) {
-    throw new Error(
-      `Failed to parse narrative JSON from model output: ${(err as Error).message}`,
-    );
+    const json = extractJson(result.text);
+    try {
+      return JSON.parse(json) as NarrativeResponse;
+    } catch (err) {
+      const isTruncated = result.finishReason === "length";
+      if (isTruncated && attempt < MAX_RETRIES) {
+        console.log(`Narrative truncated (attempt ${attempt + 1}/${MAX_RETRIES + 1}), retrying with longer limit...`);
+        continue;
+      }
+      throw new Error(
+        `Failed to parse narrative JSON: ${(err as Error).message}${isTruncated ? " (response was truncated — PR may be too large for the model's output limit)" : ""}`,
+      );
+    }
   }
+  throw new Error("Unreachable");
 }
