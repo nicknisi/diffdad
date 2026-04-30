@@ -2,6 +2,8 @@ import { useReviewStore } from "../state/review-store";
 import type { DiffHunk, PRComment } from "../state/types";
 import { CodeLine } from "./CodeLine";
 import { CommentThread } from "./CommentThread";
+import { useHighlighter } from "../hooks/useHighlighter";
+import { guessLang } from "../lib/shiki";
 
 type Props = {
   file: string;
@@ -14,6 +16,8 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex }: Props) {
   const openLine = useReviewStore((s) => s.openLine);
   const comments = useReviewStore((s) => s.comments);
   const setOpenLine = useReviewStore((s) => s.setOpenLine);
+  useHighlighter();
+  const lang = guessLang(file);
 
   const range = `@@ -${hunk.oldStart},${hunk.oldCount} +${hunk.newStart},${hunk.newCount} @@`;
 
@@ -42,7 +46,7 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex }: Props) {
           );
           return (
             <div key={lineKey}>
-              <CodeLine line={line} lineKey={lineKey} />
+              <CodeLine line={line} lineKey={lineKey} lang={lang} />
               {(openLine === lineKey || lineComments.length > 0) && (
                 <div className="border-l-2 border-brand bg-gray-50 px-3 py-3 dark:bg-gray-900/60">
                   <CommentThread

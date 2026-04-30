@@ -1,13 +1,17 @@
+import { useMemo } from "react";
 import { useReviewStore } from "../state/review-store";
 import type { DiffLine } from "../state/types";
+import { highlightLine } from "../lib/shiki";
 
 type Props = {
   line: DiffLine;
   lineKey: string;
+  lang: string;
 };
 
-export function CodeLine({ line, lineKey }: Props) {
+export function CodeLine({ line, lineKey, lang }: Props) {
   const setOpenLine = useReviewStore((s) => s.setOpenLine);
+  const theme = useReviewStore((s) => s.theme);
 
   const sign =
     line.type === "add" ? "+" : line.type === "remove" ? "−" : " ";
@@ -25,6 +29,12 @@ export function CodeLine({ line, lineKey }: Props) {
       : line.type === "remove"
         ? "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300"
         : "text-gray-400 dark:text-gray-600";
+
+  // Shiki output is spans with inline style="color:..." — all content is escapeHtml'd in highlightLine
+  const highlighted = useMemo(
+    () => highlightLine(line.content, lang, theme),
+    [line.content, lang, theme],
+  );
 
   return (
     <div
@@ -47,9 +57,16 @@ export function CodeLine({ line, lineKey }: Props) {
           +
         </button>
       </div>
-      <pre className="flex-1 overflow-x-auto whitespace-pre px-4 text-gray-800 dark:text-gray-200">
-        {line.content}
-      </pre>
+      {highlighted ? (
+        <pre
+          className="flex-1 overflow-x-auto whitespace-pre px-4"
+          dangerouslySetInnerHTML={{ __html: highlighted }}
+        />
+      ) : (
+        <pre className="flex-1 overflow-x-auto whitespace-pre px-4 text-gray-800 dark:text-gray-200">
+          {line.content}
+        </pre>
+      )}
     </div>
   );
 }
