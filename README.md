@@ -11,16 +11,22 @@
 
 ## Install
 
-```sh
-# From source (requires Bun)
-git clone https://github.com/nicknisi/diffdad && cd diffdad
-bun install && bun run build
-bun link
+### Homebrew
 
-# Homebrew (after first release)
+```sh
 brew tap nicknisi/diffdad https://github.com/nicknisi/diffdad
 brew install dad
 ```
+
+### From source
+
+```sh
+git clone https://github.com/nicknisi/diffdad && cd diffdad
+bun install && bun run build
+bun link
+```
+
+Requires [Bun](https://bun.sh) when building from source. The Homebrew install is a standalone binary — no runtime needed.
 
 ## Usage
 
