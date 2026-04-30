@@ -2,7 +2,11 @@ import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
-export type AiProvider = "anthropic" | "openai" | "openai-compatible";
+export type AiProvider =
+  | "anthropic"
+  | "openai"
+  | "openai-compatible"
+  | "ollama";
 
 export interface DiffDadConfig {
   githubToken?: string;
