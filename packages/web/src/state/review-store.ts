@@ -14,6 +14,10 @@ import type {
 type Theme = "light" | "dark";
 type Density = "terse" | "normal" | "verbose";
 type View = "story" | "files";
+type StoryStructure = "chapters" | "linear" | "outline";
+type VisualStyle = "stripe" | "linear" | "github";
+type LayoutMode = "toc" | "linear";
+type DisplayDensity = "comfortable" | "compact";
 
 type ReviewState = {
   pr: PRData | null;
@@ -34,6 +38,12 @@ type ReviewState = {
   liveEvents: LiveEvent[];
   lastEventAt: number;
   shortcutsHelpOpen: boolean;
+  storyStructure: StoryStructure;
+  visualStyle: VisualStyle;
+  layoutMode: LayoutMode;
+  displayDensity: DisplayDensity;
+  collapseNarration: boolean;
+  clusterBots: boolean;
 
   setData: (
     pr: PRData,
@@ -60,6 +70,12 @@ type ReviewState = {
   setLastEventAt: (ts: number) => void;
   setCheckRuns: (checkRuns: CheckRun[]) => void;
   setShortcutsHelpOpen: (open: boolean) => void;
+  setStoryStructure: (s: StoryStructure) => void;
+  setVisualStyle: (s: VisualStyle) => void;
+  setLayoutMode: (m: LayoutMode) => void;
+  setDisplayDensity: (d: DisplayDensity) => void;
+  setCollapseNarration: (v: boolean) => void;
+  setClusterBots: (v: boolean) => void;
 };
 
 export const useReviewStore = create<ReviewState>((set) => ({
@@ -81,6 +97,12 @@ export const useReviewStore = create<ReviewState>((set) => ({
   liveEvents: [],
   lastEventAt: Date.now(),
   shortcutsHelpOpen: false,
+  storyStructure: "chapters",
+  visualStyle: "stripe",
+  layoutMode: "toc",
+  displayDensity: "comfortable",
+  collapseNarration: false,
+  clusterBots: true,
 
   setData: (pr, narrative, files, comments, repoUrl = null, checkRuns = []) => {
     const chapterStates: Record<string, ChapterState> = {};
@@ -150,4 +172,11 @@ export const useReviewStore = create<ReviewState>((set) => ({
   setCheckRuns: (checkRuns) => set({ checkRuns }),
 
   setShortcutsHelpOpen: (shortcutsHelpOpen) => set({ shortcutsHelpOpen }),
+
+  setStoryStructure: (storyStructure) => set({ storyStructure }),
+  setVisualStyle: (visualStyle) => set({ visualStyle }),
+  setLayoutMode: (layoutMode) => set({ layoutMode }),
+  setDisplayDensity: (displayDensity) => set({ displayDensity }),
+  setCollapseNarration: (collapseNarration) => set({ collapseNarration }),
+  setClusterBots: (clusterBots) => set({ clusterBots }),
 }));

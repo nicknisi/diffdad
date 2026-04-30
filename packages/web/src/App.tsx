@@ -11,6 +11,7 @@ import { ShortcutsHelp } from "./components/ShortcutsHelp";
 import { Splash } from "./components/Splash";
 import { StoryView } from "./components/StoryView";
 import { SubmitBar } from "./components/SubmitBar";
+import { TweaksPanel } from "./components/TweaksPanel";
 import { copy } from "./lib/microcopy";
 
 const SPLASH_KEY = "diffdad.splashSeen";
@@ -32,6 +33,7 @@ export default function App() {
   useLiveStream();
   useKeyboardShortcuts();
   const [activityOpen, setActivityOpen] = useState(false);
+  const [tweaksOpen, setTweaksOpen] = useState(false);
   const [splashSeen, setSplashSeen] = useState<boolean>(() => readSplashSeen());
 
   useEffect(() => {
@@ -85,11 +87,15 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gray-50 pb-20 text-gray-900 dark:bg-gray-950 dark:text-gray-100">
-      <AppBar onOpenActivity={() => setActivityOpen(true)} />
+      <AppBar
+        onOpenActivity={() => setActivityOpen(true)}
+        onOpenTweaks={() => setTweaksOpen(true)}
+      />
       <PRHeader />
       {view === "story" ? <StoryView /> : <ClassicView />}
       <SubmitBar />
       <ActivityDrawer open={activityOpen} onClose={() => setActivityOpen(false)} />
+      <TweaksPanel open={tweaksOpen} onClose={() => setTweaksOpen(false)} />
       <ShortcutsHelp
         open={shortcutsHelpOpen}
         onClose={() => setShortcutsHelpOpen(false)}
