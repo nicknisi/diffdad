@@ -51,10 +51,14 @@ export function NarrationAnchor({ chapterIndex }: Props) {
   const setChapterDensity = useReviewStore((s) => s.setChapterDensity);
   const activeDensity = chapterDensityMap[chapterKey] ?? globalDensity;
 
+  const narrationOverrides = useReviewStore((s) => s.narrationOverrides);
+  const setNarrationOverride = useReviewStore((s) => (s as any).setNarrationOverride) as (key: string, text: string) => void;
+  const clearNarrationOverride = useReviewStore((s) => (s as any).clearNarrationOverride) as (key: string) => void;
+
   const [renarrating, setRenarrating] = useState(false);
   const [activeLens, setActiveLens] = useState<PerspectiveLens | null>(null);
-  const [overrideText, setOverrideText] = useState<string | null>(null);
   const [renarrateError, setRenarrateError] = useState<string | null>(null);
+  const hasOverrideInStore = chapterKey in narrationOverrides;
 
   const [askOpen, setAskOpen] = useState(false);
   const [askPrompt, setAskPrompt] = useState("");
@@ -75,7 +79,7 @@ export function NarrationAnchor({ chapterIndex }: Props) {
     setRenarrateError(null);
     try {
       const text = await callAi({ action: "renarrate", chapterIndex, lens });
-      setOverrideText(text);
+      setNarrationOverride(chapterKey, text);
     } catch (err) {
       setRenarrateError(err instanceof Error ? err.message : "Failed");
     } finally {
@@ -92,7 +96,7 @@ export function NarrationAnchor({ chapterIndex }: Props) {
       idx >= LENS_CYCLE.length ? null : LENS_CYCLE[idx] ?? null;
     setActiveLens(next);
     if (next === null) {
-      setOverrideText(null);
+      clearNarrationOverride(chapterKey);
       setRenarrateError(null);
       return;
     }
@@ -101,7 +105,7 @@ export function NarrationAnchor({ chapterIndex }: Props) {
 
   function handleRestoreDefault() {
     setActiveLens(null);
-    setOverrideText(null);
+    clearNarrationOverride(chapterKey);
     setRenarrateError(null);
   }
 
@@ -170,7 +174,7 @@ export function NarrationAnchor({ chapterIndex }: Props) {
     }
   }
 
-  const hasOverride = overrideText !== null || activeLens !== null;
+  const hasOverride = hasOverrideInStore || activeLens !== null;
 
   return (
     <div className="ml-[34px] mt-1 mb-[14px]">
@@ -201,18 +205,6 @@ export function NarrationAnchor({ chapterIndex }: Props) {
           >
             Restore default
           </button>
-        </div>
-      )}
-
-      {overrideText && !renarrating && (
-        <div
-          className="mb-2 rounded-md p-3 text-sm"
-          style={{
-            background: "var(--bg-panel)",
-            boxShadow: "inset 0 0 0 1px var(--gray-a5)",
-          }}
-        >
-          <Markdown source={overrideText} />
         </div>
       )}
 

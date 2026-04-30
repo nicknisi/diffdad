@@ -157,7 +157,7 @@ export function Chapter({ index, chapter }: Props) {
         if (section.type === "narrative") {
           return (
             <div key={i}>
-              <NarrationBlock content={section.content} />
+              <NarrationBlock content={section.content} chapterKey={id} />
               <NarrationAnchor chapterIndex={index} />
             </div>
           );

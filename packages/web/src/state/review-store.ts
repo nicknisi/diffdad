@@ -112,6 +112,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
   displayDensity: "comfortable",
   collapseNarration: false,
   clusterBots: true,
+  narrationOverrides: {} as Record<string, string>,
 
   setData: (
     pr,
@@ -122,9 +123,16 @@ export const useReviewStore = create<ReviewState>((set) => ({
     checkRuns = [],
     config = null,
   ) => {
+    const storageKey = `diffdad.reviewed.${pr.number}`;
+    let saved: Record<string, ChapterState> = {};
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (raw) saved = JSON.parse(raw);
+    } catch {}
     const chapterStates: Record<string, ChapterState> = {};
     narrative.chapters.forEach((_, idx) => {
-      chapterStates[`ch-${idx}`] = "reading";
+      const key = `ch-${idx}`;
+      chapterStates[key] = saved[key] === "reviewed" ? "reviewed" : "reading";
     });
     const next: Partial<ReviewState> = {
       pr,
@@ -156,9 +164,13 @@ export const useReviewStore = create<ReviewState>((set) => ({
       const key = `ch-${idx}`;
       const current = state.chapterStates[key];
       const next: ChapterState = current === "reviewed" ? "reading" : "reviewed";
-      return {
-        chapterStates: { ...state.chapterStates, [key]: next },
-      };
+      const updated = { ...state.chapterStates, [key]: next };
+      if (state.pr) {
+        try {
+          localStorage.setItem(`diffdad.reviewed.${state.pr.number}`, JSON.stringify(updated));
+        } catch {}
+      }
+      return { chapterStates: updated };
     }),
 
   setOpenLine: (key) => set({ openLine: key }),
@@ -212,4 +224,11 @@ export const useReviewStore = create<ReviewState>((set) => ({
   setDisplayDensity: (displayDensity) => set({ displayDensity }),
   setCollapseNarration: (collapseNarration) => set({ collapseNarration }),
   setClusterBots: (clusterBots) => set({ clusterBots }),
+  setNarrationOverride: (chapterKey: string, text: string) =>
+    set((s) => ({ narrationOverrides: { ...s.narrationOverrides, [chapterKey]: text } })),
+  clearNarrationOverride: (chapterKey: string) =>
+    set((s) => {
+      const { [chapterKey]: _, ...rest } = s.narrationOverrides;
+      return { narrationOverrides: rest };
+    }),
 }));
