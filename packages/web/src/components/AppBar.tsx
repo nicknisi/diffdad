@@ -28,15 +28,12 @@ export function AppBar({ onOpenActivity }: AppBarProps) {
       style={{ boxShadow: 'inset 0 -1px 0 var(--gray-a4)' }}
     >
       {/* Brand mark */}
-      <div className="flex items-center gap-2 text-[14px] font-bold tracking-[-0.01em]">
-        <img
-          src="/diff-dad-mark.svg"
-          alt="Diff Dad"
-          title={copy.brandTooltip}
-          className="h-[26px] w-[26px]"
-        />
-        <span className="text-[var(--fg-1)]">Diff Dad</span>
-      </div>
+      <img
+        src="/diff-dad-mark.svg"
+        alt="Diff Dad"
+        title={copy.brandTooltip}
+        className="h-[26px] w-[26px]"
+      />
 
       {/* Separator */}
       <span aria-hidden className="mx-1 inline-block h-5 w-px" style={{ background: 'var(--gray-a4)' }} />
