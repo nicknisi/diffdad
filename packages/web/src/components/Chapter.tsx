@@ -213,7 +213,7 @@ export function Chapter({ index, chapter }: Props) {
 
   const badgeStyle: React.CSSProperties = reviewed
     ? { background: 'var(--green-9)', color: '#fff' }
-    : { background: 'var(--gray-12)', color: '#fff' };
+    : { background: 'var(--purple-9)', color: '#fff' };
 
   // OUTLINE STRUCTURE
   if (storyStructure === 'outline') {
