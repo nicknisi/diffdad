@@ -183,7 +183,7 @@ export function PRHeader() {
 
   return (
     <section
-      className="bg-[var(--bg-panel)] px-6 pt-[18px] pb-3.5"
+      className="sticky top-[52px] z-20 bg-[var(--bg-panel)] px-6 pt-[18px] pb-3.5"
       style={{ boxShadow: 'inset 0 -1px 0 var(--gray-a4)' }}
     >
       <div className="flex items-start gap-3">

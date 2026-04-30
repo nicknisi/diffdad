@@ -48,7 +48,7 @@ export function ChapterTOC() {
   }
 
   return (
-    <aside className="sticky top-4 self-start text-[13px] text-[var(--fg-2)]">
+    <aside className="sticky top-[160px] self-start text-[13px] text-[var(--fg-2)]">
       <div className="px-2.5 pb-2 text-[11px] font-bold uppercase tracking-[0.06em] text-[var(--fg-3)]">Story</div>
       <ul className="m-0 list-none p-0">
         {narrative.chapters.map((ch, idx) => {
