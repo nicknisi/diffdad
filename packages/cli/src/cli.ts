@@ -1,8 +1,10 @@
 #!/usr/bin/env bun
 import { resolveGitHubToken } from "./auth";
-import { readConfig } from "./config";
+import { readConfig, runConfig } from "./config";
 import { GitHubClient } from "./github/client";
+import { cacheNarrative, getCachedNarrative } from "./narrative/cache";
 import { generateNarrative } from "./narrative/engine";
+import type { NarrativeResponse } from "./narrative/types";
 import { createServer } from "./server";
 
 interface ParsedPr {
@@ -135,10 +137,22 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
   ]);
 
   console.log(`${metadata.title} — ${files.length} files, +${metadata.additions} -${metadata.deletions}`);
-  console.log("Generating narrative...");
 
-  const narrative = await generateNarrative(metadata, files, [], config);
-  console.log(`${narrative.chapters.length} chapters generated. Starting server...`);
+  const noCache = Bun.argv.includes("--no-cache");
+  const cached = noCache
+    ? null
+    : await getCachedNarrative(parsed.owner, parsed.repo, parsed.number, metadata.headSha);
+  let narrative: NarrativeResponse;
+  if (cached) {
+    console.log("Using cached narrative (same commit SHA).");
+    narrative = cached;
+  } else {
+    console.log("Generating narrative...");
+    narrative = await generateNarrative(metadata, files, [], config);
+    await cacheNarrative(parsed.owner, parsed.repo, parsed.number, metadata.headSha, narrative);
+    console.log(`${narrative.chapters.length} chapters generated.`);
+  }
+  console.log("Starting server...");
 
   const app = createServer({ narrative, pr: metadata, files, comments, github, owner: parsed.owner, repo: parsed.repo, headSha: metadata.headSha });
 
@@ -161,9 +175,8 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
   await new Promise(() => {});
 }
 
-function configCommand(): number {
-  console.log("dad config: not yet implemented");
-  return 0;
+async function configCommand(): Promise<number> {
+  return await runConfig();
 }
 
 async function main(argv: string[]): Promise<number> {
@@ -178,7 +191,7 @@ async function main(argv: string[]): Promise<number> {
     case "review":
       return await reviewCommand(rest[0]);
     case "config":
-      return configCommand();
+      return await configCommand();
     default:
       console.error(`error: unknown command: ${cmd}`);
       console.error(USAGE);
