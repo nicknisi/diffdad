@@ -1,6 +1,46 @@
 @import "tailwindcss";
 @variant dark (&:where(.dark, .dark *));
 
+@theme {
+  --color-brand: #6565EC;
+  --color-brand-hover: #5151CD;
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-serif: "Source Serif 4", ui-serif, Georgia, serif;
+}
+
+:root {
+  --brand: #6565EC;
+  --brand-hover: #5151CD;
+  --brand-soft: rgba(101, 101, 236, 0.10);
+  --bg-page: #f8f8fa;
+  --bg-panel: #ffffff;
+  --bg-subtle: #f3f3f6;
+  --fg-1: #1a1523;
+  --fg-2: #60646c;
+  --fg-3: #8b8d98;
+  --border: rgba(0, 0, 20, 0.08);
+  --border-strong: rgba(0, 0, 20, 0.12);
+  --shadow-card: 0 1px 2px rgba(3, 2, 13, 0.06), 0 3px 6px -1px rgba(3, 2, 13, 0.10);
+  --shadow-elevated: 0 12px 24px -4px rgba(3, 2, 13, 0.18), 0 4px 8px -2px rgba(3, 2, 13, 0.10);
+}
+
+.dark {
+  --brand: #7c7cf2;
+  --brand-hover: #9595f5;
+  --brand-soft: rgba(124, 124, 242, 0.14);
+  --bg-page: #111113;
+  --bg-panel: #1a1a1e;
+  --bg-subtle: #222226;
+  --fg-1: #ededef;
+  --fg-2: #a0a0ab;
+  --fg-3: #6e6e7a;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.12);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.30), 0 3px 6px -1px rgba(0, 0, 0, 0.40);
+  --shadow-elevated: 0 12px 24px -4px rgba(0, 0, 0, 0.50), 0 4px 8px -2px rgba(0, 0, 0, 0.30);
+}
+
 html {
   font-size: 16px;
   -webkit-font-smoothing: antialiased;
@@ -10,6 +50,9 @@ html {
 
 body {
   font-family: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  background: var(--bg-page);
+  color: var(--fg-1);
+  font-feature-settings: "ss01", "cv11";
 }
 
 .font-mono, pre, code {

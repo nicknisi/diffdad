@@ -137,7 +137,10 @@ export const useReviewStore = create<ReviewState>((set) => ({
   setOpenLine: (key) => set({ openLine: key }),
 
   addComment: (comment) =>
-    set((state) => ({ comments: [...state.comments, comment] })),
+    set((state) => {
+      if (state.comments.some((c) => c.id === comment.id)) return state;
+      return { comments: [...state.comments, comment] };
+    }),
 
   setComments: (comments) => set({ comments }),
 

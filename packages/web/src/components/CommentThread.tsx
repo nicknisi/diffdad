@@ -222,7 +222,7 @@ export function CommentThread({
           </div>
         );
       })}
-      <div className="rounded-lg border border-gray-200 bg-white p-2 dark:border-gray-800 dark:bg-gray-900">
+      <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-panel)] p-2">
         {hasConflict && (
           <div className="mb-2 flex items-center justify-between gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200">
             <span>
@@ -247,7 +247,7 @@ export function CommentThread({
           onChange={(e) => setBody(e.target.value)}
           onKeyDown={onKeyDown}
           placeholder="Leave a comment. Cmd/Ctrl+Enter to submit."
-          className="block w-full resize-y rounded-md border border-gray-200 bg-transparent px-3 py-2 text-sm text-gray-900 outline-none focus:border-brand dark:border-gray-800 dark:text-gray-100"
+          className="block w-full resize-y rounded-md border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--fg-1)] outline-none focus:border-[var(--brand)]"
           rows={3}
         />
         {error && (
@@ -256,7 +256,7 @@ export function CommentThread({
           </div>
         )}
         {draftSavedAt && !error && (
-          <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+          <div className="mt-1 text-xs text-[var(--fg-3)]">
             Draft saved.
           </div>
         )}
@@ -268,7 +268,7 @@ export function CommentThread({
                 setBody("");
                 onClose();
               }}
-              className="rounded-md px-3 py-1 text-sm text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
+              className="rounded-md border border-[var(--border)] bg-transparent px-3 py-1 text-sm font-medium text-[var(--fg-1)] hover:bg-[var(--bg-subtle)]"
             >
               Cancel
             </button>
@@ -277,7 +277,7 @@ export function CommentThread({
             type="button"
             disabled={!body.trim() || !draftKey}
             onClick={saveDraft}
-            className="rounded-md border border-gray-200 bg-gray-50 px-3 py-1 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+            className="rounded-md border border-[var(--border-strong)] bg-[var(--bg-panel)] px-3 py-1 text-sm font-medium text-[var(--fg-1)] shadow-sm hover:bg-[var(--bg-subtle)] disabled:cursor-not-allowed disabled:opacity-50"
           >
             Save draft
           </button>
@@ -285,7 +285,7 @@ export function CommentThread({
             type="button"
             disabled={!body.trim() || submitting}
             onClick={() => void submit()}
-            className="rounded-md bg-brand px-3 py-1 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-md bg-[var(--brand)] px-3 py-1 text-sm font-semibold text-white shadow-sm hover:bg-[var(--brand-hover)] disabled:cursor-not-allowed disabled:opacity-50"
           >
             {submitting ? "Posting..." : "Comment"}
           </button>

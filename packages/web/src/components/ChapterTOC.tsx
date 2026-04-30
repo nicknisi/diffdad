@@ -16,10 +16,10 @@ export function ChapterTOC() {
 
   return (
     <aside className="sticky top-16 self-start">
-      <div className="px-2.5 pb-2 text-xs font-bold uppercase tracking-[0.06em] text-gray-400 dark:text-gray-500">
+      <div className="px-2.5 pb-2 text-[11px] font-bold uppercase tracking-[0.06em] text-[var(--fg-3)]">
         Story
       </div>
-      <ul className="space-y-1">
+      <ul className="space-y-0.5">
         {narrative.chapters.map((ch, idx) => {
           const id = `ch-${idx}`;
           const reviewed = chapterStates[id] === "reviewed";
@@ -30,32 +30,40 @@ export function ChapterTOC() {
               <button
                 type="button"
                 onClick={() => jump(id)}
-                className={`flex w-full items-start gap-2 rounded-md px-2.5 py-2 text-left ${
+                className={`relative flex w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors ${
                   active
-                    ? "bg-brand/10 text-brand"
-                    : "text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                    ? "bg-[var(--brand-soft)] text-[var(--brand)]"
+                    : "text-[var(--fg-2)] hover:bg-[var(--bg-subtle)] hover:text-[var(--fg-1)]"
                 }`}
               >
                 <div
-                  className={`mt-0.5 flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center rounded-full font-mono text-xs font-bold ${
+                  className={`mt-px flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center rounded-full font-mono text-[10.5px] font-bold ${
                     reviewed
                       ? "bg-green-600 text-white"
-                      : "bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-200"
+                      : active
+                        ? "bg-[var(--brand)] text-white"
+                        : "bg-[var(--bg-subtle)] text-[var(--fg-2)]"
                   }`}
                 >
-                  {reviewed ? "✓" : idx + 1}
+                  {reviewed ? (
+                    <svg viewBox="0 0 12 12" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M2.5 6.5l2.5 2.5 4.5-5" />
+                    </svg>
+                  ) : (
+                    idx + 1
+                  )}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium leading-snug">
+                  <div className="text-[13px] font-medium leading-[17px]">
                     {ch.title}
                   </div>
-                  <div className="text-xs leading-tight text-gray-400 dark:text-gray-500">
+                  <div className="text-[11.5px] leading-[14px] text-[var(--fg-3)] mt-0.5">
                     {hunkCount} {hunkCount === 1 ? "hunk" : "hunks"} · risk{" "}
                     {ch.risk}
                   </div>
                 </div>
                 {active && (
-                  <span className="mt-2 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-brand" />
+                  <span className="absolute right-2.5 top-3.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-[var(--brand)]" />
                 )}
               </button>
             </li>

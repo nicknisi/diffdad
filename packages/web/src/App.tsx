@@ -8,21 +8,10 @@ import { AppBar } from "./components/AppBar";
 import { ClassicView } from "./components/ClassicView";
 import { PRHeader } from "./components/PRHeader";
 import { ShortcutsHelp } from "./components/ShortcutsHelp";
-import { Splash } from "./components/Splash";
 import { StoryView } from "./components/StoryView";
 import { SubmitBar } from "./components/SubmitBar";
 import { TweaksPanel } from "./components/TweaksPanel";
 import { copy } from "./lib/microcopy";
-
-const SPLASH_KEY = "diffdad.splashSeen";
-
-function readSplashSeen(): boolean {
-  try {
-    return sessionStorage.getItem(SPLASH_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
 
 export default function App() {
   const theme = useReviewStore((s) => s.theme);
@@ -34,7 +23,6 @@ export default function App() {
   useKeyboardShortcuts();
   const [activityOpen, setActivityOpen] = useState(false);
   const [tweaksOpen, setTweaksOpen] = useState(false);
-  const [splashSeen, setSplashSeen] = useState<boolean>(() => readSplashSeen());
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
@@ -53,22 +41,9 @@ export default function App() {
     return () => document.removeEventListener("keydown", onKey);
   }, [activityOpen, shortcutsHelpOpen]);
 
-  function dismissSplash() {
-    try {
-      sessionStorage.setItem(SPLASH_KEY, "1");
-    } catch {
-      // ignore
-    }
-    setSplashSeen(true);
-  }
-
-  if (!splashSeen) {
-    return <Splash onContinue={dismissSplash} />;
-  }
-
   if (loading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-gray-50 text-gray-600 dark:bg-gray-950 dark:text-gray-400">
+      <main className="flex min-h-screen items-center justify-center bg-[var(--bg-page)] text-[var(--fg-2)]">
         <p className="text-base">{copy.loading}</p>
       </main>
     );
@@ -76,17 +51,17 @@ export default function App() {
 
   if (error) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-gray-50 text-gray-600 dark:bg-gray-950 dark:text-gray-400">
+      <main className="flex min-h-screen items-center justify-center bg-[var(--bg-page)] text-[var(--fg-2)]">
         <div className="text-center">
           <p className="text-base">{copy.errorGeneric}</p>
-          <p className="mt-2 text-sm text-gray-400">{error}</p>
+          <p className="mt-2 text-sm text-[var(--fg-3)]">{error}</p>
         </div>
       </main>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20 text-gray-900 dark:bg-gray-950 dark:text-gray-100">
+    <div className="min-h-screen bg-[var(--bg-page)] pb-20 text-[var(--fg-1)]">
       <AppBar
         onOpenActivity={() => setActivityOpen(true)}
         onOpenTweaks={() => setTweaksOpen(true)}

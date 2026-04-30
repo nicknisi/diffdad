@@ -42,7 +42,7 @@ export function SubmitDialog({ open, onClose, onSubmit }: Props) {
   const submitClasses =
     resolution === "request_changes"
       ? "bg-red-600 hover:bg-red-700"
-      : "bg-brand hover:bg-brand/90";
+      : "bg-[var(--brand)] hover:bg-[var(--brand-hover)]";
 
   return (
     <div
@@ -52,10 +52,10 @@ export function SubmitDialog({ open, onClose, onSubmit }: Props) {
       onClick={onClose}
     >
       <div
-        className="w-full max-w-[480px] rounded-2xl bg-white p-6 shadow-xl dark:bg-gray-900"
+        className="w-full max-w-[480px] rounded-2xl bg-[var(--bg-panel)] p-6 shadow-[var(--shadow-elevated)]"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="text-xl font-bold text-gray-900 dark:text-gray-50">
+        <h2 className="text-xl font-bold tracking-[-0.01em] text-[var(--fg-1)]">
           Submit your review
         </h2>
         <div className="mt-4 space-y-2">
@@ -66,8 +66,8 @@ export function SubmitDialog({ open, onClose, onSubmit }: Props) {
                 key={opt.value}
                 className={`block cursor-pointer rounded-md border p-3 text-sm ${
                   selected
-                    ? "border-brand bg-brand/5"
-                    : "border-gray-200 dark:border-gray-800"
+                    ? "border-[var(--brand)] bg-[var(--brand-soft)]"
+                    : "border-[var(--border)] hover:bg-[var(--bg-subtle)]"
                 }`}
               >
                 <div className="flex items-start gap-2">
@@ -77,13 +77,13 @@ export function SubmitDialog({ open, onClose, onSubmit }: Props) {
                     value={opt.value}
                     checked={selected}
                     onChange={() => setResolution(opt.value)}
-                    className="mt-1 accent-brand"
+                    className="mt-1 accent-[var(--brand)]"
                   />
                   <div>
-                    <div className="font-medium text-gray-900 dark:text-gray-100">
+                    <div className="font-semibold text-[var(--fg-1)]">
                       {opt.label}
                     </div>
-                    <div className="text-sm text-gray-500 dark:text-gray-400">
+                    <div className="text-[12.5px] leading-[17px] text-[var(--fg-2)]">
                       {opt.desc}
                     </div>
                   </div>
@@ -96,20 +96,20 @@ export function SubmitDialog({ open, onClose, onSubmit }: Props) {
           value={summary}
           onChange={(e) => setSummary(e.target.value)}
           placeholder="Optional summary..."
-          className="mt-4 block min-h-[100px] w-full rounded-md border border-gray-200 bg-transparent px-3 py-2 text-base outline-none focus:border-brand dark:border-gray-800"
+          className="mt-4 block min-h-[80px] w-full rounded-lg border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--fg-1)] outline-none focus:border-[var(--brand)]"
         />
         <div className="mt-4 flex justify-end gap-2">
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+            className="rounded-md border border-[var(--border)] px-3 py-1.5 text-sm font-medium text-[var(--fg-1)] hover:bg-[var(--bg-subtle)]"
           >
             Cancel
           </button>
           <button
             type="button"
             onClick={() => onSubmit(resolution, summary)}
-            className={`rounded-md px-4 py-1.5 text-sm font-medium text-white ${submitClasses}`}
+            className={`rounded-md px-4 py-1.5 text-sm font-bold text-white shadow-sm ${submitClasses}`}
           >
             {submitLabel}
           </button>

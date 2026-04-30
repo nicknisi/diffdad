@@ -29,23 +29,19 @@ export function SubmitBar() {
   return (
     <>
       <div
-        className="fixed bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-3 rounded-[14px] border border-black/[0.08] bg-white py-2 pl-[14px] pr-2 dark:border-white/10 dark:bg-gray-900"
-        style={{
-          boxShadow:
-            "0 12px 24px -4px rgba(3,2,13,0.18), 0 4px 8px -2px rgba(3,2,13,0.10)",
-        }}
+        className="fixed bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-3 rounded-[14px] border border-[var(--border-strong)] bg-[var(--bg-panel)] py-2 pl-[14px] pr-2 shadow-[var(--shadow-elevated)]"
       >
-        <div className="text-sm text-gray-700 dark:text-gray-300">
-          <span className="font-semibold text-gray-900 dark:text-gray-100">
+        <div className="text-[12.5px] text-[var(--fg-2)]">
+          <span className="font-bold text-[var(--fg-1)]">
             {reviewedCount} of {total}
           </span>{" "}
           chapters reviewed ·{" "}
-          <span className="font-semibold text-gray-900 dark:text-gray-100">
+          <span className="font-bold text-[var(--fg-1)]">
             {drafts.length}
           </span>{" "}
           pending {drafts.length === 1 ? "draft" : "drafts"}
         </div>
-        <div className="h-1.5 w-[90px] overflow-hidden rounded-full bg-gray-200 dark:bg-gray-800">
+        <div className="h-1.5 w-[90px] overflow-hidden rounded-full bg-[var(--bg-subtle)]">
           <div
             className="h-full rounded-full bg-green-500 transition-all"
             style={{ width: `${progress}%` }}
@@ -54,7 +50,7 @@ export function SubmitBar() {
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand/90"
+          className="h-[30px] rounded-[8px] bg-[var(--brand)] px-3 text-[12.5px] font-bold text-white shadow-sm hover:bg-[var(--brand-hover)]"
         >
           Submit review
         </button>

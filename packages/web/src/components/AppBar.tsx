@@ -23,38 +23,37 @@ export function AppBar({ onOpenActivity, onOpenTweaks }: AppBarProps) {
   const prNum = pr ? pr.number : null;
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-gray-200 bg-white px-4 dark:border-gray-800 dark:bg-gray-900">
+    <header className="sticky top-0 z-30 flex h-[52px] items-center gap-3.5 border-b border-[var(--border)] bg-[var(--bg-panel)] px-[18px]">
       {/* Brand mark */}
       <div className="flex items-center gap-2">
         <div
-          className="flex items-center justify-center bg-brand text-white"
-          style={{ width: 22, height: 22, borderRadius: 6 }}
+          className="flex h-[22px] w-[22px] items-center justify-center rounded-[6px] bg-[var(--brand)] text-white shadow-[var(--shadow-card)]"
         >
           <span className="text-[13px] font-bold leading-none">D</span>
         </div>
-        <span className="text-[15px] font-bold tracking-tight text-gray-900 dark:text-gray-50">
+        <span className="text-[14px] font-bold tracking-[-0.01em] text-[var(--fg-1)]">
           Diff Dad
         </span>
       </div>
 
       {/* Separator */}
-      <div className="h-5 w-px bg-gray-200 dark:bg-gray-800" />
+      <div className="h-5 w-px bg-[var(--border)]" />
 
       {/* CLI framing */}
-      <div className="flex min-w-0 items-center gap-2 font-mono text-[13px] text-gray-600 dark:text-gray-300">
-        <span className="font-bold text-brand">$</span>
-        <span className="rounded-md border border-gray-200 bg-gray-100 px-2 py-0.5 text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
+      <div className="flex min-w-0 items-center gap-2 font-mono text-[12.5px] font-medium text-[var(--fg-2)]">
+        <span className="font-bold text-[var(--brand)]">$</span>
+        <span className="rounded-[4px] border border-[var(--border)] bg-[var(--bg-subtle)] px-2 py-0.5 text-[var(--fg-1)]">
           dad review {prNum ?? "—"}
         </span>
-        <span className="text-gray-400 dark:text-gray-500">→</span>
-        <span className="truncate text-gray-600 dark:text-gray-300">
+        <span className="text-[var(--fg-3)]">→</span>
+        <span className="truncate text-[var(--fg-2)]">
           {slug ? (
             <>
-              <span className="font-bold text-brand">{slug}</span>
+              <span className="font-semibold text-[var(--brand)]">{slug}</span>
               {prNum != null ? `#${prNum}` : null}
             </>
           ) : (
-            <span className="text-gray-400">—</span>
+            <span className="text-[var(--fg-3)]">—</span>
           )}
         </span>
       </div>
@@ -68,7 +67,7 @@ export function AppBar({ onOpenActivity, onOpenTweaks }: AppBarProps) {
           type="button"
           aria-label="Open tweaks"
           onClick={onOpenTweaks}
-          className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+          className="flex h-[30px] w-[30px] items-center justify-center rounded-[6px] border border-[var(--border-strong)] bg-[var(--bg-panel)] text-[var(--fg-2)] hover:bg-[var(--bg-subtle)] hover:text-[var(--fg-1)]"
         >
           <IconGear className="h-4 w-4" />
         </button>
@@ -78,7 +77,7 @@ export function AppBar({ onOpenActivity, onOpenTweaks }: AppBarProps) {
           type="button"
           aria-label="Toggle theme"
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-          className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+          className="flex h-[30px] w-[30px] items-center justify-center rounded-[6px] border border-[var(--border-strong)] bg-[var(--bg-panel)] text-[var(--fg-2)] hover:bg-[var(--bg-subtle)] hover:text-[var(--fg-1)]"
         >
           {theme === "dark" ? (
             <IconSun className="h-4 w-4" />
@@ -90,8 +89,7 @@ export function AppBar({ onOpenActivity, onOpenTweaks }: AppBarProps) {
         {/* Avatar */}
         <div
           aria-label="User avatar"
-          className="flex items-center justify-center rounded-full text-xs font-bold text-white"
-          style={{ width: 28, height: 28, background: "#6565EC" }}
+          className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--brand)] text-[11px] font-bold text-white"
         >
           DD
         </div>

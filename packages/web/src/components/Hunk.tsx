@@ -190,23 +190,23 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight }: Props) {
   const editorUrl = `vscode://file/${file}:${hunk.newStart}`;
 
   return (
-    <div className="my-3 overflow-hidden rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-      <div className="flex items-center gap-3 border-b border-gray-200 bg-gray-50 px-3 py-2 font-mono text-sm dark:border-gray-800 dark:bg-gray-900/60">
-        <span className="font-semibold text-gray-800 dark:text-gray-200">
+    <div className="my-3 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--bg-panel)] shadow-sm">
+      <div className="flex items-center gap-2 border-b border-[var(--border)] bg-[var(--bg-subtle)] px-3 py-2 font-mono text-[12.5px]">
+        <span className="font-semibold text-[var(--fg-1)]">
           {file}
         </span>
-        <span className="text-gray-400 dark:text-gray-500">{range}</span>
+        <span className="text-[var(--fg-3)]">{range}</span>
         {isNewFile ? (
-          <span className="rounded bg-brand px-1.5 py-0.5 text-xs font-bold uppercase tracking-wider text-white">
+          <span className="ml-1 rounded-[4px] bg-green-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.06em] text-green-700 dark:bg-green-900/40 dark:text-green-300">
             New
           </span>
         ) : null}
         {highlight ? (
-          <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-bold uppercase tracking-wider text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+          <span className="ml-1 rounded-[4px] bg-[var(--brand-soft)] px-1.5 py-0.5 text-[10.5px] font-medium font-mono text-[var(--brand)]">
             focus L{highlight.from}–L{highlight.to}
           </span>
         ) : null}
-        <div className="ml-auto flex items-center gap-3">
+        <div className="ml-auto flex items-center gap-1">
           {githubUrl && (
             <a
               href={githubUrl}
@@ -214,18 +214,18 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight }: Props) {
               rel="noopener noreferrer"
               title="View on GitHub"
               aria-label="View on GitHub"
-              className="inline-flex items-center text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+              className="inline-flex h-[22px] w-[22px] items-center justify-center rounded text-[var(--fg-3)] hover:bg-[var(--bg-panel)] hover:text-[var(--fg-1)]"
             >
-              <IconGitHub className="h-4 w-4" />
+              <IconGitHub className="h-[11px] w-[11px]" />
             </a>
           )}
           <a
             href={editorUrl}
             title="Open in editor"
             aria-label="Open in editor"
-            className="inline-flex items-center text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+            className="inline-flex h-[22px] w-[22px] items-center justify-center rounded text-[var(--fg-3)] hover:bg-[var(--bg-panel)] hover:text-[var(--fg-1)]"
           >
-            <IconCode className="h-4 w-4" />
+            <IconCode className="h-[11px] w-[11px]" />
           </a>
         </div>
       </div>

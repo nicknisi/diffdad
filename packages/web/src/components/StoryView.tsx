@@ -10,11 +10,11 @@ export function StoryView() {
   if (!narrative) return null;
 
   const compact = displayDensity === "compact";
-  const padY = compact ? "py-4" : "py-6";
+  const padY = compact ? "py-4" : "pt-[18px] pb-20";
 
   if (layoutMode === "linear") {
     return (
-      <div className={`mx-auto max-w-[1100px] px-5 ${padY}`}>
+      <div className={`mx-auto max-w-[880px] px-6 ${padY}`}>
         <main>
           <SuggestedStart />
           {narrative.chapters.map((ch, idx) => (
@@ -27,10 +27,10 @@ export function StoryView() {
 
   return (
     <div
-      className={`mx-auto grid max-w-[1600px] grid-cols-[280px_1fr] gap-5 px-5 ${padY}`}
+      className={`mx-auto grid max-w-[1100px] grid-cols-[220px_minmax(0,1fr)] gap-7 px-6 ${padY}`}
     >
       <ChapterTOC />
-      <main>
+      <main className="min-w-0">
         <SuggestedStart />
         {narrative.chapters.map((ch, idx) => (
           <Chapter key={`ch-${idx}`} index={idx} chapter={ch} />

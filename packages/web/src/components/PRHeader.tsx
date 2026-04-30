@@ -121,11 +121,11 @@ export function PRHeader() {
   const prUrl = repoUrl ? `${repoUrl}/pull/${pr.number}` : null;
 
   const baseBtn =
-    "px-3 py-1 text-sm font-medium rounded-md transition-colors";
+    "px-2.5 py-1 text-[12.5px] font-medium rounded-[5px] transition-colors";
   const activeBtn =
-    "bg-white text-gray-900 border border-gray-200 shadow-sm dark:bg-gray-900 dark:text-gray-50 dark:border-gray-700";
+    "bg-[var(--bg-panel)] text-[var(--fg-1)] shadow-sm";
   const inactiveBtn =
-    "bg-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200";
+    "bg-transparent text-[var(--fg-2)] hover:text-[var(--fg-1)]";
 
   let checksLabel: { text: string; className: string } | null = null;
   if (summary.total > 0) {
@@ -161,30 +161,30 @@ export function PRHeader() {
     : null;
 
   return (
-    <section className="border-b border-gray-200 bg-white px-8 py-6 dark:border-gray-800 dark:bg-gray-900">
-      <div className="flex items-start justify-between gap-4">
-        <h1 className="text-2xl font-bold tracking-[-0.0125em] text-gray-900 dark:text-gray-50">
+    <section className="border-b border-[var(--border)] bg-[var(--bg-panel)] px-6 pb-3.5 pt-[18px]">
+      <div className="flex items-start justify-between gap-3">
+        <h1 className="text-[22px] font-bold leading-[27px] tracking-[-0.0125em] text-[var(--fg-1)]">
           {prUrl ? (
             <a
               href={prUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="font-normal text-gray-400 hover:text-brand dark:text-gray-500"
+              className="mr-2 font-normal text-[var(--fg-3)] hover:text-[var(--brand)]"
             >
               #{pr.number}
             </a>
           ) : (
-            <span className="font-normal text-gray-400 dark:text-gray-500">
+            <span className="mr-2 font-normal text-[var(--fg-3)]">
               #{pr.number}
             </span>
-          )}{" "}
+          )}
           {pr.title}
         </h1>
-        <div className="flex shrink-0 items-center gap-3">
+        <div className="flex shrink-0 items-center gap-2">
           <div
             role="tablist"
             aria-label="View mode"
-            className="flex items-center gap-1 rounded-lg bg-gray-100 p-1 dark:bg-gray-800"
+            className="flex items-center gap-0.5 rounded-[7px] border border-[var(--border)] bg-[var(--bg-subtle)] p-[2px]"
           >
             <button
               type="button"
@@ -208,43 +208,46 @@ export function PRHeader() {
           <button
             type="button"
             onClick={() => setSubmitOpen(true)}
-            className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand/90"
+            className="h-[30px] rounded-[6px] bg-[var(--brand)] px-3 text-[12.5px] font-bold text-white shadow-sm hover:bg-[var(--brand-hover)]"
           >
             Submit review
           </button>
         </div>
       </div>
-      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-gray-600 dark:text-gray-400">
-        <span className="rounded-md border border-gray-200 bg-gray-100 px-2 py-0.5 font-mono text-[12px] text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
-          {pr.branch} <span className="text-gray-400 dark:text-gray-500">→</span>{" "}
-          {pr.base}
+      <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-2 text-[13px] text-[var(--fg-2)]">
+        <span className="rounded-[4px] bg-[var(--bg-subtle)] px-1.5 py-[2px] font-mono text-[12.5px] text-[var(--fg-2)]">
+          <b className="font-medium text-[var(--fg-1)]">{pr.branch}</b>{" "}
+          <span className="text-[var(--fg-3)]">→</span>{" "}
+          <b className="font-medium text-[var(--fg-1)]">{pr.base}</b>
         </span>
         {authorUrl ? (
           <a
             href={authorUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="font-bold text-gray-900 hover:text-brand dark:text-gray-100"
+            className="font-bold text-[var(--fg-1)] hover:text-[var(--brand)]"
           >
             {pr.author.login}
           </a>
         ) : (
-          <span className="font-bold text-gray-900 dark:text-gray-100">
+          <span className="font-bold text-[var(--fg-1)]">
             {pr.author?.login ?? "unknown"}
           </span>
         )}
-        <span className="text-gray-500 dark:text-gray-400">
+        <span className="text-[var(--fg-3)]">
           opened {timeAgo(pr.createdAt)} · updated {timeAgo(pr.updatedAt)}
         </span>
-        <span className="text-gray-300 dark:text-gray-600">·</span>
+        <span className="text-[var(--fg-3)]">·</span>
         <span>
-          <span className="font-medium text-green-700 dark:text-green-400">
+          <span className="font-medium text-green-600 dark:text-green-400">
             +{pr.additions}
           </span>{" "}
-          <span className="font-medium text-red-700 dark:text-red-400">
+          <span className="font-medium text-red-600 dark:text-red-400">
             −{pr.deletions}
           </span>{" "}
-          across {pr.changedFiles} {pr.changedFiles === 1 ? "file" : "files"}
+          <span className="text-[var(--fg-2)]">
+            across {pr.changedFiles} {pr.changedFiles === 1 ? "file" : "files"}
+          </span>
         </span>
         {checksLabel ? (
           <div className="relative">

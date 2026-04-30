@@ -19,7 +19,7 @@ export function NarrationBlock({ content }: Props) {
       <button
         type="button"
         onClick={() => setExpanded(true)}
-        className={`${margin} block text-sm italic text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200`}
+        className={`${margin} block text-sm italic text-[var(--fg-3)] hover:text-[var(--fg-1)]`}
       >
         AI narration (click to expand)
       </button>
@@ -27,7 +27,10 @@ export function NarrationBlock({ content }: Props) {
   }
 
   return (
-    <div className={`${margin} text-base leading-relaxed text-gray-700 dark:text-gray-300`}>
+    <div
+      className={`${margin} max-w-[64ch] text-[14.5px] leading-[22px] text-[var(--fg-1)]`}
+      style={{ textWrap: "pretty" }}
+    >
       <Markdown source={content} />
     </div>
   );

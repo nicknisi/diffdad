@@ -122,8 +122,8 @@ export function NarrationAnchor({ chapterIndex }: Props) {
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-2 text-sm font-medium text-gray-400">
-        <div className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-gray-50 p-0.5 dark:border-gray-800 dark:bg-gray-900">
+      <div className="flex flex-wrap items-center gap-1.5 text-[12px] font-medium text-[var(--fg-3)]">
+        <div className="inline-flex items-center gap-0.5 rounded-md border border-[var(--border)] bg-[var(--bg-subtle)] p-[2px]">
           {DENSITIES.map((d) => {
             const active = d === activeDensity;
             return (
@@ -133,8 +133,8 @@ export function NarrationAnchor({ chapterIndex }: Props) {
                 onClick={() => setChapterDensity(chapterKey, d)}
                 className={
                   active
-                    ? "rounded-md border border-gray-200 bg-white px-2 py-0.5 text-xs font-medium capitalize text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-                    : "rounded-md border border-transparent px-2 py-0.5 text-xs font-medium capitalize text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                    ? "rounded-[3px] bg-[var(--bg-panel)] px-2 py-0.5 text-[11px] font-medium capitalize text-[var(--fg-1)] shadow-sm"
+                    : "rounded-[3px] px-2 py-0.5 text-[11px] font-medium capitalize text-[var(--fg-3)] hover:text-[var(--fg-1)]"
                 }
               >
                 {d}
@@ -147,9 +147,9 @@ export function NarrationAnchor({ chapterIndex }: Props) {
           type="button"
           onClick={handleRenarrate}
           disabled={renarrating}
-          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-60 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+          className="inline-flex items-center gap-1 rounded-[4px] px-1.5 py-1 text-[12px] font-medium text-[var(--fg-3)] hover:bg-[var(--bg-subtle)] hover:text-[var(--fg-1)] disabled:opacity-60"
         >
-          <IconRefresh className="h-3.5 w-3.5" />
+          <IconRefresh className="h-3 w-3" />
           {renarrating ? "Re-narrating..." : "Re-narrate"}
         </button>
 
@@ -158,11 +158,11 @@ export function NarrationAnchor({ chapterIndex }: Props) {
           onClick={() => setAskOpen((v) => !v)}
           className={
             askOpen
-              ? "inline-flex items-center gap-1 rounded-md bg-brand/10 px-2 py-1 text-sm font-medium text-brand"
-              : "inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+              ? "inline-flex items-center gap-1 rounded-[4px] bg-[var(--brand-soft)] px-1.5 py-1 text-[12px] font-medium text-[var(--brand)]"
+              : "inline-flex items-center gap-1 rounded-[4px] px-1.5 py-1 text-[12px] font-medium text-[var(--fg-3)] hover:bg-[var(--bg-subtle)] hover:text-[var(--fg-1)]"
           }
         >
-          <IconSpark className="h-3.5 w-3.5" />
+          <IconSpark className="h-3 w-3" />
           Ask AI
         </button>
 
@@ -171,28 +171,28 @@ export function NarrationAnchor({ chapterIndex }: Props) {
           onClick={() => setCommentOpen((v) => !v)}
           className={
             commentOpen
-              ? "inline-flex items-center gap-1 rounded-md bg-gray-100 px-2 py-1 text-sm font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-200"
-              : "inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+              ? "inline-flex items-center gap-1 rounded-[4px] bg-[var(--bg-subtle)] px-1.5 py-1 text-[12px] font-medium text-[var(--fg-1)]"
+              : "inline-flex items-center gap-1 rounded-[4px] px-1.5 py-1 text-[12px] font-medium text-[var(--fg-3)] hover:bg-[var(--bg-subtle)] hover:text-[var(--fg-1)]"
           }
         >
-          <IconChat className="h-3.5 w-3.5" />
+          <IconChat className="h-3 w-3" />
           Comment on chapter
         </button>
       </div>
 
       {askOpen && (
-        <div className="mt-2 rounded-lg border border-gray-200 bg-white p-2 dark:border-gray-800 dark:bg-gray-900">
+        <div className="mt-2 rounded-lg border border-[var(--border)] bg-[var(--bg-panel)] p-2">
           <textarea
             autoFocus
             value={askPrompt}
             onChange={(e) => setAskPrompt(e.target.value)}
             onKeyDown={onAskKeyDown}
             placeholder="e.g. Why this timeout? What does this Zod schema cover?"
-            className="block w-full resize-y rounded-md border border-gray-200 bg-transparent px-3 py-2 text-sm text-gray-900 outline-none focus:border-brand dark:border-gray-800 dark:text-gray-100"
+            className="block w-full resize-y rounded-md border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--fg-1)] outline-none focus:border-[var(--brand)]"
             rows={2}
           />
           {askResponse && (
-            <div className="mt-2 rounded-md bg-gray-50 p-2 text-sm text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+            <div className="mt-2 rounded-md bg-[var(--bg-subtle)] p-2 text-sm text-[var(--fg-1)]">
               {askResponse}
             </div>
           )}
@@ -201,7 +201,7 @@ export function NarrationAnchor({ chapterIndex }: Props) {
               type="button"
               onClick={closeAsk}
               aria-label="Close"
-              className="inline-flex items-center justify-center rounded-md px-2 py-1 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
+              className="inline-flex items-center justify-center rounded-md px-2 py-1 text-[var(--fg-2)] hover:bg-[var(--bg-subtle)] hover:text-[var(--fg-1)]"
             >
               <IconX className="h-4 w-4" />
             </button>
@@ -209,7 +209,7 @@ export function NarrationAnchor({ chapterIndex }: Props) {
               type="button"
               disabled={!askPrompt.trim() || askLoading}
               onClick={submitAsk}
-              className="rounded-md bg-brand px-3 py-1 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-md bg-[var(--brand)] px-3 py-1 text-sm font-semibold text-white shadow-sm hover:bg-[var(--brand-hover)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {askLoading ? "Asking..." : "Ask"}
             </button>
@@ -218,14 +218,14 @@ export function NarrationAnchor({ chapterIndex }: Props) {
       )}
 
       {commentOpen && (
-        <div className="mt-2 rounded-lg border border-gray-200 bg-white p-2 dark:border-gray-800 dark:bg-gray-900">
+        <div className="mt-2 rounded-lg border border-[var(--border)] bg-[var(--bg-panel)] p-2">
           <textarea
             autoFocus
             value={commentBody}
             onChange={(e) => setCommentBody(e.target.value)}
             onKeyDown={onCommentKeyDown}
             placeholder={`Comment on Chapter ${chapterIndex + 1}. Cmd/Ctrl+Enter to submit.`}
-            className="block w-full resize-y rounded-md border border-gray-200 bg-transparent px-3 py-2 text-sm text-gray-900 outline-none focus:border-brand dark:border-gray-800 dark:text-gray-100"
+            className="block w-full resize-y rounded-md border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--fg-1)] outline-none focus:border-[var(--brand)]"
             rows={3}
           />
           {commentError && (
@@ -241,7 +241,7 @@ export function NarrationAnchor({ chapterIndex }: Props) {
                 setCommentOpen(false);
                 setCommentError(null);
               }}
-              className="rounded-md px-3 py-1 text-sm text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
+              className="rounded-md border border-[var(--border)] px-3 py-1 text-sm font-medium text-[var(--fg-1)] hover:bg-[var(--bg-subtle)]"
             >
               Cancel
             </button>
@@ -249,7 +249,7 @@ export function NarrationAnchor({ chapterIndex }: Props) {
               type="button"
               disabled={!commentBody.trim() || commentSubmitting}
               onClick={() => void submitComment()}
-              className="rounded-md bg-brand px-3 py-1 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-md bg-[var(--brand)] px-3 py-1 text-sm font-semibold text-white shadow-sm hover:bg-[var(--brand-hover)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {commentSubmitting ? "Posting..." : "Comment"}
             </button>

@@ -12,7 +12,7 @@ type Props = {
 };
 
 const RISK_STYLES: Record<ChapterType["risk"], string> = {
-  low: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300",
+  low: "bg-[var(--bg-subtle)] text-[var(--fg-2)]",
   medium:
     "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300",
   high: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
@@ -101,7 +101,7 @@ export function Chapter({ index, chapter }: Props) {
       className={
         reviewed
           ? "ml-auto inline-flex items-center gap-1 rounded-md bg-green-100 px-3 py-1 text-sm font-medium text-green-700 dark:bg-green-900/40 dark:text-green-300"
-          : "ml-auto rounded-md border border-gray-200 px-3 py-1 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800"
+          : "ml-auto rounded-md border border-[var(--border-strong)] bg-[var(--bg-panel)] px-3 py-1 text-sm font-medium text-[var(--fg-1)] shadow-sm hover:bg-[var(--bg-subtle)]"
       }
     >
       {reviewed ? (
@@ -178,11 +178,11 @@ export function Chapter({ index, chapter }: Props) {
   // OUTLINE STRUCTURE
   if (storyStructure === "outline") {
     const padding = compact ? "p-3" : "p-4";
-    const margin = compact ? "mb-2" : "mb-3";
+    const margin = compact ? "mb-3" : "mb-4";
     return (
       <section
         data-chid={id}
-        className={`${margin} rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900 ${reviewed ? "opacity-85" : ""}`}
+        className={`${margin} rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)] shadow-[var(--shadow-card)] ${reviewed ? "opacity-85" : ""}`}
       >
         <button
           type="button"
@@ -191,20 +191,20 @@ export function Chapter({ index, chapter }: Props) {
           className={`flex w-full items-center gap-3 ${padding} text-left`}
         >
           <span
-            className={`flex h-5 w-5 flex-shrink-0 items-center justify-center text-gray-500 transition-transform dark:text-gray-400 ${
+            className={`flex h-5 w-5 flex-shrink-0 items-center justify-center text-[var(--fg-3)] transition-transform ${
               outlineOpen ? "rotate-90" : ""
             }`}
           >
             <IconChevron className="h-3.5 w-3.5" />
           </span>
-          <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md bg-gray-900 font-mono text-sm font-bold text-white dark:bg-gray-200 dark:text-gray-900">
+          <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md bg-[var(--fg-1)] font-mono text-[12px] font-bold text-[var(--bg-panel)]">
             {index + 1}
           </div>
-          <h2 className="text-base font-bold tracking-[-0.01em] text-gray-900 dark:text-gray-50">
+          <h2 className="text-[18px] font-bold leading-6 tracking-[-0.01em] text-[var(--fg-1)]">
             {chapter.title}
           </h2>
           {riskPill}
-          <span className="text-xs text-gray-500 dark:text-gray-400">
+          <span className="text-xs text-[var(--fg-3)]">
             {hunkCount} {hunkCount === 1 ? "hunk" : "hunks"} · {commentCount}{" "}
             {commentCount === 1 ? "comment" : "comments"}
           </span>
@@ -216,21 +216,21 @@ export function Chapter({ index, chapter }: Props) {
 
   // LINEAR STRUCTURE
   if (storyStructure === "linear") {
-    const margin = compact ? "mb-4" : "mb-6";
+    const margin = compact ? "mb-5" : "mb-7";
     return (
       <section data-chid={id} className={margin}>
         <div className="mb-3 flex items-center gap-3">
-          <hr className="w-8 flex-shrink-0 border-gray-300 dark:border-gray-700" />
-          <div className="flex h-5 flex-shrink-0 items-center justify-center rounded-md bg-gray-900 px-1.5 font-mono text-xs font-bold text-white dark:bg-gray-200 dark:text-gray-900">
+          <hr className="w-8 flex-shrink-0 border-[var(--border-strong)]" />
+          <div className="flex h-5 flex-shrink-0 items-center justify-center rounded-md bg-[var(--fg-1)] px-1.5 font-mono text-xs font-bold text-[var(--bg-panel)]">
             Ch {index + 1}
           </div>
-          <h2 className="text-lg font-bold tracking-[-0.01em] text-gray-900 dark:text-gray-50">
+          <h2 className="text-[18px] font-bold leading-6 tracking-[-0.01em] text-[var(--fg-1)]">
             {chapter.title}
           </h2>
           {riskPill}
           {reviewedButton}
         </div>
-        <div className="border-t border-gray-200 pt-3 dark:border-gray-800">
+        <div className="border-t border-[var(--border)] pt-4">
           {body}
         </div>
       </section>
@@ -238,18 +238,18 @@ export function Chapter({ index, chapter }: Props) {
   }
 
   // CHAPTERS (default)
-  const padding = compact ? "p-4" : "p-6";
-  const margin = compact ? "mb-2" : "mb-4";
+  const padding = compact ? "p-5" : "p-7";
+  const margin = compact ? "mb-4" : "mb-7";
   return (
     <section
       data-chid={id}
-      className={`${margin} rounded-2xl border border-gray-200 bg-white ${padding} shadow-sm dark:border-gray-800 dark:bg-gray-900 ${reviewed ? "opacity-85" : ""}`}
+      className={`${margin} rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)] ${padding} shadow-[var(--shadow-card)] ${reviewed ? "opacity-85" : ""}`}
     >
       <div className="flex items-center gap-3">
-        <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md bg-gray-900 font-mono text-sm font-bold text-white dark:bg-gray-200 dark:text-gray-900">
+        <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-[7px] bg-[var(--fg-1)] font-mono text-[12px] font-bold text-[var(--bg-panel)]">
           {index + 1}
         </div>
-        <h2 className="text-lg font-bold tracking-[-0.01em] text-gray-900 dark:text-gray-50">
+        <h2 className="text-[18px] font-bold leading-6 tracking-[-0.01em] text-[var(--fg-1)]">
           {chapter.title}
         </h2>
         {riskPill}
