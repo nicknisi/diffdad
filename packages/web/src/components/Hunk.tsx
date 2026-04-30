@@ -7,6 +7,7 @@ import { Comment } from "./Comment";
 import { useHighlighter } from "../hooks/useHighlighter";
 import { guessLang } from "../lib/shiki";
 import { getAuthorInfo } from "../lib/authors";
+import { normalizePath } from "../lib/paths";
 import { IconArrowRight, IconChat, IconFile, IconGitHub } from "./Icons";
 
 type Props = {
@@ -210,8 +211,9 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight }: Props) {
 
   // Bot comments scoped to this hunk's line range and file
   const botComments = useMemo(() => {
+    const normFile = normalizePath(file);
     return comments.filter((c) => {
-      if (c.path !== file) return false;
+      if (normalizePath(c.path) !== normFile) return false;
       if (!/\[bot\]$/.test(c.author)) return false;
       if (c.line === undefined) return false;
       return c.line >= hunkStart && c.line <= hunkEnd;
@@ -288,14 +290,26 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight }: Props) {
       <div>
         {hunk.lines.map((line, i) => {
           const lineKey = `${file}:${hunkIndex}:${i}`;
-          const lineComments: PRComment[] = comments.filter(
-            (c) =>
-              c.path === file &&
-              c.line !== undefined &&
+          const normFile = normalizePath(file);
+          const lineComments: PRComment[] = comments.filter((c) => {
+            if (normalizePath(c.path) !== normFile) return false;
+            if (c.line === undefined) return false;
+            if (clusterBots && /\[bot\]$/.test(c.author)) return false;
+            // GitHub review comments use `line` for the new-side line number
+            // when side === "RIGHT" (or unset), and the old-side line number
+            // when side === "LEFT". Match against the right axis on the diff
+            // line so LEFT-side comments still appear.
+            if (c.side === "LEFT") {
+              return (
+                line.lineNumber.old !== undefined &&
+                c.line === line.lineNumber.old
+              );
+            }
+            return (
               line.lineNumber.new !== undefined &&
-              c.line === line.lineNumber.new &&
-              (clusterBots ? !/\[bot\]$/.test(c.author) : true),
-          );
+              c.line === line.lineNumber.new
+            );
+          });
           const hasThread = openLine === lineKey || lineComments.length > 0;
           const dimmed =
             highlight !== undefined &&

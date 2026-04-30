@@ -40,6 +40,8 @@ type GhReviewComment = {
   updated_at: string;
   path: string;
   line: number | null;
+  original_line: number | null;
+  position: number | null;
   side: "LEFT" | "RIGHT" | null;
   in_reply_to_id?: number;
   diff_hunk: string;
@@ -152,7 +154,7 @@ export class GitHubClient {
       createdAt: c.created_at,
       updatedAt: c.updated_at,
       path: c.path,
-      line: c.line ?? undefined,
+      line: c.line ?? c.original_line ?? undefined,
       side: c.side ?? undefined,
       inReplyToId: c.in_reply_to_id,
       diffHunk: c.diff_hunk,

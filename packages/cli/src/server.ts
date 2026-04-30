@@ -42,6 +42,25 @@ export function createServer(ctx: ServerContext) {
 
   app.get("/api/narrative", async (c) => {
     const config = await readConfig();
+    const commentPaths = [
+      ...new Set(
+        ctx.comments
+          .map((cm) => cm.path)
+          .filter((p): p is string => Boolean(p)),
+      ),
+    ];
+    const diffFiles = ctx.files.map((f) => f.file);
+    const narrativeFiles = [
+      ...new Set(
+        ctx.narrative.chapters.flatMap((ch) =>
+          ch.sections
+            .filter(
+              (s): s is Extract<typeof s, { type: "diff" }> => s.type === "diff",
+            )
+            .map((s) => s.file),
+        ),
+      ),
+    ];
     return c.json({
       narrative: ctx.narrative,
       pr: ctx.pr,
@@ -55,6 +74,12 @@ export function createServer(ctx: ServerContext) {
         displayDensity: config.displayDensity ?? "comfortable",
         defaultNarrationDensity: config.defaultNarrationDensity ?? "normal",
         clusterBots: config.clusterBots ?? true,
+      },
+      _debug: {
+        totalComments: ctx.comments.length,
+        commentPaths,
+        diffFiles,
+        narrativeFiles,
       },
     });
   });
