@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useReviewStore } from "../state/review-store";
 import type { DiffHunk, PRComment } from "../state/types";
 import { CodeLine } from "./CodeLine";
@@ -12,6 +13,59 @@ type Props = {
   hunkIndex: number;
 };
 
+function CollapsibleThread({
+  comments,
+  file,
+  lineNumber,
+  lineKey,
+  isNewThread,
+  onClose,
+}: {
+  comments: PRComment[];
+  file: string;
+  lineNumber: number | undefined;
+  lineKey: string;
+  isNewThread: boolean;
+  onClose: () => void;
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+  const count = comments.length;
+
+  if (collapsed) {
+    return (
+      <button
+        type="button"
+        onClick={() => setCollapsed(false)}
+        className="flex w-full items-center gap-2 border-l-2 border-brand/40 bg-gray-50 px-3 py-1.5 text-[12.5px] text-gray-500 hover:bg-gray-100 dark:bg-gray-900/40 dark:hover:bg-gray-800"
+      >
+        <span className="text-brand">💬</span>
+        {count} {count === 1 ? "comment" : "comments"} — click to expand
+      </button>
+    );
+  }
+
+  return (
+    <div className="border-l-2 border-brand bg-gray-50 px-3 py-3 dark:bg-gray-900/60">
+      {count > 0 && (
+        <button
+          type="button"
+          onClick={() => setCollapsed(true)}
+          className="mb-2 text-[11.5px] font-medium text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+        >
+          Collapse {count} {count === 1 ? "comment" : "comments"}
+        </button>
+      )}
+      <CommentThread
+        comments={comments}
+        path={file}
+        line={lineNumber}
+        onClose={onClose}
+        autoFocus={isNewThread}
+      />
+    </div>
+  );
+}
+
 export function Hunk({ file, hunk, isNewFile, hunkIndex }: Props) {
   const openLine = useReviewStore((s) => s.openLine);
   const comments = useReviewStore((s) => s.comments);
@@ -23,7 +77,7 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex }: Props) {
 
   return (
     <div className="my-3 overflow-hidden rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-      <div className="flex items-center gap-3 border-b border-gray-200 bg-gray-50 px-3 py-2 font-mono text-[13px] dark:border-gray-800 dark:bg-gray-900/60">
+      <div className="flex items-center gap-3 border-b border-gray-200 bg-gray-50 px-3 py-2 font-mono text-[13.5px] dark:border-gray-800 dark:bg-gray-900/60">
         <span className="font-semibold text-gray-800 dark:text-gray-200">
           {file}
         </span>
@@ -44,21 +98,21 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex }: Props) {
               line.lineNumber.new !== undefined &&
               c.line === line.lineNumber.new,
           );
+          const hasThread = openLine === lineKey || lineComments.length > 0;
           return (
             <div key={lineKey}>
               <CodeLine line={line} lineKey={lineKey} lang={lang} />
-              {(openLine === lineKey || lineComments.length > 0) && (
-                <div className="border-l-2 border-brand bg-gray-50 px-3 py-3 dark:bg-gray-900/60">
-                  <CommentThread
-                    comments={lineComments}
-                    path={file}
-                    line={line.lineNumber.new}
-                    onClose={() =>
-                      openLine === lineKey ? setOpenLine(null) : null
-                    }
-                    autoFocus={openLine === lineKey}
-                  />
-                </div>
+              {hasThread && (
+                <CollapsibleThread
+                  comments={lineComments}
+                  file={file}
+                  lineNumber={line.lineNumber.new}
+                  lineKey={lineKey}
+                  isNewThread={openLine === lineKey && lineComments.length === 0}
+                  onClose={() =>
+                    openLine === lineKey ? setOpenLine(null) : undefined
+                  }
+                />
               )}
             </div>
           );

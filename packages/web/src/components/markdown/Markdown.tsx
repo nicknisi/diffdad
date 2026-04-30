@@ -42,7 +42,7 @@ function renderMarkdown(src: string): string {
     if (para.length === 0) return;
     const joined = para.join(" ");
     out.push(
-      `<p class="mb-2 text-[13.5px] leading-[19px] text-gray-800 dark:text-gray-200">${renderInline(escapeHtml(joined))}</p>`,
+      `<p class="mb-3 text-[15px] leading-[24px] text-gray-800 dark:text-gray-200">${renderInline(escapeHtml(joined))}</p>`,
     );
     para = [];
   }

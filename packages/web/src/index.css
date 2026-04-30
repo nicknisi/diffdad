@@ -1,2 +1,21 @@
 @import "tailwindcss";
 @variant dark (&:where(.dark, .dark *));
+
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  font-family: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+
+.font-mono, pre, code {
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+.font-serif, .font-em {
+  font-family: "Source Serif 4", ui-serif, Georgia, serif;
+}

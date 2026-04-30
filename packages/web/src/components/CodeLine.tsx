@@ -38,7 +38,7 @@ export function CodeLine({ line, lineKey, lang }: Props) {
 
   return (
     <div
-      className={`group relative flex font-mono text-[13px] leading-[20px] ${rowBg}`}
+      className={`group relative flex font-mono text-[13.5px] leading-[21px] ${rowBg}`}
     >
       <div className="w-12 select-none px-2 text-right text-gray-400 dark:text-gray-600">
         {line.lineNumber.old ?? ""}

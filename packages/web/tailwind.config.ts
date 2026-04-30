@@ -9,8 +9,8 @@ const config: Config = {
         brand: "#6565EC",
       },
       fontFamily: {
-        sans: ["Untitled Sans", "ui-sans-serif", "system-ui", "sans-serif"],
-        mono: ["IBM Plex Mono", "ui-monospace", "monospace"],
+        sans: ["Inter", "ui-sans-serif", "system-ui", "-apple-system", "sans-serif"],
+        mono: ["IBM Plex Mono", "ui-monospace", "SFMono-Regular", "monospace"],
         serif: ["Source Serif 4", "ui-serif", "Georgia", "serif"],
       },
     },
