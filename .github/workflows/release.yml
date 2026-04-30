@@ -65,31 +65,29 @@ jobs:
           generate_release_notes: true
           files: "*.tar.gz"
 
-  update-tap:
+  update-formula:
     needs: release
     runs-on: ubuntu-latest
     if: ${{ !contains(github.ref_name, '-') }}
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
       - uses: actions/download-artifact@v4
         with:
           merge-multiple: true
 
-      - name: Compute checksums
-        id: sha
-        run: |
-          echo "arm64=$(shasum -a 256 dad-darwin-arm64.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-          echo "x86_64=$(shasum -a 256 dad-darwin-x86_64.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-          echo "linux=$(shasum -a 256 dad-linux-x86_64.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-
-      - name: Generate formula
+      - name: Update formula
         env:
           VERSION: ${{ github.ref_name }}
-          SHA_ARM64: ${{ steps.sha.outputs.arm64 }}
-          SHA_X86_64: ${{ steps.sha.outputs.x86_64 }}
-          SHA_LINUX: ${{ steps.sha.outputs.linux }}
         run: |
           VER="${VERSION#v}"
-          cat > dad.rb << FORMULA
+          SHA_ARM64=$(shasum -a 256 dad-darwin-arm64.tar.gz | cut -d' ' -f1)
+          SHA_X86_64=$(shasum -a 256 dad-darwin-x86_64.tar.gz | cut -d' ' -f1)
+          SHA_LINUX=$(shasum -a 256 dad-linux-x86_64.tar.gz | cut -d' ' -f1)
+
+          cat > Formula/dad.rb << FORMULA
           class Dad < Formula
             desc "GitHub PRs as narrated stories — AI-powered semantic diff review"
             homepage "https://github.com/workos/diffappointment"
@@ -122,14 +120,10 @@ jobs:
           end
           FORMULA
 
-      - name: Push to homebrew-tap
-        uses: dmnemec/copy_file_to_another_repo_action@main
-        env:
-          API_TOKEN_GITHUB: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-        with:
-          source_file: dad.rb
-          destination_repo: workos/homebrew-tap
-          destination_folder: Formula
-          user_email: github-actions[bot]@users.noreply.github.com
-          user_name: github-actions[bot]
-          commit_message: "dad ${{ github.ref_name }}"
+      - name: Commit formula
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/dad.rb
+          git diff --cached --quiet || git commit -m "formula: update to ${{ github.ref_name }}"
+          git push
