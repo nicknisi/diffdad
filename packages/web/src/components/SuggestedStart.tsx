@@ -19,28 +19,26 @@ export function SuggestedStart() {
   }
 
   return (
-    <div className="mb-4 flex gap-3 rounded-xl border border-brand/30 bg-brand/5 p-4 dark:bg-brand/10">
-      <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md bg-brand text-white">
-        <IconSpark className="h-4 w-4" />
+    <div className="mb-6 flex items-start gap-2.5 rounded-[10px] border border-brand/30 bg-brand/5 p-4 dark:bg-brand/10">
+      <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-[7px] bg-brand text-white shadow-sm">
+        <IconSpark className="h-3.5 w-3.5" />
       </div>
-      <div className="flex-1">
-        <p className="text-base leading-relaxed text-gray-800 dark:text-gray-200">
-          <span className="font-semibold">Suggested place to start:</span>{" "}
-          Chapter {chapter} —{" "}
-          <span className="font-serif italic">{target.title}</span>. {reason}
-        </p>
-        <div className="mt-3 flex gap-2">
+      <div className="flex-1 text-[13.5px] leading-[19px] text-[var(--fg-1)]">
+        <span className="font-bold">Suggested place to start:</span> Chapter{" "}
+        {chapter} —{" "}
+        <span className="font-serif italic">{target.title}</span>. {reason}
+        <div className="mt-2 flex gap-2">
           <button
             type="button"
             onClick={() => scrollToChapter(chapter - 1)}
-            className="rounded-md border border-brand/40 bg-white/60 px-3 py-1 text-sm font-medium text-brand hover:bg-white dark:bg-gray-900/60 dark:hover:bg-gray-900"
+            className="inline-flex h-6 items-center rounded-[5px] border border-brand/30 bg-white/70 px-2 text-[11.5px] font-bold text-brand hover:bg-white dark:bg-[var(--bg-panel)]/70 dark:hover:bg-[var(--bg-panel)]"
           >
             Jump to chapter {chapter}
           </button>
           <button
             type="button"
             onClick={() => scrollToChapter(0)}
-            className="rounded-md border border-brand/40 bg-white/60 px-3 py-1 text-sm font-medium text-brand hover:bg-white dark:bg-gray-900/60 dark:hover:bg-gray-900"
+            className="inline-flex h-6 items-center rounded-[5px] border border-brand/30 bg-white/70 px-2 text-[11.5px] font-bold text-brand hover:bg-white dark:bg-[var(--bg-panel)]/70 dark:hover:bg-[var(--bg-panel)]"
           >
             Start from chapter 1
           </button>

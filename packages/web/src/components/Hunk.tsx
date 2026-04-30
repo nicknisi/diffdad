@@ -7,7 +7,7 @@ import { Comment } from "./Comment";
 import { useHighlighter } from "../hooks/useHighlighter";
 import { guessLang } from "../lib/shiki";
 import { getAuthorInfo } from "../lib/authors";
-import { IconChat, IconCode, IconGitHub } from "./Icons";
+import { IconArrowRight, IconChat, IconFile, IconGitHub } from "./Icons";
 
 type Props = {
   file: string;
@@ -168,7 +168,9 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight }: Props) {
   useHighlighter();
   const lang = guessLang(file);
 
-  const range = `@@ -${hunk.oldStart},${hunk.oldCount} +${hunk.newStart},${hunk.newCount} @@`;
+  const rangeStart = hunk.oldStart;
+  const rangeEnd = hunk.oldStart + Math.max(hunk.oldCount, 0);
+  const range = `L${rangeStart}–L${rangeEnd}`;
 
   const hunkStart = hunk.newStart;
   const hunkEnd = hunk.newStart + Math.max(hunk.newCount - 1, 0);
@@ -190,11 +192,10 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight }: Props) {
   const editorUrl = `vscode://file/${file}:${hunk.newStart}`;
 
   return (
-    <div className="my-3 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--bg-panel)] shadow-sm">
+    <div className="my-3 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--bg-panel)] shadow-[var(--shadow-card)]">
       <div className="flex items-center gap-2 border-b border-[var(--border)] bg-[var(--bg-subtle)] px-3 py-2 font-mono text-[12.5px]">
-        <span className="font-semibold text-[var(--fg-1)]">
-          {file}
-        </span>
+        <IconFile className="h-[12px] w-[12px] flex-shrink-0 text-[var(--fg-3)]" />
+        <span className="font-semibold text-[var(--fg-1)]">{file}</span>
         <span className="text-[var(--fg-3)]">{range}</span>
         {isNewFile ? (
           <span className="ml-1 rounded-[4px] bg-green-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.06em] text-green-700 dark:bg-green-900/40 dark:text-green-300">
@@ -207,6 +208,14 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight }: Props) {
           </span>
         ) : null}
         <div className="ml-auto flex items-center gap-1">
+          <a
+            href={editorUrl}
+            title="Open in editor"
+            aria-label="Open in editor"
+            className="inline-flex h-[22px] w-[22px] items-center justify-center rounded-[4px] text-[var(--fg-3)] hover:bg-[var(--border)] hover:text-[var(--fg-1)]"
+          >
+            <IconArrowRight className="h-[11px] w-[11px]" />
+          </a>
           {githubUrl && (
             <a
               href={githubUrl}
@@ -214,19 +223,11 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight }: Props) {
               rel="noopener noreferrer"
               title="View on GitHub"
               aria-label="View on GitHub"
-              className="inline-flex h-[22px] w-[22px] items-center justify-center rounded text-[var(--fg-3)] hover:bg-[var(--bg-panel)] hover:text-[var(--fg-1)]"
+              className="inline-flex h-[22px] w-[22px] items-center justify-center rounded-[4px] text-[var(--fg-3)] hover:bg-[var(--border)] hover:text-[var(--fg-1)]"
             >
               <IconGitHub className="h-[11px] w-[11px]" />
             </a>
           )}
-          <a
-            href={editorUrl}
-            title="Open in editor"
-            aria-label="Open in editor"
-            className="inline-flex h-[22px] w-[22px] items-center justify-center rounded text-[var(--fg-3)] hover:bg-[var(--bg-panel)] hover:text-[var(--fg-1)]"
-          >
-            <IconCode className="h-[11px] w-[11px]" />
-          </a>
         </div>
       </div>
       {clusterBots && botComments.length > 0 && (

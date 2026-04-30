@@ -28,7 +28,7 @@ export function NarrationBlock({ content }: Props) {
 
   return (
     <div
-      className={`${margin} max-w-[64ch] text-[14.5px] leading-[22px] text-[var(--fg-1)]`}
+      className={`${margin} max-w-prose text-[14.5px] leading-[22px] text-[var(--fg-1)]`}
       style={{ textWrap: "pretty" }}
     >
       <Markdown source={content} />

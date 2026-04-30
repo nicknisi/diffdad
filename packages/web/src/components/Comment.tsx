@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { getAuthorInfo } from "../lib/authors";
 import type { PRComment } from "../state/types";
-import { IconSpark } from "./Icons";
+import { IconCheck, IconSpark } from "./Icons";
 import { Markdown } from "./markdown/Markdown";
 
 const RECENT_SYNC_WINDOW_MS = 60_000;
@@ -50,45 +50,44 @@ export function Comment({ comment, replies = [], isReply = false }: Props) {
     kind === "draft"
       ? "draft"
       : kind === "synced"
-        ? "synced"
+        ? "synced to GitHub"
         : "from GitHub";
   const badgeClass =
     kind === "draft"
       ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
-      : kind === "synced"
-        ? "bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300"
-        : "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300";
+      : "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300";
 
   return (
     <div
       className={
         isReply
-          ? "rounded-lg bg-white p-3 dark:bg-gray-900"
-          : "rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900"
+          ? "rounded-lg bg-[var(--bg-panel)] p-3"
+          : `rounded-lg border border-[var(--border)] bg-[var(--bg-panel)] p-3 ${isBot ? "ring-1 ring-inset ring-brand/20" : ""}`
       }
     >
       <div className="flex items-center gap-2">
         <div
-          className="flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold text-white"
+          className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
           style={{ background: info.color }}
         >
           {info.initials}
         </div>
-        <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+        <span className="text-sm font-semibold text-[var(--fg-1)]">
           {info.displayName}
         </span>
         {isBot && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-brand/10 px-2 py-0.5 text-xs font-bold uppercase tracking-wide text-brand">
-            <IconSpark className="h-3 w-3" />
+          <span className="inline-flex items-center gap-1 rounded-[3px] bg-brand/10 px-1.5 py-0.5 font-mono text-[9.5px] font-semibold uppercase tracking-[0.06em] text-brand">
+            <IconSpark className="h-2.5 w-2.5" />
             bot
           </span>
         )}
-        <span className="text-sm text-gray-400 dark:text-gray-500">
+        <span className="text-sm text-[var(--fg-3)]">
           {relativeTime(comment.createdAt)}
         </span>
         <span
           className={`ml-auto inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${badgeClass}`}
         >
+          {kind === "synced" && <IconCheck className="h-3 w-3" />}
           {badgeText}
         </span>
       </div>

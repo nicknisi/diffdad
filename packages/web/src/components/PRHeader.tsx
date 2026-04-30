@@ -121,9 +121,9 @@ export function PRHeader() {
   const prUrl = repoUrl ? `${repoUrl}/pull/${pr.number}` : null;
 
   const baseBtn =
-    "px-2.5 py-1 text-[12.5px] font-medium rounded-[5px] transition-colors";
+    "h-[26px] inline-flex items-center px-2.5 text-[12.5px] font-medium rounded-[5px] transition-colors";
   const activeBtn =
-    "bg-[var(--bg-panel)] text-[var(--fg-1)] shadow-sm";
+    "bg-[var(--bg-panel)] text-[var(--fg-1)] shadow-sm ring-1 ring-inset ring-[var(--border-strong)]";
   const inactiveBtn =
     "bg-transparent text-[var(--fg-2)] hover:text-[var(--fg-1)]";
 

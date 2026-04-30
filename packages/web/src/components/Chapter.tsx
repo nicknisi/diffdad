@@ -18,6 +18,12 @@ const RISK_STYLES: Record<ChapterType["risk"], string> = {
   high: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
 };
 
+const RISK_LABELS: Record<ChapterType["risk"], string> = {
+  low: "low risk",
+  medium: "medium risk",
+  high: "high risk",
+};
+
 type FlatHunk = { hunk: DiffHunk; file: string; isNewFile: boolean };
 
 function flattenFiles(files: DiffFile[]): FlatHunk[] {
@@ -88,25 +94,28 @@ export function Chapter({ index, chapter }: Props) {
 
   const riskPill = (
     <span
-      className={`rounded-full px-2 py-0.5 text-xs font-bold uppercase tracking-wider ${RISK_STYLES[chapter.risk]}`}
+      className={`rounded-full px-[7px] py-[2px] text-[10.5px] font-bold uppercase tracking-[0.06em] ${RISK_STYLES[chapter.risk]}`}
     >
-      {chapter.risk}
+      {RISK_LABELS[chapter.risk]}
     </span>
   );
 
   const reviewedButton = (
     <button
       type="button"
-      onClick={() => toggleReviewed(index)}
+      onClick={(e) => {
+        e.stopPropagation();
+        toggleReviewed(index);
+      }}
       className={
         reviewed
-          ? "ml-auto inline-flex items-center gap-1 rounded-md bg-green-100 px-3 py-1 text-sm font-medium text-green-700 dark:bg-green-900/40 dark:text-green-300"
-          : "ml-auto rounded-md border border-[var(--border-strong)] bg-[var(--bg-panel)] px-3 py-1 text-sm font-medium text-[var(--fg-1)] shadow-sm hover:bg-[var(--bg-subtle)]"
+          ? "ml-auto inline-flex flex-shrink-0 items-center gap-1.5 rounded-[5px] bg-green-100 px-2 py-1 text-xs font-medium text-green-700 ring-1 ring-inset ring-green-200/60 dark:bg-green-900/40 dark:text-green-300 dark:ring-green-700/40"
+          : "ml-auto inline-flex flex-shrink-0 items-center gap-1.5 rounded-[5px] bg-[var(--bg-panel)] px-2 py-1 text-xs font-medium text-[var(--fg-2)] ring-1 ring-inset ring-[var(--border-strong)] hover:bg-[var(--bg-subtle)] hover:text-[var(--fg-1)]"
       }
     >
       {reviewed ? (
         <>
-          <IconCheck className="h-3.5 w-3.5" />
+          <IconCheck className="h-[11px] w-[11px]" />
           Reviewed
         </>
       ) : (
@@ -182,32 +191,34 @@ export function Chapter({ index, chapter }: Props) {
     return (
       <section
         data-chid={id}
-        className={`${margin} rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)] shadow-[var(--shadow-card)] ${reviewed ? "opacity-85" : ""}`}
+        className={`${margin} rounded-[14px] border border-[var(--border)] bg-[var(--bg-panel)] shadow-[var(--shadow-card)] ${reviewed ? "opacity-85" : ""}`}
       >
         <button
           type="button"
           onClick={() => setOutlineOpen((v) => !v)}
           aria-expanded={outlineOpen}
-          className={`flex w-full items-center gap-3 ${padding} text-left`}
+          className={`flex w-full items-start gap-2.5 ${padding} text-left`}
         >
           <span
-            className={`flex h-5 w-5 flex-shrink-0 items-center justify-center text-[var(--fg-3)] transition-transform ${
+            className={`mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center text-[var(--fg-3)] transition-transform ${
               outlineOpen ? "rotate-90" : ""
             }`}
           >
             <IconChevron className="h-3.5 w-3.5" />
           </span>
-          <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md bg-[var(--fg-1)] font-mono text-[12px] font-bold text-[var(--bg-panel)]">
+          <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-[7px] bg-[var(--fg-1)] font-mono text-[12px] font-bold text-[var(--bg-panel)]">
             {index + 1}
           </div>
-          <h2 className="text-[18px] font-bold leading-6 tracking-[-0.01em] text-[var(--fg-1)]">
-            {chapter.title}
-          </h2>
-          {riskPill}
-          <span className="text-xs text-[var(--fg-3)]">
-            {hunkCount} {hunkCount === 1 ? "hunk" : "hunks"} · {commentCount}{" "}
-            {commentCount === 1 ? "comment" : "comments"}
-          </span>
+          <div className="min-w-0 flex-1">
+            <h2 className="flex flex-wrap items-center gap-2 text-[18px] font-bold leading-6 tracking-[-0.01em] text-[var(--fg-1)]">
+              <span>{chapter.title}</span>
+              {riskPill}
+            </h2>
+            <span className="mt-1 block text-xs text-[var(--fg-3)]">
+              {hunkCount} {hunkCount === 1 ? "hunk" : "hunks"} · {commentCount}{" "}
+              {commentCount === 1 ? "comment" : "comments"}
+            </span>
+          </div>
         </button>
         {outlineOpen && <div className={`${padding} pt-0`}>{body}</div>}
       </section>
@@ -224,15 +235,13 @@ export function Chapter({ index, chapter }: Props) {
           <div className="flex h-5 flex-shrink-0 items-center justify-center rounded-md bg-[var(--fg-1)] px-1.5 font-mono text-xs font-bold text-[var(--bg-panel)]">
             Ch {index + 1}
           </div>
-          <h2 className="text-[18px] font-bold leading-6 tracking-[-0.01em] text-[var(--fg-1)]">
-            {chapter.title}
+          <h2 className="flex flex-wrap items-center gap-2 text-[18px] font-bold leading-6 tracking-[-0.01em] text-[var(--fg-1)]">
+            <span>{chapter.title}</span>
+            {riskPill}
           </h2>
-          {riskPill}
           {reviewedButton}
         </div>
-        <div className="border-t border-[var(--border)] pt-4">
-          {body}
-        </div>
+        <div className="border-t border-[var(--border)] pt-4">{body}</div>
       </section>
     );
   }
@@ -243,16 +252,18 @@ export function Chapter({ index, chapter }: Props) {
   return (
     <section
       data-chid={id}
-      className={`${margin} rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)] ${padding} shadow-[var(--shadow-card)] ${reviewed ? "opacity-85" : ""}`}
+      className={`${margin} rounded-[14px] border border-[var(--border)] bg-[var(--bg-panel)] ${padding} shadow-[var(--shadow-card)] ${reviewed ? "opacity-85" : ""}`}
     >
-      <div className="flex items-center gap-3">
+      <div className="flex items-start gap-2.5">
         <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-[7px] bg-[var(--fg-1)] font-mono text-[12px] font-bold text-[var(--bg-panel)]">
           {index + 1}
         </div>
-        <h2 className="text-[18px] font-bold leading-6 tracking-[-0.01em] text-[var(--fg-1)]">
-          {chapter.title}
-        </h2>
-        {riskPill}
+        <div className="min-w-0 flex-1">
+          <h2 className="flex flex-wrap items-center gap-2 text-[18px] font-bold leading-6 tracking-[-0.01em] text-[var(--fg-1)]">
+            <span>{chapter.title}</span>
+            {riskPill}
+          </h2>
+        </div>
         {reviewedButton}
       </div>
       {body}

@@ -154,3 +154,20 @@ export function IconGear({ className }: IconProps) {
     </svg>
   );
 }
+
+export function IconArrowRight({ className }: IconProps) {
+  return (
+    <svg {...baseProps} className={className}>
+      <path d="M3 8h10M9 4l4 4-4 4" />
+    </svg>
+  );
+}
+
+export function IconFile({ className }: IconProps) {
+  return (
+    <svg {...baseProps} className={className}>
+      <path d="M9.5 1.5H4a1 1 0 0 0-1 1V13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V5l-3.5-3.5z" />
+      <path d="M9.5 1.5V5H13" />
+    </svg>
+  );
+}
