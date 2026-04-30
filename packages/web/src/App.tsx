@@ -1,23 +1,68 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useReviewStore } from "./state/review-store";
 import { useNarrative } from "./hooks/useNarrative";
-import { useCommentPolling } from "./hooks/useComments";
+import { useLiveStream } from "./hooks/useLiveStream";
+import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
+import { ActivityDrawer } from "./components/ActivityDrawer";
 import { AppBar } from "./components/AppBar";
 import { ClassicView } from "./components/ClassicView";
 import { PRHeader } from "./components/PRHeader";
+import { ShortcutsHelp } from "./components/ShortcutsHelp";
+import { Splash } from "./components/Splash";
 import { StoryView } from "./components/StoryView";
 import { SubmitBar } from "./components/SubmitBar";
 import { copy } from "./lib/microcopy";
 
+const SPLASH_KEY = "diffdad.splashSeen";
+
+function readSplashSeen(): boolean {
+  try {
+    return sessionStorage.getItem(SPLASH_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
 export default function App() {
   const theme = useReviewStore((s) => s.theme);
   const view = useReviewStore((s) => s.view);
+  const shortcutsHelpOpen = useReviewStore((s) => s.shortcutsHelpOpen);
+  const setShortcutsHelpOpen = useReviewStore((s) => s.setShortcutsHelpOpen);
   const { loading, error } = useNarrative();
-  useCommentPolling();
+  useLiveStream();
+  useKeyboardShortcuts();
+  const [activityOpen, setActivityOpen] = useState(false);
+  const [splashSeen, setSplashSeen] = useState<boolean>(() => readSplashSeen());
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
   }, [theme]);
+
+  // Escape closes the activity drawer when nothing else is open.
+  useEffect(() => {
+    if (!activityOpen) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      if (shortcutsHelpOpen) return;
+      e.preventDefault();
+      setActivityOpen(false);
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [activityOpen, shortcutsHelpOpen]);
+
+  function dismissSplash() {
+    try {
+      sessionStorage.setItem(SPLASH_KEY, "1");
+    } catch {
+      // ignore
+    }
+    setSplashSeen(true);
+  }
+
+  if (!splashSeen) {
+    return <Splash onContinue={dismissSplash} />;
+  }
 
   if (loading) {
     return (
@@ -40,10 +85,15 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gray-50 pb-20 text-gray-900 dark:bg-gray-950 dark:text-gray-100">
-      <AppBar />
+      <AppBar onOpenActivity={() => setActivityOpen(true)} />
       <PRHeader />
       {view === "story" ? <StoryView /> : <ClassicView />}
       <SubmitBar />
+      <ActivityDrawer open={activityOpen} onClose={() => setActivityOpen(false)} />
+      <ShortcutsHelp
+        open={shortcutsHelpOpen}
+        onClose={() => setShortcutsHelpOpen(false)}
+      />
     </div>
   );
 }

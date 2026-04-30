@@ -4,6 +4,8 @@ import type {
   CheckRun,
   DiffFile,
   DraftComment,
+  LiveEvent,
+  LiveStatus,
   NarrativeResponse,
   PRComment,
   PRData,
@@ -28,6 +30,10 @@ type ReviewState = {
   density: Density;
   chapterDensity: Record<string, Density>;
   view: View;
+  liveStatus: LiveStatus;
+  liveEvents: LiveEvent[];
+  lastEventAt: number;
+  shortcutsHelpOpen: boolean;
 
   setData: (
     pr: PRData,
@@ -49,6 +55,11 @@ type ReviewState = {
   setDensity: (d: Density) => void;
   setChapterDensity: (chapterKey: string, density: Density) => void;
   setView: (view: View) => void;
+  setLiveStatus: (status: LiveStatus) => void;
+  addLiveEvent: (event: LiveEvent) => void;
+  setLastEventAt: (ts: number) => void;
+  setCheckRuns: (checkRuns: CheckRun[]) => void;
+  setShortcutsHelpOpen: (open: boolean) => void;
 };
 
 export const useReviewStore = create<ReviewState>((set) => ({
@@ -66,6 +77,10 @@ export const useReviewStore = create<ReviewState>((set) => ({
   density: "normal",
   chapterDensity: {},
   view: "story",
+  liveStatus: "connecting",
+  liveEvents: [],
+  lastEventAt: Date.now(),
+  shortcutsHelpOpen: false,
 
   setData: (pr, narrative, files, comments, repoUrl = null, checkRuns = []) => {
     const chapterStates: Record<string, ChapterState> = {};
@@ -122,4 +137,17 @@ export const useReviewStore = create<ReviewState>((set) => ({
     })),
 
   setView: (view) => set({ view }),
+
+  setLiveStatus: (liveStatus) => set({ liveStatus }),
+
+  addLiveEvent: (event) =>
+    set((state) => ({
+      liveEvents: [event, ...state.liveEvents].slice(0, 200),
+    })),
+
+  setLastEventAt: (lastEventAt) => set({ lastEventAt }),
+
+  setCheckRuns: (checkRuns) => set({ checkRuns }),
+
+  setShortcutsHelpOpen: (shortcutsHelpOpen) => set({ shortcutsHelpOpen }),
 }));
