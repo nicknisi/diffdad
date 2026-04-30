@@ -26,7 +26,7 @@ export type NarrativeResponse = {
 export type Chapter = {
   title: string;
   summary: string;
-  risk: "low" | "medium" | "high";
+  risk: 'low' | 'medium' | 'high';
   sections: Section[];
   reshow?: {
     ref: number;
@@ -36,9 +36,9 @@ export type Chapter = {
 };
 
 export type Section =
-  | { type: "narrative"; content: string }
+  | { type: 'narrative'; content: string }
   | {
-      type: "diff";
+      type: 'diff';
       file: string;
       startLine: number;
       endLine: number;
@@ -62,7 +62,7 @@ export type DiffHunk = {
 };
 
 export type DiffLine = {
-  type: "add" | "remove" | "context";
+  type: 'add' | 'remove' | 'context';
   content: string;
   lineNumber: { old?: number; new?: number };
 };
@@ -80,7 +80,7 @@ export type PRComment = {
   diffHunk?: string;
 };
 
-export type ChapterState = "reading" | "reviewing" | "replied" | "reviewed";
+export type ChapterState = 'reading' | 'reviewing' | 'replied' | 'reviewed';
 
 export type DraftComment = {
   id: string;
@@ -90,9 +90,9 @@ export type DraftComment = {
   chapterIndex?: number;
 };
 
-export type LiveEventKind = "comment" | "ci" | "commit" | "system";
+export type LiveEventKind = 'comment' | 'ci' | 'commit' | 'system';
 
-export type LiveStatus = "connected" | "connecting" | "disconnected";
+export type LiveStatus = 'connected' | 'connecting' | 'disconnected';
 
 export type LiveEvent = {
   id: string;
@@ -105,7 +105,7 @@ export type LiveEvent = {
 export type CheckRun = {
   id: number;
   name: string;
-  status: "queued" | "in_progress" | "completed";
+  status: 'queued' | 'in_progress' | 'completed';
   conclusion: string | null;
   startedAt: string | null;
   completedAt: string | null;

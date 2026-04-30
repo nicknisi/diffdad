@@ -1,13 +1,4 @@
-const PALETTE = [
-  "#6565EC",
-  "#208368",
-  "#CA244D",
-  "#D97706",
-  "#0EA5E9",
-  "#7C3AED",
-  "#059669",
-  "#DC2626",
-];
+const PALETTE = ['#6565EC', '#208368', '#CA244D', '#D97706', '#0EA5E9', '#7C3AED', '#059669', '#DC2626'];
 
 export type AuthorInfo = {
   initials: string;
@@ -17,8 +8,8 @@ export type AuthorInfo = {
 };
 
 export function getAuthorInfo(login: string): AuthorInfo {
-  const isBot = login.endsWith("[bot]");
-  const cleaned = isBot ? login.replace(/\[bot\]$/, "") : login;
+  const isBot = login.endsWith('[bot]');
+  const cleaned = isBot ? login.replace(/\[bot\]$/, '') : login;
 
   let hash = 0;
   for (let i = 0; i < login.length; i++) {

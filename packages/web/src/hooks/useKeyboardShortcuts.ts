@@ -1,10 +1,10 @@
-import { useEffect } from "react";
-import { useReviewStore } from "../state/review-store";
+import { useEffect } from 'react';
+import { useReviewStore } from '../state/review-store';
 
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   const tag = target.tagName;
-  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
   if (target.isContentEditable) return true;
   return false;
 }
@@ -17,7 +17,7 @@ function getActiveIndex(activeChapterId: string | null): number {
 
 function scrollToChapter(id: string) {
   const el = document.querySelector(`[data-chid="${id}"]`);
-  if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 export function useKeyboardShortcuts() {
@@ -38,7 +38,7 @@ export function useKeyboardShortcuts() {
 
       const key = e.key;
 
-      if (key === "Escape") {
+      if (key === 'Escape') {
         if (shortcutsHelpOpen) {
           e.preventDefault();
           setShortcutsHelpOpen(false);
@@ -52,7 +52,7 @@ export function useKeyboardShortcuts() {
         return;
       }
 
-      if (key === "?") {
+      if (key === '?') {
         e.preventDefault();
         setShortcutsHelpOpen(!shortcutsHelpOpen);
         return;
@@ -64,7 +64,7 @@ export function useKeyboardShortcuts() {
 
       const idx = getActiveIndex(activeChapterId);
 
-      if (key === "j") {
+      if (key === 'j') {
         e.preventDefault();
         const next = Math.min(total - 1, idx + 1);
         const id = `ch-${next}`;
@@ -73,7 +73,7 @@ export function useKeyboardShortcuts() {
         return;
       }
 
-      if (key === "k") {
+      if (key === 'k') {
         e.preventDefault();
         const prev = Math.max(0, idx - 1);
         const id = `ch-${prev}`;
@@ -82,18 +82,18 @@ export function useKeyboardShortcuts() {
         return;
       }
 
-      if (key === "r") {
+      if (key === 'r') {
         e.preventDefault();
         toggleReviewed(idx);
         return;
       }
 
-      if (key === "c") {
+      if (key === 'c') {
         e.preventDefault();
         const chapter = narrative.chapters[idx];
         if (!chapter) return;
-        const firstDiff = chapter.sections.find((s) => s.type === "diff");
-        if (!firstDiff || firstDiff.type !== "diff") return;
+        const firstDiff = chapter.sections.find((s) => s.type === 'diff');
+        if (!firstDiff || firstDiff.type !== 'diff') return;
 
         // Look up the hunk by both file and hunkIndex — hunkIndex is per-file,
         // not a flat index across all files.
@@ -102,7 +102,7 @@ export function useKeyboardShortcuts() {
         const hunk = diffFile.hunks[firstDiff.hunkIndex];
         if (!hunk) return;
 
-        const lineIdx = hunk.lines.findIndex((l) => l.type !== "remove");
+        const lineIdx = hunk.lines.findIndex((l) => l.type !== 'remove');
         const targetIdx = lineIdx >= 0 ? lineIdx : 0;
         const lineKey = `${diffFile.file}:${firstDiff.hunkIndex}:${targetIdx}`;
         setOpenLine(lineKey);
@@ -110,8 +110,8 @@ export function useKeyboardShortcuts() {
       }
     }
 
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
   }, [
     narrative,
     files,

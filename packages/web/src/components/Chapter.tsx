@@ -1,36 +1,32 @@
-import { useMemo, useState } from "react";
-import { normalizePath } from "../lib/paths";
-import { useReviewStore } from "../state/review-store";
-import type { Chapter as ChapterType, DiffFile, DiffHunk } from "../state/types";
-import { Hunk } from "./Hunk";
-import { IconCheck, IconChevron } from "./Icons";
-import { NarrationAnchor } from "./NarrationAnchor";
-import { NarrationBlock } from "./NarrationBlock";
+import { useMemo, useState } from 'react';
+import { normalizePath } from '../lib/paths';
+import { useReviewStore } from '../state/review-store';
+import type { Chapter as ChapterType, DiffFile, DiffHunk } from '../state/types';
+import { Hunk } from './Hunk';
+import { IconCheck, IconChevron } from './Icons';
+import { NarrationAnchor } from './NarrationAnchor';
+import { NarrationBlock } from './NarrationBlock';
 
 type Props = {
   index: number;
   chapter: ChapterType;
 };
 
-const RISK_STYLES: Record<ChapterType["risk"], React.CSSProperties> = {
-  low: { background: "var(--gray-3)", color: "var(--fg-2)" },
-  medium: { background: "var(--yellow-3)", color: "var(--yellow-11)" },
-  high: { background: "var(--red-3)", color: "var(--red-11)" },
+const RISK_STYLES: Record<ChapterType['risk'], React.CSSProperties> = {
+  low: { background: 'var(--gray-3)', color: 'var(--fg-2)' },
+  medium: { background: 'var(--yellow-3)', color: 'var(--yellow-11)' },
+  high: { background: 'var(--red-3)', color: 'var(--red-11)' },
 };
 
-const RISK_LABELS: Record<ChapterType["risk"], string> = {
-  low: "low risk",
-  medium: "medium risk",
-  high: "high risk",
+const RISK_LABELS: Record<ChapterType['risk'], string> = {
+  low: 'low risk',
+  medium: 'medium risk',
+  high: 'high risk',
 };
 
 type FlatHunk = { hunk: DiffHunk; file: string; isNewFile: boolean };
 
-function findHunk(
-  files: DiffFile[],
-  file: string,
-  hunkIndex: number,
-): FlatHunk | null {
+function findHunk(files: DiffFile[], file: string, hunkIndex: number): FlatHunk | null {
   const norm = normalizePath(file);
   const diffFile = files.find((f) => normalizePath(f.file) === norm);
   if (!diffFile) return null;
@@ -48,7 +44,7 @@ export function Chapter({ index, chapter }: Props) {
   const displayDensity = useReviewStore((s) => s.displayDensity);
   const narrative = useReviewStore((s) => s.narrative);
   const id = `ch-${index}`;
-  const reviewed = chapterStates[id] === "reviewed";
+  const reviewed = chapterStates[id] === 'reviewed';
 
   // Map of `${file}:${hunkIndex}` -> first chapter index that uses that hunk via a diff section.
   // Multiple files can share hunkIndex 0, so the key must include the file.
@@ -57,7 +53,7 @@ export function Chapter({ index, chapter }: Props) {
     if (!narrative) return owners;
     narrative.chapters.forEach((ch, ci) => {
       ch.sections.forEach((s) => {
-        if (s.type === "diff") {
+        if (s.type === 'diff') {
           const key = `${s.file}:${s.hunkIndex}`;
           if (!owners.has(key)) owners.set(key, ci);
         }
@@ -75,7 +71,7 @@ export function Chapter({ index, chapter }: Props) {
     if (!narrative) return map;
     narrative.chapters.forEach((ch) => {
       ch.sections.forEach((s) => {
-        if (s.type === "diff" && !map.has(s.hunkIndex)) {
+        if (s.type === 'diff' && !map.has(s.hunkIndex)) {
           map.set(s.hunkIndex, s.file);
         }
       });
@@ -86,19 +82,16 @@ export function Chapter({ index, chapter }: Props) {
   // Outline: collapsed by default, except chapter 0
   const [outlineOpen, setOutlineOpen] = useState(index === 0);
 
-  const compact = displayDensity === "compact";
+  const compact = displayDensity === 'compact';
 
-  const hunkSections = useMemo(
-    () => chapter.sections.filter((s) => s.type === "diff"),
-    [chapter.sections],
-  );
+  const hunkSections = useMemo(() => chapter.sections.filter((s) => s.type === 'diff'), [chapter.sections]);
   const hunkCount = hunkSections.length;
 
   // Count comments belonging to this chapter's hunks (file + line range)
   const commentCount = useMemo(() => {
     let count = 0;
     for (const section of hunkSections) {
-      if (section.type !== "diff") continue;
+      if (section.type !== 'diff') continue;
       const flat = findHunk(files, section.file, section.hunkIndex);
       if (!flat) continue;
       const start = flat.hunk.newStart;
@@ -132,13 +125,13 @@ export function Chapter({ index, chapter }: Props) {
       style={
         reviewed
           ? {
-              background: "var(--green-3)",
-              color: "var(--green-11)",
-              boxShadow: "inset 0 0 0 1px var(--green-a3)",
+              background: 'var(--green-3)',
+              color: 'var(--green-11)',
+              boxShadow: 'inset 0 0 0 1px var(--green-a3)',
             }
           : {
-              color: "var(--fg-2)",
-              boxShadow: "inset 0 0 0 1px var(--gray-a5)",
+              color: 'var(--fg-2)',
+              boxShadow: 'inset 0 0 0 1px var(--gray-a5)',
             }
       }
     >
@@ -148,15 +141,15 @@ export function Chapter({ index, chapter }: Props) {
           Reviewed
         </>
       ) : (
-        "Mark reviewed"
+        'Mark reviewed'
       )}
     </button>
   );
 
   const body = (
-    <div className={compact ? "space-y-3" : "space-y-4"}>
+    <div className={compact ? 'space-y-3' : 'space-y-4'}>
       {chapter.sections.map((section, i) => {
-        if (section.type === "narrative") {
+        if (section.type === 'narrative') {
           return (
             <div key={i}>
               <NarrationBlock content={section.content} chapterKey={id} />
@@ -167,13 +160,7 @@ export function Chapter({ index, chapter }: Props) {
         const flat = findHunk(files, section.file, section.hunkIndex);
         if (!flat) return null;
         return (
-          <Hunk
-            key={i}
-            file={flat.file}
-            hunk={flat.hunk}
-            isNewFile={flat.isNewFile}
-            hunkIndex={section.hunkIndex}
-          />
+          <Hunk key={i} file={flat.file} hunk={flat.hunk} isNewFile={flat.isNewFile} hunkIndex={section.hunkIndex} />
         );
       })}
       {chapter.reshow?.map((entry, i) => {
@@ -182,41 +169,31 @@ export function Chapter({ index, chapter }: Props) {
         const flat = findHunk(files, refFile, entry.ref);
         if (!flat) return null;
         const ownerIdx = hunkOwners.get(`${refFile}:${entry.ref}`);
-        const ownerLabel =
-          ownerIdx !== undefined && ownerIdx !== index
-            ? `Chapter ${ownerIdx + 1}`
-            : "earlier";
+        const ownerLabel = ownerIdx !== undefined && ownerIdx !== index ? `Chapter ${ownerIdx + 1}` : 'earlier';
         return (
           <div
             key={`reshow-${i}`}
             className="ml-[34px] mb-[14px] overflow-hidden rounded-[8px]"
             style={{
-              boxShadow: "inset 0 0 0 1px var(--gray-a5)",
-              borderLeft: "2px solid var(--purple-9)",
-              background:
-                "linear-gradient(180deg, var(--purple-2), transparent)",
+              boxShadow: 'inset 0 0 0 1px var(--gray-a5)',
+              borderLeft: '2px solid var(--purple-9)',
+              background: 'linear-gradient(180deg, var(--purple-2), transparent)',
             }}
           >
-            <div
-              className="px-4 pt-3.5 pb-3"
-              style={{ borderBottom: "1px dashed var(--gray-a5)" }}
-            >
+            <div className="px-4 pt-3.5 pb-3" style={{ borderBottom: '1px dashed var(--gray-a5)' }}>
               <span
                 className="inline-flex items-center gap-1.5 rounded-full px-2 py-[3px] text-[11px] font-medium tracking-[0.02em]"
                 style={{
-                  background: "var(--purple-3)",
-                  color: "var(--purple-11)",
-                  boxShadow: "inset 0 0 0 1px var(--purple-a5)",
+                  background: 'var(--purple-3)',
+                  color: 'var(--purple-11)',
+                  boxShadow: 'inset 0 0 0 1px var(--purple-a5)',
                 }}
               >
                 <span aria-hidden>↻</span>
                 Showing again from {ownerLabel}
               </span>
               {entry.framing ? (
-                <div
-                  className="mt-2 text-[14px] leading-[22px]"
-                  style={{ color: "var(--fg-2)", maxWidth: "70ch" }}
-                >
+                <div className="mt-2 text-[14px] leading-[22px]" style={{ color: 'var(--fg-2)', maxWidth: '70ch' }}>
                   <NarrationBlock content={entry.framing} />
                 </div>
               ) : null}
@@ -235,16 +212,13 @@ export function Chapter({ index, chapter }: Props) {
   );
 
   const badgeStyle: React.CSSProperties = reviewed
-    ? { background: "var(--green-9)", color: "#fff" }
-    : { background: "var(--gray-12)", color: "#fff" };
+    ? { background: 'var(--green-9)', color: '#fff' }
+    : { background: 'var(--gray-12)', color: '#fff' };
 
   // OUTLINE STRUCTURE
-  if (storyStructure === "outline") {
+  if (storyStructure === 'outline') {
     return (
-      <section
-        data-chid={id}
-        className={compact ? "mb-[18px]" : "mb-[28px]"}
-      >
+      <section data-chid={id} className={compact ? 'mb-[18px]' : 'mb-[28px]'}>
         <button
           type="button"
           onClick={() => setOutlineOpen((v) => !v)}
@@ -253,7 +227,7 @@ export function Chapter({ index, chapter }: Props) {
         >
           <span
             className={`mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center text-[var(--fg-3)] transition-transform ${
-              outlineOpen ? "rotate-90" : ""
+              outlineOpen ? 'rotate-90' : ''
             }`}
           >
             <IconChevron className="h-3.5 w-3.5" />
@@ -270,8 +244,8 @@ export function Chapter({ index, chapter }: Props) {
               {riskPill}
             </h2>
             <span className="mt-[2px] block text-[12px] text-[var(--fg-3)]">
-              {hunkCount} {hunkCount === 1 ? "hunk" : "hunks"} · {commentCount}{" "}
-              {commentCount === 1 ? "comment" : "comments"}
+              {hunkCount} {hunkCount === 1 ? 'hunk' : 'hunks'} · {commentCount}{' '}
+              {commentCount === 1 ? 'comment' : 'comments'}
             </span>
           </div>
         </button>
@@ -281,15 +255,15 @@ export function Chapter({ index, chapter }: Props) {
   }
 
   // LINEAR STRUCTURE
-  if (storyStructure === "linear") {
+  if (storyStructure === 'linear') {
     return (
-      <section data-chid={id} className={compact ? "mb-[18px]" : "mb-[32px]"}>
+      <section data-chid={id} className={compact ? 'mb-[18px]' : 'mb-[32px]'}>
         <div className="mb-[16px] mt-[32px] grid grid-cols-[1fr_auto_1fr] items-center gap-4">
-          <span className="h-px" style={{ background: "var(--gray-a4)" }} />
+          <span className="h-px" style={{ background: 'var(--gray-a4)' }} />
           <h2 className="m-0 inline-flex items-center gap-[10px] whitespace-nowrap text-[17px] font-semibold tracking-[-0.005em] text-[var(--fg-1)]">
             <span
               className="rounded-full px-2 py-0.5 font-mono text-[11px] font-medium uppercase tracking-[0.06em] text-[var(--fg-3)]"
-              style={{ background: "var(--gray-3)" }}
+              style={{ background: 'var(--gray-3)' }}
             >
               Ch {index + 1}
             </span>
@@ -298,17 +272,17 @@ export function Chapter({ index, chapter }: Props) {
               className="font-mono text-[10.5px] uppercase tracking-[0.05em]"
               style={{
                 color:
-                  chapter.risk === "high"
-                    ? "var(--red-11)"
-                    : chapter.risk === "medium"
-                      ? "var(--amber-11)"
-                      : "var(--green-11)",
+                  chapter.risk === 'high'
+                    ? 'var(--red-11)'
+                    : chapter.risk === 'medium'
+                      ? 'var(--amber-11)'
+                      : 'var(--green-11)',
               }}
             >
               {chapter.risk}
             </span>
           </h2>
-          <span className="h-px" style={{ background: "var(--gray-a4)" }} />
+          <span className="h-px" style={{ background: 'var(--gray-a4)' }} />
         </div>
         {body}
       </section>
@@ -317,10 +291,7 @@ export function Chapter({ index, chapter }: Props) {
 
   // CHAPTERS (default) — no card chrome, just spacing.
   return (
-    <section
-      data-chid={id}
-      className={compact ? "mb-[18px]" : "mb-[28px]"}
-    >
+    <section data-chid={id} className={compact ? 'mb-[18px]' : 'mb-[28px]'}>
       <div className="mb-[14px] flex items-start gap-2.5">
         <div
           className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-[7px] font-mono text-[12px] font-bold"

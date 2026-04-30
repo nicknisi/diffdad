@@ -1,16 +1,16 @@
-import { useEffect, useState } from "react";
-import { useReviewStore } from "./state/review-store";
-import { useNarrative } from "./hooks/useNarrative";
-import { useLiveStream } from "./hooks/useLiveStream";
-import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
-import { ActivityDrawer } from "./components/ActivityDrawer";
-import { AppBar } from "./components/AppBar";
-import { ClassicView } from "./components/ClassicView";
-import { PRHeader } from "./components/PRHeader";
-import { ShortcutsHelp } from "./components/ShortcutsHelp";
-import { StoryView } from "./components/StoryView";
-import { SubmitBar } from "./components/SubmitBar";
-import { copy } from "./lib/microcopy";
+import { useEffect, useState } from 'react';
+import { useReviewStore } from './state/review-store';
+import { useNarrative } from './hooks/useNarrative';
+import { useLiveStream } from './hooks/useLiveStream';
+import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
+import { ActivityDrawer } from './components/ActivityDrawer';
+import { AppBar } from './components/AppBar';
+import { ClassicView } from './components/ClassicView';
+import { PRHeader } from './components/PRHeader';
+import { ShortcutsHelp } from './components/ShortcutsHelp';
+import { StoryView } from './components/StoryView';
+import { SubmitBar } from './components/SubmitBar';
+import { copy } from './lib/microcopy';
 
 export default function App() {
   const theme = useReviewStore((s) => s.theme);
@@ -32,29 +32,25 @@ export default function App() {
 
   useEffect(() => {
     if (!loading) return;
-    const t = setInterval(
-      () =>
-        setLoadingMsgIndex((i) => (i + 1) % copy.loadingMessages.length),
-      2500,
-    );
+    const t = setInterval(() => setLoadingMsgIndex((i) => (i + 1) % copy.loadingMessages.length), 2500);
     return () => clearInterval(t);
   }, [loading]);
 
   useEffect(() => {
-    document.documentElement.classList.toggle("dark", theme === "dark");
+    document.documentElement.classList.toggle('dark', theme === 'dark');
   }, [theme]);
 
   // Escape closes the activity drawer when nothing else is open.
   useEffect(() => {
     if (!activityOpen) return;
     function onKey(e: KeyboardEvent) {
-      if (e.key !== "Escape") return;
+      if (e.key !== 'Escape') return;
       if (shortcutsHelpOpen) return;
       e.preventDefault();
       setActivityOpen(false);
     }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
   }, [activityOpen, shortcutsHelpOpen]);
 
   if (loading) {
@@ -67,8 +63,7 @@ export default function App() {
 
   if (error) {
     const lower = error.toLowerCase();
-    const isOffline =
-      lower.includes("fetch") || lower.includes("network");
+    const isOffline = lower.includes('fetch') || lower.includes('network');
     const headline = isOffline ? copy.offline : copy.errorGeneric;
     return (
       <main className="flex min-h-screen items-center justify-center bg-[var(--bg-page)] text-[var(--fg-2)]">
@@ -84,13 +79,10 @@ export default function App() {
     <div className="min-h-screen bg-[var(--bg-page)] pb-20 text-[var(--fg-1)]">
       <AppBar onOpenActivity={() => setActivityOpen(true)} />
       <PRHeader />
-      {view === "story" ? <StoryView /> : <ClassicView />}
+      {view === 'story' ? <StoryView /> : <ClassicView />}
       <SubmitBar />
       <ActivityDrawer open={activityOpen} onClose={() => setActivityOpen(false)} />
-      <ShortcutsHelp
-        open={shortcutsHelpOpen}
-        onClose={() => setShortcutsHelpOpen(false)}
-      />
+      <ShortcutsHelp open={shortcutsHelpOpen} onClose={() => setShortcutsHelpOpen(false)} />
     </div>
   );
 }

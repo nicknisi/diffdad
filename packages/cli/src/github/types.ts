@@ -2,7 +2,7 @@ export type PRMetadata = {
   number: number;
   title: string;
   body: string;
-  state: "open" | "closed" | "merged";
+  state: 'open' | 'closed' | 'merged';
   draft: boolean;
   author: { login: string; avatarUrl: string };
   branch: string;
@@ -25,13 +25,13 @@ export type PRComment = {
   updatedAt: string;
   path?: string;
   line?: number;
-  side?: "LEFT" | "RIGHT";
+  side?: 'LEFT' | 'RIGHT';
   inReplyToId?: number;
   diffHunk?: string;
 };
 
 export type DiffLine = {
-  type: "add" | "remove" | "context";
+  type: 'add' | 'remove' | 'context';
   content: string;
   lineNumber: { old?: number; new?: number };
 };
@@ -55,7 +55,7 @@ export type DiffFile = {
 export type CheckRun = {
   id: number;
   name: string;
-  status: "queued" | "in_progress" | "completed";
+  status: 'queued' | 'in_progress' | 'completed';
   conclusion: string | null;
   startedAt: string | null;
   completedAt: string | null;

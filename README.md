@@ -85,13 +85,13 @@ Submit reviews directly from the UI — Comment, Approve, or Request Changes. In
 
 ### Keyboard Shortcuts
 
-| Key | Action |
-|-----|--------|
-| `j` / `k` | Next / previous chapter |
-| `r` | Toggle reviewed on current chapter |
-| `c` | Open comment composer on hovered line |
-| `?` | Show shortcuts help |
-| `Esc` | Close open panels |
+| Key       | Action                                |
+| --------- | ------------------------------------- |
+| `j` / `k` | Next / previous chapter               |
+| `r`       | Toggle reviewed on current chapter    |
+| `c`       | Open comment composer on hovered line |
+| `?`       | Show shortcuts help                   |
+| `Esc`     | Close open panels                     |
 
 ### Display Options
 

@@ -1,13 +1,11 @@
-import { readConfig } from "./config";
+import { readConfig } from './config';
 
 export interface ResolveGitHubTokenOptions {
   skipGhCli?: boolean;
   skipConfig?: boolean;
 }
 
-export async function resolveGitHubToken(
-  opts: ResolveGitHubTokenOptions = {},
-): Promise<string | null> {
+export async function resolveGitHubToken(opts: ResolveGitHubTokenOptions = {}): Promise<string | null> {
   // Priority 1: env var
   const envToken = process.env.DIFFDAD_GITHUB_TOKEN;
   if (envToken && envToken.trim().length > 0) {
@@ -39,9 +37,9 @@ export async function resolveGitHubToken(
 
 async function tryGhAuthToken(): Promise<string | null> {
   try {
-    const proc = Bun.spawn(["gh", "auth", "token"], {
-      stdout: "pipe",
-      stderr: "pipe",
+    const proc = Bun.spawn(['gh', 'auth', 'token'], {
+      stdout: 'pipe',
+      stderr: 'pipe',
     });
     const exitCode = await proc.exited;
     if (exitCode !== 0) {

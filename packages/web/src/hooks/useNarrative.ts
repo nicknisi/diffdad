@@ -1,12 +1,6 @@
-import { useEffect, useState } from "react";
-import { useReviewStore, type BackendConfig } from "../state/review-store";
-import type {
-  CheckRun,
-  DiffFile,
-  NarrativeResponse,
-  PRComment,
-  PRData,
-} from "../state/types";
+import { useEffect, useState } from 'react';
+import { useReviewStore, type BackendConfig } from '../state/review-store';
+import type { CheckRun, DiffFile, NarrativeResponse, PRComment, PRData } from '../state/types';
 
 type NarrativeApiResponse = {
   pr: PRData;
@@ -30,7 +24,7 @@ export function useNarrative() {
       try {
         setLoading(true);
         setError(null);
-        const res = await fetch("/api/narrative");
+        const res = await fetch('/api/narrative');
         if (!res.ok) {
           throw new Error(`Request failed: ${res.status}`);
         }
@@ -47,7 +41,7 @@ export function useNarrative() {
         );
       } catch (err) {
         if (cancelled) return;
-        setError(err instanceof Error ? err.message : "Unknown error");
+        setError(err instanceof Error ? err.message : 'Unknown error');
       } finally {
         if (!cancelled) setLoading(false);
       }

@@ -1,4 +1,4 @@
-import type { DiffFile, DiffHunk, DiffLine } from "../github/types";
+import type { DiffFile, DiffHunk, DiffLine } from '../github/types';
 
 export interface NarrativePromptInput {
   title: string;
@@ -64,60 +64,52 @@ Output format — return ONLY valid JSON, no prose around it, matching this sche
 ${RESPONSE_SCHEMA}`;
 
 function formatHunkLine(line: DiffLine): string {
-  const prefix =
-    line.type === "add" ? "+" : line.type === "remove" ? "-" : " ";
+  const prefix = line.type === 'add' ? '+' : line.type === 'remove' ? '-' : ' ';
   return `${prefix}${line.content}`;
 }
 
 function formatHunk(hunk: DiffHunk, index: number): string {
-  const body = hunk.lines.map(formatHunkLine).join("\n");
+  const body = hunk.lines.map(formatHunkLine).join('\n');
   return `[hunkIndex=${index}]\n${hunk.header}\n${body}`;
 }
 
 function formatFile(file: DiffFile): string {
   const header = `diff --git a/${file.file} b/${file.file}`;
-  const fromPath = file.isNewFile ? "/dev/null" : `a/${file.file}`;
-  const toPath = file.isDeleted ? "/dev/null" : `b/${file.file}`;
-  const fileMarkers = [
-    file.isNewFile ? "new file" : null,
-    file.isDeleted ? "deleted file" : null,
-  ]
+  const fromPath = file.isNewFile ? '/dev/null' : `a/${file.file}`;
+  const toPath = file.isDeleted ? '/dev/null' : `b/${file.file}`;
+  const fileMarkers = [file.isNewFile ? 'new file' : null, file.isDeleted ? 'deleted file' : null]
     .filter(Boolean)
-    .join(" ");
+    .join(' ');
   const meta = [header];
   if (fileMarkers) meta.push(fileMarkers);
   meta.push(`--- ${fromPath}`, `+++ ${toPath}`);
-  const hunks = file.hunks.map((h, i) => formatHunk(h, i)).join("\n");
-  return `${meta.join("\n")}\n${hunks}`;
+  const hunks = file.hunks.map((h, i) => formatHunk(h, i)).join('\n');
+  return `${meta.join('\n')}\n${hunks}`;
 }
 
-export function buildNarrativePrompt(
-  input: NarrativePromptInput,
-): NarrativePrompt {
+export function buildNarrativePrompt(input: NarrativePromptInput): NarrativePrompt {
   const { title, description, labels, files, fileTree } = input;
 
   const truncatedTree = fileTree.slice(0, FILE_TREE_LIMIT);
-  const labelLine = labels.length > 0 ? labels.join(", ") : "(none)";
-  const descriptionBlock = description.trim().length > 0 ? description : "(no description provided)";
-  const treeBlock =
-    truncatedTree.length > 0 ? truncatedTree.join("\n") : "(empty)";
-  const diffBlock =
-    files.length > 0 ? files.map(formatFile).join("\n") : "(no file changes)";
+  const labelLine = labels.length > 0 ? labels.join(', ') : '(none)';
+  const descriptionBlock = description.trim().length > 0 ? description : '(no description provided)';
+  const treeBlock = truncatedTree.length > 0 ? truncatedTree.join('\n') : '(empty)';
+  const diffBlock = files.length > 0 ? files.map(formatFile).join('\n') : '(no file changes)';
 
   const user = [
     `PR title: ${title}`,
-    "",
-    "PR description:",
+    '',
+    'PR description:',
     descriptionBlock,
-    "",
+    '',
     `Labels: ${labelLine}`,
-    "",
+    '',
     `File tree (first ${FILE_TREE_LIMIT} entries):`,
     treeBlock,
-    "",
-    "Unified diff:",
+    '',
+    'Unified diff:',
     diffBlock,
-  ].join("\n");
+  ].join('\n');
 
   return { system: SYSTEM_PROMPT, user };
 }

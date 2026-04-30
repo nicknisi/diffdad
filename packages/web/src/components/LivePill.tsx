@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { useReviewStore } from "../state/review-store";
+import { useEffect, useState } from 'react';
+import { useReviewStore } from '../state/review-store';
 
 function formatRelative(ms: number): string {
   const sec = Math.max(0, Math.floor(ms / 1000));
@@ -33,40 +33,40 @@ export function LivePill({ onClick }: Props) {
   let metaColor: string;
   let animateDot = true;
 
-  if (status === "connected") {
-    label = "Live";
-    dotColor = "var(--green-10)";
+  if (status === 'connected') {
+    label = 'Live';
+    dotColor = 'var(--green-10)';
     containerStyle = {
-      background: "var(--green-3)",
-      color: "var(--green-11)",
-      boxShadow: "inset 0 0 0 1px var(--green-a5)",
+      background: 'var(--green-3)',
+      color: 'var(--green-11)',
+      boxShadow: 'inset 0 0 0 1px var(--green-a5)',
     };
-    labelColor = "var(--green-11)";
-    metaColor = "var(--green-11)";
-  } else if (status === "connecting") {
-    label = "Reconnecting…";
-    dotColor = "var(--amber-10)";
+    labelColor = 'var(--green-11)';
+    metaColor = 'var(--green-11)';
+  } else if (status === 'connecting') {
+    label = 'Reconnecting…';
+    dotColor = 'var(--amber-10)';
     containerStyle = {
-      background: "var(--amber-3)",
-      color: "var(--amber-11)",
-      boxShadow: "inset 0 0 0 1px var(--amber-a5)",
+      background: 'var(--amber-3)',
+      color: 'var(--amber-11)',
+      boxShadow: 'inset 0 0 0 1px var(--amber-a5)',
     };
-    labelColor = "var(--amber-11)";
-    metaColor = "var(--amber-11)";
+    labelColor = 'var(--amber-11)';
+    metaColor = 'var(--amber-11)';
   } else {
-    label = "Offline";
-    dotColor = "var(--gray-9)";
+    label = 'Offline';
+    dotColor = 'var(--gray-9)';
     containerStyle = {
-      background: "var(--gray-3)",
-      color: "var(--fg-2)",
-      boxShadow: "inset 0 0 0 1px var(--gray-a5)",
+      background: 'var(--gray-3)',
+      color: 'var(--fg-2)',
+      boxShadow: 'inset 0 0 0 1px var(--gray-a5)',
     };
-    labelColor = "var(--fg-2)";
-    metaColor = "var(--fg-3)";
+    labelColor = 'var(--fg-2)';
+    metaColor = 'var(--fg-3)';
     animateDot = false;
   }
 
-  const meta = `:4317 · ${eventCount} event${eventCount === 1 ? "" : "s"} · last ${formatRelative(now - lastEventAt)}`;
+  const meta = `:4317 · ${eventCount} event${eventCount === 1 ? '' : 's'} · last ${formatRelative(now - lastEventAt)}`;
 
   return (
     <button
@@ -77,16 +77,13 @@ export function LivePill({ onClick }: Props) {
       style={containerStyle}
     >
       <span
-        className={`inline-block h-2 w-2 rounded-full ${animateDot ? "live-ping-dot" : ""}`}
+        className={`inline-block h-2 w-2 rounded-full ${animateDot ? 'live-ping-dot' : ''}`}
         style={{ background: dotColor }}
       />
       <span className="font-semibold" style={{ color: labelColor }}>
         {label}
       </span>
-      <span
-        className="font-mono text-[11.5px]"
-        style={{ color: metaColor, opacity: 0.78 }}
-      >
+      <span className="font-mono text-[11.5px]" style={{ color: metaColor, opacity: 0.78 }}>
         {meta}
       </span>
     </button>

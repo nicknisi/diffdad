@@ -1,5 +1,5 @@
-import { useEffect } from "react";
-import { useReviewStore } from "../state/review-store";
+import { useEffect } from 'react';
+import { useReviewStore } from '../state/review-store';
 
 export function useScrollTracker() {
   const narrative = useReviewStore((s) => s.narrative);
@@ -13,7 +13,7 @@ export function useScrollTracker() {
       const offset = window.scrollY + 120;
       const discussionEl = document.querySelector('[data-chid="discussion"]');
       if (discussionEl && (discussionEl as HTMLElement).offsetTop <= offset) {
-        setActiveChapter("discussion");
+        setActiveChapter('discussion');
         return;
       }
       for (let i = narrative.chapters.length - 1; i >= 0; i--) {
@@ -25,7 +25,7 @@ export function useScrollTracker() {
       }
     }
 
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
   }, [narrative, setActiveChapter]);
 }

@@ -1,6 +1,6 @@
-import { useState } from "react";
-import { useReviewStore } from "../state/review-store";
-import { Markdown } from "./markdown/Markdown";
+import { useState } from 'react';
+import { useReviewStore } from '../state/review-store';
+import { Markdown } from './markdown/Markdown';
 
 type Props = {
   content: string;
@@ -30,7 +30,7 @@ export function NarrationBlock({ content, chapterKey }: Props) {
   return (
     <div
       className="m-0 ml-[34px] mb-[16px] text-[14.5px] leading-[22px] text-[var(--fg-1)] narration-prose"
-      style={{ textWrap: "pretty" }}
+      style={{ textWrap: 'pretty' }}
     >
       <Markdown source={displayText} />
     </div>

@@ -7,7 +7,7 @@ export type NarrativeResponse = {
 export type NarrativeChapter = {
   title: string;
   summary: string;
-  risk: "low" | "medium" | "high";
+  risk: 'low' | 'medium' | 'high';
   sections: NarrativeSection[];
   reshow?: {
     ref: number;
@@ -17,9 +17,9 @@ export type NarrativeChapter = {
 };
 
 export type NarrativeSection =
-  | { type: "narrative"; content: string }
+  | { type: 'narrative'; content: string }
   | {
-      type: "diff";
+      type: 'diff';
       file: string;
       startLine: number;
       endLine: number;

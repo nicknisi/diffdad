@@ -1,9 +1,12 @@
-import type { NarrativeResponse } from "../narrative/types";
-import type { PRComment } from "./types";
+import type { NarrativeResponse } from '../narrative/types';
+import type { PRComment } from './types';
 
 function normalizePath(p: string | undefined | null): string {
-  if (!p) return "";
-  return p.trim().replace(/^[ab]\//, "").replace(/^\/+/, "");
+  if (!p) return '';
+  return p
+    .trim()
+    .replace(/^[ab]\//, '')
+    .replace(/^\/+/, '');
 }
 
 export type MappedComment = PRComment & {
@@ -25,15 +28,12 @@ const NARRATIVE_TAG_RE = /\[diff\.dad:\s*Chapter\s+(\d+)\]/i;
  *   mapped to every chapter whose sections reference that file via a
  *   `diff` section.
  */
-export function mapCommentsToChapters(
-  comments: PRComment[],
-  narrative: NarrativeResponse,
-): MappedComment[] {
+export function mapCommentsToChapters(comments: PRComment[], narrative: NarrativeResponse): MappedComment[] {
   // Build normalized path -> chapterIndices index from narrative diff sections.
   const pathToChapters = new Map<string, Set<number>>();
   narrative.chapters.forEach((chapter, idx) => {
     for (const section of chapter.sections) {
-      if (section.type === "diff") {
+      if (section.type === 'diff') {
         const norm = normalizePath(section.file);
         const set = pathToChapters.get(norm) ?? new Set<number>();
         set.add(idx);

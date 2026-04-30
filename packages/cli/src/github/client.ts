@@ -1,12 +1,12 @@
-import { parseDiff } from "./diff-parser";
-import type { CheckRun, DiffFile, PRComment, PRMetadata } from "./types";
+import { parseDiff } from './diff-parser';
+import type { CheckRun, DiffFile, PRComment, PRMetadata } from './types';
 
-const GITHUB_API = "https://api.github.com";
+const GITHUB_API = 'https://api.github.com';
 
 export type PostCommentOptions = {
   path?: string;
   line?: number;
-  side?: "LEFT" | "RIGHT";
+  side?: 'LEFT' | 'RIGHT';
   commitId?: string;
   inReplyToId?: number;
 };
@@ -17,7 +17,7 @@ type GhPullResponse = {
   number: number;
   title: string;
   body: string | null;
-  state: "open" | "closed";
+  state: 'open' | 'closed';
   draft: boolean;
   merged: boolean;
   user: GhUser;
@@ -42,7 +42,7 @@ type GhReviewComment = {
   line: number | null;
   original_line: number | null;
   position: number | null;
-  side: "LEFT" | "RIGHT" | null;
+  side: 'LEFT' | 'RIGHT' | null;
   in_reply_to_id?: number;
   diff_hunk: string;
 };
@@ -58,52 +58,36 @@ type GhIssueComment = {
 export class GitHubClient {
   constructor(private readonly token: string) {}
 
-  private async fetch(
-    path: string,
-    init: RequestInit = {},
-    accept = "application/vnd.github+json",
-  ): Promise<Response> {
-    const url = path.startsWith("http") ? path : `${GITHUB_API}${path}`;
+  private async fetch(path: string, init: RequestInit = {}, accept = 'application/vnd.github+json'): Promise<Response> {
+    const url = path.startsWith('http') ? path : `${GITHUB_API}${path}`;
     const headers = new Headers(init.headers);
-    headers.set("Authorization", `Bearer ${this.token}`);
-    headers.set("Accept", accept);
-    headers.set("X-GitHub-Api-Version", "2022-11-28");
-    if (!headers.has("User-Agent")) {
-      headers.set("User-Agent", "diffdad-cli");
+    headers.set('Authorization', `Bearer ${this.token}`);
+    headers.set('Accept', accept);
+    headers.set('X-GitHub-Api-Version', '2022-11-28');
+    if (!headers.has('User-Agent')) {
+      headers.set('User-Agent', 'diffdad-cli');
     }
     const res = await fetch(url, { ...init, headers });
     if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(
-        `GitHub API ${res.status} ${res.statusText} for ${url}: ${text}`,
-      );
+      const text = await res.text().catch(() => '');
+      throw new Error(`GitHub API ${res.status} ${res.statusText} for ${url}: ${text}`);
     }
     return res;
   }
 
-  async getPR(
-    owner: string,
-    repo: string,
-    number: number,
-  ): Promise<PRMetadata> {
-    const res = await this.fetch(
-      `/repos/${owner}/${repo}/pulls/${number}`,
-    );
+  async getPR(owner: string, repo: string, number: number): Promise<PRMetadata> {
+    const res = await this.fetch(`/repos/${owner}/${repo}/pulls/${number}`);
     const data = (await res.json()) as GhPullResponse;
-    const state: PRMetadata["state"] = data.merged
-      ? "merged"
-      : data.state === "closed"
-        ? "closed"
-        : "open";
+    const state: PRMetadata['state'] = data.merged ? 'merged' : data.state === 'closed' ? 'closed' : 'open';
     return {
       number: data.number,
       title: data.title,
-      body: data.body ?? "",
+      body: data.body ?? '',
       state,
       draft: data.draft,
       author: {
-        login: data.user?.login ?? "",
-        avatarUrl: data.user?.avatar_url ?? "",
+        login: data.user?.login ?? '',
+        avatarUrl: data.user?.avatar_url ?? '',
       },
       branch: data.head.ref,
       base: data.base.ref,
@@ -118,30 +102,16 @@ export class GitHubClient {
     };
   }
 
-  async getDiff(
-    owner: string,
-    repo: string,
-    number: number,
-  ): Promise<DiffFile[]> {
-    const res = await this.fetch(
-      `/repos/${owner}/${repo}/pulls/${number}`,
-      {},
-      "application/vnd.github.v3.diff",
-    );
+  async getDiff(owner: string, repo: string, number: number): Promise<DiffFile[]> {
+    const res = await this.fetch(`/repos/${owner}/${repo}/pulls/${number}`, {}, 'application/vnd.github.v3.diff');
     const text = await res.text();
     return parseDiff(text);
   }
 
-  async getComments(
-    owner: string,
-    repo: string,
-    number: number,
-  ): Promise<PRComment[]> {
+  async getComments(owner: string, repo: string, number: number): Promise<PRComment[]> {
     const [reviewRes, issueRes] = await Promise.all([
       this.fetch(`/repos/${owner}/${repo}/pulls/${number}/comments?per_page=100`),
-      this.fetch(
-        `/repos/${owner}/${repo}/issues/${number}/comments?per_page=100`,
-      ),
+      this.fetch(`/repos/${owner}/${repo}/issues/${number}/comments?per_page=100`),
     ]);
 
     const reviews = (await reviewRes.json()) as GhReviewComment[];
@@ -149,7 +119,7 @@ export class GitHubClient {
 
     const reviewComments: PRComment[] = reviews.map((c) => ({
       id: c.id,
-      author: c.user?.login ?? "",
+      author: c.user?.login ?? '',
       body: c.body,
       createdAt: c.created_at,
       updatedAt: c.updated_at,
@@ -162,7 +132,7 @@ export class GitHubClient {
 
     const issueComments: PRComment[] = issues.map((c) => ({
       id: c.id,
-      author: c.user?.login ?? "",
+      author: c.user?.login ?? '',
       body: c.body,
       createdAt: c.created_at,
       updatedAt: c.updated_at,
@@ -173,19 +143,13 @@ export class GitHubClient {
     return all;
   }
 
-  async getCheckRuns(
-    owner: string,
-    repo: string,
-    ref: string,
-  ): Promise<CheckRun[]> {
-    const res = await this.fetch(
-      `/repos/${owner}/${repo}/commits/${ref}/check-runs`,
-    );
+  async getCheckRuns(owner: string, repo: string, ref: string): Promise<CheckRun[]> {
+    const res = await this.fetch(`/repos/${owner}/${repo}/commits/${ref}/check-runs`);
     const data = (await res.json()) as {
       check_runs: Array<{
         id: number;
         name: string;
-        status: "queued" | "in_progress" | "completed";
+        status: 'queued' | 'in_progress' | 'completed';
         conclusion: string | null;
         started_at: string | null;
         completed_at: string | null;
@@ -215,10 +179,7 @@ export class GitHubClient {
     body: string,
     opts: PostCommentOptions = {},
   ): Promise<PRComment> {
-    const isInline =
-      opts.path !== undefined &&
-      opts.line !== undefined &&
-      opts.commitId !== undefined;
+    const isInline = opts.path !== undefined && opts.line !== undefined && opts.commitId !== undefined;
 
     if (isInline) {
       const payload: Record<string, unknown> = {
@@ -226,23 +187,20 @@ export class GitHubClient {
         commit_id: opts.commitId,
         path: opts.path,
         line: opts.line,
-        side: opts.side ?? "RIGHT",
+        side: opts.side ?? 'RIGHT',
       };
       if (opts.inReplyToId !== undefined) {
         payload.in_reply_to = opts.inReplyToId;
       }
-      const res = await this.fetch(
-        `/repos/${owner}/${repo}/pulls/${number}/comments`,
-        {
-          method: "POST",
-          body: JSON.stringify(payload),
-          headers: { "Content-Type": "application/json" },
-        },
-      );
+      const res = await this.fetch(`/repos/${owner}/${repo}/pulls/${number}/comments`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+        headers: { 'Content-Type': 'application/json' },
+      });
       const data = (await res.json()) as GhReviewComment;
       return {
         id: data.id,
-        author: data.user?.login ?? "",
+        author: data.user?.login ?? '',
         body: data.body,
         createdAt: data.created_at,
         updatedAt: data.updated_at,
@@ -254,18 +212,15 @@ export class GitHubClient {
       };
     }
 
-    const res = await this.fetch(
-      `/repos/${owner}/${repo}/issues/${number}/comments`,
-      {
-        method: "POST",
-        body: JSON.stringify({ body }),
-        headers: { "Content-Type": "application/json" },
-      },
-    );
+    const res = await this.fetch(`/repos/${owner}/${repo}/issues/${number}/comments`, {
+      method: 'POST',
+      body: JSON.stringify({ body }),
+      headers: { 'Content-Type': 'application/json' },
+    });
     const data = (await res.json()) as GhIssueComment;
     return {
       id: data.id,
-      author: data.user?.login ?? "",
+      author: data.user?.login ?? '',
       body: data.body,
       createdAt: data.created_at,
       updatedAt: data.updated_at,
@@ -276,12 +231,12 @@ export class GitHubClient {
     owner: string,
     repo: string,
     number: number,
-    event: "COMMENT" | "APPROVE" | "REQUEST_CHANGES",
+    event: 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES',
     body?: string,
   ): Promise<void> {
     await this.fetch(`/repos/${owner}/${repo}/pulls/${number}/reviews`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ event, body: body || undefined }),
     });
   }

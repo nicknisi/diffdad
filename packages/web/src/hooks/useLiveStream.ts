@@ -1,6 +1,6 @@
-import { useEffect } from "react";
-import { useReviewStore } from "../state/review-store";
-import type { CheckRun, LiveEvent, LiveEventKind, PRComment } from "../state/types";
+import { useEffect } from 'react';
+import { useReviewStore } from '../state/review-store';
+import type { CheckRun, LiveEvent, LiveEventKind, PRComment } from '../state/types';
 
 function makeEventId(): string {
   return `ev-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -18,21 +18,18 @@ function makeEvent(kind: LiveEventKind, summary: string, data?: unknown): LiveEv
 
 export function useLiveStream() {
   useEffect(() => {
-    const setLiveStatus = (status: "connected" | "connecting" | "disconnected") =>
+    const setLiveStatus = (status: 'connected' | 'connecting' | 'disconnected') =>
       useReviewStore.getState().setLiveStatus(status);
-    const addLiveEvent = (event: LiveEvent) =>
-      useReviewStore.getState().addLiveEvent(event);
-    const setLastEventAt = (ts: number) =>
-      useReviewStore.getState().setLastEventAt(ts);
-    const setCheckRuns = (checks: CheckRun[]) =>
-      useReviewStore.getState().setCheckRuns(checks);
+    const addLiveEvent = (event: LiveEvent) => useReviewStore.getState().addLiveEvent(event);
+    const setLastEventAt = (ts: number) => useReviewStore.getState().setLastEventAt(ts);
+    const setCheckRuns = (checks: CheckRun[]) => useReviewStore.getState().setCheckRuns(checks);
 
-    const es = new EventSource("/api/events");
+    const es = new EventSource('/api/events');
 
     const onConnected = () => {
-      setLiveStatus("connected");
+      setLiveStatus('connected');
       setLastEventAt(Date.now());
-      addLiveEvent(makeEvent("system", "Connected to Diff Dad server"));
+      addLiveEvent(makeEvent('system', 'Connected to Diff Dad server'));
     };
 
     const onComment = (e: MessageEvent) => {
@@ -43,13 +40,7 @@ export function useLiveStream() {
           return { comments: [...state.comments, comment] };
         });
         setLastEventAt(Date.now());
-        addLiveEvent(
-          makeEvent(
-            "comment",
-            `${comment.author} commented on ${comment.path ?? "PR"}`,
-            comment,
-          ),
-        );
+        addLiveEvent(makeEvent('comment', `${comment.author} commented on ${comment.path ?? 'PR'}`, comment));
       } catch {
         // ignore malformed event
       }
@@ -60,30 +51,28 @@ export function useLiveStream() {
         const checks = JSON.parse(e.data) as CheckRun[];
         setCheckRuns(checks);
         setLastEventAt(Date.now());
-        addLiveEvent(
-          makeEvent("ci", `CI status updated (${checks.length} checks)`, checks),
-        );
+        addLiveEvent(makeEvent('ci', `CI status updated (${checks.length} checks)`, checks));
       } catch {
         // ignore
       }
     };
 
-    es.addEventListener("connected", onConnected);
-    es.addEventListener("comment", onComment as EventListener);
-    es.addEventListener("checks", onChecks as EventListener);
+    es.addEventListener('connected', onConnected);
+    es.addEventListener('comment', onComment as EventListener);
+    es.addEventListener('checks', onChecks as EventListener);
 
     es.onopen = () => {
-      setLiveStatus("connected");
+      setLiveStatus('connected');
     };
 
     es.onerror = () => {
-      setLiveStatus("disconnected");
+      setLiveStatus('disconnected');
     };
 
     return () => {
-      es.removeEventListener("connected", onConnected);
-      es.removeEventListener("comment", onComment as EventListener);
-      es.removeEventListener("checks", onChecks as EventListener);
+      es.removeEventListener('connected', onConnected);
+      es.removeEventListener('comment', onComment as EventListener);
+      es.removeEventListener('checks', onChecks as EventListener);
       es.close();
     };
   }, []);

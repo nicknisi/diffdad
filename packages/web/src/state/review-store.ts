@@ -1,4 +1,4 @@
-import { create } from "zustand";
+import { create } from 'zustand';
 import type {
   ChapterState,
   CheckRun,
@@ -9,15 +9,15 @@ import type {
   NarrativeResponse,
   PRComment,
   PRData,
-} from "./types";
+} from './types';
 
-type Theme = "light" | "dark";
-type Density = "terse" | "normal" | "verbose";
-type View = "story" | "files";
-type StoryStructure = "chapters" | "linear" | "outline";
-type VisualStyle = "stripe" | "linear" | "github";
-type LayoutMode = "toc" | "linear";
-type DisplayDensity = "comfortable" | "compact";
+type Theme = 'light' | 'dark';
+type Density = 'terse' | 'normal' | 'verbose';
+type View = 'story' | 'files';
+type StoryStructure = 'chapters' | 'linear' | 'outline';
+type VisualStyle = 'stripe' | 'linear' | 'github';
+type LayoutMode = 'toc' | 'linear';
+type DisplayDensity = 'comfortable' | 'compact';
 
 export type BackendConfig = {
   storyStructure?: StoryStructure;
@@ -60,7 +60,7 @@ type ReviewState = {
     comments: PRComment[],
     repoUrl?: string | null,
     checkRuns?: CheckRun[],
-    config?: BackendConfig | null
+    config?: BackendConfig | null,
   ) => void;
   setActiveChapter: (id: string) => void;
   toggleReviewed: (idx: number) => void;
@@ -98,31 +98,23 @@ export const useReviewStore = create<ReviewState>((set) => ({
   activeChapterId: null,
   drafts: [],
   openLine: null,
-  theme: (localStorage.getItem("diffdad.theme") as Theme) || "dark",
-  density: "normal",
+  theme: (localStorage.getItem('diffdad.theme') as Theme) || 'dark',
+  density: 'normal',
   chapterDensity: {},
-  view: "story",
-  liveStatus: "connecting",
+  view: 'story',
+  liveStatus: 'connecting',
   liveEvents: [],
   lastEventAt: Date.now(),
   shortcutsHelpOpen: false,
-  storyStructure: "chapters",
-  visualStyle: "stripe",
-  layoutMode: "toc",
-  displayDensity: "comfortable",
+  storyStructure: 'chapters',
+  visualStyle: 'stripe',
+  layoutMode: 'toc',
+  displayDensity: 'comfortable',
   collapseNarration: false,
   clusterBots: true,
   narrationOverrides: {} as Record<string, string>,
 
-  setData: (
-    pr,
-    narrative,
-    files,
-    comments,
-    repoUrl = null,
-    checkRuns = [],
-    config = null,
-  ) => {
+  setData: (pr, narrative, files, comments, repoUrl = null, checkRuns = [], config = null) => {
     const storageKey = `diffdad.reviewed.${pr.number}`;
     let saved: Record<string, ChapterState> = {};
     try {
@@ -132,7 +124,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
     const chapterStates: Record<string, ChapterState> = {};
     narrative.chapters.forEach((_, idx) => {
       const key = `ch-${idx}`;
-      chapterStates[key] = saved[key] === "reviewed" ? "reviewed" : "reading";
+      chapterStates[key] = saved[key] === 'reviewed' ? 'reviewed' : 'reading';
     });
     const next: Partial<ReviewState> = {
       pr,
@@ -142,17 +134,15 @@ export const useReviewStore = create<ReviewState>((set) => ({
       checkRuns,
       repoUrl,
       chapterStates,
-      activeChapterId: narrative.chapters.length > 0 ? "ch-0" : null,
+      activeChapterId: narrative.chapters.length > 0 ? 'ch-0' : null,
       chapterDensity: {},
     };
     if (config) {
       if (config.storyStructure) next.storyStructure = config.storyStructure;
       if (config.layoutMode) next.layoutMode = config.layoutMode;
       if (config.displayDensity) next.displayDensity = config.displayDensity;
-      if (config.defaultNarrationDensity)
-        next.density = config.defaultNarrationDensity;
-      if (typeof config.clusterBots === "boolean")
-        next.clusterBots = config.clusterBots;
+      if (config.defaultNarrationDensity) next.density = config.defaultNarrationDensity;
+      if (typeof config.clusterBots === 'boolean') next.clusterBots = config.clusterBots;
     }
     set(next);
   },
@@ -163,7 +153,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
     set((state) => {
       const key = `ch-${idx}`;
       const current = state.chapterStates[key];
-      const next: ChapterState = current === "reviewed" ? "reading" : "reviewed";
+      const next: ChapterState = current === 'reviewed' ? 'reading' : 'reviewed';
       const updated = { ...state.chapterStates, [key]: next };
       if (state.pr) {
         try {
@@ -183,16 +173,14 @@ export const useReviewStore = create<ReviewState>((set) => ({
 
   setComments: (comments) => set({ comments }),
 
-  addDraft: (draft) =>
-    set((state) => ({ drafts: [...state.drafts, draft] })),
+  addDraft: (draft) => set((state) => ({ drafts: [...state.drafts, draft] })),
 
-  removeDraft: (id) =>
-    set((state) => ({ drafts: state.drafts.filter((d) => d.id !== id) })),
+  removeDraft: (id) => set((state) => ({ drafts: state.drafts.filter((d) => d.id !== id) })),
 
   clearDrafts: () => set({ drafts: [] }),
 
   setTheme: (theme) => {
-    localStorage.setItem("diffdad.theme", theme);
+    localStorage.setItem('diffdad.theme', theme);
     set({ theme });
   },
 

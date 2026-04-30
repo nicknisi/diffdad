@@ -5,6 +5,9 @@
  * platforms — but trims whitespace.
  */
 export function normalizePath(p: string | undefined | null): string {
-  if (!p) return "";
-  return p.trim().replace(/^[ab]\//, "").replace(/^\/+/, "");
+  if (!p) return '';
+  return p
+    .trim()
+    .replace(/^[ab]\//, '')
+    .replace(/^\/+/, '');
 }

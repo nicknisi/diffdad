@@ -1,19 +1,19 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 @variant dark (&:where(.dark, .dark *));
 
 @theme {
-  --color-brand: #6565EC;
-  --color-brand-hover: #5151CD;
-  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
-  --font-serif: "Source Serif 4", ui-serif, Georgia, serif;
+  --color-brand: #6565ec;
+  --color-brand-hover: #5151cd;
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
+  --font-serif: 'Source Serif 4', ui-serif, Georgia, serif;
 }
 
 :root {
   /* Brand */
-  --brand: #6565EC;
-  --brand-hover: #5151CD;
-  --brand-soft: rgba(101, 101, 236, 0.10);
+  --brand: #6565ec;
+  --brand-hover: #5151cd;
+  --brand-soft: rgba(101, 101, 236, 0.1);
 
   /* Page surfaces */
   --bg-page: #f8f8fa;
@@ -30,8 +30,8 @@
   --border-strong: rgba(0, 0, 20, 0.12);
 
   /* Shadows */
-  --shadow-card: 0 1px 2px rgba(3, 2, 13, 0.06), 0 3px 6px -1px rgba(3, 2, 13, 0.10);
-  --shadow-elevated: 0 12px 24px -4px rgba(3, 2, 13, 0.18), 0 4px 8px -2px rgba(3, 2, 13, 0.10);
+  --shadow-card: 0 1px 2px rgba(3, 2, 13, 0.06), 0 3px 6px -1px rgba(3, 2, 13, 0.1);
+  --shadow-elevated: 0 12px 24px -4px rgba(3, 2, 13, 0.18), 0 4px 8px -2px rgba(3, 2, 13, 0.1);
 
   /* Radix-style scale tokens used by the design */
   --gray-1: #fcfcfd;
@@ -49,12 +49,12 @@
   --purple-2: #f6f5ff;
   --purple-3: #ede9fe;
   --purple-4: #dfd9fb;
-  --purple-9: #6565EC;
-  --purple-10: #5151CD;
+  --purple-9: #6565ec;
+  --purple-10: #5151cd;
   --purple-11: #4f46e5;
   --purple-12: #2c2167;
   --purple-a3: rgba(101, 101, 236, 0.12);
-  --purple-a4: rgba(101, 101, 236, 0.20);
+  --purple-a4: rgba(101, 101, 236, 0.2);
   --purple-a5: rgba(101, 101, 236, 0.28);
   --purple-a8: rgba(101, 101, 236, 0.55);
 
@@ -65,7 +65,7 @@
   --green-10: #1f8f72;
   --green-11: #1a7a5f;
   --green-a3: rgba(41, 163, 131, 0.18);
-  --green-a5: rgba(41, 163, 131, 0.30);
+  --green-a5: rgba(41, 163, 131, 0.3);
   --green-a8: rgba(41, 163, 131, 0.55);
 
   --red-2: #fff4f5;
@@ -104,8 +104,8 @@
   --border: rgba(255, 255, 255, 0.08);
   --border-strong: rgba(255, 255, 255, 0.12);
 
-  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.30), 0 3px 6px -1px rgba(0, 0, 0, 0.40);
-  --shadow-elevated: 0 12px 24px -4px rgba(0, 0, 0, 0.50), 0 4px 8px -2px rgba(0, 0, 0, 0.30);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 3px 6px -1px rgba(0, 0, 0, 0.4);
+  --shadow-elevated: 0 12px 24px -4px rgba(0, 0, 0, 0.5), 0 4px 8px -2px rgba(0, 0, 0, 0.3);
 
   --gray-1: #18181a;
   --gray-2: #1c1c1f;
@@ -119,7 +119,7 @@
   --gray-a5: rgba(255, 255, 255, 0.13);
   --gray-a6: rgba(255, 255, 255, 0.18);
 
-  --purple-2: rgba(124, 124, 242, 0.10);
+  --purple-2: rgba(124, 124, 242, 0.1);
   --purple-3: rgba(124, 124, 242, 0.18);
   --purple-4: rgba(124, 124, 242, 0.26);
   --purple-9: #7c7cf2;
@@ -131,9 +131,9 @@
   --purple-a5: rgba(124, 124, 242, 0.36);
   --purple-a8: rgba(124, 124, 242, 0.65);
 
-  --green-2: rgba(41, 163, 131, 0.10);
-  --green-3: rgba(41, 163, 131, 0.20);
-  --green-4: rgba(41, 163, 131, 0.30);
+  --green-2: rgba(41, 163, 131, 0.1);
+  --green-3: rgba(41, 163, 131, 0.2);
+  --green-4: rgba(41, 163, 131, 0.3);
   --green-9: #29a383;
   --green-10: #3eb593;
   --green-11: #56ba9f;
@@ -148,16 +148,16 @@
   --red-11: #efacb8;
 
   --amber-2: rgba(232, 179, 57, 0.08);
-  --amber-3: rgba(232, 179, 57, 0.20);
+  --amber-3: rgba(232, 179, 57, 0.2);
   --amber-9: #e8b339;
   --amber-10: #f0c45a;
   --amber-11: #f5cf6f;
-  --amber-a5: rgba(232, 179, 57, 0.30);
+  --amber-a5: rgba(232, 179, 57, 0.3);
 
-  --yellow-3: rgba(232, 179, 57, 0.20);
+  --yellow-3: rgba(232, 179, 57, 0.2);
   --yellow-11: #f5cf6f;
 
-  --blue-3: rgba(70, 122, 230, 0.20);
+  --blue-3: rgba(70, 122, 230, 0.2);
   --blue-11: #95b3ee;
 }
 
@@ -169,55 +169,104 @@ html {
 }
 
 body {
-  font-family: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-family:
+    'Inter',
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    sans-serif;
   background: var(--bg-page);
   color: var(--fg-1);
-  font-feature-settings: "ss01", "cv11";
+  font-feature-settings: 'ss01', 'cv11';
 }
 
-.font-mono, pre, code {
-  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+.font-mono,
+pre,
+code {
+  font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
 }
 
-.font-serif, .font-em {
-  font-family: "Source Serif 4", ui-serif, Georgia, serif;
+.font-serif,
+.font-em {
+  font-family: 'Source Serif 4', ui-serif, Georgia, serif;
 }
 
 /* Animations */
 @keyframes live-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
 }
 
 @keyframes live-ping {
-  0%   { box-shadow: 0 0 0 0 var(--green-a8); }
-  70%  { box-shadow: 0 0 0 6px rgba(0,0,0,0); }
-  100% { box-shadow: 0 0 0 0 rgba(0,0,0,0); }
+  0% {
+    box-shadow: 0 0 0 0 var(--green-a8);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(0, 0, 0, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(0, 0, 0, 0);
+  }
 }
 
 @keyframes drawer-in {
-  from { transform: translateX(20px); opacity: 0; }
-  to { transform: none; opacity: 1; }
+  from {
+    transform: translateX(20px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
 }
 
 @keyframes fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 @keyframes hunk-flash {
-  0%   { box-shadow: inset 0 0 0 1px var(--gray-a5), 0 0 0 3px var(--purple-a8); }
-  100% { box-shadow: inset 0 0 0 1px var(--gray-a5), 0 0 0 0 transparent; }
+  0% {
+    box-shadow:
+      inset 0 0 0 1px var(--gray-a5),
+      0 0 0 3px var(--purple-a8);
+  }
+  100% {
+    box-shadow:
+      inset 0 0 0 1px var(--gray-a5),
+      0 0 0 0 transparent;
+  }
 }
 
 @keyframes confetti-fall {
-  0% { transform: translateY(-10vh) rotate(0deg); opacity: 1; }
-  100% { transform: translateY(110vh) rotate(720deg); opacity: 0; }
+  0% {
+    transform: translateY(-10vh) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(110vh) rotate(720deg);
+    opacity: 0;
+  }
 }
 
 @keyframes celebration-in {
-  0% { opacity: 0; transform: scale(0.9); }
-  100% { opacity: 1; transform: scale(1); }
+  0% {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 .live-dot {
@@ -248,7 +297,7 @@ body {
 
 /* Narration prose: serif italic em, bold b, mono code on gray chip */
 .narration-prose em {
-  font-family: "Source Serif 4", ui-serif, Georgia, serif;
+  font-family: 'Source Serif 4', ui-serif, Georgia, serif;
   font-style: italic;
   font-size: 1.05em;
 }
@@ -257,7 +306,10 @@ body {
   font-weight: 700;
 }
 .narration-prose code {
-  font: 400 0.9em "IBM Plex Mono", ui-monospace, monospace;
+  font:
+    400 0.9em 'IBM Plex Mono',
+    ui-monospace,
+    monospace;
   background: var(--gray-a3);
   color: var(--fg-1);
   padding: 1px 5px 2px;
@@ -297,8 +349,12 @@ body {
   padding: 0.5rem 0.75rem;
 }
 
-.markdown-body h1, .markdown-body h2, .markdown-body h3,
-.markdown-body h4, .markdown-body h5, .markdown-body h6 {
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
   color: var(--fg-1);
 }
 

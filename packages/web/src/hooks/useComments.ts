@@ -1,6 +1,6 @@
-import { useCallback } from "react";
-import { useReviewStore } from "../state/review-store";
-import type { PRComment } from "../state/types";
+import { useCallback } from 'react';
+import { useReviewStore } from '../state/review-store';
+import type { PRComment } from '../state/types';
 
 type PostCommentOpts = {
   path?: string;
@@ -15,7 +15,7 @@ export function useComments() {
 
   const refreshComments = useCallback(async () => {
     try {
-      const res = await fetch("/api/comments");
+      const res = await fetch('/api/comments');
       if (!res.ok) return;
       const comments = (await res.json()) as PRComment[];
       setComments(comments);
@@ -26,9 +26,9 @@ export function useComments() {
 
   const postComment = useCallback(
     async (body: string, opts: PostCommentOpts = {}): Promise<PRComment> => {
-      const res = await fetch("/api/comments", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+      const res = await fetch('/api/comments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ body, ...opts }),
       });
       if (!res.ok) {
@@ -38,7 +38,7 @@ export function useComments() {
       addComment(comment);
       return comment;
     },
-    [addComment]
+    [addComment],
   );
 
   return { postComment, refreshComments };

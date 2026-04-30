@@ -1,11 +1,11 @@
 #!/usr/bin/env bun
-import { resolveGitHubToken } from "./auth";
-import { readConfig, runConfig } from "./config";
-import { GitHubClient } from "./github/client";
-import { cacheNarrative, clearCache, getCachedNarrative } from "./narrative/cache";
-import { generateNarrative } from "./narrative/engine";
-import type { NarrativeResponse } from "./narrative/types";
-import { createServer } from "./server";
+import { resolveGitHubToken } from './auth';
+import { readConfig, runConfig } from './config';
+import { GitHubClient } from './github/client';
+import { cacheNarrative, clearCache, getCachedNarrative } from './narrative/cache';
+import { generateNarrative } from './narrative/engine';
+import type { NarrativeResponse } from './narrative/types';
+import { createServer } from './server';
 
 interface ParsedPr {
   owner: string;
@@ -32,9 +32,7 @@ export function parsePrArg(arg: string): ParsedPr | null {
   const trimmed = arg.trim();
 
   // Full URL: https://github.com/owner/repo/pull/123
-  const urlMatch = trimmed.match(
-    /^https?:\/\/github\.com\/([^/\s]+)\/([^/\s]+)\/pull\/(\d+)(?:[/?#].*)?$/i,
-  );
+  const urlMatch = trimmed.match(/^https?:\/\/github\.com\/([^/\s]+)\/([^/\s]+)\/pull\/(\d+)(?:[/?#].*)?$/i);
   if (urlMatch) {
     const [, owner, repo, num] = urlMatch;
     if (owner && repo && num) {
@@ -61,9 +59,9 @@ export function parsePrArg(arg: string): ParsedPr | null {
 
 export async function inferRepoFromGit(): Promise<{ owner: string; repo: string } | null> {
   try {
-    const proc = Bun.spawn(["git", "remote", "get-url", "origin"], {
-      stdout: "pipe",
-      stderr: "pipe",
+    const proc = Bun.spawn(['git', 'remote', 'get-url', 'origin'], {
+      stdout: 'pipe',
+      stderr: 'pipe',
     });
     const exitCode = await proc.exited;
     if (exitCode !== 0) return null;
@@ -93,8 +91,8 @@ export async function inferRepoFromGit(): Promise<{ owner: string; repo: string 
 
 async function reviewCommand(prArg: string | undefined): Promise<number> {
   if (!prArg) {
-    console.error("error: missing PR argument");
-    console.error("usage: dad review <pr-url-or-shorthand>");
+    console.error('error: missing PR argument');
+    console.error('usage: dad review <pr-url-or-shorthand>');
     return 2;
   }
 
@@ -112,18 +110,14 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
       parsed = { owner: inferred.owner, repo: inferred.repo, number: Number(trimmed) };
     } else {
       console.error(`error: could not parse PR argument: ${prArg}`);
-      console.error(
-        "expected: https://github.com/owner/repo/pull/123, owner/repo#123, or a bare PR number (e.g. 139)",
-      );
+      console.error('expected: https://github.com/owner/repo/pull/123, owner/repo#123, or a bare PR number (e.g. 139)');
       return 2;
     }
   }
 
   const token = await resolveGitHubToken();
   if (!token) {
-    console.error(
-      "error: no GitHub token found. set DIFFDAD_GITHUB_TOKEN, run `gh auth login`, or run `dad config`.",
-    );
+    console.error('error: no GitHub token found. set DIFFDAD_GITHUB_TOKEN, run `gh auth login`, or run `dad config`.');
     return 1;
   }
 
@@ -137,36 +131,42 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
     github.getComments(parsed.owner, parsed.repo, parsed.number),
   ]);
 
-  const checkRuns = await github
-    .getCheckRuns(parsed.owner, parsed.repo, metadata.headSha)
-    .catch((err) => {
-      console.warn(`warn: failed to fetch check runs: ${err instanceof Error ? err.message : err}`);
-      return [];
-    });
+  const checkRuns = await github.getCheckRuns(parsed.owner, parsed.repo, metadata.headSha).catch((err) => {
+    console.warn(`warn: failed to fetch check runs: ${err instanceof Error ? err.message : err}`);
+    return [];
+  });
 
   console.log(`${metadata.title} — ${files.length} files, +${metadata.additions} -${metadata.deletions}`);
 
-  const noCache = Bun.argv.includes("--no-cache");
-  const cached = noCache
-    ? null
-    : await getCachedNarrative(parsed.owner, parsed.repo, parsed.number, metadata.headSha);
+  const noCache = Bun.argv.includes('--no-cache');
+  const cached = noCache ? null : await getCachedNarrative(parsed.owner, parsed.repo, parsed.number, metadata.headSha);
   let narrative: NarrativeResponse;
   if (cached) {
-    console.log("Using cached narrative (same commit SHA).");
+    console.log('Using cached narrative (same commit SHA).');
     narrative = cached;
   } else {
-    console.log("Generating narrative...");
+    console.log('Generating narrative...');
     narrative = await generateNarrative(metadata, files, [], config);
     await cacheNarrative(parsed.owner, parsed.repo, parsed.number, metadata.headSha, narrative);
     console.log(`${narrative.chapters.length} chapters generated.`);
   }
-  console.log("Starting server...");
+  console.log('Starting server...');
 
-  const app = createServer({ narrative, pr: metadata, files, comments, checkRuns, github, owner: parsed.owner, repo: parsed.repo, headSha: metadata.headSha });
+  const app = createServer({
+    narrative,
+    pr: metadata,
+    files,
+    comments,
+    checkRuns,
+    github,
+    owner: parsed.owner,
+    repo: parsed.repo,
+    headSha: metadata.headSha,
+  });
 
   // Check for --port=N flag
-  const portFlag = Bun.argv.find(a => a.startsWith("--port="));
-  const port = portFlag ? parseInt(portFlag.split("=")[1]) : 0;
+  const portFlag = Bun.argv.find((a) => a.startsWith('--port='));
+  const port = portFlag ? parseInt(portFlag.split('=')[1]) : 0;
   const server = Bun.serve({ fetch: app.fetch, port });
 
   const url = `http://localhost:${server.port}`;
@@ -174,8 +174,8 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
   console.log(`  Reviewing: ${parsed.owner}/${parsed.repo}#${parsed.number}`);
   console.log(`  ${narrative.chapters.length} chapters · ${comments.length} comments\n`);
 
-  if (!Bun.argv.includes("--no-open")) {
-    const { default: open } = await import("open");
+  if (!Bun.argv.includes('--no-open')) {
+    const { default: open } = await import('open');
     await open(url);
   }
 
@@ -190,23 +190,23 @@ async function configCommand(): Promise<number> {
 async function main(argv: string[]): Promise<number> {
   const [cmd, ...rest] = argv;
 
-  if (!cmd || cmd === "--help" || cmd === "-h" || cmd === "help") {
+  if (!cmd || cmd === '--help' || cmd === '-h' || cmd === 'help') {
     console.log(USAGE);
     return 0;
   }
 
   switch (cmd) {
-    case "review":
+    case 'review':
       return await reviewCommand(rest[0]);
-    case "config":
+    case 'config':
       return await configCommand();
-    case "cache": {
-      if (rest[0] === "clear") {
+    case 'cache': {
+      if (rest[0] === 'clear') {
         const count = await clearCache();
-        console.log(count > 0 ? `Cleared ${count} cached narrative${count === 1 ? "" : "s"}.` : "Cache already empty.");
+        console.log(count > 0 ? `Cleared ${count} cached narrative${count === 1 ? '' : 's'}.` : 'Cache already empty.');
         return 0;
       }
-      console.error("usage: dad cache clear");
+      console.error('usage: dad cache clear');
       return 2;
     }
     default:

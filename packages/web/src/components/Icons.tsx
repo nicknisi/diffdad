@@ -3,13 +3,13 @@ type IconProps = { className?: string };
 const baseProps = {
   width: 16,
   height: 16,
-  viewBox: "0 0 16 16",
-  fill: "none",
-  stroke: "currentColor",
+  viewBox: '0 0 16 16',
+  fill: 'none',
+  stroke: 'currentColor',
   strokeWidth: 1.5,
-  strokeLinecap: "round" as const,
-  strokeLinejoin: "round" as const,
-  "aria-hidden": true,
+  strokeLinecap: 'round' as const,
+  strokeLinejoin: 'round' as const,
+  'aria-hidden': true,
 };
 
 export function IconSun({ className }: IconProps) {
@@ -31,14 +31,7 @@ export function IconMoon({ className }: IconProps) {
 
 export function IconSpark({ className }: IconProps) {
   return (
-    <svg
-      width={16}
-      height={16}
-      viewBox="0 0 16 16"
-      fill="currentColor"
-      aria-hidden
-      className={className}
-    >
+    <svg width={16} height={16} viewBox="0 0 16 16" fill="currentColor" aria-hidden className={className}>
       <path d="M8 1.5l1.4 4.1 4.1 1.4-4.1 1.4L8 12.5 6.6 8.4 2.5 7l4.1-1.4z" />
     </svg>
   );
@@ -95,14 +88,7 @@ export function IconChevron({ className }: IconProps) {
 
 export function IconGitHub({ className }: IconProps) {
   return (
-    <svg
-      width={16}
-      height={16}
-      viewBox="0 0 16 16"
-      fill="currentColor"
-      aria-hidden
-      className={className}
-    >
+    <svg width={16} height={16} viewBox="0 0 16 16" fill="currentColor" aria-hidden className={className}>
       <path
         fillRule="evenodd"
         clipRule="evenodd"

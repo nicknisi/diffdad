@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState } from 'react';
 
 type Props = {
   message: string;
@@ -6,11 +6,11 @@ type Props = {
 };
 
 export function Toast({ message, onDone }: Props) {
-  const [phase, setPhase] = useState<"in" | "hold" | "out">("in");
+  const [phase, setPhase] = useState<'in' | 'hold' | 'out'>('in');
 
   useEffect(() => {
-    const tIn = setTimeout(() => setPhase("hold"), 240);
-    const tOut = setTimeout(() => setPhase("out"), 240 + 4000);
+    const tIn = setTimeout(() => setPhase('hold'), 240);
+    const tOut = setTimeout(() => setPhase('out'), 240 + 4000);
     const tEnd = setTimeout(() => onDone?.(), 240 + 4000 + 200);
     return () => {
       clearTimeout(tIn);
@@ -19,8 +19,8 @@ export function Toast({ message, onDone }: Props) {
     };
   }, [onDone]);
 
-  const opacity = phase === "out" ? "opacity-0" : "opacity-100";
-  const translate = phase === "in" ? "translate-y-2" : "translate-y-0";
+  const opacity = phase === 'out' ? 'opacity-0' : 'opacity-100';
+  const translate = phase === 'in' ? 'translate-y-2' : 'translate-y-0';
 
   return (
     <div

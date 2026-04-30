@@ -1,4 +1,4 @@
-import type { DiffFile, DiffHunk, DiffLine } from "./types";
+import type { DiffFile, DiffHunk, DiffLine } from './types';
 
 const HUNK_HEADER_RE = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
 const FILE_HEADER_RE = /^diff --git a\/(.+) b\/(.+)$/;
@@ -8,12 +8,12 @@ export function parseDiff(raw: string): DiffFile[] {
     return [];
   }
 
-  const lines = raw.split("\n");
+  const lines = raw.split('\n');
   const fileChunks: string[][] = [];
   let current: string[] | null = null;
 
   for (const line of lines) {
-    if (line.startsWith("diff --git ")) {
+    if (line.startsWith('diff --git ')) {
       if (current) {
         fileChunks.push(current);
       }
@@ -30,7 +30,7 @@ export function parseDiff(raw: string): DiffFile[] {
 }
 
 function parseFileChunk(chunk: string[]): DiffFile {
-  const header = chunk[0] ?? "";
+  const header = chunk[0] ?? '';
   const file = extractFilePath(header);
 
   let isNewFile = false;
@@ -40,12 +40,12 @@ function parseFileChunk(chunk: string[]): DiffFile {
   let i = 1;
   while (i < chunk.length) {
     const line = chunk[i]!;
-    if (line.startsWith("@@")) {
+    if (line.startsWith('@@')) {
       break;
     }
-    if (line.startsWith("new file mode")) {
+    if (line.startsWith('new file mode')) {
       isNewFile = true;
-    } else if (line.startsWith("deleted file mode")) {
+    } else if (line.startsWith('deleted file mode')) {
       isDeleted = true;
     }
     i++;
@@ -53,7 +53,7 @@ function parseFileChunk(chunk: string[]): DiffFile {
 
   while (i < chunk.length) {
     const line = chunk[i]!;
-    if (!line.startsWith("@@")) {
+    if (!line.startsWith('@@')) {
       i++;
       continue;
     }
@@ -74,38 +74,38 @@ function parseFileChunk(chunk: string[]): DiffFile {
 
     while (i < chunk.length) {
       const body = chunk[i]!;
-      if (body.startsWith("@@") || body.startsWith("diff --git ")) {
+      if (body.startsWith('@@') || body.startsWith('diff --git ')) {
         break;
       }
-      if (body.startsWith("\\")) {
+      if (body.startsWith('\\')) {
         i++;
         continue;
       }
       const prefix = body[0];
       const content = body.slice(1);
-      if (prefix === "+") {
+      if (prefix === '+') {
         hunkLines.push({
-          type: "add",
+          type: 'add',
           content,
           lineNumber: { new: newLine },
         });
         newLine++;
-      } else if (prefix === "-") {
+      } else if (prefix === '-') {
         hunkLines.push({
-          type: "remove",
+          type: 'remove',
           content,
           lineNumber: { old: oldLine },
         });
         oldLine++;
-      } else if (prefix === " ") {
+      } else if (prefix === ' ') {
         hunkLines.push({
-          type: "context",
+          type: 'context',
           content,
           lineNumber: { old: oldLine, new: newLine },
         });
         oldLine++;
         newLine++;
-      } else if (body === "") {
+      } else if (body === '') {
         i++;
         continue;
       } else {
@@ -132,11 +132,11 @@ function extractFilePath(header: string): string {
   if (match) {
     return match[2]!;
   }
-  const parts = header.split(" ");
+  const parts = header.split(' ');
   for (const part of parts) {
-    if (part.startsWith("b/")) {
+    if (part.startsWith('b/')) {
       return part.slice(2);
     }
   }
-  return "";
+  return '';
 }

@@ -1,14 +1,11 @@
-import type { DiffHunk } from "./types";
+import type { DiffHunk } from './types';
 
 /**
  * Convert an absolute new-side line number to a 1-based diff position
  * within the hunk (as used by GitHub's review comment API).
  * Returns null if the line is not represented in the hunk.
  */
-export function absoluteToPosition(
-  hunk: DiffHunk,
-  absoluteNewLine: number,
-): number | null {
+export function absoluteToPosition(hunk: DiffHunk, absoluteNewLine: number): number | null {
   for (let i = 0; i < hunk.lines.length; i++) {
     const line = hunk.lines[i]!;
     if (line.lineNumber.new === absoluteNewLine) {
@@ -22,10 +19,7 @@ export function absoluteToPosition(
  * Convert a 1-based diff position back to absolute line numbers
  * (old- and/or new-side). Returns null if the position is out of range.
  */
-export function positionToAbsolute(
-  hunk: DiffHunk,
-  position: number,
-): { old?: number; new?: number } | null {
+export function positionToAbsolute(hunk: DiffHunk, position: number): { old?: number; new?: number } | null {
   if (position < 1 || position > hunk.lines.length) {
     return null;
   }

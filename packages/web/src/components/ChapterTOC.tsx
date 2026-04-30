@@ -1,6 +1,6 @@
-import { useMemo } from "react";
-import { normalizePath } from "../lib/paths";
-import { useReviewStore } from "../state/review-store";
+import { useMemo } from 'react';
+import { normalizePath } from '../lib/paths';
+import { useReviewStore } from '../state/review-store';
 
 export function ChapterTOC() {
   const narrative = useReviewStore((s) => s.narrative);
@@ -16,7 +16,7 @@ export function ChapterTOC() {
     narrative.chapters.forEach((ch, idx) => {
       let count = 0;
       for (const section of ch.sections) {
-        if (section.type !== "diff") continue;
+        if (section.type !== 'diff') continue;
         const normFile = normalizePath(section.file);
         const diffFile = files.find((f) => normalizePath(f.file) === normFile);
         if (!diffFile) continue;
@@ -44,22 +44,18 @@ export function ChapterTOC() {
   function jump(id: string) {
     setActiveChapter(id);
     const el = document.querySelector(`[data-chid="${id}"]`);
-    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   return (
     <aside className="sticky top-4 self-start text-[13px] text-[var(--fg-2)]">
-      <div
-        className="px-2.5 pb-2 text-[11px] font-bold uppercase tracking-[0.06em] text-[var(--fg-3)]"
-      >
-        Story
-      </div>
+      <div className="px-2.5 pb-2 text-[11px] font-bold uppercase tracking-[0.06em] text-[var(--fg-3)]">Story</div>
       <ul className="m-0 list-none p-0">
         {narrative.chapters.map((ch, idx) => {
           const id = `ch-${idx}`;
-          const reviewed = chapterStates[id] === "reviewed";
+          const reviewed = chapterStates[id] === 'reviewed';
           const active = activeChapterId === id;
-          const hunkCount = ch.sections.filter((s) => s.type === "diff").length;
+          const hunkCount = ch.sections.filter((s) => s.type === 'diff').length;
           const commentCount = chapterCommentCounts[id] ?? 0;
           return (
             <li key={id}>
@@ -67,25 +63,19 @@ export function ChapterTOC() {
                 type="button"
                 onClick={() => jump(id)}
                 className={`relative flex w-full cursor-pointer items-start gap-2.5 rounded-md px-2.5 py-[9px] text-left transition-colors ${
-                  active
-                    ? "text-[var(--purple-11)]"
-                    : "text-[var(--fg-2)]"
+                  active ? 'text-[var(--purple-11)]' : 'text-[var(--fg-2)]'
                 }`}
-                style={
-                  active
-                    ? { background: "var(--purple-a3)" }
-                    : undefined
-                }
+                style={active ? { background: 'var(--purple-a3)' } : undefined}
                 onMouseEnter={(e) => {
                   if (!active) {
-                    e.currentTarget.style.background = "var(--gray-a3)";
-                    e.currentTarget.style.color = "var(--fg-1)";
+                    e.currentTarget.style.background = 'var(--gray-a3)';
+                    e.currentTarget.style.color = 'var(--fg-1)';
                   }
                 }}
                 onMouseLeave={(e) => {
                   if (!active) {
-                    e.currentTarget.style.background = "";
-                    e.currentTarget.style.color = "";
+                    e.currentTarget.style.background = '';
+                    e.currentTarget.style.color = '';
                   }
                 }}
               >
@@ -93,10 +83,10 @@ export function ChapterTOC() {
                   className="mt-[1px] inline-flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center rounded-full font-mono text-[10.5px] font-bold"
                   style={
                     reviewed
-                      ? { background: "var(--green-9)", color: "#fff" }
+                      ? { background: 'var(--green-9)', color: '#fff' }
                       : active
-                        ? { background: "var(--purple-9)", color: "#fff" }
-                        : { background: "var(--gray-3)", color: "var(--fg-2)" }
+                        ? { background: 'var(--purple-9)', color: '#fff' }
+                        : { background: 'var(--gray-3)', color: 'var(--fg-2)' }
                   }
                 >
                   {reviewed ? (
@@ -116,17 +106,14 @@ export function ChapterTOC() {
                   )}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <div className="text-[13px] font-medium leading-[17px]">
-                    {ch.title}
-                  </div>
-                  <div
-                    className="mt-[2px] text-[11.5px] leading-[14px] text-[var(--fg-3)]"
-                    style={{ fontWeight: 400 }}
-                  >
-                    {hunkCount} {hunkCount === 1 ? "hunk" : "hunks"} · risk{" "}
-                    {ch.risk}
+                  <div className="text-[13px] font-medium leading-[17px]">{ch.title}</div>
+                  <div className="mt-[2px] text-[11.5px] leading-[14px] text-[var(--fg-3)]" style={{ fontWeight: 400 }}>
+                    {hunkCount} {hunkCount === 1 ? 'hunk' : 'hunks'} · risk {ch.risk}
                     {commentCount > 0 && (
-                      <> · {commentCount} {commentCount === 1 ? "comment" : "comments"}</>
+                      <>
+                        {' '}
+                        · {commentCount} {commentCount === 1 ? 'comment' : 'comments'}
+                      </>
                     )}
                   </div>
                 </div>
@@ -134,7 +121,7 @@ export function ChapterTOC() {
                   <span
                     aria-hidden
                     className="absolute right-2.5 top-[14px] h-1.5 w-1.5 flex-shrink-0 rounded-full"
-                    style={{ background: "var(--purple-9)" }}
+                    style={{ background: 'var(--purple-9)' }}
                   />
                 )}
               </button>
@@ -145,47 +132,42 @@ export function ChapterTOC() {
           <li>
             <button
               type="button"
-              onClick={() => jump("discussion")}
+              onClick={() => jump('discussion')}
               className={`relative flex w-full cursor-pointer items-start gap-2.5 rounded-md px-2.5 py-[9px] text-left transition-colors ${
-                activeChapterId === "discussion"
-                  ? "text-[var(--purple-11)]"
-                  : "text-[var(--fg-2)]"
+                activeChapterId === 'discussion' ? 'text-[var(--purple-11)]' : 'text-[var(--fg-2)]'
               }`}
-              style={
-                activeChapterId === "discussion"
-                  ? { background: "var(--purple-a3)" }
-                  : undefined
-              }
+              style={activeChapterId === 'discussion' ? { background: 'var(--purple-a3)' } : undefined}
               onMouseEnter={(e) => {
-                if (activeChapterId !== "discussion") {
-                  e.currentTarget.style.background = "var(--gray-a3)";
-                  e.currentTarget.style.color = "var(--fg-1)";
+                if (activeChapterId !== 'discussion') {
+                  e.currentTarget.style.background = 'var(--gray-a3)';
+                  e.currentTarget.style.color = 'var(--fg-1)';
                 }
               }}
               onMouseLeave={(e) => {
-                if (activeChapterId !== "discussion") {
-                  e.currentTarget.style.background = "";
-                  e.currentTarget.style.color = "";
+                if (activeChapterId !== 'discussion') {
+                  e.currentTarget.style.background = '';
+                  e.currentTarget.style.color = '';
                 }
               }}
             >
               <span
                 className="mt-[1px] inline-flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center rounded-full font-mono text-[10.5px] font-bold"
-                style={{ background: "var(--gray-3)", color: "var(--fg-2)" }}
+                style={{ background: 'var(--gray-3)', color: 'var(--fg-2)' }}
               >
-                <svg viewBox="0 0 15 15" className="h-[10px] w-[10px]" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <svg
+                  viewBox="0 0 15 15"
+                  className="h-[10px] w-[10px]"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                >
                   <path d="M2 2h11v8H5l-3 3V2z" />
                 </svg>
               </span>
               <div className="min-w-0 flex-1">
-                <div className="text-[13px] font-medium leading-[17px]">
-                  PR Discussion
-                </div>
-                <div
-                  className="mt-[2px] text-[11.5px] leading-[14px] text-[var(--fg-3)]"
-                  style={{ fontWeight: 400 }}
-                >
-                  {discussionCount} {discussionCount === 1 ? "comment" : "comments"}
+                <div className="text-[13px] font-medium leading-[17px]">PR Discussion</div>
+                <div className="mt-[2px] text-[11.5px] leading-[14px] text-[var(--fg-3)]" style={{ fontWeight: 400 }}>
+                  {discussionCount} {discussionCount === 1 ? 'comment' : 'comments'}
                 </div>
               </div>
             </button>
