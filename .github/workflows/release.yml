@@ -90,22 +90,22 @@ jobs:
           cat > Formula/dad.rb << FORMULA
           class Dad < Formula
             desc "GitHub PRs as narrated stories — AI-powered semantic diff review"
-            homepage "https://github.com/workos/diffappointment"
+            homepage "https://github.com/nicknisi/diffdad"
             version "${VER}"
             license "MIT"
 
             on_macos do
               if Hardware::CPU.arm?
-                url "https://github.com/workos/diffappointment/releases/download/${VERSION}/dad-darwin-arm64.tar.gz"
+                url "https://github.com/nicknisi/diffdad/releases/download/${VERSION}/dad-darwin-arm64.tar.gz"
                 sha256 "${SHA_ARM64}"
               else
-                url "https://github.com/workos/diffappointment/releases/download/${VERSION}/dad-darwin-x86_64.tar.gz"
+                url "https://github.com/nicknisi/diffdad/releases/download/${VERSION}/dad-darwin-x86_64.tar.gz"
                 sha256 "${SHA_X86_64}"
               end
             end
 
             on_linux do
-              url "https://github.com/workos/diffappointment/releases/download/${VERSION}/dad-linux-x86_64.tar.gz"
+              url "https://github.com/nicknisi/diffdad/releases/download/${VERSION}/dad-linux-x86_64.tar.gz"
               sha256 "${SHA_LINUX}"
             end
 
