@@ -31,6 +31,13 @@ const RESPONSE_SCHEMA = `{
           "endLine": "number — last line in the new file (1-based)",
           "hunkIndex": "number — index of the hunk inside the DiffFile.hunks array (0-based)"
         }
+      ],
+      "reshow": [
+        {
+          "ref": "number — hunkIndex of a hunk to re-display from another chapter",
+          "framing": "string — markdown explaining why it's reshown",
+          "highlight": { "from": "number — first line (new-side, 1-based)", "to": "number — last line (new-side, 1-based)" }
+        }
       ]
     }
   ],
@@ -51,6 +58,7 @@ Rules:
 - Inside each chapter, alternate "narrative" prose sections with "diff" sections that point at the relevant hunks. Narrative sections explain intent and consequences in plain language; diff sections cite the specific lines.
 - Use the hunkIndex field to reference the position of the hunk inside the file's hunks array (0-based). Use startLine/endLine on the NEW side of the diff (1-based). For deleted files, use the OLD side line numbers.
 - Suggest where a reviewer should start reading via "suggestedStart". Pick the chapter that best anchors the rest of the change.
+- Each chapter can optionally include a "reshow" array to echo hunks from other chapters: "reshow": [{ "ref": hunkIndex, "framing": "markdown explanation", "highlight": { "from": lineNum, "to": lineNum } }]. Use this when a hunk is genuinely relevant to a later chapter and seeing it again helps the reviewer connect behaviors.
 
 Output format — return ONLY valid JSON, no prose around it, matching this schema:
 ${RESPONSE_SCHEMA}`;

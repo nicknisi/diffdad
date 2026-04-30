@@ -28,6 +28,11 @@ export type Chapter = {
   summary: string;
   risk: "low" | "medium" | "high";
   sections: Section[];
+  reshow?: {
+    ref: number;
+    framing?: string;
+    highlight?: { from: number; to: number };
+  }[];
 };
 
 export type Section =

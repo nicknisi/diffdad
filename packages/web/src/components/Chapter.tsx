@@ -138,6 +138,40 @@ export function Chapter({ index, chapter }: Props) {
           />
         );
       })}
+      {chapter.reshow?.map((entry, i) => {
+        const flat = flatHunks[entry.ref];
+        if (!flat) return null;
+        const ownerIdx = hunkOwners.get(entry.ref);
+        const ownerLabel =
+          ownerIdx !== undefined && ownerIdx !== index
+            ? `Chapter ${ownerIdx + 1}`
+            : "earlier";
+        return (
+          <div
+            key={`reshow-${i}`}
+            className="rounded-lg border border-dashed border-amber-300 bg-amber-50/40 p-3 dark:border-amber-700/60 dark:bg-amber-950/20"
+          >
+            <div className="mb-2 flex items-center gap-2">
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold uppercase tracking-wider text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                <span aria-hidden>↻</span>
+                Showing again from {ownerLabel}
+              </span>
+            </div>
+            {entry.framing ? (
+              <div className="mb-2">
+                <NarrationBlock content={entry.framing} />
+              </div>
+            ) : null}
+            <Hunk
+              file={flat.file}
+              hunk={flat.hunk}
+              isNewFile={flat.isNewFile}
+              hunkIndex={entry.ref}
+              highlight={entry.highlight}
+            />
+          </div>
+        );
+      })}
     </div>
   );
 

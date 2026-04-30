@@ -9,6 +9,11 @@ export type NarrativeChapter = {
   summary: string;
   risk: "low" | "medium" | "high";
   sections: NarrativeSection[];
+  reshow?: {
+    ref: number;
+    framing?: string;
+    highlight?: { from: number; to: number };
+  }[];
 };
 
 export type NarrativeSection =

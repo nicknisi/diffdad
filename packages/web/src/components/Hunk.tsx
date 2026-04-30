@@ -164,6 +164,7 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight }: Props) {
   const setOpenLine = useReviewStore((s) => s.setOpenLine);
   const repoUrl = useReviewStore((s) => s.repoUrl);
   const headSha = useReviewStore((s) => s.pr?.headSha ?? null);
+  const clusterBots = useReviewStore((s) => s.clusterBots);
   useHighlighter();
   const lang = guessLang(file);
 
@@ -228,7 +229,7 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight }: Props) {
           </a>
         </div>
       </div>
-      {botComments.length > 0 && (
+      {clusterBots && botComments.length > 0 && (
         <BotCluster comments={botComments} file={file} />
       )}
       <div>
@@ -240,7 +241,7 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight }: Props) {
               c.line !== undefined &&
               line.lineNumber.new !== undefined &&
               c.line === line.lineNumber.new &&
-              !/\[bot\]$/.test(c.author),
+              (clusterBots ? !/\[bot\]$/.test(c.author) : true),
           );
           const hasThread = openLine === lineKey || lineComments.length > 0;
           const dimmed =
