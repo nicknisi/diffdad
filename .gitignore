@@ -3,7 +3,6 @@ node_modules/
 dist/
 .DS_Store
 *.log
-bun.lock
 bun.lockb
 .env
 .env.local
