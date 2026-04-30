@@ -1,0 +1,27 @@
+<svg viewBox="0 0 320 320" width="320" height="320" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="160" cy="160" r="150" fill="#6565EC"/>
+  <g>
+    <path d="M 82 132 C 72 76, 130 50, 170 58 C 230 66, 252 98, 246 132 C 230 98, 190 90, 150 110 C 130 120, 110 118, 82 132 Z" fill="#15233F"/>
+    <circle cx="160" cy="168" r="94" fill="#FFF6E6" stroke="#15233F" stroke-width="8"/>
+    <path d="M 82 132 C 72 76, 130 50, 170 58 C 230 66, 252 98, 246 132 C 230 98, 190 90, 150 110 C 130 120, 110 118, 82 132 Z" fill="#15233F"/>
+    <ellipse cx="68" cy="176" rx="9" ry="14" fill="#FFF6E6" stroke="#15233F" stroke-width="8"/>
+    <ellipse cx="252" cy="176" rx="9" ry="14" fill="#FFF6E6" stroke="#15233F" stroke-width="8"/>
+    <circle cx="104" cy="196" r="11" fill="#D4C2F0" opacity="0.7"/>
+    <circle cx="216" cy="196" r="11" fill="#D4C2F0" opacity="0.7"/>
+    <path d="M 108 146 Q 122 138 138 146" stroke="#15233F" stroke-width="6" stroke-linecap="round" fill="none"/>
+    <path d="M 182 146 Q 198 138 212 146" stroke="#15233F" stroke-width="6" stroke-linecap="round" fill="none"/>
+    <g>
+      <line x1="148" y1="172" x2="172" y2="172" stroke="#15233F" stroke-width="6" stroke-linecap="round"/>
+      <circle cx="122" cy="172" r="26" fill="white" stroke="#15233F" stroke-width="6"/>
+      <circle cx="198" cy="172" r="26" fill="white" stroke="#15233F" stroke-width="6"/>
+      <circle cx="124" cy="174" r="4" fill="#15233F"/>
+      <circle cx="200" cy="174" r="4" fill="#15233F"/>
+      <line x1="96" y1="170" x2="84" y2="164" stroke="#15233F" stroke-width="6" stroke-linecap="round"/>
+      <line x1="224" y1="170" x2="236" y2="164" stroke="#15233F" stroke-width="6" stroke-linecap="round"/>
+    </g>
+    <path d="M 154 198 Q 160 206 166 198" stroke="#15233F" stroke-width="5" stroke-linecap="round" fill="none"/>
+    <path d="M 160 212 C 146 208, 132 210, 116 220 C 100 228, 84 232, 74 224 C 82 244, 104 252, 122 246 C 138 242, 150 236, 160 232 C 170 236, 182 242, 198 246 C 216 252, 238 244, 246 224 C 236 232, 220 228, 204 220 C 188 210, 174 208, 160 212 Z" fill="#15233F"/>
+    <path d="M 160 216 Q 160 228 158 234" stroke="#FFF6E6" stroke-width="2" stroke-linecap="round" fill="none" opacity="0.4"/>
+    <path d="M 146 248 Q 160 260 174 248" stroke="#15233F" stroke-width="5" stroke-linecap="round" fill="none"/>
+  </g>
+</svg>

@@ -30,13 +30,10 @@ export function AppBar({ onOpenActivity }: AppBarProps) {
       {/* Brand mark */}
       <div className="flex items-center gap-2 text-[14px] font-bold tracking-[-0.01em]">
         <img
-          src="/diffdad-v2-dad.png"
+          src="/diff-dad-mark.svg"
           alt="Diff Dad"
           title={copy.brandTooltip}
-          className="h-[28px] w-[28px] rounded-[6px]"
-          style={{
-            boxShadow: '0 1px 2px rgba(3,2,13,0.06), 0 3px 6px -1px rgba(3,2,13,0.10)',
-          }}
+          className="h-[26px] w-[26px]"
         />
         <span className="text-[var(--fg-1)]">Diff Dad</span>
       </div>
@@ -94,9 +91,9 @@ export function AppBar({ onOpenActivity }: AppBarProps) {
 
         {/* Avatar */}
         <img
-          src="/diffdad-v2-dad.png"
+          src="/diff-dad-mark.svg"
           alt="Diff Dad"
-          className="h-7 w-7 rounded-full"
+          className="h-7 w-7"
         />
       </div>
     </header>
