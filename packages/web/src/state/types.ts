@@ -14,6 +14,7 @@ export type PRData = {
   deletions: number;
   changedFiles: number;
   commits: number;
+  headSha: string;
 };
 
 export type NarrativeResponse = {
@@ -81,6 +82,18 @@ export type DraftComment = {
   path?: string;
   line?: number;
   chapterIndex?: number;
+};
+
+export type LiveEventKind = "comment" | "ci" | "commit" | "system";
+
+export type LiveStatus = "connected" | "connecting" | "disconnected";
+
+export type LiveEvent = {
+  id: string;
+  kind: LiveEventKind | string;
+  summary: string;
+  timestamp: number;
+  data?: unknown;
 };
 
 export type CheckRun = {
