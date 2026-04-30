@@ -69,9 +69,9 @@ function formatHunkLine(line: DiffLine): string {
   return `${prefix}${line.content}`;
 }
 
-function formatHunk(hunk: DiffHunk): string {
+function formatHunk(hunk: DiffHunk, index: number): string {
   const body = hunk.lines.map(formatHunkLine).join("\n");
-  return `${hunk.header}\n${body}`;
+  return `[hunkIndex=${index}]\n${hunk.header}\n${body}`;
 }
 
 function formatFile(file: DiffFile): string {
@@ -87,7 +87,7 @@ function formatFile(file: DiffFile): string {
   const meta = [header];
   if (fileMarkers) meta.push(fileMarkers);
   meta.push(`--- ${fromPath}`, `+++ ${toPath}`);
-  const hunks = file.hunks.map(formatHunk).join("\n");
+  const hunks = file.hunks.map((h, i) => formatHunk(h, i)).join("\n");
   return `${meta.join("\n")}\n${hunks}`;
 }
 

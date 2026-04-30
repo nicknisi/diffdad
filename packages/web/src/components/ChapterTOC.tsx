@@ -1,10 +1,43 @@
+import { useMemo } from "react";
+import { normalizePath } from "../lib/paths";
 import { useReviewStore } from "../state/review-store";
 
 export function ChapterTOC() {
   const narrative = useReviewStore((s) => s.narrative);
+  const comments = useReviewStore((s) => s.comments);
+  const files = useReviewStore((s) => s.files);
   const activeChapterId = useReviewStore((s) => s.activeChapterId);
   const chapterStates = useReviewStore((s) => s.chapterStates);
   const setActiveChapter = useReviewStore((s) => s.setActiveChapter);
+
+  const chapterCommentCounts = useMemo(() => {
+    if (!narrative) return {};
+    const counts: Record<string, number> = {};
+    narrative.chapters.forEach((ch, idx) => {
+      let count = 0;
+      for (const section of ch.sections) {
+        if (section.type !== "diff") continue;
+        const normFile = normalizePath(section.file);
+        const diffFile = files.find((f) => normalizePath(f.file) === normFile);
+        if (!diffFile) continue;
+        const hunk = diffFile.hunks[section.hunkIndex];
+        if (!hunk) continue;
+        const start = hunk.newStart;
+        const end = start + Math.max(hunk.newCount - 1, 0);
+        for (const c of comments) {
+          if (!c.path || c.line === undefined) continue;
+          if (normalizePath(c.path) !== normFile) continue;
+          if (c.line >= start && c.line <= end) count++;
+        }
+      }
+      counts[`ch-${idx}`] = count;
+    });
+    return counts;
+  }, [narrative, comments, files]);
+
+  const discussionCount = useMemo(() => {
+    return comments.filter((c) => !c.path).length;
+  }, [comments]);
 
   if (!narrative) return null;
 
@@ -27,7 +60,7 @@ export function ChapterTOC() {
           const reviewed = chapterStates[id] === "reviewed";
           const active = activeChapterId === id;
           const hunkCount = ch.sections.filter((s) => s.type === "diff").length;
-          const hasComments = false; // TODO if needed
+          const commentCount = chapterCommentCounts[id] ?? 0;
           return (
             <li key={id}>
               <button
@@ -92,7 +125,9 @@ export function ChapterTOC() {
                   >
                     {hunkCount} {hunkCount === 1 ? "hunk" : "hunks"} · risk{" "}
                     {ch.risk}
-                    {hasComments ? " · has comments" : ""}
+                    {commentCount > 0 && (
+                      <> · {commentCount} {commentCount === 1 ? "comment" : "comments"}</>
+                    )}
                   </div>
                 </div>
                 {active && (
@@ -106,6 +141,56 @@ export function ChapterTOC() {
             </li>
           );
         })}
+        {discussionCount > 0 && (
+          <li>
+            <button
+              type="button"
+              onClick={() => jump("discussion")}
+              className={`relative flex w-full cursor-pointer items-start gap-2.5 rounded-md px-2.5 py-[9px] text-left transition-colors ${
+                activeChapterId === "discussion"
+                  ? "text-[var(--purple-11)]"
+                  : "text-[var(--fg-2)]"
+              }`}
+              style={
+                activeChapterId === "discussion"
+                  ? { background: "var(--purple-a3)" }
+                  : undefined
+              }
+              onMouseEnter={(e) => {
+                if (activeChapterId !== "discussion") {
+                  e.currentTarget.style.background = "var(--gray-a3)";
+                  e.currentTarget.style.color = "var(--fg-1)";
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (activeChapterId !== "discussion") {
+                  e.currentTarget.style.background = "";
+                  e.currentTarget.style.color = "";
+                }
+              }}
+            >
+              <span
+                className="mt-[1px] inline-flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center rounded-full font-mono text-[10.5px] font-bold"
+                style={{ background: "var(--gray-3)", color: "var(--fg-2)" }}
+              >
+                <svg viewBox="0 0 15 15" className="h-[10px] w-[10px]" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <path d="M2 2h11v8H5l-3 3V2z" />
+                </svg>
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="text-[13px] font-medium leading-[17px]">
+                  PR Discussion
+                </div>
+                <div
+                  className="mt-[2px] text-[11.5px] leading-[14px] text-[var(--fg-3)]"
+                  style={{ fontWeight: 400 }}
+                >
+                  {discussionCount} {discussionCount === 1 ? "comment" : "comments"}
+                </div>
+              </div>
+            </button>
+          </li>
+        )}
       </ul>
     </aside>
   );

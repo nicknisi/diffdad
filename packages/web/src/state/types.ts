@@ -77,6 +77,7 @@ export type PRComment = {
   line?: number;
   side?: string;
   inReplyToId?: number;
+  diffHunk?: string;
 };
 
 export type ChapterState = "reading" | "reviewing" | "replied" | "reviewed";

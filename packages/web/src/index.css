@@ -267,3 +267,46 @@ body {
   background: var(--gray-a4);
   color: var(--gray-12);
 }
+
+.markdown-body details {
+  margin: 0.5rem 0;
+  border: 1px solid var(--gray-a4);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.markdown-body details summary {
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: var(--fg-1);
+  background: var(--gray-2);
+  user-select: none;
+}
+
+.markdown-body details summary:hover {
+  background: var(--gray-3);
+}
+
+.markdown-body details[open] > summary {
+  border-bottom: 1px solid var(--gray-a4);
+}
+
+.markdown-body details > :not(summary) {
+  padding: 0.5rem 0.75rem;
+}
+
+.markdown-body h1, .markdown-body h2, .markdown-body h3,
+.markdown-body h4, .markdown-body h5, .markdown-body h6 {
+  color: var(--fg-1);
+}
+
+.markdown-body table {
+  font-size: 0.875rem;
+}
+
+.markdown-body sub {
+  font-size: 0.75em;
+  color: var(--fg-3);
+}

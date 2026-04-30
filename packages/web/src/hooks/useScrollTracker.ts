@@ -11,6 +11,11 @@ export function useScrollTracker() {
     function onScroll() {
       if (!narrative) return;
       const offset = window.scrollY + 120;
+      const discussionEl = document.querySelector('[data-chid="discussion"]');
+      if (discussionEl && (discussionEl as HTMLElement).offsetTop <= offset) {
+        setActiveChapter("discussion");
+        return;
+      }
       for (let i = narrative.chapters.length - 1; i >= 0; i--) {
         const el = document.querySelector(`[data-chid="ch-${i}"]`);
         if (el && (el as HTMLElement).offsetTop <= offset) {

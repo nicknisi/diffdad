@@ -47,15 +47,15 @@ export function SuggestedStart() {
             onClick={() => scrollToChapter(chapter - 1)}
             className="inline-flex h-6 cursor-pointer items-center rounded-[5px] px-2 text-[11.5px] font-bold transition-colors"
             style={{
-              background: "rgba(255,255,255,0.7)",
+              background: "var(--purple-a4)",
               color: "var(--purple-12)",
               boxShadow: "inset 0 0 0 1px var(--purple-a5)",
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.background = "#fff";
+              e.currentTarget.style.background = "var(--purple-a5)";
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.background = "rgba(255,255,255,0.7)";
+              e.currentTarget.style.background = "var(--purple-a4)";
             }}
           >
             Jump to chapter {chapter}
@@ -65,15 +65,15 @@ export function SuggestedStart() {
             onClick={() => scrollToChapter(0)}
             className="inline-flex h-6 cursor-pointer items-center rounded-[5px] px-2 text-[11.5px] font-bold transition-colors"
             style={{
-              background: "rgba(255,255,255,0.7)",
+              background: "var(--purple-a4)",
               color: "var(--purple-12)",
               boxShadow: "inset 0 0 0 1px var(--purple-a5)",
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.background = "#fff";
+              e.currentTarget.style.background = "var(--purple-a5)";
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.background = "rgba(255,255,255,0.7)";
+              e.currentTarget.style.background = "var(--purple-a4)";
             }}
           >
             Start from chapter 1

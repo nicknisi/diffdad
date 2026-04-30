@@ -23,6 +23,7 @@ type Props = {
   comment: PRComment;
   replies?: PRComment[];
   isReply?: boolean;
+  showFilePath?: boolean;
 };
 
 type Provenance = "draft" | "synced" | "github" | "syncing";
@@ -85,13 +86,12 @@ function SourceBadge({ kind }: { kind: Provenance }) {
   );
 }
 
-export function Comment({ comment, replies = [], isReply = false }: Props) {
+export function Comment({ comment, replies = [], isReply = false, showFilePath = false }: Props) {
   const info = getAuthorInfo(comment.author);
   const isBot = info.isBot;
   const kind = provenance(comment);
   const [collapsed, setCollapsed] = useState(false);
 
-  // Inline thread comment style: no card chrome, just an avatar+body row.
   const containerClass = isReply
     ? "flex gap-2.5 py-2"
     : "flex gap-2.5 py-2";
@@ -133,6 +133,17 @@ export function Comment({ comment, replies = [], isReply = false }: Props) {
             <SourceBadge kind={kind} />
           </span>
         </div>
+        {showFilePath && comment.path && (
+          <div
+            className="mt-1 mb-1 inline-flex items-center gap-1 rounded-[3px] px-1.5 py-px font-mono text-[11px]"
+            style={{ background: "var(--gray-3)", color: "var(--fg-3)" }}
+          >
+            {comment.path}
+            {comment.line !== undefined && (
+              <span>:L{comment.line}</span>
+            )}
+          </div>
+        )}
         <div className="mt-[3px] text-[13.5px] leading-[19px] text-[var(--fg-1)]">
           <Markdown source={comment.body} />
         </div>

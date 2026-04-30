@@ -80,6 +80,27 @@ export function createServer(ctx: ServerContext) {
         commentPaths,
         diffFiles,
         narrativeFiles,
+        inlineComments: ctx.comments
+          .filter((cm) => cm.path && cm.line !== undefined)
+          .map((cm) => ({ path: cm.path, line: cm.line, side: cm.side, author: cm.author })),
+        narrativeHunks: ctx.narrative.chapters.flatMap((ch, ci) =>
+          ch.sections
+            .filter((s): s is Extract<typeof s, { type: "diff" }> => s.type === "diff")
+            .map((s) => {
+              const f = ctx.files.find((df) => df.file === s.file);
+              const h = f?.hunks[s.hunkIndex];
+              return {
+                chapter: ci,
+                file: s.file,
+                hunkIndex: s.hunkIndex,
+                newStart: h?.newStart,
+                newEnd: h ? h.newStart + h.newCount - 1 : undefined,
+                oldStart: h?.oldStart,
+                oldEnd: h ? h.oldStart + h.oldCount - 1 : undefined,
+                found: !!h,
+              };
+            }),
+        ),
       },
     });
   });
@@ -318,13 +339,21 @@ export function createServer(ctx: ServerContext) {
     const ghEvent = payload.event ? eventMap[payload.event] : undefined;
     if (!ghEvent) return c.json({ error: "invalid event" }, 400);
 
-    await ctx.github.submitReview(
-      ctx.owner,
-      ctx.repo,
-      ctx.pr.number,
-      ghEvent,
-      payload.body,
-    );
+    try {
+      await ctx.github.submitReview(
+        ctx.owner,
+        ctx.repo,
+        ctx.pr.number,
+        ghEvent,
+        payload.body,
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("Can not approve your own")) {
+        return c.json({ error: "You can't approve your own pull request" }, 422);
+      }
+      return c.json({ error: msg }, 500);
+    }
     broadcast("review", { event: ghEvent, body: payload.body });
     return c.json({ ok: true });
   });

@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { normalizePath } from "../lib/paths";
 import { useReviewStore } from "../state/review-store";
 import type { Chapter as ChapterType, DiffFile, DiffHunk } from "../state/types";
 import { Hunk } from "./Hunk";
@@ -30,7 +31,8 @@ function findHunk(
   file: string,
   hunkIndex: number,
 ): FlatHunk | null {
-  const diffFile = files.find((f) => f.file === file);
+  const norm = normalizePath(file);
+  const diffFile = files.find((f) => normalizePath(f.file) === norm);
   if (!diffFile) return null;
   const hunk = diffFile.hunks[hunkIndex];
   if (!hunk) return null;

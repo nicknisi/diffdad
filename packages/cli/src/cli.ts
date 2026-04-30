@@ -2,7 +2,7 @@
 import { resolveGitHubToken } from "./auth";
 import { readConfig, runConfig } from "./config";
 import { GitHubClient } from "./github/client";
-import { cacheNarrative, getCachedNarrative } from "./narrative/cache";
+import { cacheNarrative, clearCache, getCachedNarrative } from "./narrative/cache";
 import { generateNarrative } from "./narrative/engine";
 import type { NarrativeResponse } from "./narrative/types";
 import { createServer } from "./server";
@@ -18,6 +18,7 @@ const USAGE = `dad - GitHub PRs as narrated stories
 Usage:
   dad review <pr-url-or-shorthand>   Review a PR
   dad config                         Configure dad (interactive)
+  dad cache clear                    Clear all cached narratives
   dad --help, -h                     Show this help
 
 PR argument formats:
@@ -199,6 +200,15 @@ async function main(argv: string[]): Promise<number> {
       return await reviewCommand(rest[0]);
     case "config":
       return await configCommand();
+    case "cache": {
+      if (rest[0] === "clear") {
+        const count = await clearCache();
+        console.log(count > 0 ? `Cleared ${count} cached narrative${count === 1 ? "" : "s"}.` : "Cache already empty.");
+        return 0;
+      }
+      console.error("usage: dad cache clear");
+      return 2;
+    }
     default:
       console.error(`error: unknown command: ${cmd}`);
       console.error(USAGE);

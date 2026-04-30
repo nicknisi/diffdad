@@ -1,6 +1,6 @@
 import { homedir } from "os";
 import { join } from "path";
-import { readFile, writeFile, mkdir } from "fs/promises";
+import { readdir, readFile, rm, writeFile, mkdir } from "fs/promises";
 import type { NarrativeResponse } from "./types";
 
 const CACHE_DIR = join(homedir(), ".cache", "diffdad");
@@ -21,6 +21,19 @@ export async function getCachedNarrative(
     return JSON.parse(raw) as NarrativeResponse;
   } catch {
     return null;
+  }
+}
+
+export async function clearCache(): Promise<number> {
+  try {
+    const entries = await readdir(CACHE_DIR);
+    const jsonFiles = entries.filter((e) => e.endsWith(".json"));
+    for (const file of jsonFiles) {
+      await rm(join(CACHE_DIR, file));
+    }
+    return jsonFiles.length;
+  } catch {
+    return 0;
   }
 }
 

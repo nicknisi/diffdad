@@ -161,7 +161,12 @@ export function PRHeader() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ event: resolution, body: summary }),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        const msg = data?.error ?? `HTTP ${res.status}`;
+        setToast(msg);
+        return;
+      }
       setSubmitOpen(false);
       clearDrafts();
       const toastMsg =

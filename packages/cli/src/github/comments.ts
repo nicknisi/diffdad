@@ -1,6 +1,11 @@
 import type { NarrativeResponse } from "../narrative/types";
 import type { PRComment } from "./types";
 
+function normalizePath(p: string | undefined | null): string {
+  if (!p) return "";
+  return p.trim().replace(/^[ab]\//, "").replace(/^\/+/, "");
+}
+
 export type MappedComment = PRComment & {
   chapterIndices: number[];
   isNarrativeComment: boolean;
@@ -24,14 +29,15 @@ export function mapCommentsToChapters(
   comments: PRComment[],
   narrative: NarrativeResponse,
 ): MappedComment[] {
-  // Build path -> chapterIndices index from narrative diff sections.
+  // Build normalized path -> chapterIndices index from narrative diff sections.
   const pathToChapters = new Map<string, Set<number>>();
   narrative.chapters.forEach((chapter, idx) => {
     for (const section of chapter.sections) {
       if (section.type === "diff") {
-        const set = pathToChapters.get(section.file) ?? new Set<number>();
+        const norm = normalizePath(section.file);
+        const set = pathToChapters.get(norm) ?? new Set<number>();
         set.add(idx);
-        pathToChapters.set(section.file, set);
+        pathToChapters.set(norm, set);
       }
     }
   });
@@ -57,7 +63,7 @@ export function mapCommentsToChapters(
       };
     }
 
-    const chapters = pathToChapters.get(c.path);
+    const chapters = pathToChapters.get(normalizePath(c.path));
     return {
       ...c,
       chapterIndices: chapters ? [...chapters].sort((a, b) => a - b) : [],
