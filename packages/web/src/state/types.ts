@@ -82,3 +82,14 @@ export type DraftComment = {
   line?: number;
   chapterIndex?: number;
 };
+
+export type CheckRun = {
+  id: number;
+  name: string;
+  status: "queued" | "in_progress" | "completed";
+  conclusion: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  detailsUrl: string | null;
+  output: { title?: string; summary?: string };
+};

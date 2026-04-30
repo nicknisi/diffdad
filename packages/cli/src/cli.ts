@@ -136,6 +136,13 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
     github.getComments(parsed.owner, parsed.repo, parsed.number),
   ]);
 
+  const checkRuns = await github
+    .getCheckRuns(parsed.owner, parsed.repo, metadata.headSha)
+    .catch((err) => {
+      console.warn(`warn: failed to fetch check runs: ${err instanceof Error ? err.message : err}`);
+      return [];
+    });
+
   console.log(`${metadata.title} — ${files.length} files, +${metadata.additions} -${metadata.deletions}`);
 
   const noCache = Bun.argv.includes("--no-cache");
@@ -154,7 +161,7 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
   }
   console.log("Starting server...");
 
-  const app = createServer({ narrative, pr: metadata, files, comments, github, owner: parsed.owner, repo: parsed.repo, headSha: metadata.headSha });
+  const app = createServer({ narrative, pr: metadata, files, comments, checkRuns, github, owner: parsed.owner, repo: parsed.repo, headSha: metadata.headSha });
 
   // Check for --port=N flag
   const portFlag = Bun.argv.find(a => a.startsWith("--port="));

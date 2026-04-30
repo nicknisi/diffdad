@@ -3,7 +3,7 @@ import { serveStatic } from "hono/bun";
 import { resolve } from "path";
 import type { GitHubClient } from "./github/client";
 import { mapCommentsToChapters } from "./github/comments";
-import type { DiffFile, PRComment, PRMetadata } from "./github/types";
+import type { CheckRun, DiffFile, PRComment, PRMetadata } from "./github/types";
 import type { NarrativeResponse } from "./narrative/types";
 
 export type ServerContext = {
@@ -11,6 +11,7 @@ export type ServerContext = {
   pr: PRMetadata;
   files: DiffFile[];
   comments: PRComment[];
+  checkRuns: CheckRun[];
   github: GitHubClient;
   owner: string;
   repo: string;
@@ -34,8 +35,19 @@ export function createServer(ctx: ServerContext) {
       pr: ctx.pr,
       files: ctx.files,
       comments: mapCommentsToChapters(ctx.comments, ctx.narrative),
+      checkRuns: ctx.checkRuns,
       repoUrl: `https://github.com/${ctx.owner}/${ctx.repo}`,
     });
+  });
+
+  app.get("/api/checks", async (c) => {
+    const fresh = await ctx.github.getCheckRuns(
+      ctx.owner,
+      ctx.repo,
+      ctx.headSha,
+    );
+    ctx.checkRuns = fresh;
+    return c.json(fresh);
   });
 
   app.get("/api/comments", async (c) => {

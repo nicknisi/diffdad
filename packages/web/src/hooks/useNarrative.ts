@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useReviewStore } from "../state/review-store";
 import type {
+  CheckRun,
   DiffFile,
   NarrativeResponse,
   PRComment,
@@ -12,6 +13,7 @@ type NarrativeApiResponse = {
   narrative: NarrativeResponse;
   files: DiffFile[];
   comments: PRComment[];
+  checkRuns?: CheckRun[];
   repoUrl?: string;
 };
 
@@ -33,7 +35,14 @@ export function useNarrative() {
         }
         const data = (await res.json()) as NarrativeApiResponse;
         if (cancelled) return;
-        setData(data.pr, data.narrative, data.files, data.comments, data.repoUrl ?? null);
+        setData(
+          data.pr,
+          data.narrative,
+          data.files,
+          data.comments,
+          data.repoUrl ?? null,
+          data.checkRuns ?? [],
+        );
       } catch (err) {
         if (cancelled) return;
         setError(err instanceof Error ? err.message : "Unknown error");

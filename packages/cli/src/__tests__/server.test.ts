@@ -25,7 +25,7 @@ const mockPR: PRMetadata = {
 describe("server", () => {
   it("serves narrative at /api/narrative", async () => {
     const app = createServer({
-      narrative: mockNarrative, pr: mockPR, files: [], comments: [],
+      narrative: mockNarrative, pr: mockPR, files: [], comments: [], checkRuns: [],
       github: {} as any, owner: "test", repo: "test", headSha: "abc123",
     });
     const res = await app.request("/api/narrative");

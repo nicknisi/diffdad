@@ -1,5 +1,5 @@
 import { parseDiff } from "./diff-parser";
-import type { DiffFile, PRComment, PRMetadata } from "./types";
+import type { CheckRun, DiffFile, PRComment, PRMetadata } from "./types";
 
 const GITHUB_API = "https://api.github.com";
 
@@ -169,6 +169,41 @@ export class GitHubClient {
     const all = [...reviewComments, ...issueComments];
     all.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     return all;
+  }
+
+  async getCheckRuns(
+    owner: string,
+    repo: string,
+    ref: string,
+  ): Promise<CheckRun[]> {
+    const res = await this.fetch(
+      `/repos/${owner}/${repo}/commits/${ref}/check-runs`,
+    );
+    const data = (await res.json()) as {
+      check_runs: Array<{
+        id: number;
+        name: string;
+        status: "queued" | "in_progress" | "completed";
+        conclusion: string | null;
+        started_at: string | null;
+        completed_at: string | null;
+        details_url: string | null;
+        output?: { title?: string; summary?: string };
+      }>;
+    };
+    return data.check_runs.map((cr) => ({
+      id: cr.id,
+      name: cr.name,
+      status: cr.status,
+      conclusion: cr.conclusion,
+      startedAt: cr.started_at,
+      completedAt: cr.completed_at,
+      detailsUrl: cr.details_url,
+      output: {
+        title: cr.output?.title,
+        summary: cr.output?.summary,
+      },
+    }));
   }
 
   async postComment(
