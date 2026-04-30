@@ -276,6 +276,32 @@ export function createServer(ctx: ServerContext) {
     return c.json(posted, 201);
   });
 
+  app.post("/api/review", async (c) => {
+    let payload: { event?: string; body?: string };
+    try {
+      payload = (await c.req.json()) as { event?: string; body?: string };
+    } catch {
+      return c.json({ error: "invalid JSON body" }, 400);
+    }
+    const eventMap: Record<string, "COMMENT" | "APPROVE" | "REQUEST_CHANGES"> = {
+      comment: "COMMENT",
+      approve: "APPROVE",
+      request_changes: "REQUEST_CHANGES",
+    };
+    const ghEvent = payload.event ? eventMap[payload.event] : undefined;
+    if (!ghEvent) return c.json({ error: "invalid event" }, 400);
+
+    await ctx.github.submitReview(
+      ctx.owner,
+      ctx.repo,
+      ctx.pr.number,
+      ghEvent,
+      payload.body,
+    );
+    broadcast("review", { event: ghEvent, body: payload.body });
+    return c.json({ ok: true });
+  });
+
   const webDist = resolve(import.meta.dir, "../../web/dist");
 
   app.use(

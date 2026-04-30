@@ -1,9 +1,11 @@
+import { useScrollTracker } from "../hooks/useScrollTracker";
 import { useReviewStore } from "../state/review-store";
 import { Chapter } from "./Chapter";
 import { ChapterTOC } from "./ChapterTOC";
 import { SuggestedStart } from "./SuggestedStart";
 
 export function StoryView() {
+  useScrollTracker();
   const narrative = useReviewStore((s) => s.narrative);
   const layoutMode = useReviewStore((s) => s.layoutMode);
   const displayDensity = useReviewStore((s) => s.displayDensity);

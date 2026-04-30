@@ -20,10 +20,26 @@ export function SubmitBar() {
   ).length;
   const progress = total === 0 ? 0 : (reviewedCount / total) * 100;
 
-  function handleSubmit() {
-    setOpen(false);
-    clearDrafts();
-    setToast("✓ Review submitted to GitHub");
+  async function handleSubmit(resolution: string, summary: string) {
+    try {
+      const res = await fetch("/api/review", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ event: resolution, body: summary }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setOpen(false);
+      clearDrafts();
+      const toastMsg =
+        resolution === "approve"
+          ? "Proud of you, champ. Approved."
+          : resolution === "request_changes"
+            ? "Changes requested on GitHub"
+            : "Review submitted to GitHub";
+      setToast(toastMsg);
+    } catch {
+      setToast("Failed to submit review");
+    }
   }
 
   return (
