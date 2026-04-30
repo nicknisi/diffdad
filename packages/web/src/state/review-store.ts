@@ -10,6 +10,7 @@ import type {
 
 type Theme = "light" | "dark";
 type Density = "terse" | "normal" | "verbose";
+type View = "story" | "files";
 
 type ReviewState = {
   pr: PRData | null;
@@ -23,6 +24,8 @@ type ReviewState = {
   openLine: string | null;
   theme: Theme;
   density: Density;
+  chapterDensity: Record<string, Density>;
+  view: View;
 
   setData: (
     pr: PRData,
@@ -35,11 +38,14 @@ type ReviewState = {
   toggleReviewed: (idx: number) => void;
   setOpenLine: (key: string | null) => void;
   addComment: (comment: PRComment) => void;
+  setComments: (comments: PRComment[]) => void;
   addDraft: (draft: DraftComment) => void;
   removeDraft: (id: string) => void;
   clearDrafts: () => void;
   setTheme: (theme: Theme) => void;
   setDensity: (d: Density) => void;
+  setChapterDensity: (chapterKey: string, density: Density) => void;
+  setView: (view: View) => void;
 };
 
 export const useReviewStore = create<ReviewState>((set) => ({
@@ -54,6 +60,8 @@ export const useReviewStore = create<ReviewState>((set) => ({
   openLine: null,
   theme: "dark",
   density: "normal",
+  chapterDensity: {},
+  view: "story",
 
   setData: (pr, narrative, files, comments, repoUrl = null) => {
     const chapterStates: Record<string, ChapterState> = {};
@@ -68,6 +76,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
       repoUrl,
       chapterStates,
       activeChapterId: narrative.chapters.length > 0 ? "ch-0" : null,
+      chapterDensity: {},
     });
   },
 
@@ -88,6 +97,8 @@ export const useReviewStore = create<ReviewState>((set) => ({
   addComment: (comment) =>
     set((state) => ({ comments: [...state.comments, comment] })),
 
+  setComments: (comments) => set({ comments }),
+
   addDraft: (draft) =>
     set((state) => ({ drafts: [...state.drafts, draft] })),
 
@@ -99,4 +110,11 @@ export const useReviewStore = create<ReviewState>((set) => ({
   setTheme: (theme) => set({ theme }),
 
   setDensity: (density) => set({ density }),
+
+  setChapterDensity: (chapterKey, density) =>
+    set((state) => ({
+      chapterDensity: { ...state.chapterDensity, [chapterKey]: density },
+    })),
+
+  setView: (view) => set({ view }),
 }));

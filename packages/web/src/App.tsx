@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useReviewStore } from "./state/review-store";
 import { useNarrative } from "./hooks/useNarrative";
+import { useCommentPolling } from "./hooks/useComments";
 import { AppBar } from "./components/AppBar";
 import { PRHeader } from "./components/PRHeader";
 import { StoryView } from "./components/StoryView";
@@ -10,6 +11,7 @@ import { copy } from "./lib/microcopy";
 export default function App() {
   const theme = useReviewStore((s) => s.theme);
   const { loading, error } = useNarrative();
+  useCommentPolling();
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");

@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent } from "react";
+import { useMemo, useState, type KeyboardEvent } from "react";
 import { useComments } from "../hooks/useComments";
 import type { PRComment } from "../state/types";
 import { Comment } from "./Comment";
@@ -11,6 +11,43 @@ type Props = {
   onClose?: () => void;
   autoFocus?: boolean;
 };
+
+type Thread = {
+  root: PRComment;
+  replies: PRComment[];
+};
+
+function groupThreads(comments: PRComment[]): Thread[] {
+  const roots: PRComment[] = [];
+  const repliesByParent = new Map<number, PRComment[]>();
+
+  for (const c of comments) {
+    if (c.inReplyToId == null) {
+      roots.push(c);
+    } else {
+      const arr = repliesByParent.get(c.inReplyToId) ?? [];
+      arr.push(c);
+      repliesByParent.set(c.inReplyToId, arr);
+    }
+  }
+
+  // Orphan replies (parent not in list) become roots so they still render.
+  for (const [parentId, replies] of repliesByParent) {
+    if (!comments.some((c) => c.id === parentId)) {
+      roots.push(...replies);
+      repliesByParent.delete(parentId);
+    }
+  }
+
+  const sortByCreated = (a: PRComment, b: PRComment) =>
+    new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+
+  roots.sort(sortByCreated);
+  return roots.map((root) => ({
+    root,
+    replies: (repliesByParent.get(root.id) ?? []).slice().sort(sortByCreated),
+  }));
+}
 
 export function CommentThread({
   comments,
@@ -25,13 +62,19 @@ export function CommentThread({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const threads = useMemo(() => groupThreads(comments), [comments]);
+
+  // Default the reply target to the first root if not explicitly set.
+  const replyTarget =
+    inReplyToId ?? (threads.length > 0 ? threads[0]?.root.id : undefined);
+
   async function submit() {
     const trimmed = body.trim();
     if (!trimmed || submitting) return;
     setSubmitting(true);
     setError(null);
     try {
-      await postComment(trimmed, { path, line, inReplyToId });
+      await postComment(trimmed, { path, line, inReplyToId: replyTarget });
       setBody("");
       onClose?.();
     } catch (err) {
@@ -50,8 +93,8 @@ export function CommentThread({
 
   return (
     <div className="space-y-2">
-      {comments.map((c) => (
-        <Comment key={c.id} comment={c} />
+      {threads.map((t) => (
+        <Comment key={t.root.id} comment={t.root} replies={t.replies} />
       ))}
       <div className="rounded-lg border border-gray-200 bg-white p-2 dark:border-gray-800 dark:bg-gray-900">
         <textarea
