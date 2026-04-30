@@ -89,12 +89,6 @@ export function AppBar({ onOpenActivity }: AppBarProps) {
           {theme === 'dark' ? <IconSun className="h-[15px] w-[15px]" /> : <IconMoon className="h-[15px] w-[15px]" />}
         </button>
 
-        {/* Avatar */}
-        <img
-          src="/diff-dad-mark.svg"
-          alt="Diff Dad"
-          className="h-7 w-7"
-        />
       </div>
     </header>
   );
