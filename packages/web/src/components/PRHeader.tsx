@@ -3,9 +3,18 @@ import { useReviewStore } from "../state/review-store";
 export function PRHeader() {
   const pr = useReviewStore((s) => s.pr);
   const repoUrl = useReviewStore((s) => s.repoUrl);
+  const view = useReviewStore((s) => s.view);
+  const setView = useReviewStore((s) => s.setView);
   if (!pr) return null;
 
   const prUrl = repoUrl ? `${repoUrl}/pull/${pr.number}` : null;
+
+  const baseBtn =
+    "px-3 py-1 text-sm font-medium rounded-md transition-colors";
+  const activeBtn =
+    "bg-white text-gray-900 border border-gray-200 shadow-sm dark:bg-gray-900 dark:text-gray-50 dark:border-gray-700";
+  const inactiveBtn =
+    "bg-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200";
 
   return (
     <section className="border-b border-gray-200 bg-white px-8 py-6 dark:border-gray-800 dark:bg-gray-900">
@@ -16,16 +25,42 @@ export function PRHeader() {
           </span>{" "}
           {pr.title}
         </h1>
-        {prUrl ? (
-          <a
-            href={prUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="shrink-0 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+        <div className="flex shrink-0 items-center gap-3">
+          <div
+            role="tablist"
+            aria-label="View mode"
+            className="flex items-center gap-1 rounded-lg bg-gray-100 p-1 dark:bg-gray-800"
           >
-            View on GitHub
-          </a>
-        ) : null}
+            <button
+              type="button"
+              role="tab"
+              aria-selected={view === "story"}
+              onClick={() => setView("story")}
+              className={`${baseBtn} ${view === "story" ? activeBtn : inactiveBtn}`}
+            >
+              Story
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={view === "files"}
+              onClick={() => setView("files")}
+              className={`${baseBtn} ${view === "files" ? activeBtn : inactiveBtn}`}
+            >
+              Files
+            </button>
+          </div>
+          {prUrl ? (
+            <a
+              href={prUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+            >
+              View on GitHub
+            </a>
+          ) : null}
+        </div>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-gray-600 dark:text-gray-400">
         <span className="rounded-md bg-gray-100 px-2 py-0.5 font-mono text-sm text-gray-700 dark:bg-gray-800 dark:text-gray-300">

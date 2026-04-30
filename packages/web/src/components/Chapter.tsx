@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useReviewStore } from "../state/review-store";
 import type { Chapter as ChapterType, DiffFile, DiffHunk } from "../state/types";
 import { Hunk } from "./Hunk";
+import { NarrationAnchor } from "./NarrationAnchor";
 import { NarrationBlock } from "./NarrationBlock";
 
 type Props = {
@@ -70,7 +71,12 @@ export function Chapter({ index, chapter }: Props) {
       <div className="mt-4 space-y-4">
         {chapter.sections.map((section, i) => {
           if (section.type === "narrative") {
-            return <NarrationBlock key={i} content={section.content} />;
+            return (
+              <div key={i}>
+                <NarrationBlock content={section.content} />
+                <NarrationAnchor chapterIndex={index} />
+              </div>
+            );
           }
           const flat = flatHunks[section.hunkIndex];
           if (!flat) return null;

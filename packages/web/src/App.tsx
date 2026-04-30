@@ -3,6 +3,7 @@ import { useReviewStore } from "./state/review-store";
 import { useNarrative } from "./hooks/useNarrative";
 import { useCommentPolling } from "./hooks/useComments";
 import { AppBar } from "./components/AppBar";
+import { ClassicView } from "./components/ClassicView";
 import { PRHeader } from "./components/PRHeader";
 import { StoryView } from "./components/StoryView";
 import { SubmitBar } from "./components/SubmitBar";
@@ -10,6 +11,7 @@ import { copy } from "./lib/microcopy";
 
 export default function App() {
   const theme = useReviewStore((s) => s.theme);
+  const view = useReviewStore((s) => s.view);
   const { loading, error } = useNarrative();
   useCommentPolling();
 
@@ -40,7 +42,7 @@ export default function App() {
     <div className="min-h-screen bg-gray-50 pb-20 text-gray-900 dark:bg-gray-950 dark:text-gray-100">
       <AppBar />
       <PRHeader />
-      <StoryView />
+      {view === "story" ? <StoryView /> : <ClassicView />}
       <SubmitBar />
     </div>
   );
