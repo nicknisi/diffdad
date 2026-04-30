@@ -1,12 +1,11 @@
 import { Hono } from "hono";
 import { serveStatic } from "hono/bun";
-import { generateText } from "ai";
 import { resolve } from "path";
 import { readConfig } from "./config";
 import type { GitHubClient } from "./github/client";
 import { mapCommentsToChapters } from "./github/comments";
 import type { CheckRun, DiffFile, PRComment, PRMetadata } from "./github/types";
-import { getModel } from "./narrative/engine";
+import { callAi } from "./narrative/engine";
 import type { NarrativeResponse } from "./narrative/types";
 
 export type ServerContext = {
@@ -151,15 +150,6 @@ export function createServer(ctx: ServerContext) {
       .join("\n\n");
 
     const config = await readConfig();
-    let model;
-    try {
-      model = getModel(config);
-    } catch (err) {
-      return c.json(
-        { error: `model unavailable: ${(err as Error).message}` },
-        500,
-      );
-    }
 
     let systemPrompt: string;
     let userPrompt: string;
@@ -194,11 +184,7 @@ export function createServer(ctx: ServerContext) {
     }
 
     try {
-      const result = await generateText({
-        model,
-        system: systemPrompt,
-        messages: [{ role: "user", content: userPrompt }],
-      });
+      const result = await callAi(config, systemPrompt, userPrompt);
       return c.json({ text: result.text });
     } catch (err) {
       return c.json(

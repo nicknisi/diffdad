@@ -84,66 +84,76 @@ export async function runConfig(): Promise<number> {
     process.stdout.write("  AI Provider\n");
     const currentProviderLabel = existing.aiProvider
       ? existing.aiProvider
-      : "(not set)";
+      : "claude CLI (default — uses your Claude subscription)";
     process.stdout.write(`  Current: ${currentProviderLabel}\n\n`);
-    process.stdout.write("  1. Anthropic (Claude)\n");
-    process.stdout.write("  2. OpenAI\n");
+    process.stdout.write("  0. Claude CLI (default — uses your Claude subscription, no API key needed)\n");
+    process.stdout.write("  1. Anthropic API (requires API key)\n");
+    process.stdout.write("  2. OpenAI (requires API key)\n");
     process.stdout.write("  3. Ollama (local)\n\n");
 
     let provider: "anthropic" | "openai" | "ollama" | undefined;
-    while (!provider) {
-      const defaultChoice =
-        existing.aiProvider === "openai"
+    let useClaudeCli = !existing.aiProvider;
+    while (true) {
+      const defaultChoice = !existing.aiProvider
+        ? "0"
+        : existing.aiProvider === "openai"
           ? "2"
           : existing.aiProvider === "ollama"
             ? "3"
             : "1";
-      const answer = await ask(`  Pick a provider [1-3] (${defaultChoice}): `);
+      const answer = await ask(`  Pick a provider [0-3] (${defaultChoice}): `);
       const choice = answer.length === 0 ? defaultChoice : answer;
-      if (choice === "1") provider = "anthropic";
-      else if (choice === "2") provider = "openai";
-      else if (choice === "3") provider = "ollama";
-      else process.stdout.write("  Please enter 1, 2, or 3.\n");
+      if (choice === "0") { useClaudeCli = true; break; }
+      if (choice === "1") { provider = "anthropic"; useClaudeCli = false; break; }
+      if (choice === "2") { provider = "openai"; useClaudeCli = false; break; }
+      if (choice === "3") { provider = "ollama"; useClaudeCli = false; break; }
+      process.stdout.write("  Please enter 0, 1, 2, or 3.\n");
     }
 
-    const defaults = PROVIDER_DEFAULTS[provider];
-    process.stdout.write("\n");
-
-    // --- Credential / Base URL ---
     let aiApiKey: string | undefined = existing.aiApiKey;
     let aiBaseUrl: string | undefined = existing.aiBaseUrl;
+    let aiModel: string | undefined = existing.aiModel;
 
-    if (provider === "ollama") {
-      const currentUrl = existing.aiBaseUrl ?? defaults.baseUrl ?? "";
-      const answer = await ask(`  Ollama base URL [${currentUrl}]: `);
-      aiBaseUrl = answer.length === 0 ? currentUrl : answer;
+    if (useClaudeCli) {
+      process.stdout.write("\n  Using Claude CLI — no API key needed.\n");
       aiApiKey = undefined;
-    } else {
-      const providerName = provider === "anthropic" ? "Anthropic" : "OpenAI";
-      const hasExisting =
-        provider === existing.aiProvider &&
-        existing.aiApiKey &&
-        existing.aiApiKey.length > 0;
-      const suffix = hasExisting ? " (leave blank to keep existing)" : "";
-      const answer = await ask(`  ${providerName} API key${suffix}: `);
-      if (answer.length > 0) {
-        aiApiKey = answer;
-      } else if (!hasExisting) {
-        process.stdout.write("  Warning: no API key set.\n");
-      }
       aiBaseUrl = undefined;
-    }
+      aiModel = undefined;
+    } else if (provider) {
+      const defaults = PROVIDER_DEFAULTS[provider];
+      process.stdout.write("\n");
 
-    // --- Model ---
-    const currentModel =
-      provider === existing.aiProvider && existing.aiModel
-        ? existing.aiModel
-        : defaults.model;
-    process.stdout.write("\n");
-    const modelAnswer = await ask(
-      `  Model (leave blank for default — ${currentModel}): `,
-    );
-    const aiModel = modelAnswer.length === 0 ? currentModel : modelAnswer;
+      if (provider === "ollama") {
+        const currentUrl = existing.aiBaseUrl ?? defaults.baseUrl ?? "";
+        const answer = await ask(`  Ollama base URL [${currentUrl}]: `);
+        aiBaseUrl = answer.length === 0 ? currentUrl : answer;
+        aiApiKey = undefined;
+      } else {
+        const providerName = provider === "anthropic" ? "Anthropic" : "OpenAI";
+        const hasExisting =
+          provider === existing.aiProvider &&
+          existing.aiApiKey &&
+          existing.aiApiKey.length > 0;
+        const suffix = hasExisting ? " (leave blank to keep existing)" : "";
+        const answer = await ask(`  ${providerName} API key${suffix}: `);
+        if (answer.length > 0) {
+          aiApiKey = answer;
+        } else if (!hasExisting) {
+          process.stdout.write("  Warning: no API key set.\n");
+        }
+        aiBaseUrl = undefined;
+      }
+
+      const currentModel =
+        provider === existing.aiProvider && existing.aiModel
+          ? existing.aiModel
+          : defaults.model;
+      process.stdout.write("\n");
+      const modelAnswer = await ask(
+        `  Model (leave blank for default — ${currentModel}): `,
+      );
+      aiModel = modelAnswer.length === 0 ? currentModel : modelAnswer;
+    }
 
     // --- GitHub Token ---
     process.stdout.write("\n  GitHub Token\n");
@@ -222,16 +232,23 @@ export async function runConfig(): Promise<number> {
     // --- Persist ---
     const next: DiffDadConfig = {
       ...existing,
-      aiProvider: provider,
+      aiProvider: useClaudeCli ? undefined : provider,
       aiModel,
       storyStructure,
       layoutMode,
       defaultNarrationDensity,
     };
-    if (aiApiKey !== undefined) next.aiApiKey = aiApiKey;
-    else delete next.aiApiKey;
-    if (aiBaseUrl !== undefined) next.aiBaseUrl = aiBaseUrl;
-    else delete next.aiBaseUrl;
+    if (useClaudeCli) {
+      delete next.aiProvider;
+      delete next.aiApiKey;
+      delete next.aiBaseUrl;
+      delete next.aiModel;
+    } else {
+      if (aiApiKey !== undefined) next.aiApiKey = aiApiKey;
+      else delete next.aiApiKey;
+      if (aiBaseUrl !== undefined) next.aiBaseUrl = aiBaseUrl;
+      else delete next.aiBaseUrl;
+    }
     if (githubToken && githubToken.length > 0) next.githubToken = githubToken;
 
     await writeConfig(next);
