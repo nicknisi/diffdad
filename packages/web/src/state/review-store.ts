@@ -16,6 +16,7 @@ type ReviewState = {
   narrative: NarrativeResponse | null;
   files: DiffFile[];
   comments: PRComment[];
+  repoUrl: string | null;
   chapterStates: Record<string, ChapterState>;
   activeChapterId: string | null;
   drafts: DraftComment[];
@@ -27,7 +28,8 @@ type ReviewState = {
     pr: PRData,
     narrative: NarrativeResponse,
     files: DiffFile[],
-    comments: PRComment[]
+    comments: PRComment[],
+    repoUrl?: string | null
   ) => void;
   setActiveChapter: (id: string) => void;
   toggleReviewed: (idx: number) => void;
@@ -45,6 +47,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
   narrative: null,
   files: [],
   comments: [],
+  repoUrl: null,
   chapterStates: {},
   activeChapterId: null,
   drafts: [],
@@ -52,7 +55,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
   theme: "dark",
   density: "normal",
 
-  setData: (pr, narrative, files, comments) => {
+  setData: (pr, narrative, files, comments, repoUrl = null) => {
     const chapterStates: Record<string, ChapterState> = {};
     narrative.chapters.forEach((_, idx) => {
       chapterStates[`ch-${idx}`] = "reading";
@@ -62,6 +65,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
       narrative,
       files,
       comments,
+      repoUrl,
       chapterStates,
       activeChapterId: narrative.chapters.length > 0 ? "ch-0" : null,
     });

@@ -14,6 +14,7 @@ export type ServerContext = {
   github: GitHubClient;
   owner: string;
   repo: string;
+  headSha: string;
 };
 
 type PostCommentBody = {
@@ -33,6 +34,7 @@ export function createServer(ctx: ServerContext) {
       pr: ctx.pr,
       files: ctx.files,
       comments: mapCommentsToChapters(ctx.comments, ctx.narrative),
+      repoUrl: `https://github.com/${ctx.owner}/${ctx.repo}`,
     });
   });
 
@@ -63,12 +65,14 @@ export function createServer(ctx: ServerContext) {
       ctx.repo,
       ctx.pr.number,
       payload.body,
-      {
-        path: payload.path,
-        line: payload.line,
-        side: payload.side,
-        commitId: payload.commitId,
-      },
+      payload.path && payload.line
+        ? {
+            path: payload.path,
+            line: payload.line,
+            side: payload.side ?? "RIGHT",
+            commitId: payload.commitId ?? ctx.headSha,
+          }
+        : undefined,
     );
     ctx.comments = [...ctx.comments, posted];
     return c.json(posted, 201);

@@ -14,6 +14,7 @@ export type PRMetadata = {
   deletions: number;
   changedFiles: number;
   commits: number;
+  headSha: string;
 };
 
 export type PRComment = {

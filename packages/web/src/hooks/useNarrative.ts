@@ -12,6 +12,7 @@ type NarrativeApiResponse = {
   narrative: NarrativeResponse;
   files: DiffFile[];
   comments: PRComment[];
+  repoUrl?: string;
 };
 
 export function useNarrative() {
@@ -32,7 +33,7 @@ export function useNarrative() {
         }
         const data = (await res.json()) as NarrativeApiResponse;
         if (cancelled) return;
-        setData(data.pr, data.narrative, data.files, data.comments);
+        setData(data.pr, data.narrative, data.files, data.comments, data.repoUrl ?? null);
       } catch (err) {
         if (cancelled) return;
         setError(err instanceof Error ? err.message : "Unknown error");

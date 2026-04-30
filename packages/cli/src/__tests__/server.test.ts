@@ -19,13 +19,14 @@ const mockPR: PRMetadata = {
   author: { login: "test", avatarUrl: "" }, branch: "feat", base: "main",
   labels: [], createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z",
   additions: 10, deletions: 2, changedFiles: 1, commits: 1,
+  headSha: "abc123",
 };
 
 describe("server", () => {
   it("serves narrative at /api/narrative", async () => {
     const app = createServer({
       narrative: mockNarrative, pr: mockPR, files: [], comments: [],
-      github: {} as any, owner: "test", repo: "test",
+      github: {} as any, owner: "test", repo: "test", headSha: "abc123",
     });
     const res = await app.request("/api/narrative");
     expect(res.status).toBe(200);

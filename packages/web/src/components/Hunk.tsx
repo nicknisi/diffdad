@@ -19,7 +19,7 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex }: Props) {
 
   return (
     <div className="my-3 overflow-hidden rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-      <div className="flex items-center gap-3 border-b border-gray-200 bg-gray-50 px-3 py-2 font-mono text-[12.5px] dark:border-gray-800 dark:bg-gray-900/60">
+      <div className="flex items-center gap-3 border-b border-gray-200 bg-gray-50 px-3 py-2 font-mono text-[13px] dark:border-gray-800 dark:bg-gray-900/60">
         <span className="font-semibold text-gray-800 dark:text-gray-200">
           {file}
         </span>

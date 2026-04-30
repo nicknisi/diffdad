@@ -28,7 +28,7 @@ export function CodeLine({ line, lineKey }: Props) {
 
   return (
     <div
-      className={`group relative flex font-mono text-[12.5px] leading-[18px] ${rowBg}`}
+      className={`group relative flex font-mono text-[13px] leading-[20px] ${rowBg}`}
     >
       <div className="w-12 select-none px-2 text-right text-gray-400 dark:text-gray-600">
         {line.lineNumber.old ?? ""}
@@ -47,7 +47,7 @@ export function CodeLine({ line, lineKey }: Props) {
           +
         </button>
       </div>
-      <pre className="flex-1 overflow-x-auto whitespace-pre px-3 text-gray-800 dark:text-gray-200">
+      <pre className="flex-1 overflow-x-auto whitespace-pre px-4 text-gray-800 dark:text-gray-200">
         {line.content}
       </pre>
     </div>

@@ -8,7 +8,7 @@ export function StoryView() {
   if (!narrative) return null;
 
   return (
-    <div className="mx-auto grid max-w-[1280px] grid-cols-[280px_1fr] gap-6 px-8 py-6">
+    <div className="mx-auto grid max-w-[1600px] grid-cols-[280px_1fr] gap-5 px-5 py-6">
       <ChapterTOC />
       <main>
         <SuggestedStart />

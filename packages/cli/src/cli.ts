@@ -21,6 +21,7 @@ Usage:
 PR argument formats:
   https://github.com/owner/repo/pull/123
   owner/repo#123
+  139                                (bare PR number; requires being inside a git repo with a GitHub remote)
 `;
 
 export function parsePrArg(arg: string): ParsedPr | null {
@@ -47,7 +48,44 @@ export function parsePrArg(arg: string): ParsedPr | null {
     }
   }
 
+  // Bare number: 139 — handled by reviewCommand via inferRepoFromGit()
+  if (/^\d+$/.test(trimmed)) {
+    return null;
+  }
+
   return null;
+}
+
+export async function inferRepoFromGit(): Promise<{ owner: string; repo: string } | null> {
+  try {
+    const proc = Bun.spawn(["git", "remote", "get-url", "origin"], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const exitCode = await proc.exited;
+    if (exitCode !== 0) return null;
+
+    const url = (await new Response(proc.stdout).text()).trim();
+    if (!url) return null;
+
+    // git@github.com:owner/repo(.git)?
+    const sshMatch = url.match(/^git@github\.com:([^/\s]+)\/([^/\s]+?)(?:\.git)?$/i);
+    if (sshMatch) {
+      const [, owner, repo] = sshMatch;
+      if (owner && repo) return { owner, repo };
+    }
+
+    // https://github.com/owner/repo(.git)?
+    const httpsMatch = url.match(/^https?:\/\/github\.com\/([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/i);
+    if (httpsMatch) {
+      const [, owner, repo] = httpsMatch;
+      if (owner && repo) return { owner, repo };
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 async function reviewCommand(prArg: string | undefined): Promise<number> {
@@ -57,13 +95,25 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
     return 2;
   }
 
-  const parsed = parsePrArg(prArg);
+  let parsed = parsePrArg(prArg);
   if (!parsed) {
-    console.error(`error: could not parse PR argument: ${prArg}`);
-    console.error(
-      "expected: https://github.com/owner/repo/pull/123 or owner/repo#123",
-    );
-    return 2;
+    const trimmed = prArg.trim();
+    if (/^\d+$/.test(trimmed)) {
+      const inferred = await inferRepoFromGit();
+      if (!inferred) {
+        console.error(
+          `error: bare PR number "${trimmed}" requires being inside a git repo with a GitHub "origin" remote`,
+        );
+        return 2;
+      }
+      parsed = { owner: inferred.owner, repo: inferred.repo, number: Number(trimmed) };
+    } else {
+      console.error(`error: could not parse PR argument: ${prArg}`);
+      console.error(
+        "expected: https://github.com/owner/repo/pull/123, owner/repo#123, or a bare PR number (e.g. 139)",
+      );
+      return 2;
+    }
   }
 
   const token = await resolveGitHubToken();
@@ -90,7 +140,7 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
   const narrative = await generateNarrative(metadata, files, [], config);
   console.log(`${narrative.chapters.length} chapters generated. Starting server...`);
 
-  const app = createServer({ narrative, pr: metadata, files, comments, github, owner: parsed.owner, repo: parsed.repo });
+  const app = createServer({ narrative, pr: metadata, files, comments, github, owner: parsed.owner, repo: parsed.repo, headSha: metadata.headSha });
 
   // Check for --port=N flag
   const portFlag = Bun.argv.find(a => a.startsWith("--port="));

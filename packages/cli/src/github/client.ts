@@ -21,7 +21,7 @@ type GhPullResponse = {
   draft: boolean;
   merged: boolean;
   user: GhUser;
-  head: { ref: string };
+  head: { ref: string; sha: string };
   base: { ref: string };
   labels: Array<{ name: string }>;
   created_at: string;
@@ -112,6 +112,7 @@ export class GitHubClient {
       deletions: data.deletions,
       changedFiles: data.changed_files,
       commits: data.commits,
+      headSha: data.head.sha,
     };
   }
 
