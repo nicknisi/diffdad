@@ -305,9 +305,13 @@ export function createServer(ctx: ServerContext) {
     return c.json({ ok: true });
   });
 
-  const devPath = resolve(import.meta.dir, '../../web/dist');
-  const installedPath = resolve(dirname(process.execPath), '..', 'share', 'diffdad', 'web');
-  const webDist = existsSync(devPath) ? devPath : installedPath;
+  const candidates = [
+    resolve(import.meta.dir, '../../web/dist'),
+    resolve(dirname(process.execPath), 'packages', 'web', 'dist'),
+    resolve(dirname(process.execPath), 'share', 'diffdad', 'web'),
+    resolve(dirname(process.execPath), '..', 'share', 'diffdad', 'web'),
+  ];
+  const webDist = candidates.find((p) => existsSync(p)) ?? candidates[0]!;
 
   app.use(
     '/*',
