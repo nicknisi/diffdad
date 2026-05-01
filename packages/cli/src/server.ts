@@ -239,6 +239,16 @@ export function createServer(ctx: ServerContext) {
             const freshPr = await ctx.github.getPR(ctx.owner, ctx.repo, ctx.pr.number);
             const shaChanged = freshPr.headSha !== ctx.headSha;
 
+            const prMetaChanged =
+              freshPr.draft !== ctx.pr.draft ||
+              freshPr.state !== ctx.pr.state ||
+              freshPr.title !== ctx.pr.title ||
+              freshPr.labels.join(',') !== ctx.pr.labels.join(',');
+            if (prMetaChanged && !shaChanged) {
+              ctx.pr = freshPr;
+              send('pr', ctx.pr);
+            }
+
             const fresh = await ctx.github.getComments(ctx.owner, ctx.repo, ctx.pr.number);
             const prevIds = new Set(ctx.comments.map((cm) => cm.id));
             const freshIds = new Set(fresh.map((cm) => cm.id));
