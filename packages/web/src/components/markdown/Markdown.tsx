@@ -1,6 +1,6 @@
 import DOMPurify from 'dompurify';
 import { highlightLine } from '../../lib/shiki';
-import { useReviewStore } from '../../state/review-store';
+import { useResolvedTheme } from '../../state/review-store';
 import { useHighlighter } from '../../hooks/useHighlighter';
 
 type Props = {
@@ -277,7 +277,7 @@ function renderMarkdown(src: string, theme: 'light' | 'dark' = 'light'): string 
 }
 
 export function Markdown({ source }: Props) {
-  const theme = useReviewStore((s) => s.theme);
+  const theme = useResolvedTheme();
   useHighlighter();
 
   const rawHtml = renderMarkdown(source, theme);

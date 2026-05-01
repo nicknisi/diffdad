@@ -1,7 +1,7 @@
 import { copy } from '../lib/microcopy';
 import { useReviewStore } from '../state/review-store';
 import { LivePill } from './LivePill';
-import { IconMoon, IconSun, IconArrowRight } from './Icons';
+import { IconMoon, IconMonitor, IconSun, IconArrowRight } from './Icons';
 
 function repoSlug(repoUrl: string | null): string | null {
   if (!repoUrl) return null;
@@ -70,15 +70,22 @@ export function AppBar({ onOpenActivity }: AppBarProps) {
         {/* Live pill */}
         <LivePill onClick={onOpenActivity} />
 
-        {/* Theme toggle */}
+        {/* Theme toggle: light → dark → auto */}
         <button
           type="button"
-          aria-label="Toggle theme"
-          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+          aria-label={`Theme: ${theme}`}
+          title={`Theme: ${theme}`}
+          onClick={() => setTheme(theme === 'light' ? 'dark' : theme === 'dark' ? 'auto' : 'light')}
           className="inline-flex h-[30px] w-[30px] items-center justify-center rounded-[6px] bg-[var(--bg-panel)] text-[var(--fg-2)] hover:bg-[var(--gray-2)] hover:text-[var(--fg-1)]"
           style={{ boxShadow: 'inset 0 0 0 1px var(--gray-a5)' }}
         >
-          {theme === 'dark' ? <IconSun className="h-[15px] w-[15px]" /> : <IconMoon className="h-[15px] w-[15px]" />}
+          {theme === 'light' ? (
+            <IconSun className="h-[15px] w-[15px]" />
+          ) : theme === 'dark' ? (
+            <IconMoon className="h-[15px] w-[15px]" />
+          ) : (
+            <IconMonitor className="h-[15px] w-[15px]" />
+          )}
         </button>
       </div>
     </header>

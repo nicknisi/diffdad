@@ -12,7 +12,7 @@ import type {
   PRReview,
 } from './types';
 
-type Theme = 'light' | 'dark';
+type Theme = 'light' | 'dark' | 'auto';
 type Density = 'terse' | 'normal' | 'verbose';
 type View = 'story' | 'files';
 type StoryStructure = 'chapters' | 'linear' | 'outline';
@@ -21,6 +21,7 @@ type LayoutMode = 'toc' | 'linear';
 type DisplayDensity = 'comfortable' | 'compact';
 
 export type BackendConfig = {
+  theme?: Theme;
   storyStructure?: StoryStructure;
   layoutMode?: LayoutMode;
   displayDensity?: DisplayDensity;
@@ -105,7 +106,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
   activeChapterId: null,
   drafts: [],
   openLine: null,
-  theme: (localStorage.getItem('diffdad.theme') as Theme) || 'dark',
+  theme: (localStorage.getItem('diffdad.theme') as Theme) || 'auto',
   density: 'normal',
   chapterDensity: {},
   view: 'story',
@@ -147,6 +148,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
       chapterDensity: {},
     };
     if (config) {
+      if (config.theme && !localStorage.getItem('diffdad.theme')) next.theme = config.theme;
       if (config.storyStructure) next.storyStructure = config.storyStructure;
       if (config.layoutMode) next.layoutMode = config.layoutMode;
       if (config.displayDensity) next.displayDensity = config.displayDensity;
@@ -231,3 +233,9 @@ export const useReviewStore = create<ReviewState>((set) => ({
       return { narrationOverrides: rest };
     }),
 }));
+
+export function useResolvedTheme(): 'light' | 'dark' {
+  const theme = useReviewStore((s) => s.theme);
+  if (theme !== 'auto') return theme;
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}

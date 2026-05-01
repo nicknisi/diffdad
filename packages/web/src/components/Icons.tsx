@@ -166,3 +166,12 @@ export function IconReply({ className }: IconProps) {
     </svg>
   );
 }
+
+export function IconMonitor({ className }: IconProps) {
+  return (
+    <svg {...baseProps} className={className}>
+      <rect x="2" y="2" width="12" height="9" rx="1" />
+      <path d="M5.5 14h5M8 11v3" />
+    </svg>
+  );
+}

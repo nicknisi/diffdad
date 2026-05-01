@@ -63,6 +63,7 @@ export function createServer(ctx: ServerContext) {
       reviews: ctx.reviews,
       repoUrl: `https://github.com/${ctx.owner}/${ctx.repo}`,
       config: {
+        theme: config.theme ?? 'auto',
         storyStructure: config.storyStructure ?? 'chapters',
         layoutMode: config.layoutMode ?? 'toc',
         displayDensity: config.displayDensity ?? 'comfortable',

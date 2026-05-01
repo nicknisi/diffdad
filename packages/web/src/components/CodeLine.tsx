@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useReviewStore } from '../state/review-store';
+import { useResolvedTheme, useReviewStore } from '../state/review-store';
 import type { DiffLine } from '../state/types';
 import { highlightLine } from '../lib/shiki';
 import { IconPlus } from './Icons';
@@ -13,7 +13,7 @@ type Props = {
 
 export function CodeLine({ line, lineKey, lang, dimmed }: Props) {
   const setOpenLine = useReviewStore((s) => s.setOpenLine);
-  const theme = useReviewStore((s) => s.theme);
+  const theme = useResolvedTheme();
 
   const isAdd = line.type === 'add';
   const isRem = line.type === 'remove';

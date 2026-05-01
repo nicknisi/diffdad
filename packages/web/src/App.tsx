@@ -37,7 +37,17 @@ export default function App() {
   }, [loading]);
 
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', theme === 'dark');
+    const applyTheme = () => {
+      const resolved =
+        theme === 'auto' ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : theme;
+      document.documentElement.classList.toggle('dark', resolved === 'dark');
+    };
+    applyTheme();
+    if (theme === 'auto') {
+      const mq = window.matchMedia('(prefers-color-scheme: dark)');
+      mq.addEventListener('change', applyTheme);
+      return () => mq.removeEventListener('change', applyTheme);
+    }
   }, [theme]);
 
   // Escape closes the activity drawer when nothing else is open.

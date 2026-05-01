@@ -10,6 +10,7 @@ export type StoryStructure = 'chapters' | 'linear' | 'outline';
 export type LayoutMode = 'toc' | 'linear';
 export type DisplayDensity = 'comfortable' | 'compact';
 export type NarrationDensity = 'terse' | 'normal' | 'verbose';
+export type ThemePreference = 'light' | 'dark' | 'auto';
 
 export interface DiffDadConfig {
   githubToken?: string;
@@ -22,6 +23,7 @@ export interface DiffDadConfig {
   displayDensity?: DisplayDensity;
   defaultNarrationDensity?: NarrationDensity;
   clusterBots?: boolean;
+  theme?: ThemePreference;
 }
 
 export function getConfigPath(): string {
@@ -206,6 +208,18 @@ export async function runConfig(): Promise<number> {
       process.stdout.write('  Please enter toc or linear.\n');
     }
 
+    const currentTheme: ThemePreference = existing.theme ?? 'auto';
+    let theme: ThemePreference = currentTheme;
+    while (true) {
+      const answer = await ask(`  Theme [light/dark/auto] (current: ${currentTheme}): `);
+      if (answer.length === 0) break;
+      if (answer === 'light' || answer === 'dark' || answer === 'auto') {
+        theme = answer;
+        break;
+      }
+      process.stdout.write('  Please enter light, dark, or auto.\n');
+    }
+
     const currentNarrationDensity: NarrationDensity = existing.defaultNarrationDensity ?? 'normal';
     let defaultNarrationDensity: NarrationDensity = currentNarrationDensity;
     while (true) {
@@ -223,6 +237,7 @@ export async function runConfig(): Promise<number> {
       ...existing,
       aiProvider: useClaudeCli ? undefined : provider,
       aiModel,
+      theme,
       storyStructure,
       layoutMode,
       defaultNarrationDensity,
