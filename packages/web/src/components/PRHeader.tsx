@@ -111,6 +111,7 @@ export function PRHeader() {
   const reviews = useReviewStore((s) => s.reviews);
   const view = useReviewStore((s) => s.view);
   const setView = useReviewStore((s) => s.setView);
+  const drafts = useReviewStore((s) => s.drafts);
   const clearDrafts = useReviewStore((s) => s.clearDrafts);
   const [open, setOpen] = useState(false);
   const [submitOpen, setSubmitOpen] = useState(false);
@@ -155,10 +156,13 @@ export function PRHeader() {
 
   async function handleSubmit(resolution: string, summary: string) {
     try {
+      const comments = drafts
+        .filter((d) => d.path && d.line !== undefined)
+        .map((d) => ({ path: d.path!, line: d.line!, body: d.body }));
       const res = await fetch('/api/review', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ event: resolution, body: summary }),
+        body: JSON.stringify({ event: resolution, body: summary, comments }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => null);

@@ -372,9 +372,9 @@ export function createServer(ctx: ServerContext) {
   });
 
   app.post('/api/review', async (c) => {
-    let payload: { event?: string; body?: string };
+    let payload: { event?: string; body?: string; comments?: { path: string; line: number; body: string }[] };
     try {
-      payload = (await c.req.json()) as { event?: string; body?: string };
+      payload = (await c.req.json()) as typeof payload;
     } catch {
       return c.json({ error: 'invalid JSON body' }, 400);
     }
@@ -387,7 +387,7 @@ export function createServer(ctx: ServerContext) {
     if (!ghEvent) return c.json({ error: 'invalid event' }, 400);
 
     try {
-      await ctx.github.submitReview(ctx.owner, ctx.repo, ctx.pr.number, ghEvent, payload.body);
+      await ctx.github.submitReview(ctx.owner, ctx.repo, ctx.pr.number, ghEvent, payload.body, payload.comments);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes('Can not approve your own')) {

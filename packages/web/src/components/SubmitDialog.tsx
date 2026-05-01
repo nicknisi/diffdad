@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useReviewStore } from '../state/review-store';
 
 type Resolution = 'comment' | 'approve' | 'request_changes';
 
@@ -29,6 +30,7 @@ const OPTIONS: { value: Resolution; label: string; desc: string }[] = [
 export function SubmitDialog({ open, onClose, onSubmit }: Props) {
   const [resolution, setResolution] = useState<Resolution>('comment');
   const [summary, setSummary] = useState('');
+  const draftCount = useReviewStore((s) => s.drafts.filter((d) => d.path && d.line !== undefined).length);
 
   if (!open) return null;
 
@@ -57,7 +59,9 @@ export function SubmitDialog({ open, onClose, onSubmit }: Props) {
       >
         <h3 className="m-0 mb-[6px] text-[18px] font-bold tracking-[-0.01em] text-[var(--fg-1)]">Submit your review</h3>
         <p className="m-0 mb-4 text-[13.5px] text-[var(--fg-2)]">
-          Inline comments will be posted to GitHub along with this summary.
+          {draftCount > 0
+            ? `${draftCount} inline ${draftCount === 1 ? 'comment' : 'comments'} will be posted to GitHub along with this summary.`
+            : 'Your review will be posted to GitHub.'}
         </p>
         <div className="mb-3.5 flex flex-col gap-2">
           {OPTIONS.map((opt) => {

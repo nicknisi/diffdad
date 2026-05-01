@@ -284,11 +284,16 @@ export class GitHubClient {
     number: number,
     event: 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES',
     body?: string,
+    comments?: { path: string; line: number; body: string }[],
   ): Promise<void> {
     await this.fetch(`/repos/${owner}/${repo}/pulls/${number}/reviews`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ event, body: body || undefined }),
+      body: JSON.stringify({
+        event,
+        body: body || undefined,
+        comments: comments?.length ? comments : undefined,
+      }),
     });
   }
 }
