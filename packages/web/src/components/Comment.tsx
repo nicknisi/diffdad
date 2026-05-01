@@ -2,7 +2,7 @@ import { useState, type KeyboardEvent } from 'react';
 import { useComments } from '../hooks/useComments';
 import { getAuthorInfo } from '../lib/authors';
 import type { PRComment } from '../state/types';
-import { IconCheck, IconRefresh } from './Icons';
+import { IconCheck, IconRefresh, IconReply } from './Icons';
 import { Markdown } from './markdown/Markdown';
 
 const RECENT_SYNC_WINDOW_MS = 60_000;
@@ -188,8 +188,9 @@ export function Comment({ comment, replies = [], isReply = false, showFilePath =
               <button
                 type="button"
                 onClick={() => setReplying(true)}
-                className="text-[11px] font-medium text-[var(--fg-3)] hover:text-[var(--brand)]"
+                className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--fg-3)] hover:text-[var(--brand)]"
               >
+                <IconReply className="h-[10px] w-[10px]" />
                 Reply
               </button>
             )}
