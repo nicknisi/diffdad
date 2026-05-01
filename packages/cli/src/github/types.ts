@@ -20,6 +20,7 @@ export type PRMetadata = {
 export type PRComment = {
   id: number;
   author: string;
+  avatarUrl?: string;
   body: string;
   createdAt: string;
   updatedAt: string;
