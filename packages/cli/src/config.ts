@@ -69,23 +69,67 @@ function makeAsker() {
   return { ask, close };
 }
 
+const c = {
+  reset: '\x1b[0m',
+  bold: '\x1b[1m',
+  dim: '\x1b[2m',
+  italic: '\x1b[3m',
+  purple: '\x1b[38;5;99m',
+  green: '\x1b[38;5;78m',
+  red: '\x1b[38;5;204m',
+  yellow: '\x1b[38;5;221m',
+  cyan: '\x1b[38;5;117m',
+  gray: '\x1b[38;5;243m',
+  white: '\x1b[97m',
+};
+
+function heading(text: string) {
+  process.stdout.write(`\n  ${c.purple}${c.bold}${text}${c.reset}\n`);
+  process.stdout.write(`  ${c.gray}${'─'.repeat(text.length + 2)}${c.reset}\n`);
+}
+
+function current(label: string) {
+  process.stdout.write(`  ${c.dim}current:${c.reset} ${c.cyan}${label}${c.reset}\n\n`);
+}
+
+function option(num: string, label: string, desc: string) {
+  process.stdout.write(`  ${c.white}${num}.${c.reset} ${label} ${c.dim}${desc}${c.reset}\n`);
+}
+
+async function pickOne<T extends string>(
+  ask: (q: string) => Promise<string>,
+  label: string,
+  options: { value: T; display: string }[],
+  currentValue: T,
+): Promise<T> {
+  const currentDisplay = options.find((o) => o.value === currentValue)?.display ?? currentValue;
+  const valid = options.map((o) => o.value).join('/');
+  const prompt = `  ${c.dim}${label} [${valid}]${c.reset} ${c.gray}(${currentDisplay})${c.reset}: `;
+  while (true) {
+    const answer = await ask(prompt);
+    if (answer.length === 0) return currentValue;
+    const match = options.find((o) => o.value === answer);
+    if (match) return match.value;
+    process.stdout.write(`  ${c.red}enter ${valid}${c.reset}\n`);
+  }
+}
+
 export async function runConfig(): Promise<number> {
   const existing = await readConfig();
   const { ask, close } = makeAsker();
 
   try {
-    process.stdout.write('\n  Diff Dad — configuration\n\n');
+    process.stdout.write(`\n  ${c.purple}${c.bold}Diff Dad${c.reset} ${c.dim}— configuration${c.reset}\n`);
 
     // --- AI Provider ---
-    process.stdout.write('  AI Provider\n');
-    const currentProviderLabel = existing.aiProvider
-      ? existing.aiProvider
-      : 'claude CLI (default — uses your Claude subscription)';
-    process.stdout.write(`  Current: ${currentProviderLabel}\n\n`);
-    process.stdout.write('  0. Claude CLI (default — uses your Claude subscription, no API key needed)\n');
-    process.stdout.write('  1. Anthropic API (requires API key)\n');
-    process.stdout.write('  2. OpenAI (requires API key)\n');
-    process.stdout.write('  3. Ollama (local)\n\n');
+    heading('AI Provider');
+    const currentProviderLabel = existing.aiProvider ?? 'local CLI (no API key)';
+    current(currentProviderLabel);
+    option('0', `${c.green}Local CLI${c.reset}`, '— auto-detects claude, codex, or pi (no API key)');
+    option('1', 'Anthropic API', '— requires ANTHROPIC_API_KEY');
+    option('2', 'OpenAI', '— requires OPENAI_API_KEY');
+    option('3', 'Ollama', '— local models via ollama');
+    process.stdout.write('\n');
 
     let provider: 'anthropic' | 'openai' | 'ollama' | undefined;
     let useClaudeCli = !existing.aiProvider;
@@ -97,7 +141,7 @@ export async function runConfig(): Promise<number> {
           : existing.aiProvider === 'ollama'
             ? '3'
             : '1';
-      const answer = await ask(`  Pick a provider [0-3] (${defaultChoice}): `);
+      const answer = await ask(`  ${c.white}pick [0-3]${c.reset} ${c.gray}(${defaultChoice})${c.reset}: `);
       const choice = answer.length === 0 ? defaultChoice : answer;
       if (choice === '0') {
         useClaudeCli = true;
@@ -118,7 +162,7 @@ export async function runConfig(): Promise<number> {
         useClaudeCli = false;
         break;
       }
-      process.stdout.write('  Please enter 0, 1, 2, or 3.\n');
+      process.stdout.write(`  ${c.red}enter 0-3${c.reset}\n`);
     }
 
     let aiApiKey: string | undefined = existing.aiApiKey;
@@ -126,7 +170,7 @@ export async function runConfig(): Promise<number> {
     let aiModel: string | undefined = existing.aiModel;
 
     if (useClaudeCli) {
-      process.stdout.write('\n  Using Claude CLI — no API key needed.\n');
+      process.stdout.write(`\n  ${c.green}✓${c.reset} Using local CLI ${c.dim}(claude → codex → pi)${c.reset}\n`);
       aiApiKey = undefined;
       aiBaseUrl = undefined;
       aiModel = undefined;
@@ -136,101 +180,73 @@ export async function runConfig(): Promise<number> {
 
       if (provider === 'ollama') {
         const currentUrl = existing.aiBaseUrl ?? defaults.baseUrl ?? '';
-        const answer = await ask(`  Ollama base URL [${currentUrl}]: `);
+        const answer = await ask(`  ${c.dim}base URL${c.reset} ${c.gray}(${currentUrl})${c.reset}: `);
         aiBaseUrl = answer.length === 0 ? currentUrl : answer;
         aiApiKey = undefined;
       } else {
         const providerName = provider === 'anthropic' ? 'Anthropic' : 'OpenAI';
         const hasExisting = provider === existing.aiProvider && existing.aiApiKey && existing.aiApiKey.length > 0;
-        const suffix = hasExisting ? ' (leave blank to keep existing)' : '';
-        const answer = await ask(`  ${providerName} API key${suffix}: `);
+        const suffix = hasExisting ? ` ${c.gray}(enter to keep existing)${c.reset}` : '';
+        const answer = await ask(`  ${c.dim}${providerName} API key${c.reset}${suffix}: `);
         if (answer.length > 0) {
           aiApiKey = answer;
         } else if (!hasExisting) {
-          process.stdout.write('  Warning: no API key set.\n');
+          process.stdout.write(`  ${c.yellow}no API key set${c.reset}\n`);
         }
         aiBaseUrl = undefined;
       }
 
       const currentModel = provider === existing.aiProvider && existing.aiModel ? existing.aiModel : defaults.model;
-      process.stdout.write('\n');
-      const modelAnswer = await ask(`  Model (leave blank for default — ${currentModel}): `);
+      const modelAnswer = await ask(`  ${c.dim}model${c.reset} ${c.gray}(${currentModel})${c.reset}: `);
       aiModel = modelAnswer.length === 0 ? currentModel : modelAnswer;
     }
 
     // --- GitHub Token ---
-    process.stdout.write('\n  GitHub Token\n');
-
-    // Check what's already available outside the config file
+    heading('GitHub');
     const tokenFromEnvOrGh = await resolveGitHubToken({ skipConfig: true });
     let githubToken = existing.githubToken;
 
     if (tokenFromEnvOrGh) {
-      const source = process.env.DIFFDAD_GITHUB_TOKEN ? 'env DIFFDAD_GITHUB_TOKEN' : 'gh CLI';
-      process.stdout.write(`  Current: ✓ found via ${source}\n`);
+      const source = process.env.DIFFDAD_GITHUB_TOKEN ? 'DIFFDAD_GITHUB_TOKEN env' : 'gh CLI';
+      process.stdout.write(`  ${c.green}✓${c.reset} token found via ${c.cyan}${source}${c.reset}\n`);
     } else if (githubToken && githubToken.length > 0) {
-      process.stdout.write('  Current: ✓ stored in config\n');
-      const answer = await ask('  Replace GitHub token? (leave blank to keep): ');
+      process.stdout.write(`  ${c.green}✓${c.reset} token stored in config\n`);
+      const answer = await ask(`  ${c.dim}replace?${c.reset} ${c.gray}(enter to keep)${c.reset}: `);
       if (answer.length > 0) githubToken = answer;
     } else {
-      process.stdout.write('  Current: (not set)\n\n');
-      const answer = await ask('  GitHub personal access token: ');
+      process.stdout.write(`  ${c.yellow}no token found${c.reset} ${c.dim}— set DIFFDAD_GITHUB_TOKEN, run${c.reset} ${c.cyan}gh auth login${c.reset}${c.dim}, or enter one:${c.reset}\n`);
+      const answer = await ask(`  ${c.dim}personal access token${c.reset}: `);
       if (answer.length > 0) {
         githubToken = answer;
-        process.stdout.write('  ✓ Saved\n');
+        process.stdout.write(`  ${c.green}✓${c.reset} saved\n`);
       }
     }
 
     // --- Display Settings ---
-    process.stdout.write('\n  Display Settings\n');
+    heading('Display');
 
-    const currentStoryStructure: StoryStructure = existing.storyStructure ?? 'chapters';
-    let storyStructure: StoryStructure = currentStoryStructure;
-    while (true) {
-      const answer = await ask(`  Story structure [chapters/linear/outline] (current: ${currentStoryStructure}): `);
-      if (answer.length === 0) break;
-      if (answer === 'chapters' || answer === 'linear' || answer === 'outline') {
-        storyStructure = answer;
-        break;
-      }
-      process.stdout.write('  Please enter chapters, linear, or outline.\n');
-    }
+    const theme = await pickOne(ask, 'theme', [
+      { value: 'auto' as ThemePreference, display: 'auto' },
+      { value: 'light' as ThemePreference, display: 'light' },
+      { value: 'dark' as ThemePreference, display: 'dark' },
+    ], existing.theme ?? 'auto');
 
-    const currentLayoutMode: LayoutMode = existing.layoutMode ?? 'toc';
-    let layoutMode: LayoutMode = currentLayoutMode;
-    while (true) {
-      const answer = await ask(`  Layout [toc/linear] (current: ${currentLayoutMode}): `);
-      if (answer.length === 0) break;
-      if (answer === 'toc' || answer === 'linear') {
-        layoutMode = answer;
-        break;
-      }
-      process.stdout.write('  Please enter toc or linear.\n');
-    }
+    const storyStructure = await pickOne(ask, 'story structure', [
+      { value: 'chapters' as StoryStructure, display: 'chapters' },
+      { value: 'linear' as StoryStructure, display: 'linear' },
+      { value: 'outline' as StoryStructure, display: 'outline' },
+    ], existing.storyStructure ?? 'chapters');
 
-    const currentTheme: ThemePreference = existing.theme ?? 'auto';
-    let theme: ThemePreference = currentTheme;
-    while (true) {
-      const answer = await ask(`  Theme [light/dark/auto] (current: ${currentTheme}): `);
-      if (answer.length === 0) break;
-      if (answer === 'light' || answer === 'dark' || answer === 'auto') {
-        theme = answer;
-        break;
-      }
-      process.stdout.write('  Please enter light, dark, or auto.\n');
-    }
+    const layoutMode = await pickOne(ask, 'layout', [
+      { value: 'toc' as LayoutMode, display: 'sidebar TOC' },
+      { value: 'linear' as LayoutMode, display: 'linear' },
+    ], existing.layoutMode ?? 'toc');
 
-    const currentNarrationDensity: NarrationDensity = existing.defaultNarrationDensity ?? 'normal';
-    let defaultNarrationDensity: NarrationDensity = currentNarrationDensity;
-    while (true) {
-      const answer = await ask(`  Narration density [terse/normal/verbose] (current: ${currentNarrationDensity}): `);
-      if (answer.length === 0) break;
-      if (answer === 'terse' || answer === 'normal' || answer === 'verbose') {
-        defaultNarrationDensity = answer;
-        break;
-      }
-      process.stdout.write('  Please enter terse, normal, or verbose.\n');
-    }
+    const defaultNarrationDensity = await pickOne(ask, 'narration density', [
+      { value: 'terse' as NarrationDensity, display: 'terse' },
+      { value: 'normal' as NarrationDensity, display: 'normal' },
+      { value: 'verbose' as NarrationDensity, display: 'verbose' },
+    ], existing.defaultNarrationDensity ?? 'normal');
 
     // --- Persist ---
     const next: DiffDadConfig = {
@@ -256,7 +272,7 @@ export async function runConfig(): Promise<number> {
     if (githubToken && githubToken.length > 0) next.githubToken = githubToken;
 
     await writeConfig(next);
-    process.stdout.write(`\n  ✓ Config saved to ${getConfigPath()}\n\n`);
+    process.stdout.write(`\n  ${c.green}✓${c.reset} saved to ${c.dim}${getConfigPath()}${c.reset}\n\n`);
     return 0;
   } finally {
     close();
