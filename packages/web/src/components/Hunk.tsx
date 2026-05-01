@@ -43,7 +43,7 @@ function CollapsibleThread({
           boxShadow: 'inset 0 1px 0 var(--gray-a4), inset 0 -1px 0 var(--gray-a4)',
         }}
       >
-        <IconChat className="h-3.5 w-3.5" style={{ color: 'var(--purple-11)' }} />
+        <IconChat className="h-3.5 w-3.5 text-[var(--purple-11)]" />
         {count} {count === 1 ? 'comment' : 'comments'} — click to expand
       </button>
     );

@@ -352,7 +352,7 @@ export function createServer(ctx: ServerContext) {
               console.log(`\n  \x1b[2mBrowser disconnected — shutting down.\x1b[0m`);
               console.log(`  \x1b[38;5;141m${joke}\x1b[0m\n`);
               setTimeout(() => process.exit(0), 500);
-            }, 3000);
+            }, 30_000);
           }
         });
       },
