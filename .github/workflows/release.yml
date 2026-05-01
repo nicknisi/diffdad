@@ -87,9 +87,15 @@ jobs:
           SHA_X86_64=$(shasum -a 256 dad-darwin-x86_64.tar.gz | cut -d' ' -f1)
           SHA_LINUX=$(shasum -a 256 dad-linux-x86_64.tar.gz | cut -d' ' -f1)
           sed -i "s/version \".*\"/version \"${VER}\"/" Formula/dad.rb
-          sed -i "s/PLACEHOLDER_ARM64/${SHA_ARM64}/" Formula/dad.rb
-          sed -i "s/PLACEHOLDER_X86_64/${SHA_X86_64}/" Formula/dad.rb
-          sed -i "s/PLACEHOLDER_LINUX/${SHA_LINUX}/" Formula/dad.rb
+          python3 -c "
+          import re, sys
+          f = 'Formula/dad.rb'
+          txt = open(f).read()
+          shas = {'arm64': '${SHA_ARM64}', 'x86_64': '${SHA_X86_64}', 'linux': '${SHA_LINUX}'}
+          for arch, sha in shas.items():
+              txt = re.sub(r'(dad-.*' + arch + r'.*\n\s*sha256 \")([a-fA-F0-9]+|PLACEHOLDER_\w+)(\")', lambda m: m.group(1) + sha + m.group(3), txt)
+          open(f, 'w').write(txt)
+          "
 
       - name: Commit formula
         run: |
