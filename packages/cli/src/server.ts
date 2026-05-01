@@ -62,6 +62,7 @@ export function createServer(ctx: ServerContext) {
           displayDensity: config.displayDensity ?? 'comfortable',
           defaultNarrationDensity: config.defaultNarrationDensity ?? 'normal',
           clusterBots: config.clusterBots ?? true,
+          accent: config.accent ?? 'classic',
         },
       });
     }
@@ -89,6 +90,7 @@ export function createServer(ctx: ServerContext) {
         displayDensity: config.displayDensity ?? 'comfortable',
         defaultNarrationDensity: config.defaultNarrationDensity ?? 'normal',
         clusterBots: config.clusterBots ?? true,
+        accent: config.accent ?? 'classic',
       },
       _debug: {
         totalComments: ctx.comments.length,
