@@ -1,10 +1,15 @@
 import { useEffect, useMemo } from 'react';
+import { DadMark } from './DadMark';
+import { getAccentMeta } from '../lib/accents';
+import { useReviewStore } from '../state/review-store';
 
 type Props = {
   onDone: () => void;
 };
 
 export function ApprovalCelebration({ onDone }: Props) {
+  const accent = useReviewStore((s) => s.accent);
+  const { markBg } = getAccentMeta(accent);
   useEffect(() => {
     const t = setTimeout(onDone, 3500);
     return () => clearTimeout(t);
@@ -56,12 +61,7 @@ export function ApprovalCelebration({ onDone }: Props) {
           boxShadow: '0 24px 48px -8px rgba(3,2,13,0.25)',
         }}
       >
-        <div
-          className="flex h-16 w-16 items-center justify-center rounded-full text-white text-2xl"
-          style={{ background: 'var(--green-9)' }}
-        >
-          ✓
-        </div>
+        <DadMark size={80} bg={markBg} shape="circle" showBadge={false} showWink />
         <div className="text-[28px] font-bold tracking-tight text-[var(--fg-1)]">Proud of you, champ.</div>
         <div className="text-sm text-[var(--fg-2)]">Review approved and sent to GitHub</div>
       </div>

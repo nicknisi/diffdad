@@ -1,4 +1,6 @@
 import { useReviewStore } from '../state/review-store';
+import { DadMark } from './DadMark';
+import { getAccentMeta } from '../lib/accents';
 
 type Props = {
   message: string;
@@ -7,16 +9,15 @@ type Props = {
 export function GeneratingScreen({ message }: Props) {
   const pr = useReviewStore((s) => s.pr);
   const files = useReviewStore((s) => s.files);
+  const accent = useReviewStore((s) => s.accent);
+  const { markBg } = getAccentMeta(accent);
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center bg-[var(--bg-page)] px-6">
       <div className="flex flex-col items-center gap-6 text-center">
-        <img
-          src="/diff-dad-mark.svg"
-          alt="Diff Dad"
-          className="h-16 w-16"
-          style={{ animation: 'generating-bob 2s ease-in-out infinite' }}
-        />
+        <div style={{ animation: 'generating-bob 2s ease-in-out infinite' }}>
+          <DadMark size={64} bg={markBg} shape="circle" showBadge={false} showWink />
+        </div>
 
         {pr && (
           <div className="space-y-1">
