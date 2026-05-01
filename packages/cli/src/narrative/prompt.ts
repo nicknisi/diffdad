@@ -51,6 +51,7 @@ const RESPONSE_SCHEMA = `{
       "reshow": [
         {
           "ref": "number — hunkIndex of a hunk to re-display from another chapter",
+          "file": "string — file path (must match a diff section's file for the given hunkIndex)",
           "framing": "string — markdown explaining why it's reshown",
           "highlight": { "from": "number — first line (new-side, 1-based)", "to": "number — last line (new-side, 1-based)" }
         }
@@ -79,7 +80,8 @@ A diff shows WHAT changed. Your narrative explains:
 
 ## Structure Rules
 
-- Group hunks by semantic behavior, not by file. A chapter may pull hunks from many files. The same hunk MAY appear in more than one chapter when genuinely relevant.
+- Group hunks by semantic behavior, not by file. A chapter may pull hunks from many files.
+- **Avoid duplicating hunks.** Each hunk should appear as a diff section in ONE chapter (its owner). To reference it elsewhere, use a reshow entry with a highlight range. When a large hunk (especially in a new file) covers multiple concerns, use startLine/endLine to focus each diff section on just the relevant lines — don't repeat the whole hunk.
 - Order chapters as a review reading sequence. Lead with the chapter that anchors understanding of the whole change. Build from core behavior outward.
 - Each chapter gets a risk level:
   - **low** — mechanical, safe, minimal review needed (renames, formatting, dependency bumps)
@@ -118,8 +120,8 @@ Assign an overall verdict:
 ## Diff Referencing
 
 - hunkIndex: 0-based position in the file's hunks array (NOT a global index). Each file's hunks are independently indexed starting at 0.
-- startLine/endLine: NEW side of the diff, 1-based. For deleted files, use OLD side.
-- Reshow: echo hunks from other chapters via "reshow" when a hunk is relevant to multiple behaviors.
+- startLine/endLine: NEW side of the diff, 1-based. For deleted files, use OLD side. Use these to FOCUS: when a chapter only discusses part of a hunk, set startLine/endLine to just the relevant range — the viewer will dim lines outside this window.
+- Reshow: reference a hunk owned by another chapter via "reshow" with a highlight range. Prefer this over duplicating a diff section. This is especially important for new files where a single hunk contains the entire file.
 
 ## Suggested Start
 

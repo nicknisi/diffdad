@@ -152,7 +152,7 @@ function BotCluster({ comments }: { comments: PRComment[] }) {
       {expanded && (
         <div className="border-t border-dashed bg-[var(--bg-panel)] py-1.5" style={{ borderColor: 'var(--purple-a5)' }}>
           {comments.map((c) => (
-            <div key={c.id} className="grid grid-cols-[56px_1fr] items-start gap-2.5 px-3 py-1.5">
+            <div key={c.id} className="grid grid-cols-[56px_minmax(0,1fr)] items-start gap-2.5 px-3 py-1.5">
               <div className="pt-1.5 text-right font-mono text-[11.5px] font-medium" style={{ color: 'var(--fg-3)' }}>
                 L{c.line ?? ''}
               </div>
