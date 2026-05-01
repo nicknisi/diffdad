@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { useResolvedTheme, useReviewStore } from '../state/review-store';
 import type { DiffLine } from '../state/types';
 import { highlightLine } from '../lib/shiki';
+import { useHighlighter } from '../hooks/useHighlighter';
 import { IconPlus } from './Icons';
 
 type Props = {
@@ -9,23 +10,19 @@ type Props = {
   lineKey: string;
   lang: string;
   dimmed?: boolean;
-  highlighterReady?: boolean;
 };
 
-export function CodeLine({ line, lineKey, lang, dimmed, highlighterReady }: Props) {
+export function CodeLine({ line, lineKey, lang, dimmed }: Props) {
   const setOpenLine = useReviewStore((s) => s.setOpenLine);
   const theme = useResolvedTheme();
+  const ready = useHighlighter();
 
   const isAdd = line.type === 'add';
   const isRem = line.type === 'remove';
 
   const sign = isAdd ? '+' : isRem ? '−' : '';
 
-  // Shiki output
-  const highlighted = useMemo(
-    () => highlightLine(line.content, lang, theme),
-    [line.content, lang, theme, highlighterReady],
-  );
+  const highlighted = useMemo(() => highlightLine(line.content, lang, theme), [line.content, lang, theme, ready]);
 
   // Row background tints (matching design CSS: rgba(41,163,131,0.08) / rgba(229,70,102,0.08))
   const rowBg = isAdd ? 'rgba(41, 163, 131, 0.08)' : isRem ? 'rgba(229, 70, 102, 0.08)' : 'var(--bg-panel)';
