@@ -31,9 +31,20 @@ Requires [Bun](https://bun.sh) when building from source. The Homebrew install i
 ## Usage
 
 ```sh
-dad review <pr>              # Open a PR as a narrated story
+dad <pr>                     # Open a PR as a narrated story
+dad review <pr>              # Same as above (explicit subcommand)
 dad config                   # Configure AI provider, GitHub token, display settings
 dad cache clear              # Clear cached narratives
+dad --version                # Print version
+```
+
+Flags (can go in any position):
+
+```sh
+--with=claude|pi             # Force a specific AI CLI
+--no-cache                   # Regenerate narrative even if cached
+--no-open                    # Don't auto-open the browser
+--port=3000                  # Use a specific port
 ```
 
 PR argument formats:
@@ -52,12 +63,22 @@ Instead of reviewing files one by one, Diff Dad groups code changes into **chapt
 
 ### AI Provider
 
-By default, Diff Dad uses `claude -p` (the Claude Code CLI), which runs on your existing Claude subscription — no API key needed. If you prefer a different provider, run `dad config`:
+By default, Diff Dad uses `claude -p` (the Claude Code CLI), which runs on your existing Claude subscription — no API key needed. If Claude Code isn't installed, it falls back to `pi`. You can force a specific CLI with the `--with` flag:
+
+```sh
+dad --with=claude owner/repo#123
+dad --with=pi owner/repo#123
+```
+
+For API-based providers instead of local CLIs, run `dad config`:
 
 - **Claude CLI** (default) — uses your Claude subscription
+- **pi CLI** (fallback) — uses your pi subscription
 - **Anthropic API** — requires `ANTHROPIC_API_KEY`
 - **OpenAI** — requires OpenAI API key
 - **Ollama** — local models, no key needed
+
+When a provider is configured via `dad config`, it takes priority over CLI discovery. The `--with` flag always takes top priority.
 
 ### GitHub Token
 
