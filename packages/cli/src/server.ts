@@ -336,9 +336,9 @@ export function createServer(ctx: ServerContext) {
           } catch {
             // already closed
           }
-          if (hadClients && sseClients.size === 0) {
+          if (hadClients && sseClients.size === 0 && ctx.narrative) {
             exitTimer = setTimeout(() => {
-              if (sseClients.size > 0) return;
+              if (sseClients.size > 0 || !ctx.narrative) return;
               const jokes = [
                 "I'm not angry, just diff-appointed.",
                 "That's a wrap — like my git commits.",
