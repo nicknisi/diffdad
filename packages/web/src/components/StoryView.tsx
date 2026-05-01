@@ -7,7 +7,9 @@ import { Chapter } from './Chapter';
 import { ChapterTOC } from './ChapterTOC';
 import { Comment } from './Comment';
 import { Hunk } from './Hunk';
+import { MissingItems } from './MissingItems';
 import { SuggestedStart } from './SuggestedStart';
+import { VerdictBanner } from './VerdictBanner';
 import { IconChat } from './Icons';
 
 function OrphanedInlineComments() {
@@ -176,10 +178,12 @@ export function StoryView() {
     return (
       <div className={`mx-auto max-w-[880px] px-6 ${padY}`}>
         <main>
+          <VerdictBanner />
           <SuggestedStart />
           {narrative.chapters.map((ch, idx) => (
             <Chapter key={`ch-${idx}`} index={idx} chapter={ch} />
           ))}
+          <MissingItems />
           <OrphanedInlineComments />
           <Discussion />
         </main>
@@ -191,10 +195,12 @@ export function StoryView() {
     <div className={`mx-auto grid max-w-[1100px] grid-cols-[220px_minmax(0,1fr)] gap-7 px-6 ${padY}`}>
       <ChapterTOC />
       <main className="min-w-0">
+        <VerdictBanner />
         <SuggestedStart />
         {narrative.chapters.map((ch, idx) => (
           <Chapter key={`ch-${idx}`} index={idx} chapter={ch} />
         ))}
+        <MissingItems />
         <Discussion />
       </main>
     </div>
