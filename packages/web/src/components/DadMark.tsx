@@ -62,9 +62,7 @@ function dadMarkPaths(opts: Required<Omit<DadMarkProps, 'size' | 'className'>>):
   parts.push(`<path d="${hairPath}" fill="${ink}"/>`);
 
   // Face
-  parts.push(
-    `<circle cx="${cx}" cy="${cy}" r="94" fill="${skin}" stroke="${ink}" stroke-width="${strokeW}"/>`,
-  );
+  parts.push(`<circle cx="${cx}" cy="${cy}" r="94" fill="${skin}" stroke="${ink}" stroke-width="${strokeW}"/>`);
 
   // Hair re-clip on top of stroked face
   parts.push(`<path d="${hairPath}" fill="${ink}"/>`);
@@ -99,9 +97,7 @@ function dadMarkPaths(opts: Required<Omit<DadMarkProps, 'size' | 'className'>>):
 
   // Left lens
   if (glasses === 'round') {
-    parts.push(
-      `<circle cx="${cx - glassDX}" cy="${glassY}" r="26" fill="white" stroke="${ink}" stroke-width="6"/>`,
-    );
+    parts.push(`<circle cx="${cx - glassDX}" cy="${glassY}" r="26" fill="white" stroke="${ink}" stroke-width="6"/>`);
   } else if (glasses === 'rect') {
     parts.push(
       `<rect x="${cx - glassDX - lensW / 2}" y="${glassY - lensH / 2}" width="${lensW}" height="${lensH}" rx="${lensR}" fill="white" stroke="${ink}" stroke-width="6"/>`,
@@ -114,9 +110,7 @@ function dadMarkPaths(opts: Required<Omit<DadMarkProps, 'size' | 'className'>>):
 
   // Right lens
   if (glasses === 'round') {
-    parts.push(
-      `<circle cx="${cx + glassDX}" cy="${glassY}" r="26" fill="white" stroke="${ink}" stroke-width="6"/>`,
-    );
+    parts.push(`<circle cx="${cx + glassDX}" cy="${glassY}" r="26" fill="white" stroke="${ink}" stroke-width="6"/>`);
   } else if (glasses === 'rect') {
     parts.push(
       `<rect x="${cx + glassDX - lensW / 2}" y="${glassY - lensH / 2}" width="${lensW}" height="${lensH}" rx="${lensR}" fill="white" stroke="${ink}" stroke-width="6"/>`,
