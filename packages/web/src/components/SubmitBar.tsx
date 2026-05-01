@@ -23,10 +23,13 @@ export function SubmitBar() {
 
   async function handleSubmit(resolution: string, summary: string) {
     try {
+      const comments = drafts
+        .filter((d) => d.path && d.line !== undefined)
+        .map((d) => ({ path: d.path!, line: d.line!, body: d.body }));
       const res = await fetch('/api/review', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ event: resolution, body: summary }),
+        body: JSON.stringify({ event: resolution, body: summary, comments }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setOpen(false);

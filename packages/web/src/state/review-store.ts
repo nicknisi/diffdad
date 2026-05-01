@@ -95,6 +95,25 @@ type ReviewState = {
   setPr: (pr: PRData) => void;
 };
 
+function draftStorageKey(prNumber: number): string {
+  return `diffdad.drafts.${prNumber}`;
+}
+
+function persistDrafts(state: ReviewState) {
+  if (!state.pr) return;
+  try {
+    localStorage.setItem(draftStorageKey(state.pr.number), JSON.stringify(state.drafts));
+  } catch {}
+}
+
+function loadDrafts(prNumber: number): DraftComment[] {
+  try {
+    const raw = localStorage.getItem(draftStorageKey(prNumber));
+    if (raw) return JSON.parse(raw) as DraftComment[];
+  } catch {}
+  return [];
+}
+
 export const useReviewStore = create<ReviewState>((set) => ({
   pr: null,
   narrative: null,
@@ -145,6 +164,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
       reviews,
       repoUrl,
       chapterStates,
+      drafts: loadDrafts(pr.number),
       activeChapterId: narrative.chapters.length > 0 ? 'ch-0' : null,
       chapterDensity: {},
     };
@@ -185,11 +205,29 @@ export const useReviewStore = create<ReviewState>((set) => ({
 
   setComments: (comments) => set({ comments }),
 
-  addDraft: (draft) => set((state) => ({ drafts: [...state.drafts, draft] })),
+  addDraft: (draft) =>
+    set((state) => {
+      const next = { drafts: [...state.drafts, draft] };
+      persistDrafts({ ...state, ...next });
+      return next;
+    }),
 
-  removeDraft: (id) => set((state) => ({ drafts: state.drafts.filter((d) => d.id !== id) })),
+  removeDraft: (id) =>
+    set((state) => {
+      const next = { drafts: state.drafts.filter((d) => d.id !== id) };
+      persistDrafts({ ...state, ...next });
+      return next;
+    }),
 
-  clearDrafts: () => set({ drafts: [] }),
+  clearDrafts: () =>
+    set((state) => {
+      if (state.pr) {
+        try {
+          localStorage.removeItem(draftStorageKey(state.pr.number));
+        } catch {}
+      }
+      return { drafts: [] };
+    }),
 
   setTheme: (theme) => {
     localStorage.setItem('diffdad.theme', theme);
