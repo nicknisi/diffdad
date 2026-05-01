@@ -11,6 +11,7 @@ import type {
   PRData,
   PRReview,
 } from './types';
+import type { AccentId } from '../lib/accents';
 
 type Theme = 'light' | 'dark' | 'auto';
 type Density = 'terse' | 'normal' | 'verbose';
@@ -22,6 +23,7 @@ type DisplayDensity = 'comfortable' | 'compact';
 
 export type BackendConfig = {
   theme?: Theme;
+  accent?: AccentId;
   storyStructure?: StoryStructure;
   layoutMode?: LayoutMode;
   displayDensity?: DisplayDensity;
@@ -42,6 +44,7 @@ type ReviewState = {
   drafts: DraftComment[];
   openLine: string | null;
   theme: Theme;
+  accent: AccentId;
   density: Density;
   chapterDensity: Record<string, Density>;
   view: View;
@@ -76,6 +79,7 @@ type ReviewState = {
   removeDraft: (id: string) => void;
   clearDrafts: () => void;
   setTheme: (theme: Theme) => void;
+  setAccent: (accent: AccentId) => void;
   setDensity: (d: Density) => void;
   setChapterDensity: (chapterKey: string, density: Density) => void;
   setView: (view: View) => void;
@@ -146,6 +150,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
   drafts: [],
   openLine: null,
   theme: (localStorage.getItem('diffdad.theme') as Theme) || 'auto',
+  accent: (localStorage.getItem('diffdad.accent') as AccentId) || 'classic',
   density: 'normal',
   chapterDensity: {},
   view: 'story',
@@ -189,6 +194,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
     };
     if (config) {
       if (config.theme && !localStorage.getItem('diffdad.theme')) next.theme = config.theme;
+      if (config.accent && !localStorage.getItem('diffdad.accent')) next.accent = config.accent;
       if (config.storyStructure) next.storyStructure = config.storyStructure;
       if (config.layoutMode) next.layoutMode = config.layoutMode;
       if (config.displayDensity) next.displayDensity = config.displayDensity;
@@ -251,6 +257,11 @@ export const useReviewStore = create<ReviewState>((set) => ({
   setTheme: (theme) => {
     localStorage.setItem('diffdad.theme', theme);
     set({ theme });
+  },
+
+  setAccent: (accent) => {
+    localStorage.setItem('diffdad.accent', accent);
+    set({ accent });
   },
 
   setDensity: (density) => set({ density }),

@@ -11,6 +11,7 @@ export type LayoutMode = 'toc' | 'linear';
 export type DisplayDensity = 'comfortable' | 'compact';
 export type NarrationDensity = 'terse' | 'normal' | 'verbose';
 export type ThemePreference = 'light' | 'dark' | 'auto';
+export type AccentId = 'classic' | 'paprika' | 'tomato' | 'forest' | 'plum' | 'sky' | 'dadcore';
 
 export interface DiffDadConfig {
   githubToken?: string;
@@ -24,6 +25,7 @@ export interface DiffDadConfig {
   defaultNarrationDensity?: NarrationDensity;
   clusterBots?: boolean;
   theme?: ThemePreference;
+  accent?: AccentId;
 }
 
 export function getConfigPath(): string {
@@ -238,6 +240,21 @@ export async function runConfig(): Promise<number> {
       existing.theme ?? 'auto',
     );
 
+    const accent = await pickOne(
+      ask,
+      'accent',
+      [
+        { value: 'classic' as AccentId, display: 'classic (purple)' },
+        { value: 'paprika' as AccentId, display: 'paprika (orange)' },
+        { value: 'tomato' as AccentId, display: 'tomato (red-orange)' },
+        { value: 'forest' as AccentId, display: 'forest (green)' },
+        { value: 'plum' as AccentId, display: 'plum (purple)' },
+        { value: 'sky' as AccentId, display: 'sky (blue)' },
+        { value: 'dadcore' as AccentId, display: 'dadcore (warm paprika)' },
+      ],
+      existing.accent ?? 'classic',
+    );
+
     const storyStructure = await pickOne(
       ask,
       'story structure',
@@ -276,6 +293,7 @@ export async function runConfig(): Promise<number> {
       aiProvider: useClaudeCli ? undefined : provider,
       aiModel,
       theme,
+      accent,
       storyStructure,
       layoutMode,
       defaultNarrationDensity,

@@ -12,9 +12,12 @@ import { ShortcutsHelp } from './components/ShortcutsHelp';
 import { StoryView } from './components/StoryView';
 import { SubmitBar } from './components/SubmitBar';
 import { copy } from './lib/microcopy';
+import { getAccentMeta } from './lib/accents';
+import { renderDadMarkSVG } from './components/DadMark';
 
 export default function App() {
   const theme = useReviewStore((s) => s.theme);
+  const accent = useReviewStore((s) => s.accent);
   const view = useReviewStore((s) => s.view);
   const pr = useReviewStore((s) => s.pr);
   const narrative = useReviewStore((s) => s.narrative);
@@ -56,6 +59,28 @@ export default function App() {
       return () => mq.removeEventListener('change', applyTheme);
     }
   }, [theme]);
+
+  useEffect(() => {
+    if (accent === 'classic') {
+      document.documentElement.removeAttribute('data-accent');
+    } else {
+      document.documentElement.setAttribute('data-accent', accent);
+    }
+  }, [accent]);
+
+  useEffect(() => {
+    const { markBg } = getAccentMeta(accent);
+    const svg = renderDadMarkSVG({ size: 32, bg: markBg, shape: 'circle', showBadge: false });
+    const encoded = `data:image/svg+xml,${encodeURIComponent(svg)}`;
+    let link = document.querySelector<HTMLLinkElement>('link[rel="icon"][type="image/svg+xml"]');
+    if (!link) {
+      link = document.createElement('link');
+      link.rel = 'icon';
+      link.type = 'image/svg+xml';
+      document.head.appendChild(link);
+    }
+    link.href = encoded;
+  }, [accent]);
 
   // Escape closes the activity drawer when nothing else is open.
   useEffect(() => {

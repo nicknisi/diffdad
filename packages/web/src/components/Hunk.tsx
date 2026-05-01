@@ -4,7 +4,6 @@ import type { DiffHunk, PRComment } from '../state/types';
 import { CodeLine } from './CodeLine';
 import { CommentThread } from './CommentThread';
 import { Comment } from './Comment';
-import { useHighlighter } from '../hooks/useHighlighter';
 import { guessLang } from '../lib/shiki';
 import { getAuthorInfo } from '../lib/authors';
 import { normalizePath } from '../lib/paths';
@@ -44,7 +43,7 @@ function CollapsibleThread({
           boxShadow: 'inset 0 1px 0 var(--gray-a4), inset 0 -1px 0 var(--gray-a4)',
         }}
       >
-        <IconChat className="h-3.5 w-3.5" style={{ color: 'var(--purple-11)' }} />
+        <IconChat className="h-3.5 w-3.5 text-[var(--purple-11)]" />
         {count} {count === 1 ? 'comment' : 'comments'} — click to expand
       </button>
     );
@@ -367,7 +366,6 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight }: Props) {
   const repoUrl = useReviewStore((s) => s.repoUrl);
   const headSha = useReviewStore((s) => s.pr?.headSha ?? null);
   const clusterBots = useReviewStore((s) => s.clusterBots);
-  useHighlighter();
   const lang = guessLang(file);
 
   const rangeStart = hunk.oldStart;

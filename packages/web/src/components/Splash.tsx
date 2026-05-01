@@ -1,5 +1,8 @@
 import { useState } from 'react';
 import { copy } from '../lib/microcopy';
+import { DadMark } from './DadMark';
+import { getAccentMeta } from '../lib/accents';
+import { useReviewStore } from '../state/review-store';
 import { IconArrowRight } from './Icons';
 
 type Props = {
@@ -25,6 +28,8 @@ const STEPS: { num: number; text: string; code?: string }[] = [
 const CLI_COMMAND = 'dad review <pr-number>';
 
 export function Splash({ onContinue }: Props) {
+  const accent = useReviewStore((s) => s.accent);
+  const { markBg } = getAccentMeta(accent);
   const [copied, setCopied] = useState(false);
 
   async function handleCopy() {
@@ -57,16 +62,7 @@ export function Splash({ onContinue }: Props) {
           boxShadow: '0 1px 0 var(--gray-a4), 0 30px 80px -20px rgba(0,0,0,0.18)',
         }}
       >
-        <div
-          className="grid h-12 w-12 place-items-center rounded-[12px] text-white"
-          style={{
-            background: 'var(--purple-9)',
-            font: '800 22px var(--font-sans)',
-            marginBottom: 18,
-          }}
-        >
-          D
-        </div>
+        <DadMark size={48} bg={markBg} shape="circle" showBadge={false} />
         <div id="splash-title" className="text-[28px] font-bold tracking-[-0.02em] text-[var(--fg-1)]">
           Diff Dad
         </div>
