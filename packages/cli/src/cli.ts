@@ -280,6 +280,13 @@ async function configCommand(): Promise<number> {
 }
 
 async function main(argv: string[]): Promise<number> {
+  if (argv.includes('--help')) { console.log(USAGE); return 0; }
+  if (argv.includes('--version')) {
+    const pkg = await import('../../../package.json');
+    console.log(pkg.version ?? '0.0.0');
+    return 0;
+  }
+
   const positional = argv.filter((a) => !a.startsWith('--'));
   const [cmd, ...rest] = positional;
 
@@ -289,13 +296,6 @@ async function main(argv: string[]): Promise<number> {
   }
 
   if (cmd === '-v' || cmd === '-V') {
-    const pkg = await import('../../../package.json');
-    console.log(pkg.version ?? '0.0.0');
-    return 0;
-  }
-
-  if (argv.includes('--help')) { console.log(USAGE); return 0; }
-  if (argv.includes('--version')) {
     const pkg = await import('../../../package.json');
     console.log(pkg.version ?? '0.0.0');
     return 0;
