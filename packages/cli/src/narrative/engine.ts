@@ -49,12 +49,21 @@ export function getModel(config: DiffDadConfig): LanguageModelV1 {
   }
 }
 
-async function callClaudeCli(system: string, user: string): Promise<{ text: string; truncated: boolean }> {
-  const args = ['claude', '-p', '--output-format', 'text'];
+async function whichExists(cmd: string): Promise<boolean> {
+  try {
+    const proc = Bun.spawn(['which', cmd], { stdout: 'pipe', stderr: 'pipe' });
+    return (await proc.exited) === 0;
+  } catch {
+    return false;
+  }
+}
 
-  const prompt = `${system}\n\n---\n\n${user}`;
+async function spawnCli(
+  args: string[],
+  input: string,
+): Promise<{ text: string; truncated: boolean }> {
   const proc = Bun.spawn(args, {
-    stdin: new Response(prompt),
+    stdin: new Response(input),
     stdout: 'pipe',
     stderr: 'pipe',
   });
@@ -66,14 +75,27 @@ async function callClaudeCli(system: string, user: string): Promise<{ text: stri
   ]);
 
   if (exitCode !== 0) {
-    const msg = stderr.trim() || `claude exited with code ${exitCode}`;
-    if (msg.includes('not found') || msg.includes('No such file')) {
-      throw new Error('claude CLI not found. Install Claude Code or run `dad config` to set an API provider.');
-    }
-    throw new Error(`claude CLI failed: ${msg}`);
+    const msg = stderr.trim() || `${args[0]} exited with code ${exitCode}`;
+    throw new Error(`${args[0]} failed: ${msg}`);
   }
 
   return { text: stdout, truncated: false };
+}
+
+async function callLocalCli(system: string, user: string): Promise<{ text: string; truncated: boolean }> {
+  const prompt = `${system}\n\n---\n\n${user}`;
+
+  if (await whichExists('claude')) {
+    return spawnCli(['claude', '-p', '--output-format', 'text'], prompt);
+  }
+
+  if (await whichExists('pi')) {
+    return spawnCli(['pi', '-p', '--system-prompt', system, '--no-tools'], user);
+  }
+
+  throw new Error(
+    'No AI CLI found. Install Claude Code (claude) or pi, or run `dad config` to set an API provider.',
+  );
 }
 
 export async function callAi(
@@ -83,7 +105,7 @@ export async function callAi(
   maxTokens?: number,
 ): Promise<{ text: string; truncated: boolean }> {
   if (!hasConfiguredProvider(config)) {
-    return callClaudeCli(system, user);
+    return callLocalCli(system, user);
   }
 
   const model = getModel(config);
