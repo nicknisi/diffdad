@@ -120,6 +120,7 @@ export class GitHubClient {
     const reviewComments: PRComment[] = reviews.map((c) => ({
       id: c.id,
       author: c.user?.login ?? '',
+      avatarUrl: c.user?.avatar_url ?? undefined,
       body: c.body,
       createdAt: c.created_at,
       updatedAt: c.updated_at,
@@ -133,6 +134,7 @@ export class GitHubClient {
     const issueComments: PRComment[] = issues.map((c) => ({
       id: c.id,
       author: c.user?.login ?? '',
+      avatarUrl: c.user?.avatar_url ?? undefined,
       body: c.body,
       createdAt: c.created_at,
       updatedAt: c.updated_at,
@@ -201,6 +203,7 @@ export class GitHubClient {
       return {
         id: data.id,
         author: data.user?.login ?? '',
+        avatarUrl: data.user?.avatar_url ?? undefined,
         body: data.body,
         createdAt: data.created_at,
         updatedAt: data.updated_at,
@@ -221,6 +224,7 @@ export class GitHubClient {
     return {
       id: data.id,
       author: data.user?.login ?? '',
+      avatarUrl: data.user?.avatar_url ?? undefined,
       body: data.body,
       createdAt: data.created_at,
       updatedAt: data.updated_at,
