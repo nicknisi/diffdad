@@ -142,6 +142,7 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
         return 2;
       }
       parsed = { owner: inferred.owner, repo: inferred.repo, number: Number(trimmed) };
+      console.log(`  ${a.dim}Inferred repo from git remote: ${a.cyan}${inferred.owner}/${inferred.repo}${a.reset}`);
     } else {
       console.error(`error: could not parse PR argument: ${prArg}`);
       console.error('expected: https://github.com/owner/repo/pull/123, owner/repo#123, or a bare PR number (e.g. 139)');
@@ -165,11 +166,23 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
   console.log(`\n  ${a.purple}${a.bold}Diff Dad${a.reset}  ${a.dim}—${a.reset}  ${a.white}${slug}${a.reset}`);
   console.log(`  ${a.dim}Fetching PR data...${a.reset}`);
 
-  const [metadata, files, comments] = await Promise.all([
-    github.getPR(parsed.owner, parsed.repo, parsed.number),
-    github.getDiff(parsed.owner, parsed.repo, parsed.number),
-    github.getComments(parsed.owner, parsed.repo, parsed.number),
-  ]);
+  let metadata, files, comments;
+  try {
+    [metadata, files, comments] = await Promise.all([
+      github.getPR(parsed.owner, parsed.repo, parsed.number),
+      github.getDiff(parsed.owner, parsed.repo, parsed.number),
+      github.getComments(parsed.owner, parsed.repo, parsed.number),
+    ]);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes('404')) {
+      console.error(`\n  ${a.red}${a.bold}error:${a.reset} PR #${parsed.number} not found in ${a.cyan}${parsed.owner}/${parsed.repo}${a.reset}`);
+      console.error(`  ${a.dim}If this PR is in a different repo, use: ${a.cyan}dad owner/repo#${parsed.number}${a.reset}\n`);
+    } else {
+      console.error(`\n  ${a.red}${a.bold}error:${a.reset} ${msg}\n`);
+    }
+    return 1;
+  }
 
   const [checkRuns, reviews] = await Promise.all([
     github.getCheckRuns(parsed.owner, parsed.repo, metadata.headSha).catch(() => []),
