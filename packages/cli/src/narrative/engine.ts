@@ -84,6 +84,17 @@ async function spawnCli(
 
 async function callLocalCli(system: string, user: string): Promise<{ text: string; truncated: boolean }> {
   const prompt = `${system}\n\n---\n\n${user}`;
+  const forced = process.env.DIFFDAD_CLI;
+
+  if (forced) {
+    if (forced === 'pi') {
+      return spawnCli(['pi', '-p', '--system-prompt', system, '--no-tools'], user);
+    }
+    if (forced === 'claude') {
+      return spawnCli(['claude', '-p', '--output-format', 'text'], prompt);
+    }
+    throw new Error(`Unknown DIFFDAD_CLI value: "${forced}". Use "claude" or "pi".`);
+  }
 
   if (await whichExists('claude')) {
     return spawnCli(['claude', '-p', '--output-format', 'text'], prompt);
