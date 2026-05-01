@@ -92,6 +92,7 @@ type ReviewState = {
   setCollapseNarration: (v: boolean) => void;
   setClusterBots: (v: boolean) => void;
   setRegenerating: (v: boolean) => void;
+  setPr: (pr: PRData) => void;
 };
 
 export const useReviewStore = create<ReviewState>((set) => ({
@@ -225,6 +226,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
   setCollapseNarration: (collapseNarration) => set({ collapseNarration }),
   setClusterBots: (clusterBots) => set({ clusterBots }),
   setRegenerating: (regenerating) => set({ regenerating }),
+  setPr: (pr) => set({ pr }),
   setNarrationOverride: (chapterKey: string, text: string) =>
     set((s) => ({ narrationOverrides: { ...s.narrationOverrides, [chapterKey]: text } })),
   clearNarrationOverride: (chapterKey: string) =>
