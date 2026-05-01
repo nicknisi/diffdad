@@ -65,7 +65,7 @@ export function SubmitBar() {
                   {reviewedCount} of {total}
                 </b>{' '}
                 chapters reviewed · <b className="font-bold text-[var(--fg-1)]">{drafts.length}</b> pending{' '}
-                {drafts.length === 1 ? 'draft' : 'drafts'}
+                {drafts.length === 1 ? 'comment' : 'comments'}
               </>
             )}
           </div>
