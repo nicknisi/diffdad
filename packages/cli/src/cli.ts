@@ -3,7 +3,7 @@ import { resolveGitHubToken } from './auth';
 import { readConfig, runConfig } from './config';
 import { GitHubClient } from './github/client';
 import { cacheNarrative, clearCache, getCachedNarrative } from './narrative/cache';
-import { generateNarrative } from './narrative/engine';
+import { generateNarrative, setCliOverride } from './narrative/engine';
 import type { NarrativeResponse } from './narrative/types';
 import { createServer } from './server';
 
@@ -159,6 +159,9 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
     return 1;
   }
 
+  const withFlag = Bun.argv.find((f) => f.startsWith('--with='));
+  if (withFlag) setCliOverride(withFlag.split('=')[1]!);
+
   const config = await readConfig();
   const github = new GitHubClient(token);
 
@@ -230,9 +233,10 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
     narrative = cached;
   } else {
     console.log(`\n  ${a.yellow}Generating narrative...${a.reset}`);
-    narrative = await generateNarrative(metadata, files, [], config);
+    const { narrative: generated, provider: usedProvider } = await generateNarrative(metadata, files, [], config);
+    narrative = generated;
     await cacheNarrative(parsed.owner, parsed.repo, parsed.number, metadata.headSha, narrative);
-    console.log(`  ${a.green}✓${a.reset} ${narrative.chapters.length} chapters generated`);
+    console.log(`  ${a.green}✓${a.reset} ${narrative.chapters.length} chapters generated ${a.dim}via ${usedProvider}${a.reset}`);
   }
 
   const app = createServer({

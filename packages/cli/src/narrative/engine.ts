@@ -82,26 +82,38 @@ async function spawnCli(
   return { text: stdout, truncated: false };
 }
 
-async function callLocalCli(system: string, user: string): Promise<{ text: string; truncated: boolean }> {
+export type AiResult = { text: string; truncated: boolean; provider: string };
+
+let cliOverride: string | undefined;
+
+export function setCliOverride(cli: string) {
+  cliOverride = cli;
+}
+
+async function callLocalCli(system: string, user: string): Promise<AiResult> {
   const prompt = `${system}\n\n---\n\n${user}`;
-  const forced = process.env.DIFFDAD_CLI;
+  const forced = cliOverride ?? process.env.DIFFDAD_CLI;
 
   if (forced) {
     if (forced === 'pi') {
-      return spawnCli(['pi', '-p', '--system-prompt', system, '--no-tools'], user);
+      const r = await spawnCli(['pi', '-p', '--system-prompt', system, '--no-tools'], user);
+      return { ...r, provider: 'pi' };
     }
     if (forced === 'claude') {
-      return spawnCli(['claude', '-p', '--output-format', 'text'], prompt);
+      const r = await spawnCli(['claude', '-p', '--output-format', 'text'], prompt);
+      return { ...r, provider: 'claude' };
     }
-    throw new Error(`Unknown DIFFDAD_CLI value: "${forced}". Use "claude" or "pi".`);
+    throw new Error(`Unknown --with value: "${forced}". Use "claude" or "pi".`);
   }
 
   if (await whichExists('claude')) {
-    return spawnCli(['claude', '-p', '--output-format', 'text'], prompt);
+    const r = await spawnCli(['claude', '-p', '--output-format', 'text'], prompt);
+    return { ...r, provider: 'claude' };
   }
 
   if (await whichExists('pi')) {
-    return spawnCli(['pi', '-p', '--system-prompt', system, '--no-tools'], user);
+    const r = await spawnCli(['pi', '-p', '--system-prompt', system, '--no-tools'], user);
+    return { ...r, provider: 'pi' };
   }
 
   throw new Error(
@@ -114,11 +126,12 @@ export async function callAi(
   system: string,
   user: string,
   maxTokens?: number,
-): Promise<{ text: string; truncated: boolean }> {
+): Promise<AiResult> {
   if (!hasConfiguredProvider(config)) {
     return callLocalCli(system, user);
   }
 
+  const provider = config.aiProvider ?? 'anthropic';
   const model = getModel(config);
   const result = await generateText({
     model,
@@ -129,6 +142,7 @@ export async function callAi(
   return {
     text: result.text,
     truncated: result.finishReason === 'length',
+    provider: `${provider} (${config.aiModel ?? 'default'})`,
   };
 }
 
@@ -153,7 +167,7 @@ export async function generateNarrative(
   files: DiffFile[],
   fileTree: string[],
   config: DiffDadConfig,
-): Promise<NarrativeResponse> {
+): Promise<{ narrative: NarrativeResponse; provider: string }> {
   const { system, user } = buildNarrativePrompt({
     title: pr.title,
     description: pr.body,
@@ -168,7 +182,7 @@ export async function generateNarrative(
 
     const json = extractJson(result.text);
     try {
-      return JSON.parse(json) as NarrativeResponse;
+      return { narrative: JSON.parse(json) as NarrativeResponse, provider: result.provider };
     } catch (err) {
       if (result.truncated && attempt < MAX_RETRIES) {
         console.log(`Narrative truncated (attempt ${attempt + 1}/${MAX_RETRIES + 1}), retrying...`);
