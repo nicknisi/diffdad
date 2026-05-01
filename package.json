@@ -12,6 +12,7 @@
     "format": "oxfmt .",
     "format:check": "oxfmt --check .",
     "test": "bun test packages/cli/src/__tests__/",
+    "dad": "bun packages/cli/src/cli.ts",
     "dev": "bun run --filter '@diffdad/web' dev",
     "release": "./scripts/release.sh"
   },
