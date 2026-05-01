@@ -39,12 +39,13 @@ const mockPR: PRMetadata = {
 
 describe('server', () => {
   it('serves narrative at /api/narrative', async () => {
-    const app = createServer({
+    const { app } = createServer({
       narrative: mockNarrative,
       pr: mockPR,
       files: [],
       comments: [],
       checkRuns: [],
+      reviews: [],
       github: {} as any,
       owner: 'test',
       repo: 'test',

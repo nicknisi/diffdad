@@ -11,7 +11,7 @@ import { callAi, generateNarrative } from './narrative/engine';
 import type { NarrativeResponse } from './narrative/types';
 
 export type ServerContext = {
-  narrative: NarrativeResponse;
+  narrative: NarrativeResponse | null;
   pr: PRMetadata;
   files: DiffFile[];
   comments: PRComment[];
@@ -45,6 +45,25 @@ export function createServer(ctx: ServerContext) {
 
   app.get('/api/narrative', async (c) => {
     const config = await readConfig();
+    if (!ctx.narrative) {
+      return c.json({
+        generating: true,
+        pr: ctx.pr,
+        files: ctx.files,
+        comments: ctx.comments,
+        checkRuns: ctx.checkRuns,
+        reviews: ctx.reviews,
+        repoUrl: `https://github.com/${ctx.owner}/${ctx.repo}`,
+        config: {
+          theme: config.theme ?? 'auto',
+          storyStructure: config.storyStructure ?? 'chapters',
+          layoutMode: config.layoutMode ?? 'toc',
+          displayDensity: config.displayDensity ?? 'comfortable',
+          defaultNarrationDensity: config.defaultNarrationDensity ?? 'normal',
+          clusterBots: config.clusterBots ?? true,
+        },
+      });
+    }
     const commentPaths = [...new Set(ctx.comments.map((cm) => cm.path).filter((p): p is string => Boolean(p)))];
     const diffFiles = ctx.files.map((f) => f.file);
     const narrativeFiles = [
@@ -119,6 +138,7 @@ export function createServer(ctx: ServerContext) {
       return c.json({ error: 'missing chapterIndex' }, 400);
     }
 
+    if (!ctx.narrative) return c.json({ error: 'narrative still generating' }, 503);
     const chapter = ctx.narrative.chapters[chapterIndex];
     if (!chapter) return c.json({ error: 'invalid chapter' }, 400);
 
@@ -195,7 +215,7 @@ export function createServer(ctx: ServerContext) {
   app.get('/api/comments', async (c) => {
     const fresh = await ctx.github.getComments(ctx.owner, ctx.repo, ctx.pr.number);
     ctx.comments = fresh;
-    return c.json(mapCommentsToChapters(fresh, ctx.narrative));
+    return c.json(ctx.narrative ? mapCommentsToChapters(fresh, ctx.narrative) : fresh);
   });
 
   app.get('/api/events', (c) => {
@@ -246,8 +266,8 @@ export function createServer(ctx: ServerContext) {
               broadcast('regenerating', { previousSha: prevSha, newSha });
 
               try {
-                const prevTldr = ctx.narrative.tldr;
-                const prevChapterTitles = ctx.narrative.chapters.map((ch) => ch.title);
+                const prevTldr = ctx.narrative?.tldr;
+                const prevChapterTitles = ctx.narrative?.chapters.map((ch) => ch.title) ?? [];
 
                 ctx.pr = freshPr;
                 ctx.headSha = freshPr.headSha;
@@ -388,5 +408,5 @@ export function createServer(ctx: ServerContext) {
   // SPA fallback: any unmatched route serves index.html
   app.get('/*', serveStatic({ root: webDist, path: 'index.html' }));
 
-  return app;
+  return { app, broadcast };
 }

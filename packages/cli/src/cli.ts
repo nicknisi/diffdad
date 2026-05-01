@@ -4,7 +4,6 @@ import { readConfig, runConfig } from './config';
 import { GitHubClient } from './github/client';
 import { cacheNarrative, clearCache, getCachedNarrative } from './narrative/cache';
 import { generateNarrative, setCliOverride } from './narrative/engine';
-import type { NarrativeResponse } from './narrative/types';
 import { createServer } from './server';
 
 const a = {
@@ -227,28 +226,9 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
 
   const noCache = Bun.argv.includes('--no-cache');
   const cached = noCache ? null : await getCachedNarrative(parsed.owner, parsed.repo, parsed.number, metadata.headSha);
-  let narrative: NarrativeResponse;
-  if (cached) {
-    console.log(`\n  ${a.dim}Using cached narrative ${a.gray}(${metadata.headSha.slice(0, 7)})${a.reset}`);
-    narrative = cached;
-  } else {
-    const withCli = Bun.argv.find((f) => f.startsWith('--with='))?.split('=')[1];
-    const providerHint = withCli ?? config.aiProvider ?? 'claude';
-    const waitJoke = DAD_JOKES[Math.floor(Math.random() * DAD_JOKES.length)];
-    console.log(
-      `\n  ${a.yellow}Generating narrative${a.reset} ${a.gray}via${a.reset} ${a.cyan}${providerHint}${a.reset}`,
-    );
-    console.log(`  ${a.italic}${a.gray}"${waitJoke}"${a.reset}`);
-    const { narrative: generated, provider: usedProvider } = await generateNarrative(metadata, files, [], config);
-    narrative = generated;
-    await cacheNarrative(parsed.owner, parsed.repo, parsed.number, metadata.headSha, narrative);
-    console.log(
-      `  ${a.green}✓${a.reset} ${narrative.chapters.length} chapters generated ${a.dim}via ${usedProvider}${a.reset}`,
-    );
-  }
 
-  const app = createServer({
-    narrative,
+  const ctx = {
+    narrative: cached,
     pr: metadata,
     files,
     comments,
@@ -258,24 +238,45 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
     owner: parsed.owner,
     repo: parsed.repo,
     headSha: metadata.headSha,
-  });
+  };
 
+  const { app, broadcast } = createServer(ctx);
   const portFlag = Bun.argv.find((f) => f.startsWith('--port='));
   const port = portFlag ? parseInt(portFlag.split('=')[1]) : 0;
   const server = Bun.serve({ fetch: app.fetch, port });
-
   const url = `http://localhost:${server.port}`;
-  const joke = DAD_JOKES[Math.floor(Math.random() * DAD_JOKES.length)];
+
+  if (cached) {
+    console.log(`\n  ${a.dim}Using cached narrative ${a.gray}(${metadata.headSha.slice(0, 7)})${a.reset}`);
+  }
 
   console.log(`\n  ${a.purple}${a.bold}${url}${a.reset}`);
-  console.log(
-    `  ${a.dim}${narrative.chapters.length} chapters · ${comments.length} comments · ${reviews.length} reviewers${a.reset}`,
-  );
+  const joke = DAD_JOKES[Math.floor(Math.random() * DAD_JOKES.length)];
   console.log(`\n  ${a.italic}${a.gray}"${joke}"${a.reset}\n`);
 
   if (!Bun.argv.includes('--no-open')) {
     const { default: open } = await import('open');
     await open(url);
+  }
+
+  if (!cached) {
+    const withCli = Bun.argv.find((f) => f.startsWith('--with='))?.split('=')[1];
+    const providerHint = withCli ?? config.aiProvider ?? 'claude';
+    const waitJoke = DAD_JOKES[Math.floor(Math.random() * DAD_JOKES.length)];
+    console.log(`  ${a.yellow}Generating narrative${a.reset} ${a.gray}via${a.reset} ${a.cyan}${providerHint}${a.reset}`);
+    console.log(`  ${a.italic}${a.gray}"${waitJoke}"${a.reset}`);
+    const { narrative: generated, provider: usedProvider } = await generateNarrative(metadata, files, [], config);
+    ctx.narrative = generated;
+    await cacheNarrative(parsed.owner, parsed.repo, parsed.number, metadata.headSha, generated);
+    console.log(
+      `  ${a.green}✓${a.reset} ${generated.chapters.length} chapters generated ${a.dim}via ${usedProvider}${a.reset}`,
+    );
+    broadcast('narrative', {
+      narrative: generated,
+      pr: metadata,
+      files,
+      comments,
+    });
   }
 
   await new Promise(() => {});

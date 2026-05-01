@@ -6,6 +6,7 @@ import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { ActivityDrawer } from './components/ActivityDrawer';
 import { AppBar } from './components/AppBar';
 import { ClassicView } from './components/ClassicView';
+import { GeneratingScreen } from './components/GeneratingScreen';
 import { PRHeader } from './components/PRHeader';
 import { ShortcutsHelp } from './components/ShortcutsHelp';
 import { StoryView } from './components/StoryView';
@@ -16,9 +17,10 @@ export default function App() {
   const theme = useReviewStore((s) => s.theme);
   const view = useReviewStore((s) => s.view);
   const pr = useReviewStore((s) => s.pr);
+  const narrative = useReviewStore((s) => s.narrative);
   const shortcutsHelpOpen = useReviewStore((s) => s.shortcutsHelpOpen);
   const setShortcutsHelpOpen = useReviewStore((s) => s.setShortcutsHelpOpen);
-  const { loading, error } = useNarrative();
+  const { loading, generating, setGenerating, error } = useNarrative();
 
   useEffect(() => {
     if (pr) {
@@ -31,10 +33,15 @@ export default function App() {
   const [loadingMsgIndex, setLoadingMsgIndex] = useState(0);
 
   useEffect(() => {
-    if (!loading) return;
+    if (narrative && generating) setGenerating(false);
+  }, [narrative, generating, setGenerating]);
+
+  const showLoadingMessages = loading || generating;
+  useEffect(() => {
+    if (!showLoadingMessages) return;
     const t = setInterval(() => setLoadingMsgIndex((i) => (i + 1) % copy.loadingMessages.length), 2500);
     return () => clearInterval(t);
-  }, [loading]);
+  }, [showLoadingMessages]);
 
   useEffect(() => {
     const applyTheme = () => {
@@ -63,7 +70,7 @@ export default function App() {
     return () => document.removeEventListener('keydown', onKey);
   }, [activityOpen, shortcutsHelpOpen]);
 
-  if (loading) {
+  if (loading && !pr) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[var(--bg-page)] text-[var(--fg-2)]">
         <p className="text-base">{copy.loadingMessages[loadingMsgIndex]}</p>
@@ -83,6 +90,10 @@ export default function App() {
         </div>
       </main>
     );
+  }
+
+  if (generating || !narrative) {
+    return <GeneratingScreen message={copy.loadingMessages[loadingMsgIndex]} />;
   }
 
   return (
