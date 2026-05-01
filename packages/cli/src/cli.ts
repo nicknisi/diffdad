@@ -176,8 +176,12 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes('404')) {
-      console.error(`\n  ${a.red}${a.bold}error:${a.reset} PR #${parsed.number} not found in ${a.cyan}${parsed.owner}/${parsed.repo}${a.reset}`);
-      console.error(`  ${a.dim}If this PR is in a different repo, use: ${a.cyan}dad owner/repo#${parsed.number}${a.reset}\n`);
+      console.error(
+        `\n  ${a.red}${a.bold}error:${a.reset} PR #${parsed.number} not found in ${a.cyan}${parsed.owner}/${parsed.repo}${a.reset}`,
+      );
+      console.error(
+        `  ${a.dim}If this PR is in a different repo, use: ${a.cyan}dad owner/repo#${parsed.number}${a.reset}\n`,
+      );
     } else {
       console.error(`\n  ${a.red}${a.bold}error:${a.reset} ${msg}\n`);
     }
