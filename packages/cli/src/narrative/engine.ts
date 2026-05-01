@@ -1,3 +1,4 @@
+import { rm } from 'fs/promises';
 import { generateText } from 'ai';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createOpenAI } from '@ai-sdk/openai';
@@ -87,6 +88,18 @@ export function setCliOverride(cli: string) {
   cliOverride = cli;
 }
 
+async function callCodex(system: string, user: string): Promise<AiResult> {
+  const prompt = `${system}\n\n---\n\n${user}`;
+  const tmpFile = `/tmp/diffdad-codex-${Date.now()}.txt`;
+  try {
+    const r = await spawnCli(['codex', 'exec', '--skip-git-repo-check', '--ignore-rules', '-o', tmpFile], prompt);
+    const output = await Bun.file(tmpFile).text().catch(() => r.text);
+    return { text: output, truncated: false, provider: 'codex' };
+  } finally {
+    rm(tmpFile, { force: true }).catch(() => {});
+  }
+}
+
 async function callLocalCli(system: string, user: string): Promise<AiResult> {
   const prompt = `${system}\n\n---\n\n${user}`;
   const forced = cliOverride ?? process.env.DIFFDAD_CLI;
@@ -100,7 +113,10 @@ async function callLocalCli(system: string, user: string): Promise<AiResult> {
       const r = await spawnCli(['claude', '-p', '--output-format', 'text'], prompt);
       return { ...r, provider: 'claude' };
     }
-    throw new Error(`Unknown --with value: "${forced}". Use "claude" or "pi".`);
+    if (forced === 'codex') {
+      return callCodex(system, user);
+    }
+    throw new Error(`Unknown --with value: "${forced}". Use "claude", "codex", or "pi".`);
   }
 
   if (await whichExists('claude')) {
@@ -108,12 +124,18 @@ async function callLocalCli(system: string, user: string): Promise<AiResult> {
     return { ...r, provider: 'claude' };
   }
 
+  if (await whichExists('codex')) {
+    return callCodex(system, user);
+  }
+
   if (await whichExists('pi')) {
     const r = await spawnCli(['pi', '-p', '--system-prompt', system, '--no-tools'], user);
     return { ...r, provider: 'pi' };
   }
 
-  throw new Error('No AI CLI found. Install Claude Code (claude) or pi, or run `dad config` to set an API provider.');
+  throw new Error(
+    'No AI CLI found. Install Claude Code (claude), Codex (codex), or pi, or run `dad config` to set an API provider.',
+  );
 }
 
 export async function callAi(
