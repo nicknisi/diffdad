@@ -427,7 +427,12 @@ export function Chapter({ index, chapter }: Props) {
             <div className="overflow-hidden">
               <span className="mt-[2px] block text-[12px] text-[var(--fg-3)]">
                 {hunkCount} {hunkCount === 1 ? 'hunk' : 'hunks'}
-                {commentCount > 0 && <> · {commentCount} {commentCount === 1 ? 'comment' : 'comments'}</>}
+                {commentCount > 0 && (
+                  <>
+                    {' '}
+                    · {commentCount} {commentCount === 1 ? 'comment' : 'comments'}
+                  </>
+                )}
                 {reviewed && <> · reviewed</>}
               </span>
             </div>

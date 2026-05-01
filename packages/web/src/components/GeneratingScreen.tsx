@@ -36,9 +36,18 @@ export function GeneratingScreen({ message }: Props) {
 
         <div className="flex items-center gap-3">
           <div className="generating-dots flex gap-1">
-            <span className="h-1.5 w-1.5 rounded-full" style={{ background: 'var(--purple-9)', animation: 'generating-dot 1.4s ease-in-out infinite' }} />
-            <span className="h-1.5 w-1.5 rounded-full" style={{ background: 'var(--purple-9)', animation: 'generating-dot 1.4s ease-in-out 0.2s infinite' }} />
-            <span className="h-1.5 w-1.5 rounded-full" style={{ background: 'var(--purple-9)', animation: 'generating-dot 1.4s ease-in-out 0.4s infinite' }} />
+            <span
+              className="h-1.5 w-1.5 rounded-full"
+              style={{ background: 'var(--purple-9)', animation: 'generating-dot 1.4s ease-in-out infinite' }}
+            />
+            <span
+              className="h-1.5 w-1.5 rounded-full"
+              style={{ background: 'var(--purple-9)', animation: 'generating-dot 1.4s ease-in-out 0.2s infinite' }}
+            />
+            <span
+              className="h-1.5 w-1.5 rounded-full"
+              style={{ background: 'var(--purple-9)', animation: 'generating-dot 1.4s ease-in-out 0.4s infinite' }}
+            />
           </div>
           <p
             className="text-[14px] italic text-[var(--fg-2)]"
