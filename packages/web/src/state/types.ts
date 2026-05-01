@@ -19,8 +19,18 @@ export type PRData = {
 
 export type NarrativeResponse = {
   title: string;
+  tldr?: string;
+  verdict?: 'safe' | 'caution' | 'risky';
   chapters: Chapter[];
+  missing?: string[];
   suggestedStart?: { chapter: number; reason: string };
+};
+
+export type Callout = {
+  file: string;
+  line: number;
+  level: 'nit' | 'concern' | 'warning';
+  message: string;
 };
 
 export type Chapter = {
@@ -28,6 +38,7 @@ export type Chapter = {
   summary: string;
   risk: 'low' | 'medium' | 'high';
   sections: Section[];
+  callouts?: Callout[];
   reshow?: {
     ref: number;
     framing?: string;
