@@ -157,3 +157,12 @@ export function IconFile({ className }: IconProps) {
     </svg>
   );
 }
+
+export function IconReply({ className }: IconProps) {
+  return (
+    <svg {...baseProps} className={className}>
+      <path d="M6 8L2 5l4-3" />
+      <path d="M2 5h7a4 4 0 0 1 4 4v2" />
+    </svg>
+  );
+}
