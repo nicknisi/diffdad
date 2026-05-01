@@ -234,7 +234,7 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
   } else {
     const withCli = Bun.argv.find((f) => f.startsWith('--with='))?.split('=')[1];
     const providerHint = withCli ?? config.aiProvider ?? 'claude';
-    console.log(`\n  ${a.yellow}Generating narrative${a.reset} ${a.dim}via ${providerHint}${a.reset}`);
+    console.log(`\n  ${a.yellow}Generating narrative${a.reset} ${a.gray}via${a.reset} ${a.cyan}${providerHint}${a.reset}`);
     const { narrative: generated, provider: usedProvider } = await generateNarrative(metadata, files, [], config);
     narrative = generated;
     await cacheNarrative(parsed.owner, parsed.repo, parsed.number, metadata.headSha, narrative);
