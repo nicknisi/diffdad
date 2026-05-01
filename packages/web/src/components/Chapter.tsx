@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { normalizePath } from '../lib/paths';
 import { useReviewStore } from '../state/review-store';
-import type { Chapter as ChapterType, DiffFile, DiffHunk } from '../state/types';
+import type { Callout, Chapter as ChapterType, DiffFile, DiffHunk } from '../state/types';
 import { Hunk } from './Hunk';
 import { IconCheck, IconChevron } from './Icons';
 import { NarrationAnchor } from './NarrationAnchor';
@@ -23,6 +23,43 @@ const RISK_LABELS: Record<ChapterType['risk'], string> = {
   medium: 'medium risk',
   high: 'high risk',
 };
+
+const CALLOUT_STYLES: Record<Callout['level'], { bg: string; border: string; color: string; label: string }> = {
+  nit: { bg: 'var(--gray-2)', border: 'var(--gray-a4)', color: 'var(--fg-2)', label: 'Nit' },
+  concern: { bg: 'var(--yellow-2)', border: 'var(--yellow-a4)', color: 'var(--yellow-11)', label: 'Concern' },
+  warning: { bg: 'var(--red-2)', border: 'var(--red-a4)', color: 'var(--red-11)', label: 'Warning' },
+};
+
+function CalloutList({ callouts }: { callouts: Callout[] }) {
+  return (
+    <div className="ml-[34px] space-y-1.5">
+      <div className="text-[11px] font-bold uppercase tracking-[0.06em] text-[var(--fg-3)]">Review callouts</div>
+      {callouts.map((c, i) => {
+        const style = CALLOUT_STYLES[c.level];
+        return (
+          <div
+            key={i}
+            className="flex items-start gap-2 rounded-[6px] px-3 py-2 text-[13px] leading-[19px]"
+            style={{ background: style.bg, boxShadow: `inset 0 0 0 1px ${style.border}` }}
+          >
+            <span
+              className="mt-[1px] inline-flex flex-shrink-0 items-center rounded-full px-[6px] py-[1px] text-[10px] font-bold uppercase tracking-[0.04em]"
+              style={{ color: style.color, background: `color-mix(in srgb, ${style.color} 12%, transparent)` }}
+            >
+              {style.label}
+            </span>
+            <span className="flex-1 text-[var(--fg-2)]">
+              <span className="font-mono text-[11.5px] text-[var(--fg-3)]">
+                {c.file}:{c.line}
+              </span>{' '}
+              {c.message}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 type FlatHunk = { hunk: DiffHunk; file: string; isNewFile: boolean };
 
@@ -208,6 +245,7 @@ export function Chapter({ index, chapter }: Props) {
           </div>
         );
       })}
+      {chapter.callouts && chapter.callouts.length > 0 && <CalloutList callouts={chapter.callouts} />}
     </div>
   );
 
