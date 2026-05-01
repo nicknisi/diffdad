@@ -153,9 +153,7 @@ export function Comment({ comment, replies = [], isReply = false, showFilePath =
           src={comment.avatarUrl}
           alt={comment.author}
           className="h-[22px] w-[22px] flex-shrink-0 rounded-full"
-          style={
-            isBot ? { boxShadow: '0 0 0 1.5px var(--bg-panel), 0 0 0 2.5px var(--purple-a5)' } : undefined
-          }
+          style={isBot ? { boxShadow: '0 0 0 1.5px var(--bg-panel), 0 0 0 2.5px var(--purple-a5)' } : undefined}
         />
       ) : (
         <span

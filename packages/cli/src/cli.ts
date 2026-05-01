@@ -235,12 +235,16 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
     const withCli = Bun.argv.find((f) => f.startsWith('--with='))?.split('=')[1];
     const providerHint = withCli ?? config.aiProvider ?? 'claude';
     const waitJoke = DAD_JOKES[Math.floor(Math.random() * DAD_JOKES.length)];
-    console.log(`\n  ${a.yellow}Generating narrative${a.reset} ${a.gray}via${a.reset} ${a.cyan}${providerHint}${a.reset}`);
+    console.log(
+      `\n  ${a.yellow}Generating narrative${a.reset} ${a.gray}via${a.reset} ${a.cyan}${providerHint}${a.reset}`,
+    );
     console.log(`  ${a.italic}${a.gray}"${waitJoke}"${a.reset}`);
     const { narrative: generated, provider: usedProvider } = await generateNarrative(metadata, files, [], config);
     narrative = generated;
     await cacheNarrative(parsed.owner, parsed.repo, parsed.number, metadata.headSha, narrative);
-    console.log(`  ${a.green}✓${a.reset} ${narrative.chapters.length} chapters generated ${a.dim}via ${usedProvider}${a.reset}`);
+    console.log(
+      `  ${a.green}✓${a.reset} ${narrative.chapters.length} chapters generated ${a.dim}via ${usedProvider}${a.reset}`,
+    );
   }
 
   const app = createServer({
@@ -282,7 +286,10 @@ async function configCommand(): Promise<number> {
 }
 
 async function main(argv: string[]): Promise<number> {
-  if (argv.includes('--help')) { console.log(USAGE); return 0; }
+  if (argv.includes('--help')) {
+    console.log(USAGE);
+    return 0;
+  }
   if (argv.includes('--version')) {
     const pkg = await import('../../../package.json');
     console.log(pkg.version ?? '0.0.0');

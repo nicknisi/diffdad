@@ -200,7 +200,7 @@ export function StoryView() {
       <div className={`mx-auto max-w-[880px] px-6 ${padY}`}>
         <main>
           <RegeneratingBanner />
-        <VerdictBanner />
+          <VerdictBanner />
           <SuggestedStart />
           {narrative.chapters.map((ch, idx) => (
             <Chapter key={`ch-${idx}`} index={idx} chapter={ch} />

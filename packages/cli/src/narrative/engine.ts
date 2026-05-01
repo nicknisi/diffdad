@@ -58,10 +58,7 @@ async function whichExists(cmd: string): Promise<boolean> {
   }
 }
 
-async function spawnCli(
-  args: string[],
-  input: string,
-): Promise<{ text: string; truncated: boolean }> {
+async function spawnCli(args: string[], input: string): Promise<{ text: string; truncated: boolean }> {
   const proc = Bun.spawn(args, {
     stdin: new Response(input),
     stdout: 'pipe',
@@ -116,9 +113,7 @@ async function callLocalCli(system: string, user: string): Promise<AiResult> {
     return { ...r, provider: 'pi' };
   }
 
-  throw new Error(
-    'No AI CLI found. Install Claude Code (claude) or pi, or run `dad config` to set an API provider.',
-  );
+  throw new Error('No AI CLI found. Install Claude Code (claude) or pi, or run `dad config` to set an API provider.');
 }
 
 export async function callAi(

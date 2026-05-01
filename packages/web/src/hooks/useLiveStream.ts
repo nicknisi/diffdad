@@ -1,6 +1,15 @@
 import { useEffect } from 'react';
 import { useReviewStore } from '../state/review-store';
-import type { CheckRun, DiffFile, LiveEvent, LiveEventKind, NarrativeResponse, PRComment, PRData, PRReview } from '../state/types';
+import type {
+  CheckRun,
+  DiffFile,
+  LiveEvent,
+  LiveEventKind,
+  NarrativeResponse,
+  PRComment,
+  PRData,
+  PRReview,
+} from '../state/types';
 
 function makeEventId(): string {
   return `ev-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -80,7 +89,9 @@ export function useLiveStream() {
     const onRegenerating = (e: MessageEvent) => {
       try {
         const data = JSON.parse(e.data) as { previousSha: string; newSha: string };
-        addLiveEvent(makeEvent('system', `New commits detected (${data.previousSha} → ${data.newSha}). Regenerating narrative...`));
+        addLiveEvent(
+          makeEvent('system', `New commits detected (${data.previousSha} → ${data.newSha}). Regenerating narrative...`),
+        );
         useReviewStore.getState().setRegenerating(true);
       } catch {
         // ignore
@@ -96,7 +107,16 @@ export function useLiveStream() {
           comments: PRComment[];
         };
         const state = useReviewStore.getState();
-        state.setData(data.pr, data.narrative, data.files, data.comments, state.repoUrl, state.checkRuns, null, state.reviews);
+        state.setData(
+          data.pr,
+          data.narrative,
+          data.files,
+          data.comments,
+          state.repoUrl,
+          state.checkRuns,
+          null,
+          state.reviews,
+        );
         useReviewStore.getState().setRegenerating(false);
         setLastEventAt(Date.now());
         addLiveEvent(makeEvent('system', `Narrative updated (${data.narrative.chapters.length} chapters)`));

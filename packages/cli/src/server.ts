@@ -259,16 +259,15 @@ export function createServer(ctx: ServerContext) {
                   console.log(`  \x1b[38;5;78m✓\x1b[0m Using cached narrative \x1b[2m(${newSha})\x1b[0m`);
                 } else {
                   const config = await readConfig();
-                  const { narrative: generated, provider } = await generateNarrative(
-                    ctx.pr,
-                    freshFiles,
-                    [],
-                    config,
-                    { previousTldr: prevTldr, previousChapterTitles: prevChapterTitles },
-                  );
+                  const { narrative: generated, provider } = await generateNarrative(ctx.pr, freshFiles, [], config, {
+                    previousTldr: prevTldr,
+                    previousChapterTitles: prevChapterTitles,
+                  });
                   ctx.narrative = generated;
                   await cacheNarrative(ctx.owner, ctx.repo, ctx.pr.number, ctx.headSha, generated);
-                  console.log(`  \x1b[38;5;78m✓\x1b[0m ${generated.chapters.length} chapters regenerated \x1b[2mvia ${provider}\x1b[0m`);
+                  console.log(
+                    `  \x1b[38;5;78m✓\x1b[0m ${generated.chapters.length} chapters regenerated \x1b[2mvia ${provider}\x1b[0m`,
+                  );
                 }
 
                 broadcast('narrative', {

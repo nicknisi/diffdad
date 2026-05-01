@@ -20,11 +20,13 @@ bun run release          # bump version, tag, push (triggers CI release)
 ```
 
 Run the CLI locally after building:
+
 ```sh
 bun packages/cli/src/cli.ts review owner/repo#123
 ```
 
 Run a single test:
+
 ```sh
 bun test packages/cli/src/__tests__/diff-parser.test.ts
 ```
