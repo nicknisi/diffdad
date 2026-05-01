@@ -182,6 +182,7 @@ export class GitHubClient {
     opts: PostCommentOptions = {},
   ): Promise<PRComment> {
     const isInline = opts.path !== undefined && opts.line !== undefined && opts.commitId !== undefined;
+    const isReply = !isInline && opts.inReplyToId !== undefined;
 
     if (isInline) {
       const payload: Record<string, unknown> = {
@@ -197,6 +198,28 @@ export class GitHubClient {
       const res = await this.fetch(`/repos/${owner}/${repo}/pulls/${number}/comments`, {
         method: 'POST',
         body: JSON.stringify(payload),
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = (await res.json()) as GhReviewComment;
+      return {
+        id: data.id,
+        author: data.user?.login ?? '',
+        avatarUrl: data.user?.avatar_url ?? undefined,
+        body: data.body,
+        createdAt: data.created_at,
+        updatedAt: data.updated_at,
+        path: data.path,
+        line: data.line ?? undefined,
+        side: data.side ?? undefined,
+        inReplyToId: data.in_reply_to_id,
+        diffHunk: data.diff_hunk,
+      };
+    }
+
+    if (isReply) {
+      const res = await this.fetch(`/repos/${owner}/${repo}/pulls/${number}/comments`, {
+        method: 'POST',
+        body: JSON.stringify({ body, in_reply_to: opts.inReplyToId }),
         headers: { 'Content-Type': 'application/json' },
       });
       const data = (await res.json()) as GhReviewComment;

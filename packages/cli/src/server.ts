@@ -28,6 +28,7 @@ type PostCommentBody = {
   line?: number;
   side?: 'LEFT' | 'RIGHT';
   commitId?: string;
+  inReplyToId?: number;
 };
 
 export function createServer(ctx: ServerContext) {
@@ -267,20 +268,20 @@ export function createServer(ctx: ServerContext) {
       return c.json({ error: "missing 'body'" }, 400);
     }
 
-    const posted = await ctx.github.postComment(
-      ctx.owner,
-      ctx.repo,
-      ctx.pr.number,
-      payload.body,
+    const opts =
       payload.path && payload.line
         ? {
             path: payload.path,
             line: payload.line,
-            side: payload.side ?? 'RIGHT',
+            side: payload.side ?? ('RIGHT' as const),
             commitId: payload.commitId ?? ctx.headSha,
+            inReplyToId: payload.inReplyToId,
           }
-        : undefined,
-    );
+        : payload.inReplyToId
+          ? { inReplyToId: payload.inReplyToId }
+          : undefined;
+
+    const posted = await ctx.github.postComment(ctx.owner, ctx.repo, ctx.pr.number, payload.body, opts);
     ctx.comments = [...ctx.comments, posted];
     broadcast('comment', posted);
     return c.json(posted, 201);
