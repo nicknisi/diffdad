@@ -46,6 +46,16 @@ export function useLiveStream() {
       }
     };
 
+    const onComments = (e: MessageEvent) => {
+      try {
+        const comments = JSON.parse(e.data) as PRComment[];
+        useReviewStore.getState().setComments(comments);
+        setLastEventAt(Date.now());
+      } catch {
+        // ignore
+      }
+    };
+
     const onChecks = (e: MessageEvent) => {
       try {
         const checks = JSON.parse(e.data) as CheckRun[];
@@ -69,6 +79,7 @@ export function useLiveStream() {
 
     es.addEventListener('connected', onConnected);
     es.addEventListener('comment', onComment as EventListener);
+    es.addEventListener('comments', onComments as EventListener);
     es.addEventListener('checks', onChecks as EventListener);
     es.addEventListener('reviews', onReviews as EventListener);
 
@@ -83,6 +94,7 @@ export function useLiveStream() {
     return () => {
       es.removeEventListener('connected', onConnected);
       es.removeEventListener('comment', onComment as EventListener);
+      es.removeEventListener('comments', onComments as EventListener);
       es.removeEventListener('checks', onChecks as EventListener);
       es.removeEventListener('reviews', onReviews as EventListener);
       es.close();

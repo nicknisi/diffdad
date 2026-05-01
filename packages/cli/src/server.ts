@@ -213,9 +213,12 @@ export function createServer(ctx: ServerContext) {
         const interval = setInterval(async () => {
           try {
             const fresh = await ctx.github.getComments(ctx.owner, ctx.repo, ctx.pr.number);
-            const newComments = fresh.filter((cm) => !ctx.comments.find((existing) => existing.id === cm.id));
-            for (const comment of newComments) {
-              send('comment', comment);
+            const prevIds = new Set(ctx.comments.map((cm) => cm.id));
+            const freshIds = new Set(fresh.map((cm) => cm.id));
+            const hasNew = fresh.some((cm) => !prevIds.has(cm.id));
+            const hasDeleted = ctx.comments.some((cm) => !freshIds.has(cm.id));
+            if (hasNew || hasDeleted) {
+              send('comments', fresh);
             }
             ctx.comments = fresh;
 
