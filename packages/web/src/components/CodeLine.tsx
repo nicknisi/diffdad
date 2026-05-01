@@ -9,9 +9,10 @@ type Props = {
   lineKey: string;
   lang: string;
   dimmed?: boolean;
+  highlighterReady?: boolean;
 };
 
-export function CodeLine({ line, lineKey, lang, dimmed }: Props) {
+export function CodeLine({ line, lineKey, lang, dimmed, highlighterReady }: Props) {
   const setOpenLine = useReviewStore((s) => s.setOpenLine);
   const theme = useResolvedTheme();
 
@@ -21,7 +22,10 @@ export function CodeLine({ line, lineKey, lang, dimmed }: Props) {
   const sign = isAdd ? '+' : isRem ? '−' : '';
 
   // Shiki output
-  const highlighted = useMemo(() => highlightLine(line.content, lang, theme), [line.content, lang, theme]);
+  const highlighted = useMemo(
+    () => highlightLine(line.content, lang, theme),
+    [line.content, lang, theme, highlighterReady],
+  );
 
   // Row background tints (matching design CSS: rgba(41,163,131,0.08) / rgba(229,70,102,0.08))
   const rowBg = isAdd ? 'rgba(41, 163, 131, 0.08)' : isRem ? 'rgba(229, 70, 102, 0.08)' : 'var(--bg-panel)';
@@ -29,7 +33,7 @@ export function CodeLine({ line, lineKey, lang, dimmed }: Props) {
   // Line number tints (slightly more saturated)
   const lnBg = isAdd ? 'rgba(41, 163, 131, 0.16)' : isRem ? 'rgba(229, 70, 102, 0.16)' : 'var(--gray-1)';
 
-  const lnColor = isAdd ? '#1d3b31' : isRem ? '#64172b' : 'var(--gray-9)';
+  const lnColor = isAdd ? 'var(--green-11)' : isRem ? 'var(--red-11)' : 'var(--gray-9)';
 
   // Sigil glyph color
   const sigilColor = isAdd ? 'var(--green-11)' : isRem ? 'var(--red-11)' : 'var(--fg-3)';

@@ -329,7 +329,7 @@ function HunkLines({
       const hasThread = openLine === lineKey || lineComments.length > 0;
       return (
         <div key={lineKey}>
-          <CodeLine line={line} lineKey={lineKey} lang={lang} dimmed={dimmed} />
+          <CodeLine line={line} lineKey={lineKey} lang={lang} dimmed={dimmed} highlighterReady={highlighterReady} />
           {hasThread && (
             <CollapsibleThread
               comments={lineComments}
@@ -342,7 +342,7 @@ function HunkLines({
         </div>
       );
     },
-    [hunk.lines, file, hunkIndex, comments, normFile, clusterBots, openLine, setOpenLine, lang],
+    [hunk.lines, file, hunkIndex, comments, normFile, clusterBots, openLine, setOpenLine, lang, highlighterReady],
   );
 
   return (
@@ -367,7 +367,7 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight }: Props) {
   const repoUrl = useReviewStore((s) => s.repoUrl);
   const headSha = useReviewStore((s) => s.pr?.headSha ?? null);
   const clusterBots = useReviewStore((s) => s.clusterBots);
-  useHighlighter();
+  const highlighterReady = useHighlighter();
   const lang = guessLang(file);
 
   const rangeStart = hunk.oldStart;
