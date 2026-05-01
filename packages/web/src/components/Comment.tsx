@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, type KeyboardEvent } from 'react';
+import { useComments } from '../hooks/useComments';
 import { getAuthorInfo } from '../lib/authors';
 import type { PRComment } from '../state/types';
 import { IconCheck, IconRefresh } from './Icons';
@@ -70,32 +71,106 @@ function SourceBadge({ kind }: { kind: Provenance }) {
   );
 }
 
+function ReplyBox({ inReplyToId, onClose }: { inReplyToId: number; onClose: () => void }) {
+  const { postComment } = useComments();
+  const [body, setBody] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit() {
+    const trimmed = body.trim();
+    if (!trimmed || submitting) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await postComment(trimmed, { inReplyToId });
+      setBody('');
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to post');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+      e.preventDefault();
+      void submit();
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      onClose();
+    }
+  }
+
+  return (
+    <div className="mt-2">
+      <textarea
+        autoFocus
+        value={body}
+        onChange={(e) => setBody(e.target.value)}
+        onKeyDown={onKeyDown}
+        placeholder="Write a reply..."
+        className="block w-full resize-y rounded-md border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--fg-1)] outline-none focus:border-[var(--brand)]"
+        rows={2}
+      />
+      {error && <div className="mt-1 text-sm text-red-600 dark:text-red-400">{error}</div>}
+      <div className="mt-1.5 flex items-center justify-end gap-2">
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-md px-2.5 py-1 text-[12px] font-medium text-[var(--fg-2)] hover:text-[var(--fg-1)]"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          disabled={!body.trim() || submitting}
+          onClick={() => void submit()}
+          className="rounded-md bg-[var(--brand)] px-2.5 py-1 text-[12px] font-semibold text-white shadow-sm hover:bg-[var(--brand-hover)] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {submitting ? 'Posting...' : 'Reply'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function Comment({ comment, replies = [], isReply = false, showFilePath = false }: Props) {
   const info = getAuthorInfo(comment.author);
   const isBot = info.isBot;
   const kind = provenance(comment);
   const [collapsed, setCollapsed] = useState(false);
+  const [replying, setReplying] = useState(false);
 
   const containerClass = isReply ? 'flex gap-2.5 py-2' : 'flex gap-2.5 py-2';
 
   return (
     <div className={containerClass}>
-      <span
-        className="flex h-[22px] w-[22px] flex-shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
-        style={{
-          background: info.color,
-          ...(isBot
-            ? {
-                boxShadow: '0 0 0 1.5px var(--bg-panel), 0 0 0 2.5px var(--purple-a5)',
-              }
-            : null),
-        }}
-      >
-        {info.initials}
-      </span>
+      {comment.avatarUrl ? (
+        <img
+          src={comment.avatarUrl}
+          alt={comment.author}
+          className="h-[22px] w-[22px] flex-shrink-0 rounded-full"
+          style={
+            isBot ? { boxShadow: '0 0 0 1.5px var(--bg-panel), 0 0 0 2.5px var(--purple-a5)' } : undefined
+          }
+        />
+      ) : (
+        <span
+          className="flex h-[22px] w-[22px] flex-shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
+          style={{
+            background: info.color,
+            ...(isBot ? { boxShadow: '0 0 0 1.5px var(--bg-panel), 0 0 0 2.5px var(--purple-a5)' } : null),
+          }}
+        >
+          {info.initials}
+        </span>
+      )}
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2 text-[12.5px] font-medium text-[var(--fg-1)]">
-          <b className="font-medium">{info.displayName}</b>
+          <b className="font-medium">{comment.author}</b>
           {isBot && (
             <span
               className="ml-1 rounded-[3px] px-[5px] py-px font-mono text-[9.5px] font-semibold uppercase tracking-[0.06em]"
@@ -108,7 +183,16 @@ export function Comment({ comment, replies = [], isReply = false, showFilePath =
             </span>
           )}
           <span className="font-normal text-[var(--fg-3)]">{relativeTime(comment.createdAt)}</span>
-          <span className="ml-auto">
+          <span className="ml-auto flex items-center gap-2">
+            {comment.id > 0 && !replying && (
+              <button
+                type="button"
+                onClick={() => setReplying(true)}
+                className="text-[11px] font-medium text-[var(--fg-3)] hover:text-[var(--brand)]"
+              >
+                Reply
+              </button>
+            )}
             <SourceBadge kind={kind} />
           </span>
         </div>
@@ -124,6 +208,7 @@ export function Comment({ comment, replies = [], isReply = false, showFilePath =
         <div className="mt-[3px] text-[13.5px] leading-[19px] text-[var(--fg-1)]">
           <Markdown source={comment.body} />
         </div>
+        {replying && <ReplyBox inReplyToId={comment.id} onClose={() => setReplying(false)} />}
         {replies.length > 0 && (
           <div className="mt-3">
             <button
