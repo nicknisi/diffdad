@@ -280,14 +280,22 @@ async function configCommand(): Promise<number> {
 }
 
 async function main(argv: string[]): Promise<number> {
-  const [cmd, ...rest] = argv;
+  const positional = argv.filter((a) => !a.startsWith('--'));
+  const [cmd, ...rest] = positional;
 
-  if (!cmd || cmd === '--help' || cmd === '-h' || cmd === 'help') {
+  if (!cmd || cmd === '-h' || cmd === 'help') {
     console.log(USAGE);
     return 0;
   }
 
-  if (cmd === '--version' || cmd === '-v' || cmd === '-V') {
+  if (cmd === '-v' || cmd === '-V') {
+    const pkg = await import('../../../package.json');
+    console.log(pkg.version ?? '0.0.0');
+    return 0;
+  }
+
+  if (argv.includes('--help')) { console.log(USAGE); return 0; }
+  if (argv.includes('--version')) {
     const pkg = await import('../../../package.json');
     console.log(pkg.version ?? '0.0.0');
     return 0;
