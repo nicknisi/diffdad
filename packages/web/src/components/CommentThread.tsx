@@ -213,7 +213,7 @@ export function CommentThread({ comments, path, line, chapterIndex, inReplyToId,
           rows={3}
         />
         {error && <div className="mt-1 text-sm text-red-600 dark:text-red-400">{error}</div>}
-        {draftSavedAt && !error && <div className="mt-1 text-xs text-[var(--fg-3)]">Draft saved.</div>}
+        {draftSavedAt && !error && <div className="mt-1 text-xs text-[var(--fg-3)]">Added to review.</div>}
         <div className="mt-2 flex items-center justify-end gap-2">
           {onClose && (
             <button
@@ -233,7 +233,7 @@ export function CommentThread({ comments, path, line, chapterIndex, inReplyToId,
             onClick={saveDraft}
             className="rounded-md border border-[var(--border-strong)] bg-[var(--bg-panel)] px-3 py-1 text-sm font-medium text-[var(--fg-1)] shadow-sm hover:bg-[var(--bg-subtle)] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Save draft
+            Add to review
           </button>
           <button
             type="button"

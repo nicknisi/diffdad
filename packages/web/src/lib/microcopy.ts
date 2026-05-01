@@ -26,7 +26,7 @@ export const copy = {
   errorGeneric: 'Something went sideways. Try again?',
   offline: 'Not on my branch. Check your connection.',
   allReviewed: 'Every chapter reviewed. Proud of you, champ.',
-  noDrafts: 'No pending drafts. Clean slate.',
+  noDrafts: 'No pending comments. Clean slate.',
   shortcutsFooter: 'Measure twice, commit once.',
   brandTooltip: "I'm not mad, just diff-appointed.",
 } as const;

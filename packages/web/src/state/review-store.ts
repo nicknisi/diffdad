@@ -95,6 +95,44 @@ type ReviewState = {
   setPr: (pr: PRData) => void;
 };
 
+function draftStorageKey(prNumber: number): string {
+  return `diffdad.drafts.${prNumber}`;
+}
+
+function persistDrafts(state: ReviewState) {
+  if (!state.pr) return;
+  try {
+    localStorage.setItem(draftStorageKey(state.pr.number), JSON.stringify(state.drafts));
+  } catch {}
+}
+
+function isValidDraft(d: unknown): d is DraftComment {
+  if (!d || typeof d !== 'object') return false;
+  const obj = d as Record<string, unknown>;
+  return typeof obj.id === 'string' && typeof obj.body === 'string';
+}
+
+function loadDrafts(prNumber: number): DraftComment[] {
+  try {
+    const raw = localStorage.getItem(draftStorageKey(prNumber));
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed.filter(isValidDraft);
+    }
+  } catch {}
+  return [];
+}
+
+type InlineComment = { path: string; line: number; body: string };
+
+function isSubmittableDraft(d: DraftComment): d is DraftComment & { path: string; line: number } {
+  return !!d.path && d.line !== undefined;
+}
+
+export function pendingReviewComments(drafts: DraftComment[]): InlineComment[] {
+  return drafts.filter(isSubmittableDraft).map((d) => ({ path: d.path, line: d.line, body: d.body }));
+}
+
 export const useReviewStore = create<ReviewState>((set) => ({
   pr: null,
   narrative: null,
@@ -145,6 +183,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
       reviews,
       repoUrl,
       chapterStates,
+      drafts: loadDrafts(pr.number),
       activeChapterId: narrative.chapters.length > 0 ? 'ch-0' : null,
       chapterDensity: {},
     };
@@ -185,11 +224,29 @@ export const useReviewStore = create<ReviewState>((set) => ({
 
   setComments: (comments) => set({ comments }),
 
-  addDraft: (draft) => set((state) => ({ drafts: [...state.drafts, draft] })),
+  addDraft: (draft) =>
+    set((state) => {
+      const next = { drafts: [...state.drafts, draft] };
+      persistDrafts({ ...state, ...next });
+      return next;
+    }),
 
-  removeDraft: (id) => set((state) => ({ drafts: state.drafts.filter((d) => d.id !== id) })),
+  removeDraft: (id) =>
+    set((state) => {
+      const next = { drafts: state.drafts.filter((d) => d.id !== id) };
+      persistDrafts({ ...state, ...next });
+      return next;
+    }),
 
-  clearDrafts: () => set({ drafts: [] }),
+  clearDrafts: () =>
+    set((state) => {
+      if (state.pr) {
+        try {
+          localStorage.removeItem(draftStorageKey(state.pr.number));
+        } catch {}
+      }
+      return { drafts: [] };
+    }),
 
   setTheme: (theme) => {
     localStorage.setItem('diffdad.theme', theme);

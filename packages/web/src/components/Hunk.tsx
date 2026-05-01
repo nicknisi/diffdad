@@ -168,9 +168,7 @@ function BotCluster({ comments }: { comments: PRComment[] }) {
 const FOLD_CONTEXT = 2;
 const FOLD_MIN = 4;
 
-type LineGroup =
-  | { kind: 'lines'; indices: number[] }
-  | { kind: 'fold'; indices: number[]; count: number };
+type LineGroup = { kind: 'lines'; indices: number[] } | { kind: 'fold'; indices: number[]; count: number };
 
 function buildLineGroups(
   lines: DiffHunk['lines'],

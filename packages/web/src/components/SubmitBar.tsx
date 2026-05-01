@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { copy } from '../lib/microcopy';
-import { useReviewStore } from '../state/review-store';
+import { pendingReviewComments, useReviewStore } from '../state/review-store';
 import { ApprovalCelebration } from './ApprovalCelebration';
 import { SubmitDialog } from './SubmitDialog';
 import { Toast } from './Toast';
@@ -23,10 +23,11 @@ export function SubmitBar() {
 
   async function handleSubmit(resolution: string, summary: string) {
     try {
+      const comments = pendingReviewComments(drafts);
       const res = await fetch('/api/review', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ event: resolution, body: summary }),
+        body: JSON.stringify({ event: resolution, body: summary, comments }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setOpen(false);
@@ -62,7 +63,7 @@ export function SubmitBar() {
                   {reviewedCount} of {total}
                 </b>{' '}
                 chapters reviewed · <b className="font-bold text-[var(--fg-1)]">{drafts.length}</b> pending{' '}
-                {drafts.length === 1 ? 'draft' : 'drafts'}
+                {drafts.length === 1 ? 'comment' : 'comments'}
               </>
             )}
           </div>

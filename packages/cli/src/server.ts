@@ -36,6 +36,7 @@ export function createServer(ctx: ServerContext) {
   const app = new Hono();
   type SseClient = (event: string, data: unknown) => void;
   const sseClients = new Set<SseClient>();
+  let hadClients = false;
 
   function broadcast(event: string, data: unknown) {
     for (const send of sseClients) {
@@ -232,6 +233,7 @@ export function createServer(ctx: ServerContext) {
 
         send('connected', { timestamp: Date.now() });
         sseClients.add(send);
+        hadClients = true;
 
         let regenerating = false;
         const interval = setInterval(async () => {
@@ -327,6 +329,21 @@ export function createServer(ctx: ServerContext) {
           } catch {
             // already closed
           }
+          if (hadClients && sseClients.size === 0) {
+            const jokes = [
+              "I'm not angry, just diff-appointed.",
+              "That's a wrap — like my git commits.",
+              'Time to checkout. Get it? ...checkout?',
+              "I'd tell you a UDP joke, but you might not get it.",
+              "Don't worry, I'll be back. I always rebase.",
+              'Remember: a clean diff is a happy diff.',
+              "I'm going to sleep now. Unlike my PRs, I don't stay open forever.",
+            ];
+            const joke = jokes[Math.floor(Math.random() * jokes.length)];
+            console.log(`\n  \x1b[2mBrowser disconnected — shutting down.\x1b[0m`);
+            console.log(`  \x1b[38;5;141m${joke}\x1b[0m\n`);
+            setTimeout(() => process.exit(0), 500);
+          }
         });
       },
     });
@@ -372,9 +389,9 @@ export function createServer(ctx: ServerContext) {
   });
 
   app.post('/api/review', async (c) => {
-    let payload: { event?: string; body?: string };
+    let payload: { event?: string; body?: string; comments?: { path: string; line: number; body: string }[] };
     try {
-      payload = (await c.req.json()) as { event?: string; body?: string };
+      payload = (await c.req.json()) as typeof payload;
     } catch {
       return c.json({ error: 'invalid JSON body' }, 400);
     }
@@ -386,8 +403,12 @@ export function createServer(ctx: ServerContext) {
     const ghEvent = payload.event ? eventMap[payload.event] : undefined;
     if (!ghEvent) return c.json({ error: 'invalid event' }, 400);
 
+    const comments = payload.comments?.filter(
+      (cm) => typeof cm.path === 'string' && typeof cm.line === 'number' && typeof cm.body === 'string',
+    );
+
     try {
-      await ctx.github.submitReview(ctx.owner, ctx.repo, ctx.pr.number, ghEvent, payload.body);
+      await ctx.github.submitReview(ctx.owner, ctx.repo, ctx.pr.number, ghEvent, payload.body, comments);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes('Can not approve your own')) {
