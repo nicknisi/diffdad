@@ -281,6 +281,12 @@ async function main(argv: string[]): Promise<number> {
     return 0;
   }
 
+  if (cmd === '--version' || cmd === '-v' || cmd === '-V') {
+    const pkg = await import('../../../package.json');
+    console.log(pkg.version ?? '0.0.0');
+    return 0;
+  }
+
   switch (cmd) {
     case 'review':
       return await reviewCommand(rest[0]);
