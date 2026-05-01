@@ -3,26 +3,29 @@ import { NarrationBlock } from './NarrationBlock';
 
 const VERDICT_CONFIG = {
   safe: {
-    bg: 'linear-gradient(180deg, var(--green-2), var(--green-3))',
+    bg: 'color-mix(in srgb, var(--green-9) 8%, var(--bg-panel))',
     border: 'var(--green-a5)',
+    accent: 'var(--green-9)',
     iconBg: 'var(--green-9)',
-    textColor: 'var(--green-12)',
+    textColor: 'var(--green-11)',
     label: 'Safe to merge',
     icon: '✓',
   },
   caution: {
-    bg: 'linear-gradient(180deg, var(--yellow-2), var(--yellow-3))',
-    border: 'var(--yellow-a5)',
+    bg: 'color-mix(in srgb, var(--yellow-9) 12%, var(--bg-panel))',
+    border: 'var(--yellow-a6)',
+    accent: 'var(--yellow-9)',
     iconBg: 'var(--yellow-9)',
-    textColor: 'var(--yellow-12)',
+    textColor: 'var(--yellow-11)',
     label: 'Review with care',
     icon: '⚠',
   },
   risky: {
-    bg: 'linear-gradient(180deg, var(--red-2), var(--red-3))',
-    border: 'var(--red-a5)',
+    bg: 'color-mix(in srgb, var(--red-9) 12%, var(--bg-panel))',
+    border: 'var(--red-a6)',
+    accent: 'var(--red-9)',
     iconBg: 'var(--red-9)',
-    textColor: 'var(--red-12)',
+    textColor: 'var(--red-11)',
     label: 'Risky — needs close review',
     icon: '✗',
   },
@@ -34,26 +37,30 @@ export function VerdictBanner() {
 
   const verdict = narrative.verdict ?? 'caution';
   const config = VERDICT_CONFIG[verdict];
+  const needsAttention = verdict !== 'safe';
 
   return (
     <div
-      className="mb-6 flex items-start gap-2.5 rounded-[10px] px-4 py-3.5"
-      style={{ background: config.bg, boxShadow: `inset 0 0 0 1px ${config.border}` }}
+      className="mb-6 rounded-[10px] px-4 py-3.5"
+      style={{
+        background: config.bg,
+        boxShadow: `inset 0 0 0 1px ${config.border}`,
+        borderLeft: needsAttention ? `3px solid ${config.accent}` : undefined,
+      }}
     >
-      <div
-        className="flex h-[26px] w-[26px] flex-shrink-0 items-center justify-center rounded-[7px] text-[14px] text-white"
-        style={{ background: config.iconBg, boxShadow: '0 1px 2px rgba(3,2,13,0.10)' }}
-      >
-        {config.icon}
+      <div className="flex items-center gap-2">
+        <span className="text-[16px]" style={{ color: config.textColor }}>
+          {config.icon}
+        </span>
+        <b className="text-[15px] font-bold" style={{ color: config.textColor }}>
+          {config.label}
+        </b>
       </div>
-      <div className="flex-1 text-[13.5px] leading-[19px]" style={{ color: config.textColor }}>
-        <b className="font-bold">{config.label}</b>
-        {narrative.tldr && (
-          <div className="mt-1" style={{ color: 'var(--fg-2)' }}>
-            <NarrationBlock content={narrative.tldr} />
-          </div>
-        )}
-      </div>
+      {narrative.tldr && (
+        <div className="mt-1.5 text-[14px] leading-[21px]" style={{ color: 'var(--fg-1)' }}>
+          <NarrationBlock content={narrative.tldr} />
+        </div>
+      )}
     </div>
   );
 }

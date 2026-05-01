@@ -4,7 +4,7 @@ import { createOpenAI } from '@ai-sdk/openai';
 import type { LanguageModelV1 } from 'ai';
 import type { DiffDadConfig } from '../config';
 import type { DiffFile, PRMetadata } from '../github/types';
-import { buildNarrativePrompt } from './prompt';
+import { buildNarrativePrompt, type PreviousNarrativeContext } from './prompt';
 import type { NarrativeResponse } from './types';
 
 const DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-6';
@@ -171,6 +171,7 @@ export async function generateNarrative(
   files: DiffFile[],
   fileTree: string[],
   config: DiffDadConfig,
+  previousContext?: PreviousNarrativeContext,
 ): Promise<{ narrative: NarrativeResponse; provider: string }> {
   const { system, user } = buildNarrativePrompt({
     title: pr.title,
@@ -178,6 +179,7 @@ export async function generateNarrative(
     labels: pr.labels,
     files,
     fileTree,
+    previousContext,
   });
 
   const MAX_RETRIES = 2;

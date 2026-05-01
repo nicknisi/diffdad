@@ -1,11 +1,17 @@
 import type { DiffFile, DiffHunk, DiffLine } from '../github/types';
 
+export type PreviousNarrativeContext = {
+  previousTldr?: string;
+  previousChapterTitles?: string[];
+};
+
 export interface NarrativePromptInput {
   title: string;
   description: string;
   labels: string[];
   files: DiffFile[];
   fileTree: string[];
+  previousContext?: PreviousNarrativeContext;
 }
 
 export interface NarrativePrompt {
@@ -147,7 +153,7 @@ function formatFile(file: DiffFile): string {
 }
 
 export function buildNarrativePrompt(input: NarrativePromptInput): NarrativePrompt {
-  const { title, description, labels, files, fileTree } = input;
+  const { title, description, labels, files, fileTree, previousContext } = input;
 
   const truncatedTree = fileTree.slice(0, FILE_TREE_LIMIT);
   const labelLine = labels.length > 0 ? labels.join(', ') : '(none)';
@@ -155,7 +161,7 @@ export function buildNarrativePrompt(input: NarrativePromptInput): NarrativeProm
   const treeBlock = truncatedTree.length > 0 ? truncatedTree.join('\n') : '(empty)';
   const diffBlock = files.length > 0 ? files.map(formatFile).join('\n') : '(no file changes)';
 
-  const user = [
+  const parts = [
     `PR title: ${title}`,
     '',
     'PR description:',
@@ -168,7 +174,24 @@ export function buildNarrativePrompt(input: NarrativePromptInput): NarrativeProm
     '',
     'Unified diff:',
     diffBlock,
-  ].join('\n');
+  ];
 
+  if (previousContext?.previousTldr || previousContext?.previousChapterTitles?.length) {
+    parts.push(
+      '',
+      '---',
+      '',
+      'PREVIOUS REVIEW CONTEXT:',
+      'This PR was reviewed before with an earlier version of the code. Include a final chapter titled "What Changed" that summarizes how the PR evolved since the previous review. Focus on behavioral differences, not just file-level changes.',
+    );
+    if (previousContext.previousTldr) {
+      parts.push('', `Previous summary: ${previousContext.previousTldr}`);
+    }
+    if (previousContext.previousChapterTitles?.length) {
+      parts.push('', `Previous chapters: ${previousContext.previousChapterTitles.join(', ')}`);
+    }
+  }
+
+  const user = parts.join('\n');
   return { system: SYSTEM_PROMPT, user };
 }

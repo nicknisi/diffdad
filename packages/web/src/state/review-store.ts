@@ -54,6 +54,7 @@ type ReviewState = {
   displayDensity: DisplayDensity;
   collapseNarration: boolean;
   clusterBots: boolean;
+  regenerating: boolean;
 
   setData: (
     pr: PRData,
@@ -89,6 +90,7 @@ type ReviewState = {
   setDisplayDensity: (d: DisplayDensity) => void;
   setCollapseNarration: (v: boolean) => void;
   setClusterBots: (v: boolean) => void;
+  setRegenerating: (v: boolean) => void;
 };
 
 export const useReviewStore = create<ReviewState>((set) => ({
@@ -117,6 +119,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
   displayDensity: 'comfortable',
   collapseNarration: false,
   clusterBots: true,
+  regenerating: false,
   narrationOverrides: {} as Record<string, string>,
 
   setData: (pr, narrative, files, comments, repoUrl = null, checkRuns = [], config = null, reviews = []) => {
@@ -219,6 +222,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
   setDisplayDensity: (displayDensity) => set({ displayDensity }),
   setCollapseNarration: (collapseNarration) => set({ collapseNarration }),
   setClusterBots: (clusterBots) => set({ clusterBots }),
+  setRegenerating: (regenerating) => set({ regenerating }),
   setNarrationOverride: (chapterKey: string, text: string) =>
     set((s) => ({ narrationOverrides: { ...s.narrationOverrides, [chapterKey]: text } })),
   clearNarrationOverride: (chapterKey: string) =>

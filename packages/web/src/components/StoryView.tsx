@@ -164,6 +164,27 @@ function Discussion() {
   );
 }
 
+function RegeneratingBanner() {
+  const regenerating = useReviewStore((s) => s.regenerating);
+  if (!regenerating) return null;
+  return (
+    <div
+      className="mb-6 flex items-center gap-2.5 rounded-[10px] px-4 py-3"
+      style={{
+        background: 'linear-gradient(180deg, var(--purple-2), var(--purple-3))',
+        boxShadow: 'inset 0 0 0 1px var(--purple-a5)',
+      }}
+    >
+      <span className="animate-spin text-[14px]" style={{ color: 'var(--purple-11)' }}>
+        ↻
+      </span>
+      <span className="text-[13.5px] font-medium" style={{ color: 'var(--purple-12)' }}>
+        New commits detected — regenerating narrative...
+      </span>
+    </div>
+  );
+}
+
 export function StoryView() {
   useScrollTracker();
   const narrative = useReviewStore((s) => s.narrative);
@@ -178,7 +199,8 @@ export function StoryView() {
     return (
       <div className={`mx-auto max-w-[880px] px-6 ${padY}`}>
         <main>
-          <VerdictBanner />
+          <RegeneratingBanner />
+        <VerdictBanner />
           <SuggestedStart />
           {narrative.chapters.map((ch, idx) => (
             <Chapter key={`ch-${idx}`} index={idx} chapter={ch} />
@@ -195,6 +217,7 @@ export function StoryView() {
     <div className={`mx-auto grid max-w-[1100px] grid-cols-[220px_minmax(0,1fr)] gap-7 px-6 ${padY}`}>
       <ChapterTOC />
       <main className="min-w-0">
+        <RegeneratingBanner />
         <VerdictBanner />
         <SuggestedStart />
         {narrative.chapters.map((ch, idx) => (

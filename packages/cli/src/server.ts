@@ -6,7 +6,8 @@ import { readConfig } from './config';
 import type { GitHubClient } from './github/client';
 import { mapCommentsToChapters } from './github/comments';
 import type { CheckRun, DiffFile, PRComment, PRMetadata, PRReview } from './github/types';
-import { callAi } from './narrative/engine';
+import { cacheNarrative, getCachedNarrative } from './narrative/cache';
+import { callAi, generateNarrative } from './narrative/engine';
 import type { NarrativeResponse } from './narrative/types';
 
 export type ServerContext = {
@@ -211,8 +212,12 @@ export function createServer(ctx: ServerContext) {
         send('connected', { timestamp: Date.now() });
         sseClients.add(send);
 
+        let regenerating = false;
         const interval = setInterval(async () => {
           try {
+            const freshPr = await ctx.github.getPR(ctx.owner, ctx.repo, ctx.pr.number);
+            const shaChanged = freshPr.headSha !== ctx.headSha;
+
             const fresh = await ctx.github.getComments(ctx.owner, ctx.repo, ctx.pr.number);
             const prevIds = new Set(ctx.comments.map((cm) => cm.id));
             const freshIds = new Set(fresh.map((cm) => cm.id));
@@ -230,6 +235,55 @@ export function createServer(ctx: ServerContext) {
             const freshReviews = await ctx.github.getReviews(ctx.owner, ctx.repo, ctx.pr.number);
             ctx.reviews = freshReviews;
             send('reviews', freshReviews);
+
+            if (shaChanged && !regenerating) {
+              regenerating = true;
+              const prevSha = ctx.headSha.slice(0, 7);
+              const newSha = freshPr.headSha.slice(0, 7);
+              console.log(`\n  \x1b[38;5;221m↻\x1b[0m New commits detected \x1b[2m(${prevSha} → ${newSha})\x1b[0m`);
+              console.log(`  \x1b[2mRegenerating narrative...\x1b[0m`);
+              broadcast('regenerating', { previousSha: prevSha, newSha });
+
+              try {
+                const prevTldr = ctx.narrative.tldr;
+                const prevChapterTitles = ctx.narrative.chapters.map((ch) => ch.title);
+
+                ctx.pr = freshPr;
+                ctx.headSha = freshPr.headSha;
+                const freshFiles = await ctx.github.getDiff(ctx.owner, ctx.repo, ctx.pr.number);
+                ctx.files = freshFiles;
+
+                const cached = await getCachedNarrative(ctx.owner, ctx.repo, ctx.pr.number, ctx.headSha);
+                if (cached) {
+                  ctx.narrative = cached;
+                  console.log(`  \x1b[38;5;78m✓\x1b[0m Using cached narrative \x1b[2m(${newSha})\x1b[0m`);
+                } else {
+                  const config = await readConfig();
+                  const { narrative: generated, provider } = await generateNarrative(
+                    ctx.pr,
+                    freshFiles,
+                    [],
+                    config,
+                    { previousTldr: prevTldr, previousChapterTitles: prevChapterTitles },
+                  );
+                  ctx.narrative = generated;
+                  await cacheNarrative(ctx.owner, ctx.repo, ctx.pr.number, ctx.headSha, generated);
+                  console.log(`  \x1b[38;5;78m✓\x1b[0m ${generated.chapters.length} chapters regenerated \x1b[2mvia ${provider}\x1b[0m`);
+                }
+
+                broadcast('narrative', {
+                  narrative: ctx.narrative,
+                  pr: ctx.pr,
+                  files: ctx.files,
+                  comments: mapCommentsToChapters(ctx.comments, ctx.narrative),
+                });
+              } catch (err) {
+                const msg = err instanceof Error ? err.message : String(err);
+                console.error(`  \x1b[38;5;204m✗\x1b[0m Regeneration failed: ${msg}`);
+              } finally {
+                regenerating = false;
+              }
+            }
           } catch {
             // swallow polling errors
           }

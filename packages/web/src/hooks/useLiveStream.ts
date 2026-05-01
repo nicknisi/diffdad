@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useReviewStore } from '../state/review-store';
-import type { CheckRun, LiveEvent, LiveEventKind, PRComment, PRReview } from '../state/types';
+import type { CheckRun, DiffFile, LiveEvent, LiveEventKind, NarrativeResponse, PRComment, PRData, PRReview } from '../state/types';
 
 function makeEventId(): string {
   return `ev-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -77,11 +77,41 @@ export function useLiveStream() {
       }
     };
 
+    const onRegenerating = (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data) as { previousSha: string; newSha: string };
+        addLiveEvent(makeEvent('system', `New commits detected (${data.previousSha} → ${data.newSha}). Regenerating narrative...`));
+        useReviewStore.getState().setRegenerating(true);
+      } catch {
+        // ignore
+      }
+    };
+
+    const onNarrative = (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data) as {
+          narrative: NarrativeResponse;
+          pr: PRData;
+          files: DiffFile[];
+          comments: PRComment[];
+        };
+        const state = useReviewStore.getState();
+        state.setData(data.pr, data.narrative, data.files, data.comments, state.repoUrl, state.checkRuns, null, state.reviews);
+        useReviewStore.getState().setRegenerating(false);
+        setLastEventAt(Date.now());
+        addLiveEvent(makeEvent('system', `Narrative updated (${data.narrative.chapters.length} chapters)`));
+      } catch {
+        // ignore
+      }
+    };
+
     es.addEventListener('connected', onConnected);
     es.addEventListener('comment', onComment as EventListener);
     es.addEventListener('comments', onComments as EventListener);
     es.addEventListener('checks', onChecks as EventListener);
     es.addEventListener('reviews', onReviews as EventListener);
+    es.addEventListener('regenerating', onRegenerating as EventListener);
+    es.addEventListener('narrative', onNarrative as EventListener);
 
     es.onopen = () => {
       setLiveStatus('connected');
@@ -97,6 +127,8 @@ export function useLiveStream() {
       es.removeEventListener('comments', onComments as EventListener);
       es.removeEventListener('checks', onChecks as EventListener);
       es.removeEventListener('reviews', onReviews as EventListener);
+      es.removeEventListener('regenerating', onRegenerating as EventListener);
+      es.removeEventListener('narrative', onNarrative as EventListener);
       es.close();
     };
   }, []);
