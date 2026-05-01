@@ -12,7 +12,8 @@
     "format": "oxfmt .",
     "format:check": "oxfmt --check .",
     "test": "bun test packages/cli/src/__tests__/",
-    "dev": "bun run --filter '@diffdad/web' dev"
+    "dev": "bun run --filter '@diffdad/web' dev",
+    "release": "./scripts/release.sh"
   },
   "devDependencies": {
     "oxfmt": "^0.47.0",
