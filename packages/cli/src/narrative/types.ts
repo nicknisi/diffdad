@@ -22,6 +22,7 @@ export type NarrativeChapter = {
   callouts?: Callout[];
   reshow?: {
     ref: number;
+    file?: string;
     framing?: string;
     highlight?: { from: number; to: number };
   }[];

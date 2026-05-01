@@ -93,7 +93,9 @@ async function callCodex(system: string, user: string): Promise<AiResult> {
   const tmpFile = `/tmp/diffdad-codex-${Date.now()}.txt`;
   try {
     const r = await spawnCli(['codex', 'exec', '--skip-git-repo-check', '--ignore-rules', '-o', tmpFile], prompt);
-    const output = await Bun.file(tmpFile).text().catch(() => r.text);
+    const output = await Bun.file(tmpFile)
+      .text()
+      .catch(() => r.text);
     return { text: output, truncated: false, provider: 'codex' };
   } finally {
     rm(tmpFile, { force: true }).catch(() => {});

@@ -270,18 +270,36 @@ code {
 }
 
 @keyframes generating-bob {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-6px); }
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
 }
 
 @keyframes generating-dot {
-  0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
-  40% { opacity: 1; transform: scale(1); }
+  0%,
+  80%,
+  100% {
+    opacity: 0.3;
+    transform: scale(0.8);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 @keyframes generating-fade {
-  0%, 100% { opacity: 0.6; }
-  50% { opacity: 1; }
+  0%,
+  100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
 .live-dot {
@@ -335,6 +353,15 @@ code {
   color: var(--gray-12);
 }
 
+.markdown-body {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.markdown-body pre {
+  overflow-x: auto;
+}
+
 .markdown-body details {
   margin: 0.5rem 0;
   border: 1px solid var(--gray-a4);
@@ -375,6 +402,8 @@ code {
 
 .markdown-body table {
   font-size: 0.875rem;
+  display: block;
+  overflow-x: auto;
 }
 
 .markdown-body sub {

@@ -61,6 +61,47 @@ function CalloutList({ callouts }: { callouts: Callout[] }) {
   );
 }
 
+function ReshowBlock({
+  ownerLabel,
+  framing,
+  children,
+}: {
+  ownerLabel: string;
+  framing?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className="ml-[34px] mb-[14px] overflow-hidden rounded-[8px]"
+      style={{
+        boxShadow: 'inset 0 0 0 1px var(--gray-a5)',
+        borderLeft: '2px solid var(--purple-9)',
+        background: 'linear-gradient(180deg, var(--purple-2), transparent)',
+      }}
+    >
+      <div className="px-4 pt-3.5 pb-3" style={{ borderBottom: '1px dashed var(--gray-a5)' }}>
+        <span
+          className="inline-flex items-center gap-1.5 rounded-full px-2 py-[3px] text-[11px] font-medium tracking-[0.02em]"
+          style={{
+            background: 'var(--purple-3)',
+            color: 'var(--purple-11)',
+            boxShadow: 'inset 0 0 0 1px var(--purple-a5)',
+          }}
+        >
+          <span aria-hidden>↻</span>
+          Showing again from {ownerLabel}
+        </span>
+        {framing ? (
+          <div className="mt-2 text-[14px] leading-[22px]" style={{ color: 'var(--fg-2)', maxWidth: '70ch' }}>
+            <NarrationBlock content={framing} />
+          </div>
+        ) : null}
+      </div>
+      {children}
+    </div>
+  );
+}
+
 type FlatHunk = { hunk: DiffHunk; file: string; isNewFile: boolean };
 
 function findHunk(files: DiffFile[], file: string, hunkIndex: number): FlatHunk | null {
@@ -99,11 +140,8 @@ export function Chapter({ index, chapter }: Props) {
     return owners;
   }, [narrative]);
 
-  // Resolve a reshow `ref` (a bare hunkIndex) to its file by scanning the
-  // narrative for a diff section with the matching hunkIndex. Returns the
-  // first match — ambiguous when two files share a hunkIndex, but the LLM's
-  // schema does not give us a file for reshow refs.
-  const refToFile = useMemo(() => {
+  // Fallback map for reshow entries missing the `file` field (older cached narratives).
+  const refToFileFallback = useMemo(() => {
     const map = new Map<number, string>();
     if (!narrative) return map;
     narrative.chapters.forEach((ch) => {
@@ -115,6 +153,18 @@ export function Chapter({ index, chapter }: Props) {
     });
     return map;
   }, [narrative]);
+
+  // Hunks already rendered as diff sections by earlier chapters — duplicates render as reshow.
+  const priorHunks = useMemo(() => {
+    const set = new Set<string>();
+    if (!narrative) return set;
+    for (let ci = 0; ci < index; ci++) {
+      for (const s of narrative.chapters[ci]!.sections) {
+        if (s.type === 'diff') set.add(`${s.file}:${s.hunkIndex}`);
+      }
+    }
+    return set;
+  }, [narrative, index]);
 
   const [collapsed, setCollapsed] = useState(reviewed);
   const prevReviewed = useRef(reviewed);
@@ -203,45 +253,49 @@ export function Chapter({ index, chapter }: Props) {
         }
         const flat = findHunk(files, section.file, section.hunkIndex);
         if (!flat) return null;
+        const hunkKey = `${section.file}:${section.hunkIndex}`;
+        const isDuplicate = priorHunks.has(hunkKey);
+        const hunkCoversAll =
+          section.startLine <= flat.hunk.newStart &&
+          section.endLine >= flat.hunk.newStart + Math.max(flat.hunk.newCount - 1, 0);
+        const highlight = hunkCoversAll ? undefined : { from: section.startLine, to: section.endLine };
+
+        if (isDuplicate) {
+          const ownerIdx = hunkOwners.get(hunkKey);
+          const ownerLabel = ownerIdx !== undefined && ownerIdx !== index ? `Chapter ${ownerIdx + 1}` : 'earlier';
+          return (
+            <ReshowBlock key={i} ownerLabel={ownerLabel}>
+              <Hunk
+                file={flat.file}
+                hunk={flat.hunk}
+                isNewFile={flat.isNewFile}
+                hunkIndex={section.hunkIndex}
+                highlight={highlight}
+              />
+            </ReshowBlock>
+          );
+        }
+
         return (
-          <Hunk key={i} file={flat.file} hunk={flat.hunk} isNewFile={flat.isNewFile} hunkIndex={section.hunkIndex} />
+          <Hunk
+            key={i}
+            file={flat.file}
+            hunk={flat.hunk}
+            isNewFile={flat.isNewFile}
+            hunkIndex={section.hunkIndex}
+            highlight={highlight}
+          />
         );
       })}
       {chapter.reshow?.map((entry, i) => {
-        const refFile = refToFile.get(entry.ref);
+        const refFile = entry.file || refToFileFallback.get(entry.ref);
         if (!refFile) return null;
         const flat = findHunk(files, refFile, entry.ref);
         if (!flat) return null;
         const ownerIdx = hunkOwners.get(`${refFile}:${entry.ref}`);
         const ownerLabel = ownerIdx !== undefined && ownerIdx !== index ? `Chapter ${ownerIdx + 1}` : 'earlier';
         return (
-          <div
-            key={`reshow-${i}`}
-            className="ml-[34px] mb-[14px] overflow-hidden rounded-[8px]"
-            style={{
-              boxShadow: 'inset 0 0 0 1px var(--gray-a5)',
-              borderLeft: '2px solid var(--purple-9)',
-              background: 'linear-gradient(180deg, var(--purple-2), transparent)',
-            }}
-          >
-            <div className="px-4 pt-3.5 pb-3" style={{ borderBottom: '1px dashed var(--gray-a5)' }}>
-              <span
-                className="inline-flex items-center gap-1.5 rounded-full px-2 py-[3px] text-[11px] font-medium tracking-[0.02em]"
-                style={{
-                  background: 'var(--purple-3)',
-                  color: 'var(--purple-11)',
-                  boxShadow: 'inset 0 0 0 1px var(--purple-a5)',
-                }}
-              >
-                <span aria-hidden>↻</span>
-                Showing again from {ownerLabel}
-              </span>
-              {entry.framing ? (
-                <div className="mt-2 text-[14px] leading-[22px]" style={{ color: 'var(--fg-2)', maxWidth: '70ch' }}>
-                  <NarrationBlock content={entry.framing} />
-                </div>
-              ) : null}
-            </div>
+          <ReshowBlock key={`reshow-${i}`} ownerLabel={ownerLabel} framing={entry.framing}>
             <Hunk
               file={flat.file}
               hunk={flat.hunk}
@@ -249,7 +303,7 @@ export function Chapter({ index, chapter }: Props) {
               hunkIndex={entry.ref}
               highlight={entry.highlight}
             />
-          </div>
+          </ReshowBlock>
         );
       })}
       {chapter.callouts && chapter.callouts.length > 0 && <CalloutList callouts={chapter.callouts} />}
@@ -373,7 +427,12 @@ export function Chapter({ index, chapter }: Props) {
             <div className="overflow-hidden">
               <span className="mt-[2px] block text-[12px] text-[var(--fg-3)]">
                 {hunkCount} {hunkCount === 1 ? 'hunk' : 'hunks'}
-                {commentCount > 0 && <> · {commentCount} {commentCount === 1 ? 'comment' : 'comments'}</>}
+                {commentCount > 0 && (
+                  <>
+                    {' '}
+                    · {commentCount} {commentCount === 1 ? 'comment' : 'comments'}
+                  </>
+                )}
                 {reviewed && <> · reviewed</>}
               </span>
             </div>

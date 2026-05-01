@@ -214,7 +214,9 @@ export async function runConfig(): Promise<number> {
       const answer = await ask(`  ${c.dim}replace?${c.reset} ${c.gray}(enter to keep)${c.reset}: `);
       if (answer.length > 0) githubToken = answer;
     } else {
-      process.stdout.write(`  ${c.yellow}no token found${c.reset} ${c.dim}— set DIFFDAD_GITHUB_TOKEN, run${c.reset} ${c.cyan}gh auth login${c.reset}${c.dim}, or enter one:${c.reset}\n`);
+      process.stdout.write(
+        `  ${c.yellow}no token found${c.reset} ${c.dim}— set DIFFDAD_GITHUB_TOKEN, run${c.reset} ${c.cyan}gh auth login${c.reset}${c.dim}, or enter one:${c.reset}\n`,
+      );
       const answer = await ask(`  ${c.dim}personal access token${c.reset}: `);
       if (answer.length > 0) {
         githubToken = answer;
@@ -225,28 +227,48 @@ export async function runConfig(): Promise<number> {
     // --- Display Settings ---
     heading('Display');
 
-    const theme = await pickOne(ask, 'theme', [
-      { value: 'auto' as ThemePreference, display: 'auto' },
-      { value: 'light' as ThemePreference, display: 'light' },
-      { value: 'dark' as ThemePreference, display: 'dark' },
-    ], existing.theme ?? 'auto');
+    const theme = await pickOne(
+      ask,
+      'theme',
+      [
+        { value: 'auto' as ThemePreference, display: 'auto' },
+        { value: 'light' as ThemePreference, display: 'light' },
+        { value: 'dark' as ThemePreference, display: 'dark' },
+      ],
+      existing.theme ?? 'auto',
+    );
 
-    const storyStructure = await pickOne(ask, 'story structure', [
-      { value: 'chapters' as StoryStructure, display: 'chapters' },
-      { value: 'linear' as StoryStructure, display: 'linear' },
-      { value: 'outline' as StoryStructure, display: 'outline' },
-    ], existing.storyStructure ?? 'chapters');
+    const storyStructure = await pickOne(
+      ask,
+      'story structure',
+      [
+        { value: 'chapters' as StoryStructure, display: 'chapters' },
+        { value: 'linear' as StoryStructure, display: 'linear' },
+        { value: 'outline' as StoryStructure, display: 'outline' },
+      ],
+      existing.storyStructure ?? 'chapters',
+    );
 
-    const layoutMode = await pickOne(ask, 'layout', [
-      { value: 'toc' as LayoutMode, display: 'sidebar TOC' },
-      { value: 'linear' as LayoutMode, display: 'linear' },
-    ], existing.layoutMode ?? 'toc');
+    const layoutMode = await pickOne(
+      ask,
+      'layout',
+      [
+        { value: 'toc' as LayoutMode, display: 'sidebar TOC' },
+        { value: 'linear' as LayoutMode, display: 'linear' },
+      ],
+      existing.layoutMode ?? 'toc',
+    );
 
-    const defaultNarrationDensity = await pickOne(ask, 'narration density', [
-      { value: 'terse' as NarrationDensity, display: 'terse' },
-      { value: 'normal' as NarrationDensity, display: 'normal' },
-      { value: 'verbose' as NarrationDensity, display: 'verbose' },
-    ], existing.defaultNarrationDensity ?? 'normal');
+    const defaultNarrationDensity = await pickOne(
+      ask,
+      'narration density',
+      [
+        { value: 'terse' as NarrationDensity, display: 'terse' },
+        { value: 'normal' as NarrationDensity, display: 'normal' },
+        { value: 'verbose' as NarrationDensity, display: 'verbose' },
+      ],
+      existing.defaultNarrationDensity ?? 'normal',
+    );
 
     // --- Persist ---
     const next: DiffDadConfig = {

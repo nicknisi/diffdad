@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useReviewStore } from '../state/review-store';
 import type { DiffHunk, PRComment } from '../state/types';
 import { CodeLine } from './CodeLine';
@@ -152,7 +152,7 @@ function BotCluster({ comments }: { comments: PRComment[] }) {
       {expanded && (
         <div className="border-t border-dashed bg-[var(--bg-panel)] py-1.5" style={{ borderColor: 'var(--purple-a5)' }}>
           {comments.map((c) => (
-            <div key={c.id} className="grid grid-cols-[56px_1fr] items-start gap-2.5 px-3 py-1.5">
+            <div key={c.id} className="grid grid-cols-[56px_minmax(0,1fr)] items-start gap-2.5 px-3 py-1.5">
               <div className="pt-1.5 text-right font-mono text-[11.5px] font-medium" style={{ color: 'var(--fg-3)' }}>
                 L{c.line ?? ''}
               </div>
@@ -161,6 +161,203 @@ function BotCluster({ comments }: { comments: PRComment[] }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+const FOLD_CONTEXT = 2;
+const FOLD_MIN = 4;
+
+type LineGroup =
+  | { kind: 'lines'; indices: number[] }
+  | { kind: 'fold'; indices: number[]; count: number };
+
+function buildLineGroups(
+  lines: DiffHunk['lines'],
+  highlight: Props['highlight'],
+  commentLineSet: Set<number>,
+  openLineKeys: Set<string>,
+  file: string,
+  hunkIndex: number,
+): LineGroup[] {
+  if (!highlight) {
+    return [{ kind: 'lines', indices: lines.map((_, i) => i) }];
+  }
+
+  const pinned = new Set<number>();
+  lines.forEach((line, i) => {
+    const ln = line.lineNumber.new;
+    if (ln !== undefined && ln >= highlight.from && ln <= highlight.to) {
+      pinned.add(i);
+    }
+    if (commentLineSet.has(i) || openLineKeys.has(`${file}:${hunkIndex}:${i}`)) {
+      pinned.add(i);
+    }
+  });
+
+  // Expand context around pinned lines
+  const visible = new Set<number>();
+  for (const idx of pinned) {
+    for (let j = idx - FOLD_CONTEXT; j <= idx + FOLD_CONTEXT; j++) {
+      if (j >= 0 && j < lines.length) visible.add(j);
+    }
+  }
+
+  const groups: LineGroup[] = [];
+  let foldBuf: number[] = [];
+
+  function flushFold() {
+    if (foldBuf.length === 0) return;
+    if (foldBuf.length < FOLD_MIN) {
+      groups.push({ kind: 'lines', indices: [...foldBuf] });
+    } else {
+      groups.push({ kind: 'fold', indices: [...foldBuf], count: foldBuf.length });
+    }
+    foldBuf = [];
+  }
+
+  let lineBuf: number[] = [];
+  function flushLines() {
+    if (lineBuf.length === 0) return;
+    groups.push({ kind: 'lines', indices: [...lineBuf] });
+    lineBuf = [];
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    if (visible.has(i)) {
+      flushFold();
+      lineBuf.push(i);
+    } else {
+      flushLines();
+      foldBuf.push(i);
+    }
+  }
+  flushLines();
+  flushFold();
+
+  return groups;
+}
+
+function FoldedLines({ count, onExpand }: { count: number; onExpand: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onExpand}
+      className="flex w-full items-center gap-2 py-[3px] pl-[78px] text-[11.5px] font-medium hover:bg-[var(--gray-a3)]"
+      style={{ color: 'var(--fg-3)' }}
+    >
+      <svg className="h-[10px] w-[10px]" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.4">
+        <path d="M3 5.5h9M3 9.5h9" />
+      </svg>
+      {count} lines hidden — click to expand
+    </button>
+  );
+}
+
+function HunkLines({
+  file,
+  hunk,
+  hunkIndex,
+  lang,
+  highlight,
+  comments,
+  openLine,
+  setOpenLine,
+  clusterBots,
+}: {
+  file: string;
+  hunk: DiffHunk;
+  hunkIndex: number;
+  lang: string;
+  highlight: Props['highlight'];
+  comments: PRComment[];
+  openLine: string | null;
+  setOpenLine: (key: string | null) => void;
+  clusterBots: boolean;
+}) {
+  const normFile = normalizePath(file);
+
+  const commentLineIndices = useMemo(() => {
+    const set = new Set<number>();
+    hunk.lines.forEach((line, i) => {
+      const hasComment = comments.some((c) => {
+        if (normalizePath(c.path) !== normFile) return false;
+        if (c.line === undefined) return false;
+        if (clusterBots && c.author.endsWith('[bot]')) return false;
+        if (c.side === 'LEFT') {
+          return line.lineNumber.old !== undefined && c.line === line.lineNumber.old;
+        }
+        return line.lineNumber.new !== undefined && c.line === line.lineNumber.new;
+      });
+      if (hasComment) set.add(i);
+    });
+    return set;
+  }, [hunk.lines, comments, normFile, clusterBots]);
+
+  const openLineKeys = useMemo(() => {
+    const set = new Set<string>();
+    if (openLine) set.add(openLine);
+    return set;
+  }, [openLine]);
+
+  const initialGroups = useMemo(
+    () => buildLineGroups(hunk.lines, highlight, commentLineIndices, openLineKeys, file, hunkIndex),
+    [hunk.lines, highlight, commentLineIndices, openLineKeys, file, hunkIndex],
+  );
+
+  const [expandedFolds, setExpandedFolds] = useState<Set<number>>(() => new Set());
+
+  const expandFold = useCallback((groupIdx: number) => {
+    setExpandedFolds((prev) => {
+      const next = new Set(prev);
+      next.add(groupIdx);
+      return next;
+    });
+  }, []);
+
+  const renderLine = useCallback(
+    (i: number, dimmed: boolean) => {
+      const line = hunk.lines[i]!;
+      const lineKey = `${file}:${hunkIndex}:${i}`;
+      const lineComments: PRComment[] = comments.filter((c) => {
+        if (normalizePath(c.path) !== normFile) return false;
+        if (c.line === undefined) return false;
+        if (clusterBots && c.author.endsWith('[bot]')) return false;
+        if (c.side === 'LEFT') {
+          return line.lineNumber.old !== undefined && c.line === line.lineNumber.old;
+        }
+        return line.lineNumber.new !== undefined && c.line === line.lineNumber.new;
+      });
+      const hasThread = openLine === lineKey || lineComments.length > 0;
+      return (
+        <div key={lineKey}>
+          <CodeLine line={line} lineKey={lineKey} lang={lang} dimmed={dimmed} />
+          {hasThread && (
+            <CollapsibleThread
+              comments={lineComments}
+              file={file}
+              lineNumber={line.lineNumber.new}
+              isNewThread={openLine === lineKey && lineComments.length === 0}
+              onClose={() => (openLine === lineKey ? setOpenLine(null) : undefined)}
+            />
+          )}
+        </div>
+      );
+    },
+    [hunk.lines, file, hunkIndex, comments, normFile, clusterBots, openLine, setOpenLine, lang],
+  );
+
+  return (
+    <div>
+      {initialGroups.map((group, gi) => {
+        if (group.kind === 'lines') {
+          return group.indices.map((i) => renderLine(i, false));
+        }
+        if (expandedFolds.has(gi)) {
+          return group.indices.map((i) => renderLine(i, true));
+        }
+        return <FoldedLines key={`fold-${gi}`} count={group.count} onExpand={() => expandFold(gi)} />;
+      })}
     </div>
   );
 }
@@ -258,45 +455,17 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight }: Props) {
         </div>
       </div>
       {clusterBots && botComments.length > 0 && <BotCluster comments={botComments} />}
-      <div>
-        {hunk.lines.map((line, i) => {
-          const lineKey = `${file}:${hunkIndex}:${i}`;
-          const normFile = normalizePath(file);
-          const lineComments: PRComment[] = comments.filter((c) => {
-            if (normalizePath(c.path) !== normFile) return false;
-            if (c.line === undefined) return false;
-            if (clusterBots && c.author.endsWith('[bot]')) return false;
-            // GitHub review comments use `line` for the new-side line number
-            // when side === "RIGHT" (or unset), and the old-side line number
-            // when side === "LEFT". Match against the right axis on the diff
-            // line so LEFT-side comments still appear.
-            if (c.side === 'LEFT') {
-              return line.lineNumber.old !== undefined && c.line === line.lineNumber.old;
-            }
-            return line.lineNumber.new !== undefined && c.line === line.lineNumber.new;
-          });
-          const hasThread = openLine === lineKey || lineComments.length > 0;
-          const dimmed =
-            highlight !== undefined &&
-            (line.lineNumber.new === undefined ||
-              line.lineNumber.new < highlight.from ||
-              line.lineNumber.new > highlight.to);
-          return (
-            <div key={lineKey}>
-              <CodeLine line={line} lineKey={lineKey} lang={lang} dimmed={dimmed} />
-              {hasThread && (
-                <CollapsibleThread
-                  comments={lineComments}
-                  file={file}
-                  lineNumber={line.lineNumber.new}
-                  isNewThread={openLine === lineKey && lineComments.length === 0}
-                  onClose={() => (openLine === lineKey ? setOpenLine(null) : undefined)}
-                />
-              )}
-            </div>
-          );
-        })}
-      </div>
+      <HunkLines
+        file={file}
+        hunk={hunk}
+        hunkIndex={hunkIndex}
+        lang={lang}
+        highlight={highlight}
+        comments={comments}
+        openLine={openLine}
+        setOpenLine={setOpenLine}
+        clusterBots={clusterBots}
+      />
     </div>
   );
 }

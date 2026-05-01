@@ -41,6 +41,7 @@ export type Chapter = {
   callouts?: Callout[];
   reshow?: {
     ref: number;
+    file?: string;
     framing?: string;
     highlight?: { from: number; to: number };
   }[];
