@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { copy } from '../lib/microcopy';
-import { useReviewStore } from '../state/review-store';
+import { pendingReviewComments, useReviewStore } from '../state/review-store';
 import { ApprovalCelebration } from './ApprovalCelebration';
 import { SubmitDialog } from './SubmitDialog';
 import { Toast } from './Toast';
@@ -23,9 +23,7 @@ export function SubmitBar() {
 
   async function handleSubmit(resolution: string, summary: string) {
     try {
-      const comments = drafts
-        .filter((d) => d.path && d.line !== undefined)
-        .map((d) => ({ path: d.path!, line: d.line!, body: d.body }));
+      const comments = pendingReviewComments(drafts);
       const res = await fetch('/api/review', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

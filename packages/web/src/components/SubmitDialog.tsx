@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useReviewStore } from '../state/review-store';
+import { pendingReviewComments, useReviewStore } from '../state/review-store';
 
 type Resolution = 'comment' | 'approve' | 'request_changes';
 
@@ -30,7 +30,7 @@ const OPTIONS: { value: Resolution; label: string; desc: string }[] = [
 export function SubmitDialog({ open, onClose, onSubmit }: Props) {
   const [resolution, setResolution] = useState<Resolution>('comment');
   const [summary, setSummary] = useState('');
-  const draftCount = useReviewStore((s) => s.drafts.filter((d) => d.path && d.line !== undefined).length);
+  const draftCount = useReviewStore((s) => pendingReviewComments(s.drafts).length);
 
   if (!open) return null;
 

@@ -342,7 +342,7 @@ export function createServer(ctx: ServerContext) {
             const joke = jokes[Math.floor(Math.random() * jokes.length)];
             console.log(`\n  \x1b[2mBrowser disconnected — shutting down.\x1b[0m`);
             console.log(`  \x1b[38;5;141m${joke}\x1b[0m\n`);
-            process.exit(0);
+            setTimeout(() => process.exit(0), 500);
           }
         });
       },
@@ -403,8 +403,12 @@ export function createServer(ctx: ServerContext) {
     const ghEvent = payload.event ? eventMap[payload.event] : undefined;
     if (!ghEvent) return c.json({ error: 'invalid event' }, 400);
 
+    const comments = payload.comments?.filter(
+      (cm) => typeof cm.path === 'string' && typeof cm.line === 'number' && typeof cm.body === 'string',
+    );
+
     try {
-      await ctx.github.submitReview(ctx.owner, ctx.repo, ctx.pr.number, ghEvent, payload.body, payload.comments);
+      await ctx.github.submitReview(ctx.owner, ctx.repo, ctx.pr.number, ghEvent, payload.body, comments);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes('Can not approve your own')) {
