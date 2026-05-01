@@ -127,6 +127,10 @@ export async function callAi(
   user: string,
   maxTokens?: number,
 ): Promise<AiResult> {
+  if (cliOverride) {
+    return callLocalCli(system, user);
+  }
+
   if (!hasConfiguredProvider(config)) {
     return callLocalCli(system, user);
   }
