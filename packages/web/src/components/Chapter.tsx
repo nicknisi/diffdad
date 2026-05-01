@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { normalizePath } from '../lib/paths';
 import { useReviewStore } from '../state/review-store';
 import type { Callout, Chapter as ChapterType, DiffFile, DiffHunk } from '../state/types';
@@ -115,6 +115,13 @@ export function Chapter({ index, chapter }: Props) {
     });
     return map;
   }, [narrative]);
+
+  const [collapsed, setCollapsed] = useState(reviewed);
+  const prevReviewed = useRef(reviewed);
+  useEffect(() => {
+    if (reviewed && !prevReviewed.current) setCollapsed(true);
+    prevReviewed.current = reviewed;
+  }, [reviewed]);
 
   // Outline: collapsed by default, except chapter 0
   const [outlineOpen, setOutlineOpen] = useState(index === 0);
@@ -327,25 +334,61 @@ export function Chapter({ index, chapter }: Props) {
     );
   }
 
-  // CHAPTERS (default) — no card chrome, just spacing.
+  // CHAPTERS (default) — collapsible, auto-collapses on review.
   return (
     <section data-chid={id} className={compact ? 'mb-[18px]' : 'mb-[28px]'}>
-      <div className="mb-[14px] flex items-start gap-2.5">
+      <div
+        className="flex cursor-pointer items-start gap-2.5 rounded-lg p-2 -ml-2 transition-colors hover:bg-[var(--gray-2)]"
+        onClick={() => setCollapsed((v) => !v)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setCollapsed((v) => !v);
+          }
+        }}
+      >
+        <span
+          className="mt-1 flex h-5 w-5 flex-shrink-0 items-center justify-center text-[var(--fg-3)] transition-transform duration-200 ease-out"
+          style={{ transform: collapsed ? 'rotate(0deg)' : 'rotate(90deg)' }}
+        >
+          <IconChevron className="h-3.5 w-3.5" />
+        </span>
         <div
-          className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-[7px] font-mono text-[12px] font-bold"
+          className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-[7px] font-mono text-[12px] font-bold transition-all duration-300"
           style={badgeStyle}
         >
-          {index + 1}
+          {reviewed ? <IconCheck className="h-[11px] w-[11px]" /> : index + 1}
         </div>
         <div className="min-w-0 flex-1">
-          <h2 className="m-0 flex flex-wrap items-center gap-2 text-[18px] font-bold leading-6 tracking-[-0.01em] text-[var(--fg-1)]">
-            <span>{chapter.title}</span>
+          <h2 className="m-0 flex flex-wrap items-center gap-2 text-[18px] font-bold leading-6 tracking-[-0.01em] text-[var(--fg-1)] transition-opacity duration-200">
+            <span style={{ opacity: collapsed && reviewed ? 0.5 : 1 }}>{chapter.title}</span>
             {riskPill}
           </h2>
+          <div
+            className="grid transition-all duration-200 ease-out"
+            style={{ gridTemplateRows: collapsed ? '1fr' : '0fr', opacity: collapsed ? 1 : 0 }}
+          >
+            <div className="overflow-hidden">
+              <span className="mt-[2px] block text-[12px] text-[var(--fg-3)]">
+                {hunkCount} {hunkCount === 1 ? 'hunk' : 'hunks'}
+                {commentCount > 0 && <> · {commentCount} {commentCount === 1 ? 'comment' : 'comments'}</>}
+                {reviewed && <> · reviewed</>}
+              </span>
+            </div>
+          </div>
         </div>
         {reviewedButton}
       </div>
-      {body}
+      <div
+        className="grid transition-all duration-300 ease-out"
+        style={{ gridTemplateRows: collapsed ? '0fr' : '1fr', opacity: collapsed ? 0 : 1 }}
+      >
+        <div className="overflow-hidden">
+          <div className={collapsed ? '' : 'mt-[10px]'}>{body}</div>
+        </div>
+      </div>
     </section>
   );
 }

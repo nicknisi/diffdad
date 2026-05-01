@@ -39,6 +39,12 @@ export function ChapterTOC() {
     return comments.filter((c) => !c.path).length;
   }, [comments]);
 
+  const totalCount = narrative?.chapters.length ?? 0;
+  const reviewedCount = useMemo(() => {
+    if (!narrative) return 0;
+    return narrative.chapters.filter((_, idx) => chapterStates[`ch-${idx}`] === 'reviewed').length;
+  }, [narrative, chapterStates]);
+
   if (!narrative) return null;
 
   function jump(id: string) {
@@ -174,6 +180,13 @@ export function ChapterTOC() {
           </li>
         )}
       </ul>
+      {reviewedCount > 0 && reviewedCount < totalCount && (
+        <div className="mt-3 border-t px-2.5 pt-3" style={{ borderColor: 'var(--gray-a4)' }}>
+          <div className="text-[11px] text-[var(--fg-3)]">
+            {reviewedCount}/{totalCount} chapters reviewed
+          </div>
+        </div>
+      )}
     </aside>
   );
 }
