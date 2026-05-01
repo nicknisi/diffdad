@@ -48,8 +48,7 @@ export function useNarrative() {
             const next: Partial<typeof useReviewStore extends { getState: () => infer S } ? S : never> = {};
             if (data.config.theme && !localStorage.getItem('diffdad.theme'))
               next.theme = data.config.theme as 'light' | 'dark' | 'auto';
-            if (data.config.accent && !localStorage.getItem('diffdad.accent'))
-              next.accent = data.config.accent as any;
+            if (data.config.accent && !localStorage.getItem('diffdad.accent')) next.accent = data.config.accent as any;
             if (data.config.storyStructure) next.storyStructure = data.config.storyStructure as any;
             if (data.config.layoutMode) next.layoutMode = data.config.layoutMode as any;
             if (data.config.displayDensity) next.displayDensity = data.config.displayDensity as any;
