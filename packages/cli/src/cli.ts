@@ -536,5 +536,7 @@ async function main(argv: string[]): Promise<number> {
   }
 }
 
-const exitCode = await main(Bun.argv.slice(2));
-process.exit(exitCode);
+if (import.meta.main) {
+  const exitCode = await main(Bun.argv.slice(2));
+  process.exit(exitCode);
+}
