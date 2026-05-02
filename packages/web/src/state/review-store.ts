@@ -104,8 +104,15 @@ type ReviewState = {
   setPr: (pr: PRData) => void;
 };
 
-function sessionId(sourceType: 'pr' | 'commit', prNumber: number, commitSha?: string | null): string {
-  return sourceType === 'commit' && commitSha ? `commit.${commitSha}` : `${prNumber}`;
+function repoSlugFromUrl(repoUrl: string | null): string {
+  if (!repoUrl) return 'unknown';
+  const m = repoUrl.match(/github\.com\/([^/]+\/[^/]+)/);
+  return m?.[1]?.replace('/', '.') ?? 'unknown';
+}
+
+function sessionId(sourceType: 'pr' | 'commit', prNumber: number, repoUrl: string | null, commitSha?: string | null): string {
+  const slug = repoSlugFromUrl(repoUrl);
+  return sourceType === 'commit' && commitSha ? `${slug}.commit.${commitSha}` : `${slug}.${prNumber}`;
 }
 
 function draftStorageKey(id: string): string {
@@ -119,7 +126,7 @@ function reviewedStorageKey(id: string): string {
 function persistDrafts(state: ReviewState) {
   if (!state.pr) return;
   try {
-    const id = sessionId(state.sourceType, state.pr.number, state.commit?.sha);
+    const id = sessionId(state.sourceType, state.pr.number, state.repoUrl, state.commit?.sha);
     localStorage.setItem(draftStorageKey(id), JSON.stringify(state.drafts));
   } catch {}
 }
@@ -184,7 +191,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
   narrationOverrides: {} as Record<string, string>,
 
   setData: (pr, narrative, files, comments, repoUrl = null, checkRuns = [], config = null, reviews = [], sourceType = 'pr', commit = null) => {
-    const id = sessionId(sourceType, pr.number, commit?.sha);
+    const id = sessionId(sourceType, pr.number, repoUrl, commit?.sha);
     let saved: Record<string, ChapterState> = {};
     try {
       const raw = localStorage.getItem(reviewedStorageKey(id));
@@ -232,7 +239,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
       const updated = { ...state.chapterStates, [key]: next };
       if (state.pr) {
         try {
-          const id = sessionId(state.sourceType, state.pr.number, state.commit?.sha);
+          const id = sessionId(state.sourceType, state.pr.number, state.repoUrl, state.commit?.sha);
           localStorage.setItem(reviewedStorageKey(id), JSON.stringify(updated));
         } catch {}
       }
@@ -267,7 +274,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
     set((state) => {
       if (state.pr) {
         try {
-          const id = sessionId(state.sourceType, state.pr.number, state.commit?.sha);
+          const id = sessionId(state.sourceType, state.pr.number, state.repoUrl, state.commit?.sha);
           localStorage.removeItem(draftStorageKey(id));
         } catch {}
       }
