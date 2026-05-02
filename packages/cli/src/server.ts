@@ -11,44 +11,70 @@ import { callAi, generateNarrative } from './narrative/engine';
 import type { NarrativeResponse } from './narrative/types';
 
 /**
- * Compute GitHub's 1-based diff position for a given file + new-side line.
+ * Compute GitHub's 1-based diff position for a given file + line number.
  * Position counts every line in the unified diff output for that file:
  * each hunk header (@@...@@) counts as 1, then every context/add/remove line.
  * This is the value required by the commit comment API's `position` field.
+ *
+ * When `side` is `'LEFT'`, the lookup matches deleted lines by their old-side
+ * line number (GitHub commit comments on removed lines use this path).
+ * When `side` is `'RIGHT'` or omitted, add/context lines are matched by their
+ * new-side line number.
  */
-function diffPosition(files: DiffFile[], filePath: string, newLine: number): number | undefined {
+function diffPosition(
+  files: DiffFile[],
+  filePath: string,
+  line: number,
+  side?: 'LEFT' | 'RIGHT',
+): number | undefined {
   const norm = (p: string) => p.replace(/^[ab]\//, '').replace(/^\//, '');
   const file = files.find((f) => norm(f.file) === norm(filePath));
   if (!file) return undefined;
   let pos = 0;
   for (const hunk of file.hunks) {
     pos++; // hunk header line
-    for (const line of hunk.lines) {
+    for (const l of hunk.lines) {
       pos++;
-      if (line.lineNumber.new === newLine && line.type !== 'remove') return pos;
+      if (side === 'LEFT') {
+        if (l.type === 'remove' && l.lineNumber.old === line) return pos;
+      } else {
+        if (l.type !== 'remove' && l.lineNumber.new === line) return pos;
+      }
     }
   }
   return undefined;
 }
 
 /**
- * Reverse-map a diff position back to a new-side file line number.
- * GitHub's commit comment API accepts `position` (diff-relative) but
- * the frontend maps comments by file line number. When GitHub returns
+ * Reverse-map a diff position back to a file line number plus the side it
+ * lives on. GitHub's commit comment API accepts `position` (diff-relative)
+ * but the frontend maps comments by file line number. When GitHub returns
  * `line: null` (which happens for comments posted via `position`), we
  * compute the line ourselves from the parsed diff.
+ *
+ * For deleted lines (`type === 'remove'`) the new-side number is absent, so
+ * we fall back to `lineNumber.old` and tag the result with `side: 'LEFT'`.
+ * The caller must persist this side so that `diffPosition` can later resolve
+ * a reply back to the correct diff position.
  */
-function positionToLine(files: DiffFile[], filePath: string, position: number): number | undefined {
+function positionToLine(
+  files: DiffFile[],
+  filePath: string,
+  position: number,
+): { line: number; side?: 'LEFT' } | undefined {
   const norm = (p: string) => p.replace(/^[ab]\//, '').replace(/^\//, '');
   const file = files.find((f) => norm(f.file) === norm(filePath));
   if (!file) return undefined;
   let pos = 0;
   for (const hunk of file.hunks) {
     pos++; // hunk header
-    if (pos === position) return hunk.newStart; // pointed at the header itself
+    if (pos === position) return { line: hunk.newStart }; // pointed at the header itself
     for (const line of hunk.lines) {
       pos++;
-      if (pos === position) return line.lineNumber.new ?? line.lineNumber.old;
+      if (pos === position) {
+        if (line.lineNumber.new !== undefined) return { line: line.lineNumber.new };
+        if (line.lineNumber.old !== undefined) return { line: line.lineNumber.old, side: 'LEFT' as const };
+      }
     }
   }
   return undefined;
@@ -61,8 +87,9 @@ function positionToLine(files: DiffFile[], filePath: string, position: number): 
 export function resolveCommitCommentLines(comments: PRComment[], files: DiffFile[]): PRComment[] {
   return comments.map((c) => {
     if (c.line !== undefined || !c.path || c.position === undefined) return c;
-    const line = positionToLine(files, c.path, c.position);
-    return line !== undefined ? { ...c, line } : c;
+    const resolved = positionToLine(files, c.path, c.position);
+    if (resolved === undefined) return c;
+    return { ...c, line: resolved.line, ...(resolved.side ? { side: resolved.side } : {}) };
   });
 }
 
@@ -481,7 +508,7 @@ export function createServer(ctx: ServerContext) {
     if (ctx.sourceType === 'commit') {
       const commitOpts: { path?: string; position?: number } = {};
       if (payload.path && payload.line) {
-        const position = diffPosition(ctx.files, payload.path, payload.line);
+        const position = diffPosition(ctx.files, payload.path, payload.line, payload.side);
         if (position !== undefined) {
           commitOpts.path = payload.path;
           commitOpts.position = position;
@@ -491,7 +518,7 @@ export function createServer(ctx: ServerContext) {
       // If GitHub returns line: null (comment posted via position), resolve it from the diff
       if (posted.line === undefined && posted.position !== undefined && posted.path) {
         const resolved = positionToLine(ctx.files, posted.path, posted.position);
-        if (resolved !== undefined) posted = { ...posted, line: resolved };
+        if (resolved !== undefined) posted = { ...posted, line: resolved.line, ...(resolved.side ? { side: resolved.side } : {}) };
       }
     } else {
       posted = await ctx.github.postComment(ctx.owner, ctx.repo, ctx.pr.number, payload.body, opts);

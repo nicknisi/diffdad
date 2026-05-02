@@ -138,12 +138,13 @@ describe('resolveCommitCommentLines', () => {
     expect(result[1]?.line).toBe(10); // pos 6 → hunk[1].lines[1] → new: 10
   });
 
-  it('falls back to the old-side line number for remove-only lines', () => {
+  it('falls back to the old-side line number for remove-only lines and sets side LEFT', () => {
     const comments: PRComment[] = [
       { id: 1, author: 'user', body: 'x', createdAt: '', updatedAt: '', path: 'src/bar.ts', position: 3 },
     ];
     const result = resolveCommitCommentLines(comments, [multiHunkFile]);
     expect(result[0]?.line).toBe(2); // pos 3 → remove line → lineNumber.old: 2
+    expect(result[0]?.side).toBe('LEFT'); // deleted line → old-side anchor
   });
 
   it('matches comment paths after stripping a/ b/ diff prefixes', () => {
@@ -342,6 +343,34 @@ describe('POST /api/comments in commit mode', () => {
       'abc123def456abc123def456abc123def456abc1',
       'comment',
       {}, // line 999 not in diff → no position → empty opts
+    );
+  });
+
+  it('uses side LEFT to anchor a comment on a deleted line', async () => {
+    const postCommitComment = vi.fn().mockResolvedValue({
+      id: 50,
+      author: 'user',
+      body: 'why was this removed?',
+      createdAt: '',
+      updatedAt: '',
+      path: 'src/bar.ts',
+      position: 3,
+    });
+    const app = makeCommitApp({ postCommitComment }, [multiHunkFile]);
+
+    const res = await app.request('/api/comments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body: 'why was this removed?', path: 'src/bar.ts', line: 2, side: 'LEFT' }),
+    });
+
+    expect(res.status).toBe(201);
+    expect(postCommitComment).toHaveBeenCalledWith(
+      'owner',
+      'repo',
+      'abc123def456abc123def456abc123def456abc1',
+      'why was this removed?',
+      { path: 'src/bar.ts', position: 3 }, // old-side line 2 with side: LEFT → diff position 3
     );
   });
 });
