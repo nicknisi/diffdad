@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useReviewStore, type BackendConfig } from '../state/review-store';
-import type { CheckRun, DiffFile, NarrativeResponse, PRComment, PRData, PRReview } from '../state/types';
+import type { CheckRun, CommitData, DiffFile, NarrativeResponse, PRComment, PRData, PRReview } from '../state/types';
 
 type NarrativeApiResponse = {
   generating?: boolean;
+  sourceType?: 'pr' | 'commit';
+  commit?: CommitData;
   pr: PRData;
   narrative?: NarrativeResponse;
   files: DiffFile[];
@@ -38,6 +40,8 @@ export function useNarrative() {
           setGenerating(true);
           useReviewStore.setState({
             pr: data.pr,
+            commit: data.commit ?? null,
+            sourceType: data.sourceType ?? 'pr',
             files: data.files,
             comments: data.comments,
             checkRuns: data.checkRuns ?? [],
@@ -65,6 +69,8 @@ export function useNarrative() {
             data.checkRuns ?? [],
             data.config ?? null,
             data.reviews ?? [],
+            data.sourceType ?? 'pr',
+            data.commit ?? null,
           );
         }
       } catch (err) {

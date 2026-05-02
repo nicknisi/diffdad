@@ -106,6 +106,8 @@ function timeAgo(iso: string | undefined | null): string {
 
 export function PRHeader() {
   const pr = useReviewStore((s) => s.pr);
+  const commit = useReviewStore((s) => s.commit);
+  const sourceType = useReviewStore((s) => s.sourceType);
   const repoUrl = useReviewStore((s) => s.repoUrl);
   const checkRuns = useReviewStore((s) => s.checkRuns);
   const reviews = useReviewStore((s) => s.reviews);
@@ -121,7 +123,8 @@ export function PRHeader() {
 
   if (!pr) return null;
 
-  const prUrl = repoUrl ? `${repoUrl}/pull/${pr.number}` : null;
+  const prUrl = repoUrl && sourceType === 'pr' ? `${repoUrl}/pull/${pr.number}` : null;
+  const commitUrl = repoUrl && sourceType === 'commit' && commit ? `${repoUrl}/commit/${commit.sha}` : null;
 
   const baseBtn =
     'h-[26px] inline-flex items-center gap-1 px-2.5 text-[12.5px] font-medium rounded-[5px] transition-colors';
@@ -191,7 +194,20 @@ export function PRHeader() {
     >
       <div className="flex items-start gap-3">
         <h1 className="m-0 flex-1 text-[22px] font-bold leading-[27px] tracking-[-0.0125em] text-[var(--fg-1)]">
-          {prUrl ? (
+          {sourceType === 'commit' && commit ? (
+            commitUrl ? (
+              <a
+                href={commitUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mr-2 font-mono text-[18px] font-normal text-[var(--fg-3)] hover:text-[var(--brand)]"
+              >
+                {commit.shortSha}
+              </a>
+            ) : (
+              <span className="mr-2 font-mono text-[18px] font-normal text-[var(--fg-3)]">{commit.shortSha}</span>
+            )
+          ) : prUrl ? (
             <a
               href={prUrl}
               target="_blank"
@@ -233,17 +249,25 @@ export function PRHeader() {
               Files
             </button>
           </div>
-          <button
+          {sourceType === 'pr' && <button
             type="button"
             onClick={() => setSubmitOpen(true)}
             className="inline-flex h-[30px] items-center gap-1.5 whitespace-nowrap rounded-[6px] bg-[var(--bg-panel)] px-3 text-[12.5px] font-bold text-[var(--fg-1)] hover:bg-[var(--gray-2)]"
             style={{ boxShadow: 'inset 0 0 0 1px var(--gray-a6)' }}
           >
             Submit review
-          </button>
+          </button>}
         </div>
       </div>
       <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-2 text-[13px] text-[var(--fg-2)]">
+        {sourceType === 'commit' && commit ? (
+          <span
+            className="inline-flex items-center gap-1 rounded-full px-2 py-[2px] text-[11.5px] font-bold uppercase tracking-[0.04em]"
+            style={{ background: 'var(--gray-3)', color: 'var(--fg-2)' }}
+          >
+            commit
+          </span>
+        ) : (
         <span
           className="inline-flex items-center gap-1 rounded-full px-2 py-[2px] text-[11.5px] font-bold uppercase tracking-[0.04em]"
           style={
@@ -258,10 +282,17 @@ export function PRHeader() {
         >
           {pr.state === 'merged' ? 'Merged' : pr.state === 'closed' ? 'Closed' : pr.draft ? 'Draft' : 'Open'}
         </span>
+        )}
+        {sourceType === 'commit' && commit ? (
+          <span className="rounded-[4px] bg-[var(--gray-3)] px-[7px] py-[2px] font-mono text-[12.5px] text-[var(--fg-2)]">
+            {commit.sha.slice(0, 12)}
+          </span>
+        ) : (
         <span className="rounded-[4px] bg-[var(--gray-3)] px-[7px] py-[2px] font-mono text-[12.5px] text-[var(--fg-2)]">
           <b className="font-medium text-[var(--fg-1)]">{pr.branch}</b> <span className="text-[var(--fg-3)]">→</span>{' '}
           <b className="font-medium text-[var(--fg-1)]">{pr.base}</b>
         </span>
+        )}
         {authorUrl ? (
           <a
             href={authorUrl}
@@ -275,7 +306,9 @@ export function PRHeader() {
           <span className="font-medium text-[var(--fg-1)]">{pr.author?.login ?? 'unknown'}</span>
         )}
         <span className="text-[var(--fg-2)]">
-          opened {timeAgo(pr.createdAt)} · updated {timeAgo(pr.updatedAt)}
+          {sourceType === 'commit' && commit
+            ? `committed ${timeAgo(commit.author.date)}`
+            : `opened ${timeAgo(pr.createdAt)} · updated ${timeAgo(pr.updatedAt)}`}
         </span>
         <span className="text-[var(--fg-3)]">·</span>
         <span>

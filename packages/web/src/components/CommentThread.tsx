@@ -77,6 +77,16 @@ export function CommentThread({ comments, path, line, chapterIndex, inReplyToId,
   const [error, setError] = useState<string | null>(null);
   const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null);
 
+  // If the draft for this thread is removed externally (e.g. SubmitBar clears all drafts),
+  // clear the local body so the conflict banner can't fire when the SSE echo arrives.
+  useEffect(() => {
+    if (!draftKey) return;
+    const hasDraft = drafts.some((d) => draftKeyFor(d.path, d.line, d.chapterIndex) === draftKey);
+    if (!hasDraft && !submitting) {
+      setBody('');
+    }
+  }, [drafts, draftKey, submitting]);
+
   const threads = useMemo(() => groupThreads(comments), [comments]);
 
   // Track baseline comment count when typing started, for conflict detection.
@@ -152,12 +162,15 @@ export function CommentThread({ comments, path, line, chapterIndex, inReplyToId,
     if (!trimmed || submitting) return;
     setSubmitting(true);
     setError(null);
+    // Clear body before the await so the SSE echo of our own comment arrives
+    // while body is empty — preventing the "new comment arrived" conflict banner.
+    setBody('');
+    clearDraftForKey();
     try {
       await postComment(trimmed, { path, line, inReplyToId: replyTarget });
-      setBody('');
-      clearDraftForKey();
       onClose?.();
     } catch (err) {
+      setBody(trimmed); // restore on error so the user doesn't lose their text
       setError(err instanceof Error ? err.message : 'Failed to post');
     } finally {
       setSubmitting(false);

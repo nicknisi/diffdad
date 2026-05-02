@@ -5,14 +5,72 @@ import { dirname, resolve } from 'path';
 import { readConfig } from './config';
 import type { GitHubClient } from './github/client';
 import { mapCommentsToChapters } from './github/comments';
-import type { CheckRun, DiffFile, PRComment, PRMetadata, PRReview } from './github/types';
+import type { CheckRun, CommitMetadata, DiffFile, PRComment, PRMetadata, PRReview } from './github/types';
 import { cacheNarrative, getCachedNarrative } from './narrative/cache';
 import { callAi, generateNarrative } from './narrative/engine';
 import type { NarrativeResponse } from './narrative/types';
 
+/**
+ * Compute GitHub's 1-based diff position for a given file + new-side line.
+ * Position counts every line in the unified diff output for that file:
+ * each hunk header (@@...@@) counts as 1, then every context/add/remove line.
+ * This is the value required by the commit comment API's `position` field.
+ */
+function diffPosition(files: DiffFile[], filePath: string, newLine: number): number | undefined {
+  const norm = (p: string) => p.replace(/^[ab]\//, '').replace(/^\//, '');
+  const file = files.find((f) => norm(f.file) === norm(filePath));
+  if (!file) return undefined;
+  let pos = 0;
+  for (const hunk of file.hunks) {
+    pos++; // hunk header line
+    for (const line of hunk.lines) {
+      pos++;
+      if (line.lineNumber.new === newLine && line.type !== 'remove') return pos;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Reverse-map a diff position back to a new-side file line number.
+ * GitHub's commit comment API accepts `position` (diff-relative) but
+ * the frontend maps comments by file line number. When GitHub returns
+ * `line: null` (which happens for comments posted via `position`), we
+ * compute the line ourselves from the parsed diff.
+ */
+function positionToLine(files: DiffFile[], filePath: string, position: number): number | undefined {
+  const norm = (p: string) => p.replace(/^[ab]\//, '').replace(/^\//, '');
+  const file = files.find((f) => norm(f.file) === norm(filePath));
+  if (!file) return undefined;
+  let pos = 0;
+  for (const hunk of file.hunks) {
+    pos++; // hunk header
+    if (pos === position) return hunk.newStart; // pointed at the header itself
+    for (const line of hunk.lines) {
+      pos++;
+      if (pos === position) return line.lineNumber.new ?? line.lineNumber.old;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Ensure every commit comment that has a path+position but no line gets
+ * its line filled in from the parsed diff so the frontend can render it inline.
+ */
+export function resolveCommitCommentLines(comments: PRComment[], files: DiffFile[]): PRComment[] {
+  return comments.map((c) => {
+    if (c.line !== undefined || !c.path || c.position === undefined) return c;
+    const line = positionToLine(files, c.path, c.position);
+    return line !== undefined ? { ...c, line } : c;
+  });
+}
+
 export type ServerContext = {
   narrative: NarrativeResponse | null;
   pr: PRMetadata;
+  commit?: CommitMetadata;
+  sourceType: 'pr' | 'commit';
   files: DiffFile[];
   comments: PRComment[];
   checkRuns: CheckRun[];
@@ -50,6 +108,8 @@ export function createServer(ctx: ServerContext) {
     if (!ctx.narrative) {
       return c.json({
         generating: true,
+        sourceType: ctx.sourceType,
+        commit: ctx.commit,
         pr: ctx.pr,
         files: ctx.files,
         comments: ctx.comments,
@@ -78,6 +138,8 @@ export function createServer(ctx: ServerContext) {
     ];
     return c.json({
       narrative: ctx.narrative,
+      sourceType: ctx.sourceType,
+      commit: ctx.commit,
       pr: ctx.pr,
       files: ctx.files,
       comments: mapCommentsToChapters(ctx.comments, ctx.narrative),
@@ -217,7 +279,11 @@ export function createServer(ctx: ServerContext) {
   });
 
   app.get('/api/comments', async (c) => {
-    const fresh = await ctx.github.getComments(ctx.owner, ctx.repo, ctx.pr.number);
+    let fresh =
+      ctx.sourceType === 'commit'
+        ? await ctx.github.getCommitComments(ctx.owner, ctx.repo, ctx.headSha)
+        : await ctx.github.getComments(ctx.owner, ctx.repo, ctx.pr.number);
+    if (ctx.sourceType === 'commit') fresh = resolveCommitCommentLines(fresh, ctx.files);
     ctx.comments = fresh;
     return c.json(ctx.narrative ? mapCommentsToChapters(fresh, ctx.narrative) : fresh);
   });
@@ -245,6 +311,25 @@ export function createServer(ctx: ServerContext) {
         let regenerating = false;
         const interval = setInterval(async () => {
           try {
+            if (ctx.sourceType === 'commit') {
+              // For commits: only poll comments and checks
+              let fresh = await ctx.github.getCommitComments(ctx.owner, ctx.repo, ctx.headSha);
+              fresh = resolveCommitCommentLines(fresh, ctx.files);
+              const prevIds = new Set(ctx.comments.map((cm) => cm.id));
+              const freshIds = new Set(fresh.map((cm) => cm.id));
+              const hasNew = fresh.some((cm) => !prevIds.has(cm.id));
+              const hasDeleted = ctx.comments.some((cm) => !freshIds.has(cm.id));
+              if (hasNew || hasDeleted) {
+                send('comments', fresh);
+              }
+              ctx.comments = fresh;
+
+              const freshChecks = await ctx.github.getCheckRuns(ctx.owner, ctx.repo, ctx.headSha);
+              ctx.checkRuns = freshChecks;
+              send('checks', freshChecks);
+              return;
+            }
+
             const freshPr = await ctx.github.getPR(ctx.owner, ctx.repo, ctx.pr.number);
             const shaChanged = freshPr.headSha !== ctx.headSha;
 
@@ -392,13 +477,34 @@ export function createServer(ctx: ServerContext) {
           ? { inReplyToId: payload.inReplyToId }
           : undefined;
 
-    const posted = await ctx.github.postComment(ctx.owner, ctx.repo, ctx.pr.number, payload.body, opts);
+    let posted: PRComment;
+    if (ctx.sourceType === 'commit') {
+      const commitOpts: { path?: string; position?: number } = {};
+      if (payload.path && payload.line) {
+        const position = diffPosition(ctx.files, payload.path, payload.line);
+        if (position !== undefined) {
+          commitOpts.path = payload.path;
+          commitOpts.position = position;
+        }
+      }
+      posted = await ctx.github.postCommitComment(ctx.owner, ctx.repo, ctx.headSha, payload.body, commitOpts);
+      // If GitHub returns line: null (comment posted via position), resolve it from the diff
+      if (posted.line === undefined && posted.position !== undefined && posted.path) {
+        const resolved = positionToLine(ctx.files, posted.path, posted.position);
+        if (resolved !== undefined) posted = { ...posted, line: resolved };
+      }
+    } else {
+      posted = await ctx.github.postComment(ctx.owner, ctx.repo, ctx.pr.number, payload.body, opts);
+    }
     ctx.comments = [...ctx.comments, posted];
     broadcast('comment', posted);
     return c.json(posted, 201);
   });
 
   app.post('/api/review', async (c) => {
+    if (ctx.sourceType === 'commit') {
+      return c.json({ error: 'Review submission is not available for commits' }, 400);
+    }
     let payload: { event?: string; body?: string; comments?: { path: string; line: number; body: string }[] };
     try {
       payload = (await c.req.json()) as typeof payload;

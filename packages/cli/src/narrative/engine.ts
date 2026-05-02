@@ -4,7 +4,7 @@ import { createAnthropic } from '@ai-sdk/anthropic';
 import { createOpenAI } from '@ai-sdk/openai';
 import type { LanguageModelV1 } from 'ai';
 import type { DiffDadConfig } from '../config';
-import type { DiffFile, PRMetadata } from '../github/types';
+import type { CommitMetadata, DiffFile, PRMetadata } from '../github/types';
 import { buildNarrativePrompt, type PreviousNarrativeContext } from './prompt';
 import type { NarrativeResponse } from './types';
 
@@ -102,9 +102,9 @@ async function callCodex(system: string, user: string): Promise<AiResult> {
   }
 }
 
-async function callLocalCli(system: string, user: string): Promise<AiResult> {
+async function callLocalCli(system: string, user: string, config?: DiffDadConfig): Promise<AiResult> {
   const prompt = `${system}\n\n---\n\n${user}`;
-  const forced = cliOverride ?? process.env.DIFFDAD_CLI;
+  const forced = cliOverride ?? process.env.DIFFDAD_CLI ?? config?.cliPreference;
 
   if (forced) {
     if (forced === 'pi') {
@@ -118,7 +118,7 @@ async function callLocalCli(system: string, user: string): Promise<AiResult> {
     if (forced === 'codex') {
       return callCodex(system, user);
     }
-    throw new Error(`Unknown --with value: "${forced}". Use "claude", "codex", or "pi".`);
+    throw new Error(`Unknown CLI preference: "${forced}". Use "claude", "codex", or "pi".`);
   }
 
   if (await whichExists('claude')) {
@@ -147,11 +147,11 @@ export async function callAi(
   maxTokens?: number,
 ): Promise<AiResult> {
   if (cliOverride) {
-    return callLocalCli(system, user);
+    return callLocalCli(system, user, config);
   }
 
   if (!hasConfiguredProvider(config)) {
-    return callLocalCli(system, user);
+    return callLocalCli(system, user, config);
   }
 
   const provider = config.aiProvider ?? 'anthropic';
@@ -215,6 +215,39 @@ export async function generateNarrative(
       }
       throw new Error(
         `Failed to parse narrative JSON: ${(err as Error).message}${result.truncated ? " (response was truncated — PR may be too large for the model's output limit)" : ''}`,
+      );
+    }
+  }
+  throw new Error('Unreachable');
+}
+
+export async function generateCommitNarrative(
+  commit: CommitMetadata,
+  files: DiffFile[],
+  config: DiffDadConfig,
+): Promise<{ narrative: NarrativeResponse; provider: string }> {
+  const { system, user } = buildNarrativePrompt({
+    title: commit.subject,
+    description: commit.body,
+    labels: [],
+    files,
+    fileTree: [],
+    sourceType: 'commit',
+  });
+
+  const MAX_RETRIES = 2;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const result = await callAi(config, system, user, 16384);
+    const json = extractJson(result.text);
+    try {
+      return { narrative: JSON.parse(json) as NarrativeResponse, provider: result.provider };
+    } catch (err) {
+      if (result.truncated && attempt < MAX_RETRIES) {
+        console.log(`Narrative truncated (attempt ${attempt + 1}/${MAX_RETRIES + 1}), retrying...`);
+        continue;
+      }
+      throw new Error(
+        `Failed to parse narrative JSON: ${(err as Error).message}${result.truncated ? " (response was truncated — commit may be too large for the model's output limit)" : ''}`,
       );
     }
   }

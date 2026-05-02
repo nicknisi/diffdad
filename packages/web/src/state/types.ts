@@ -17,6 +17,17 @@ export type PRData = {
   headSha: string;
 };
 
+export type CommitData = {
+  sha: string;
+  shortSha: string;
+  subject: string;
+  body: string;
+  author: { login: string; avatarUrl: string; name: string; date: string };
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+};
+
 export type NarrativeResponse = {
   title: string;
   tldr?: string;
@@ -88,6 +99,7 @@ export type PRComment = {
   updatedAt: string;
   path?: string;
   line?: number;
+  position?: number;
   side?: string;
   inReplyToId?: number;
   diffHunk?: string;

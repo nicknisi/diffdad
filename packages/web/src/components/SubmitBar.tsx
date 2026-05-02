@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { copy } from '../lib/microcopy';
 import { pendingReviewComments, useReviewStore } from '../state/review-store';
+import type { PRComment } from '../state/types';
 import { ApprovalCelebration } from './ApprovalCelebration';
 import { SubmitDialog } from './SubmitDialog';
 import { Toast } from './Toast';
@@ -10,6 +11,8 @@ export function SubmitBar() {
   const chapterStates = useReviewStore((s) => s.chapterStates);
   const drafts = useReviewStore((s) => s.drafts);
   const clearDrafts = useReviewStore((s) => s.clearDrafts);
+  const addComment = useReviewStore((s) => s.addComment);
+  const sourceType = useReviewStore((s) => s.sourceType);
 
   const [open, setOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -24,6 +27,33 @@ export function SubmitBar() {
   async function handleSubmit(resolution: string, summary: string) {
     try {
       const comments = pendingReviewComments(drafts);
+      if (sourceType === 'commit') {
+        // For commits: post each pending inline comment then a summary comment if provided.
+        // Call addComment immediately with each response so the SSE echo is deduped away
+        // and doesn't trigger the "new comment arrived" conflict banner in open threads.
+        await Promise.all(
+          comments.map(async (c) => {
+            const res = await fetch('/api/comments', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(c),
+            });
+            if (res.ok) addComment((await res.json()) as PRComment);
+          }),
+        );
+        if (summary.trim()) {
+          const res = await fetch('/api/comments', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ body: summary }),
+          });
+          if (res.ok) addComment((await res.json()) as PRComment);
+        }
+        setOpen(false);
+        clearDrafts();
+        setToast(copy.commentToast);
+        return;
+      }
       const res = await fetch('/api/review', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

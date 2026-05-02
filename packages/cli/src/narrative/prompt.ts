@@ -11,6 +11,7 @@ export interface NarrativePromptInput {
   labels: string[];
   files: DiffFile[];
   fileTree: string[];
+  sourceType?: 'pr' | 'commit';
   previousContext?: PreviousNarrativeContext;
 }
 
@@ -21,9 +22,10 @@ export interface NarrativePrompt {
 
 const FILE_TREE_LIMIT = 200;
 
-const RESPONSE_SCHEMA = `{
-  "title": "string — overall narrative title for the PR",
-  "tldr": "string — 1-2 sentence plain-language summary: what this PR does and why",
+function buildResponseSchema(subject: string): string {
+  return `{
+  "title": "string — overall narrative title for the ${subject}",
+  "tldr": "string — 1-2 sentence plain-language summary: what this ${subject} does and why",
   "verdict": "safe | caution | risky — overall reviewer confidence signal",
   "chapters": [
     {
@@ -34,7 +36,7 @@ const RESPONSE_SCHEMA = `{
         { "type": "narrative", "content": "string — prose explaining the change" },
         {
           "type": "diff",
-          "file": "string — path to the file from the PR",
+          "file": "string — path to the file from the ${subject}",
           "startLine": "number — first line in the new file (1-based)",
           "endLine": "number — last line in the new file (1-based)",
           "hunkIndex": "number — index of the hunk inside the DiffFile.hunks array (0-based)"
@@ -59,17 +61,19 @@ const RESPONSE_SCHEMA = `{
     }
   ],
   "missing": [
-    "string — things notably absent from this PR: missing tests, error handling, docs, migrations, edge cases"
+    "string — things notably absent from this ${subject}: missing tests, error handling, docs, migrations, edge cases"
   ],
   "suggestedStart": {
     "chapter": "number — 0-based index of the chapter a reviewer should read first",
     "reason": "string — why start there"
   }
 }`;
+}
 
-const SYSTEM_PROMPT = `You are Diff Dad, a senior staff engineer preparing a code review walkthrough.
+function buildSystemPrompt(subject: string): string {
+  return `You are Diff Dad, a senior staff engineer preparing a code review walkthrough.
 
-Your job is to read the entire PR and produce a review narrative that helps a reviewer understand, evaluate, and verify the change — not just see what changed, but understand what matters.
+Your job is to read the entire ${subject} and produce a review narrative that helps a reviewer understand, evaluate, and verify the change — not just see what changed, but understand what matters.
 
 ## Narrative Philosophy
 
@@ -102,7 +106,7 @@ Use the callouts array for specific line-level review guidance:
 
 ## What's Missing
 
-After analyzing the diff, populate the top-level "missing" array with things NOT in the PR that probably should be:
+After analyzing the diff, populate the top-level "missing" array with things NOT in the ${subject} that probably should be:
 - Tests for new behavior or changed edge cases
 - Error handling for new failure modes
 - Documentation for API changes
@@ -128,7 +132,8 @@ Assign an overall verdict:
 Pick the chapter that best anchors the rest of the change. Often this is the core behavioral change, not the first file alphabetically.
 
 Output format — return ONLY valid JSON, no prose around it, matching this schema:
-${RESPONSE_SCHEMA}`;
+${buildResponseSchema(subject)}`;
+}
 
 function formatHunkLine(line: DiffLine): string {
   const prefix = line.type === 'add' ? '+' : line.type === 'remove' ? '-' : ' ';
@@ -155,7 +160,8 @@ function formatFile(file: DiffFile): string {
 }
 
 export function buildNarrativePrompt(input: NarrativePromptInput): NarrativePrompt {
-  const { title, description, labels, files, fileTree, previousContext } = input;
+  const { title, description, labels, files, fileTree, sourceType = 'pr', previousContext } = input;
+  const subject = sourceType === 'commit' ? 'commit' : 'PR';
 
   const truncatedTree = fileTree.slice(0, FILE_TREE_LIMIT);
   const labelLine = labels.length > 0 ? labels.join(', ') : '(none)';
@@ -164,9 +170,9 @@ export function buildNarrativePrompt(input: NarrativePromptInput): NarrativeProm
   const diffBlock = files.length > 0 ? files.map(formatFile).join('\n') : '(no file changes)';
 
   const parts = [
-    `PR title: ${title}`,
+    `${subject === 'commit' ? 'Commit subject' : 'PR title'}: ${title}`,
     '',
-    'PR description:',
+    `${subject === 'commit' ? 'Commit description' : 'PR description'}:`,
     descriptionBlock,
     '',
     `Labels: ${labelLine}`,
@@ -184,7 +190,7 @@ export function buildNarrativePrompt(input: NarrativePromptInput): NarrativeProm
       '---',
       '',
       'PREVIOUS REVIEW CONTEXT:',
-      'This PR was reviewed before with an earlier version of the code. Include a final chapter titled "What Changed" that summarizes how the PR evolved since the previous review. Focus on behavioral differences, not just file-level changes.',
+      `This ${subject} was reviewed before with an earlier version of the code. Include a final chapter titled "What Changed" that summarizes how the ${subject} evolved since the previous review. Focus on behavioral differences, not just file-level changes.`,
     );
     if (previousContext.previousTldr) {
       parts.push('', `Previous summary: ${previousContext.previousTldr}`);
@@ -195,5 +201,5 @@ export function buildNarrativePrompt(input: NarrativePromptInput): NarrativeProm
   }
 
   const user = parts.join('\n');
-  return { system: SYSTEM_PROMPT, user };
+  return { system: buildSystemPrompt(subject), user };
 }

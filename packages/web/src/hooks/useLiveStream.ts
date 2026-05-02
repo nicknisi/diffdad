@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useReviewStore } from '../state/review-store';
 import type {
   CheckRun,
+  CommitData,
   DiffFile,
   LiveEvent,
   LiveEventKind,
@@ -112,6 +113,8 @@ export function useLiveStream() {
       try {
         const data = JSON.parse(e.data) as {
           narrative: NarrativeResponse;
+          sourceType?: 'pr' | 'commit';
+          commit?: CommitData;
           pr: PRData;
           files: DiffFile[];
           comments: PRComment[];
@@ -126,6 +129,8 @@ export function useLiveStream() {
           state.checkRuns,
           null,
           state.reviews,
+          data.sourceType ?? 'pr',
+          data.commit ?? null,
         );
         useReviewStore.getState().setRegenerating(false);
         setLastEventAt(Date.now());

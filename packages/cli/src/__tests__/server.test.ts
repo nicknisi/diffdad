@@ -42,6 +42,7 @@ describe('server', () => {
     const { app } = createServer({
       narrative: mockNarrative,
       pr: mockPR,
+      sourceType: 'pr',
       files: [],
       comments: [],
       checkRuns: [],

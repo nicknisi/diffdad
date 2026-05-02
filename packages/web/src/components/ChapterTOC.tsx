@@ -9,6 +9,7 @@ export function ChapterTOC() {
   const activeChapterId = useReviewStore((s) => s.activeChapterId);
   const chapterStates = useReviewStore((s) => s.chapterStates);
   const setActiveChapter = useReviewStore((s) => s.setActiveChapter);
+  const sourceType = useReviewStore((s) => s.sourceType);
 
   const chapterCommentCounts = useMemo(() => {
     if (!narrative) return {};
@@ -171,7 +172,7 @@ export function ChapterTOC() {
                 </svg>
               </span>
               <div className="min-w-0 flex-1">
-                <div className="text-[13px] font-medium leading-[17px]">PR Discussion</div>
+                <div className="text-[13px] font-medium leading-[17px]">{sourceType === 'commit' ? 'Commit Discussion' : 'PR Discussion'}</div>
                 <div className="mt-[2px] text-[11.5px] leading-[14px] text-[var(--fg-3)]" style={{ fontWeight: 400 }}>
                   {discussionCount} {discussionCount === 1 ? 'comment' : 'comments'}
                 </div>

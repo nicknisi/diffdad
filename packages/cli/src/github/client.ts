@@ -1,5 +1,5 @@
 import { parseDiff } from './diff-parser';
-import type { CheckRun, DiffFile, PRComment, PRMetadata, PRReview } from './types';
+import type { CheckRun, CommitMetadata, DiffFile, PRComment, PRMetadata, PRReview } from './types';
 
 const GITHUB_API = 'https://api.github.com';
 
@@ -172,6 +172,107 @@ export class GitHubClient {
         summary: cr.output?.summary,
       },
     }));
+  }
+
+  async getCommit(owner: string, repo: string, sha: string): Promise<CommitMetadata> {
+    const res = await this.fetch(`/repos/${owner}/${repo}/commits/${sha}`);
+    const data = (await res.json()) as {
+      sha: string;
+      commit: {
+        message: string;
+        author: { name: string; email: string; date: string };
+      };
+      author: GhUser;
+      stats?: { additions: number; deletions: number; total: number };
+      files?: Array<{ filename: string }>;
+    };
+    const lines = data.commit.message.split('\n');
+    const subject = lines[0] ?? '';
+    const body = lines.slice(1).join('\n').trim();
+    return {
+      sha: data.sha,
+      shortSha: data.sha.slice(0, 7),
+      subject,
+      body,
+      author: {
+        login: data.author?.login ?? '',
+        avatarUrl: data.author?.avatar_url ?? '',
+        name: data.commit.author.name,
+        date: data.commit.author.date,
+      },
+      additions: data.stats?.additions ?? 0,
+      deletions: data.stats?.deletions ?? 0,
+      changedFiles: data.files?.length ?? 0,
+    };
+  }
+
+  async getCommitDiff(owner: string, repo: string, sha: string): Promise<DiffFile[]> {
+    const res = await this.fetch(`/repos/${owner}/${repo}/commits/${sha}`, {}, 'application/vnd.github.v3.diff');
+    const text = await res.text();
+    return parseDiff(text);
+  }
+
+  async getCommitComments(owner: string, repo: string, sha: string): Promise<PRComment[]> {
+    const res = await this.fetch(`/repos/${owner}/${repo}/commits/${sha}/comments?per_page=100`);
+    const data = (await res.json()) as Array<{
+      id: number;
+      user: GhUser;
+      body: string;
+      created_at: string;
+      updated_at: string;
+      path: string | null;
+      line: number | null;
+      position: number | null;
+    }>;
+    return data.map((c) => ({
+      id: c.id,
+      author: c.user?.login ?? '',
+      avatarUrl: c.user?.avatar_url ?? undefined,
+      body: c.body,
+      createdAt: c.created_at,
+      updatedAt: c.updated_at,
+      path: c.path ?? undefined,
+      line: c.line ?? undefined,
+      position: c.position ?? undefined,
+    }));
+  }
+
+  async postCommitComment(
+    owner: string,
+    repo: string,
+    sha: string,
+    body: string,
+    opts: { path?: string; position?: number } = {},
+  ): Promise<PRComment> {
+    const payload: Record<string, unknown> = { body };
+    if (opts.path) payload.path = opts.path;
+    if (opts.position) payload.position = opts.position;
+    const res = await this.fetch(`/repos/${owner}/${repo}/commits/${sha}/comments`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const data = (await res.json()) as {
+      id: number;
+      user: GhUser;
+      body: string;
+      created_at: string;
+      updated_at: string;
+      path: string | null;
+      line: number | null;
+      position: number | null;
+    };
+    return {
+      id: data.id,
+      author: data.user?.login ?? '',
+      avatarUrl: data.user?.avatar_url ?? undefined,
+      body: data.body,
+      createdAt: data.created_at,
+      updatedAt: data.updated_at,
+      path: data.path ?? undefined,
+      line: data.line ?? undefined,
+      position: data.position ?? undefined,
+    };
   }
 
   async postComment(

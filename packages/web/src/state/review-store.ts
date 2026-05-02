@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type {
   ChapterState,
   CheckRun,
+  CommitData,
   DiffFile,
   DraftComment,
   LiveEvent,
@@ -33,6 +34,8 @@ export type BackendConfig = {
 
 type ReviewState = {
   pr: PRData | null;
+  commit: CommitData | null;
+  sourceType: 'pr' | 'commit';
   narrative: NarrativeResponse | null;
   files: DiffFile[];
   comments: PRComment[];
@@ -69,6 +72,8 @@ type ReviewState = {
     checkRuns?: CheckRun[],
     config?: BackendConfig | null,
     reviews?: PRReview[],
+    sourceType?: 'pr' | 'commit',
+    commit?: CommitData | null,
   ) => void;
   setActiveChapter: (id: string) => void;
   toggleReviewed: (idx: number) => void;
@@ -139,6 +144,8 @@ export function pendingReviewComments(drafts: DraftComment[]): InlineComment[] {
 
 export const useReviewStore = create<ReviewState>((set) => ({
   pr: null,
+  commit: null,
+  sourceType: 'pr',
   narrative: null,
   files: [],
   comments: [],
@@ -167,7 +174,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
   regenerating: false,
   narrationOverrides: {} as Record<string, string>,
 
-  setData: (pr, narrative, files, comments, repoUrl = null, checkRuns = [], config = null, reviews = []) => {
+  setData: (pr, narrative, files, comments, repoUrl = null, checkRuns = [], config = null, reviews = [], sourceType = 'pr', commit = null) => {
     const storageKey = `diffdad.reviewed.${pr.number}`;
     let saved: Record<string, ChapterState> = {};
     try {
@@ -181,6 +188,8 @@ export const useReviewStore = create<ReviewState>((set) => ({
     });
     const next: Partial<ReviewState> = {
       pr,
+      commit,
+      sourceType,
       narrative,
       files,
       comments,

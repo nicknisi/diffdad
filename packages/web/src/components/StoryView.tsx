@@ -101,6 +101,7 @@ function OrphanedInlineComments() {
 function Discussion() {
   const comments = useReviewStore((s) => s.comments);
   const narrative = useReviewStore((s) => s.narrative);
+  const sourceType = useReviewStore((s) => s.sourceType);
 
   const unmatched = useMemo(() => {
     if (!narrative) return [];
@@ -143,7 +144,7 @@ function Discussion() {
           <IconChat className="h-[12px] w-[12px]" />
         </div>
         <div className="min-w-0 flex-1">
-          <h2 className="m-0 text-[18px] font-bold leading-6 tracking-[-0.01em] text-[var(--fg-1)]">PR Discussion</h2>
+          <h2 className="m-0 text-[18px] font-bold leading-6 tracking-[-0.01em] text-[var(--fg-1)]">{sourceType === 'commit' ? 'Commit Discussion' : 'PR Discussion'}</h2>
           <p className="mt-[2px] text-[12.5px] text-[var(--fg-3)]">
             {roots.length} {roots.length === 1 ? 'thread' : 'threads'} not tied to specific code
           </p>
