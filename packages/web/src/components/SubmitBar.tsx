@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { copy } from '../lib/microcopy';
 import { pendingReviewComments, useReviewStore } from '../state/review-store';
-import type { PRComment } from '../state/types';
+import type { DraftComment, PRComment } from '../state/types';
 import { ApprovalCelebration } from './ApprovalCelebration';
 import { SubmitDialog } from './SubmitDialog';
 import { Toast } from './Toast';
@@ -11,6 +11,7 @@ export function SubmitBar() {
   const chapterStates = useReviewStore((s) => s.chapterStates);
   const drafts = useReviewStore((s) => s.drafts);
   const clearDrafts = useReviewStore((s) => s.clearDrafts);
+  const removeDraft = useReviewStore((s) => s.removeDraft);
   const addComment = useReviewStore((s) => s.addComment);
   const sourceType = useReviewStore((s) => s.sourceType);
 
@@ -31,26 +32,41 @@ export function SubmitBar() {
         // For commits: post each pending inline comment then a summary comment if provided.
         // Call addComment immediately with each response so the SSE echo is deduped away
         // and doesn't trigger the "new comment arrived" conflict banner in open threads.
-        await Promise.all(
-          comments.map(async (c) => {
+        // Use Promise.allSettled so a single failure doesn't abort the whole batch.
+        // Only remove drafts that were successfully posted; keep failed ones so the user can retry.
+        const submittableDrafts = drafts.filter(
+          (d): d is DraftComment & { path: string; line: number } => !!d.path && d.line !== undefined,
+        );
+        const results = await Promise.allSettled(
+          submittableDrafts.map(async (d) => {
             const res = await fetch('/api/comments', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(c),
+              body: JSON.stringify({ path: d.path, line: d.line, body: d.body }),
             });
-            if (res.ok) addComment((await res.json()) as PRComment);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            addComment((await res.json()) as PRComment);
+            return d.id;
           }),
         );
+        for (const r of results) {
+          if (r.status === 'fulfilled') removeDraft(r.value);
+        }
+        const failedCount = results.filter((r) => r.status === 'rejected').length;
+        if (failedCount > 0) {
+          setToast(copy.errorGeneric);
+          return;
+        }
         if (summary.trim()) {
           const res = await fetch('/api/comments', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ body: summary }),
           });
-          if (res.ok) addComment((await res.json()) as PRComment);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          addComment((await res.json()) as PRComment);
         }
         setOpen(false);
-        clearDrafts();
         setToast(copy.commentToast);
         return;
       }
