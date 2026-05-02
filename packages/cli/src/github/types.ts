@@ -26,6 +26,7 @@ export type PRComment = {
   updatedAt: string;
   path?: string;
   line?: number;
+  position?: number;
   side?: 'LEFT' | 'RIGHT';
   inReplyToId?: number;
   diffHunk?: string;
@@ -70,4 +71,15 @@ export type CheckRun = {
   completedAt: string | null;
   detailsUrl: string | null;
   output: { title?: string; summary?: string };
+};
+
+export type CommitMetadata = {
+  sha: string;
+  shortSha: string;
+  subject: string;
+  body: string;
+  author: { login: string; avatarUrl: string; name: string; date: string };
+  additions: number;
+  deletions: number;
+  changedFiles: number;
 };

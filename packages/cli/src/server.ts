@@ -5,14 +5,99 @@ import { dirname, resolve } from 'path';
 import { readConfig } from './config';
 import type { GitHubClient } from './github/client';
 import { mapCommentsToChapters } from './github/comments';
-import type { CheckRun, DiffFile, PRComment, PRMetadata, PRReview } from './github/types';
+import type { CheckRun, CommitMetadata, DiffFile, PRComment, PRMetadata, PRReview } from './github/types';
 import { cacheNarrative, getCachedNarrative } from './narrative/cache';
 import { callAi, generateNarrative } from './narrative/engine';
 import type { NarrativeResponse } from './narrative/types';
 
+/**
+ * Compute GitHub's 1-based diff position for a given file + line number.
+ * Position counts every line in the unified diff output for that file:
+ * each hunk header (@@...@@) counts as 1, then every context/add/remove line.
+ * This is the value required by the commit comment API's `position` field.
+ *
+ * When `side` is `'LEFT'`, the lookup matches deleted lines by their old-side
+ * line number (GitHub commit comments on removed lines use this path).
+ * When `side` is `'RIGHT'` or omitted, add/context lines are matched by their
+ * new-side line number.
+ */
+export function diffPosition(
+  files: DiffFile[],
+  filePath: string,
+  line: number,
+  side?: 'LEFT' | 'RIGHT',
+): number | undefined {
+  const norm = (p: string) => p.replace(/^[ab]\//, '').replace(/^\//, '');
+  const file = files.find((f) => norm(f.file) === norm(filePath));
+  if (!file) return undefined;
+  let pos = 0;
+  for (const hunk of file.hunks) {
+    pos++; // hunk header line
+    for (const l of hunk.lines) {
+      pos++;
+      if (side === 'LEFT') {
+        if (l.type === 'remove' && l.lineNumber.old === line) return pos;
+      } else {
+        if (l.type !== 'remove' && l.lineNumber.new === line) return pos;
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Reverse-map a diff position back to a file line number plus the side it
+ * lives on. GitHub's commit comment API accepts `position` (diff-relative)
+ * but the frontend maps comments by file line number. When GitHub returns
+ * `line: null` (which happens for comments posted via `position`), we
+ * compute the line ourselves from the parsed diff.
+ *
+ * For deleted lines (`type === 'remove'`) the new-side number is absent, so
+ * we fall back to `lineNumber.old` and tag the result with `side: 'LEFT'`.
+ * The caller must persist this side so that `diffPosition` can later resolve
+ * a reply back to the correct diff position.
+ */
+export function positionToLine(
+  files: DiffFile[],
+  filePath: string,
+  position: number,
+): { line: number; side?: 'LEFT' } | undefined {
+  const norm = (p: string) => p.replace(/^[ab]\//, '').replace(/^\//, '');
+  const file = files.find((f) => norm(f.file) === norm(filePath));
+  if (!file) return undefined;
+  let pos = 0;
+  for (const hunk of file.hunks) {
+    pos++; // hunk header
+    if (pos === position) return undefined; // hunk headers don't correspond to a code line
+    for (const line of hunk.lines) {
+      pos++;
+      if (pos === position) {
+        if (line.lineNumber.new !== undefined) return { line: line.lineNumber.new };
+        if (line.lineNumber.old !== undefined) return { line: line.lineNumber.old, side: 'LEFT' as const };
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Ensure every commit comment that has a path+position but no line gets
+ * its line filled in from the parsed diff so the frontend can render it inline.
+ */
+export function resolveCommitCommentLines(comments: PRComment[], files: DiffFile[]): PRComment[] {
+  return comments.map((c) => {
+    if (c.line !== undefined || !c.path || c.position === undefined) return c;
+    const resolved = positionToLine(files, c.path, c.position);
+    if (resolved === undefined) return c;
+    return { ...c, line: resolved.line, ...(resolved.side ? { side: resolved.side } : {}) };
+  });
+}
+
 export type ServerContext = {
   narrative: NarrativeResponse | null;
   pr: PRMetadata;
+  commit?: CommitMetadata;
+  sourceType: 'pr' | 'commit';
   files: DiffFile[];
   comments: PRComment[];
   checkRuns: CheckRun[];
@@ -50,6 +135,8 @@ export function createServer(ctx: ServerContext) {
     if (!ctx.narrative) {
       return c.json({
         generating: true,
+        sourceType: ctx.sourceType,
+        commit: ctx.commit,
         pr: ctx.pr,
         files: ctx.files,
         comments: ctx.comments,
@@ -78,6 +165,8 @@ export function createServer(ctx: ServerContext) {
     ];
     return c.json({
       narrative: ctx.narrative,
+      sourceType: ctx.sourceType,
+      commit: ctx.commit,
       pr: ctx.pr,
       files: ctx.files,
       comments: mapCommentsToChapters(ctx.comments, ctx.narrative),
@@ -217,7 +306,11 @@ export function createServer(ctx: ServerContext) {
   });
 
   app.get('/api/comments', async (c) => {
-    const fresh = await ctx.github.getComments(ctx.owner, ctx.repo, ctx.pr.number);
+    let fresh =
+      ctx.sourceType === 'commit'
+        ? await ctx.github.getCommitComments(ctx.owner, ctx.repo, ctx.headSha)
+        : await ctx.github.getComments(ctx.owner, ctx.repo, ctx.pr.number);
+    if (ctx.sourceType === 'commit') fresh = resolveCommitCommentLines(fresh, ctx.files);
     ctx.comments = fresh;
     return c.json(ctx.narrative ? mapCommentsToChapters(fresh, ctx.narrative) : fresh);
   });
@@ -243,8 +336,39 @@ export function createServer(ctx: ServerContext) {
         }
 
         let regenerating = false;
+        // Commits are immutable: once all checks complete they can never change again.
+        // Track this so we can stop polling checks and avoid burning API quota.
+        let commitChecksSettled = false;
         const interval = setInterval(async () => {
           try {
+            if (ctx.sourceType === 'commit') {
+              // For commits: only poll comments and checks
+              let fresh = await ctx.github.getCommitComments(ctx.owner, ctx.repo, ctx.headSha);
+              fresh = resolveCommitCommentLines(fresh, ctx.files);
+              const prevIds = new Set(ctx.comments.map((cm) => cm.id));
+              const freshIds = new Set(fresh.map((cm) => cm.id));
+              const hasNew = fresh.some((cm) => !prevIds.has(cm.id));
+              const hasDeleted = ctx.comments.some((cm) => !freshIds.has(cm.id));
+              if (hasNew || hasDeleted) {
+                send('comments', fresh);
+              }
+              ctx.comments = fresh;
+
+              if (!commitChecksSettled) {
+                const freshChecks = await ctx.github.getCheckRuns(ctx.owner, ctx.repo, ctx.headSha);
+                const checksChanged = JSON.stringify(freshChecks) !== JSON.stringify(ctx.checkRuns);
+                if (checksChanged) {
+                  ctx.checkRuns = freshChecks;
+                  send('checks', freshChecks);
+                }
+                // All checks completed → SHA is immutable, no need to ever poll again
+                if (freshChecks.length > 0 && freshChecks.every((ch) => ch.status === 'completed')) {
+                  commitChecksSettled = true;
+                }
+              }
+              return;
+            }
+
             const freshPr = await ctx.github.getPR(ctx.owner, ctx.repo, ctx.pr.number);
             const shaChanged = freshPr.headSha !== ctx.headSha;
 
@@ -392,13 +516,34 @@ export function createServer(ctx: ServerContext) {
           ? { inReplyToId: payload.inReplyToId }
           : undefined;
 
-    const posted = await ctx.github.postComment(ctx.owner, ctx.repo, ctx.pr.number, payload.body, opts);
+    let posted: PRComment;
+    if (ctx.sourceType === 'commit') {
+      const commitOpts: { path?: string; position?: number } = {};
+      if (payload.path && payload.line) {
+        const position = diffPosition(ctx.files, payload.path, payload.line, payload.side);
+        if (position !== undefined) {
+          commitOpts.path = payload.path;
+          commitOpts.position = position;
+        }
+      }
+      posted = await ctx.github.postCommitComment(ctx.owner, ctx.repo, ctx.headSha, payload.body, commitOpts);
+      // If GitHub returns line: null (comment posted via position), resolve it from the diff
+      if (posted.line === undefined && posted.position !== undefined && posted.path) {
+        const resolved = positionToLine(ctx.files, posted.path, posted.position);
+        if (resolved !== undefined) posted = { ...posted, line: resolved.line, ...(resolved.side ? { side: resolved.side } : {}) };
+      }
+    } else {
+      posted = await ctx.github.postComment(ctx.owner, ctx.repo, ctx.pr.number, payload.body, opts);
+    }
     ctx.comments = [...ctx.comments, posted];
     broadcast('comment', posted);
     return c.json(posted, 201);
   });
 
   app.post('/api/review', async (c) => {
+    if (ctx.sourceType === 'commit') {
+      return c.json({ error: 'Review submission is not available for commits' }, 400);
+    }
     let payload: { event?: string; body?: string; comments?: { path: string; line: number; body: string }[] };
     try {
       payload = (await c.req.json()) as typeof payload;

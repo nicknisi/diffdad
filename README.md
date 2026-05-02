@@ -33,6 +33,7 @@ Requires [Bun](https://bun.sh) when building from source. The Homebrew install i
 ```sh
 dad <pr>                     # Open a PR as a narrated story
 dad review <pr>              # Same as above (explicit subcommand)
+dad commit <commit>          # Review a single commit as a narrated story
 dad config                   # Configure AI provider, GitHub token, display settings
 dad cache clear              # Clear cached narratives
 dad --version                # Print version
@@ -41,7 +42,7 @@ dad --version                # Print version
 Flags (can go in any position):
 
 ```sh
---with=claude|pi             # Force a specific AI CLI
+--with=claude|codex|pi       # Force a specific AI CLI
 --no-cache                   # Regenerate narrative even if cached
 --no-open                    # Don't auto-open the browser
 --port=3000                  # Use a specific port
@@ -55,6 +56,14 @@ owner/repo#123
 139                          # bare number — infers repo from git remote
 ```
 
+Commit argument formats:
+
+```
+https://github.com/owner/repo/commit/abc1234
+owner/repo@abc1234
+abc1234                      # bare SHA — infers repo from git remote
+```
+
 The CLI fetches the PR diff, generates a semantic narrative, and opens a local web UI in your browser.
 
 ## How It Works
@@ -63,22 +72,31 @@ Instead of reviewing files one by one, Diff Dad groups code changes into **chapt
 
 ### AI Provider
 
-By default, Diff Dad uses `claude -p` (the Claude Code CLI), which runs on your existing Claude subscription — no API key needed. If Claude Code isn't installed, it falls back to `pi`. You can force a specific CLI with the `--with` flag:
+By default, Diff Dad uses `claude -p` (the Claude Code CLI), which runs on your existing Claude subscription — no API key needed. If Claude Code isn't installed, it falls back to `codex`, then `pi`. You can force a specific CLI with the `--with` flag:
 
 ```sh
 dad --with=claude owner/repo#123
+dad --with=codex owner/repo#123
 dad --with=pi owner/repo#123
 ```
 
 For API-based providers instead of local CLIs, run `dad config`:
 
 - **Claude CLI** (default) — uses your Claude subscription
+- **Codex CLI** (fallback) — uses your OpenAI Codex subscription
 - **pi CLI** (fallback) — uses your pi subscription
 - **Anthropic API** — requires `ANTHROPIC_API_KEY`
 - **OpenAI** — requires OpenAI API key
 - **Ollama** — local models, no key needed
 
-When a provider is configured via `dad config`, it takes priority over CLI discovery. The `--with` flag always takes top priority.
+CLI resolution order (highest priority first):
+
+1. `--with` flag
+2. `DIFFDAD_CLI` environment variable
+3. `cliPreference` set via `dad config`
+4. Auto-detect: first of `claude`, `codex`, `pi` found on `PATH`
+
+When a provider is configured via `dad config`, it takes priority over auto-detection. The `--with` flag always takes top priority.
 
 ### GitHub Token
 
@@ -127,10 +145,23 @@ Submit reviews directly from the UI — Comment, Approve, or Request Changes. In
 | `?`       | Show shortcuts help                   |
 | `Esc`     | Close open panels                     |
 
+### Commit Review
+
+`dad commit` works just like `dad review` but for individual commits instead of PRs. Pass a full GitHub URL, `owner/repo@sha`, or a bare SHA when inside a git repo:
+
+```sh
+dad commit abc1234
+dad commit owner/repo@abc1234
+dad commit https://github.com/owner/repo/commit/abc1234
+```
+
+The AI generates the same semantic chapters and narrative as for PRs. Commit comments sync bidirectionally with GitHub the same way PR review comments do.
+
 ### Display Options
 
 Configurable via `dad config`:
 
+- **CLI preference** — pin a specific AI CLI (`claude`, `codex`, or `pi`) instead of auto-detecting
 - **Story structure** — chapters (cards), linear (continuous flow), outline (collapsed)
 - **Layout** — TOC sidebar or full-width linear
 - **Density** — comfortable or compact

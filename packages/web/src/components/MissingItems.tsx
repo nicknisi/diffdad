@@ -2,6 +2,7 @@ import { useReviewStore } from '../state/review-store';
 
 export function MissingItems() {
   const narrative = useReviewStore((s) => s.narrative);
+  const sourceType = useReviewStore((s) => s.sourceType);
   if (!narrative?.missing?.length) return null;
 
   return (
@@ -15,7 +16,7 @@ export function MissingItems() {
         </div>
         <div className="min-w-0 flex-1">
           <h2 className="m-0 text-[18px] font-bold leading-6 tracking-[-0.01em] text-[var(--fg-1)]">
-            What's Not in This PR
+            What's Not in This {sourceType === 'commit' ? 'Commit' : 'PR'}
           </h2>
           <p className="mt-[2px] text-[12.5px] text-[var(--fg-3)]">Potentially missing items flagged during analysis</p>
         </div>

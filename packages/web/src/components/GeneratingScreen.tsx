@@ -10,7 +10,20 @@ export function GeneratingScreen({ message }: Props) {
   const pr = useReviewStore((s) => s.pr);
   const files = useReviewStore((s) => s.files);
   const accent = useReviewStore((s) => s.accent);
+  const commit = useReviewStore((s) => s.commit);
+  const sourceType = useReviewStore((s) => s.sourceType);
   const { markBg } = getAccentMeta(accent);
+
+  const isCommit = sourceType === 'commit' && commit;
+  const title = isCommit ? commit.subject : pr?.title;
+  const additions = isCommit ? commit.additions : pr?.additions;
+  const deletions = isCommit ? commit.deletions : pr?.deletions;
+  const author = isCommit ? commit.author.login : pr?.author?.login;
+  const identifier = isCommit ? (
+    <span className="font-mono font-normal text-[var(--fg-3)]">@{commit.shortSha}</span>
+  ) : (
+    <span className="font-normal text-[var(--fg-3)]">#{pr?.number}</span>
+  );
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center bg-[var(--bg-page)] px-6">
@@ -19,18 +32,18 @@ export function GeneratingScreen({ message }: Props) {
           <DadMark size={64} bg={markBg} shape="circle" showBadge={false} showWink />
         </div>
 
-        {pr && (
+        {(pr || isCommit) && (
           <div className="space-y-1">
             <h1 className="m-0 text-[22px] font-bold tracking-tight text-[var(--fg-1)]">
-              <span className="font-normal text-[var(--fg-3)]">#{pr.number}</span> {pr.title}
+              {identifier} {title}
             </h1>
             <div className="text-[13px] text-[var(--fg-3)]">
-              <span style={{ color: 'var(--green-11)' }}>+{pr.additions}</span>{' '}
-              <span style={{ color: 'var(--red-11)' }}>-{pr.deletions}</span>
+              <span style={{ color: 'var(--green-11)' }}>+{additions}</span>{' '}
+              <span style={{ color: 'var(--red-11)' }}>-{deletions}</span>
               {' across '}
               {files.length} {files.length === 1 ? 'file' : 'files'}
               {' by '}
-              <span className="font-medium text-[var(--fg-2)]">{pr.author?.login}</span>
+              <span className="font-medium text-[var(--fg-2)]">{author}</span>
             </div>
           </div>
         )}

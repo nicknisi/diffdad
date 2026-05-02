@@ -31,6 +31,9 @@ export function SubmitDialog({ open, onClose, onSubmit }: Props) {
   const [resolution, setResolution] = useState<Resolution>('comment');
   const [summary, setSummary] = useState('');
   const draftCount = useReviewStore((s) => pendingReviewComments(s.drafts).length);
+  const sourceType = useReviewStore((s) => s.sourceType);
+
+  const options = sourceType === 'commit' ? OPTIONS.filter((o) => o.value === 'comment') : OPTIONS;
 
   if (!open) return null;
 
@@ -64,7 +67,7 @@ export function SubmitDialog({ open, onClose, onSubmit }: Props) {
             : 'Your review will be posted to GitHub.'}
         </p>
         <div className="mb-3.5 flex flex-col gap-2">
-          {OPTIONS.map((opt) => {
+          {options.map((opt) => {
             const selected = resolution === opt.value;
             return (
               <label

@@ -21,12 +21,14 @@ function CollapsibleThread({
   comments,
   file,
   lineNumber,
+  side,
   isNewThread,
   onClose,
 }: {
   comments: PRComment[];
   file: string;
   lineNumber: number | undefined;
+  side?: 'LEFT' | 'RIGHT';
   isNewThread: boolean;
   onClose: () => void;
 }) {
@@ -65,7 +67,7 @@ function CollapsibleThread({
           Collapse {count} {count === 1 ? 'comment' : 'comments'}
         </button>
       )}
-      <CommentThread comments={comments} path={file} line={lineNumber} onClose={onClose} autoFocus={isNewThread} />
+      <CommentThread comments={comments} path={file} line={lineNumber} side={side} onClose={onClose} autoFocus={isNewThread} />
     </div>
   );
 }
@@ -333,7 +335,8 @@ function HunkLines({
             <CollapsibleThread
               comments={lineComments}
               file={file}
-              lineNumber={line.lineNumber.new}
+              lineNumber={line.lineNumber.new ?? line.lineNumber.old}
+              side={line.lineNumber.new === undefined ? 'LEFT' : undefined}
               isNewThread={openLine === lineKey && lineComments.length === 0}
               onClose={() => (openLine === lineKey ? setOpenLine(null) : undefined)}
             />

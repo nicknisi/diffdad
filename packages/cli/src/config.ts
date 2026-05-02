@@ -5,6 +5,7 @@ import { createInterface } from 'node:readline';
 import { resolveGitHubToken } from './auth';
 
 export type AiProvider = 'anthropic' | 'openai' | 'openai-compatible' | 'ollama';
+export type CliPreference = 'claude' | 'codex' | 'pi';
 
 export type StoryStructure = 'chapters' | 'linear' | 'outline';
 export type LayoutMode = 'toc' | 'linear';
@@ -16,6 +17,7 @@ export type AccentId = 'classic' | 'paprika' | 'tomato' | 'forest' | 'plum' | 's
 export interface DiffDadConfig {
   githubToken?: string;
   aiProvider?: AiProvider;
+  cliPreference?: CliPreference;
   aiApiKey?: string;
   aiModel?: string;
   aiBaseUrl?: string;
@@ -170,9 +172,37 @@ export async function runConfig(): Promise<number> {
     let aiApiKey: string | undefined = existing.aiApiKey;
     let aiBaseUrl: string | undefined = existing.aiBaseUrl;
     let aiModel: string | undefined = existing.aiModel;
+    let cliPreference: CliPreference | undefined = existing.cliPreference;
 
     if (useClaudeCli) {
       process.stdout.write(`\n  ${c.green}✓${c.reset} Using local CLI ${c.dim}(claude → codex → pi)${c.reset}\n`);
+
+      // Ask which CLI to prefer
+      option('0', `${c.dim}auto${c.reset}`, '— claude → codex → pi (default)');
+      option('1', `${c.green}claude${c.reset}`, '— Claude Code CLI');
+      option('2', 'codex', '— OpenAI Codex CLI');
+      option('3', 'pi', '— pi CLI');
+      process.stdout.write('\n');
+      const cliOptions: { value: CliPreference; label: string }[] = [
+        { value: 'claude', label: 'claude' },
+        { value: 'codex', label: 'codex' },
+        { value: 'pi', label: 'pi' },
+      ];
+      const defaultCliChoice =
+        existing.cliPreference === 'codex' ? '2' : existing.cliPreference === 'pi' ? '3' : existing.cliPreference === 'claude' ? '1' : '0';
+      while (true) {
+        const answer = await ask(`  ${c.white}preferred CLI [0-3]${c.reset} ${c.gray}(${defaultCliChoice})${c.reset}: `);
+        const choice = answer.length === 0 ? defaultCliChoice : answer;
+        if (choice === '0') { cliPreference = undefined; break; }
+        if (choice === '1') { cliPreference = 'claude'; break; }
+        if (choice === '2') { cliPreference = 'codex'; break; }
+        if (choice === '3') { cliPreference = 'pi'; break; }
+        process.stdout.write(`  ${c.red}enter 0-3${c.reset}\n`);
+      }
+      if (cliPreference) {
+        process.stdout.write(`  ${c.green}✓${c.reset} CLI preference set to ${c.cyan}${cliPreference}${c.reset}\n`);
+      }
+
       aiApiKey = undefined;
       aiBaseUrl = undefined;
       aiModel = undefined;
@@ -303,11 +333,15 @@ export async function runConfig(): Promise<number> {
       delete next.aiApiKey;
       delete next.aiBaseUrl;
       delete next.aiModel;
+      if (cliPreference) next.cliPreference = cliPreference;
+      else delete next.cliPreference;
     } else {
       if (aiApiKey !== undefined) next.aiApiKey = aiApiKey;
       else delete next.aiApiKey;
       if (aiBaseUrl !== undefined) next.aiBaseUrl = aiBaseUrl;
       else delete next.aiBaseUrl;
+      // Switching to an API provider clears any CLI preference
+      delete next.cliPreference;
     }
     if (githubToken && githubToken.length > 0) next.githubToken = githubToken;
 

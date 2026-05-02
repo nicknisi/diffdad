@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { copy } from '../lib/microcopy';
 import { pendingReviewComments, useReviewStore } from '../state/review-store';
+import type { DraftComment, PRComment } from '../state/types';
 import { ApprovalCelebration } from './ApprovalCelebration';
 import { SubmitDialog } from './SubmitDialog';
 import { Toast } from './Toast';
@@ -10,6 +11,9 @@ export function SubmitBar() {
   const chapterStates = useReviewStore((s) => s.chapterStates);
   const drafts = useReviewStore((s) => s.drafts);
   const clearDrafts = useReviewStore((s) => s.clearDrafts);
+  const removeDraft = useReviewStore((s) => s.removeDraft);
+  const addComment = useReviewStore((s) => s.addComment);
+  const sourceType = useReviewStore((s) => s.sourceType);
 
   const [open, setOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -24,6 +28,56 @@ export function SubmitBar() {
   async function handleSubmit(resolution: string, summary: string) {
     try {
       const comments = pendingReviewComments(drafts);
+      if (sourceType === 'commit') {
+        // For commits: post each pending inline comment then a summary comment if provided.
+        // Call addComment immediately with each response so the SSE echo is deduped away
+        // and doesn't trigger the "new comment arrived" conflict banner in open threads.
+        // Use Promise.allSettled so a single failure doesn't abort the whole batch.
+        // Only remove drafts that were successfully posted; keep failed ones so the user can retry.
+        const submittableDrafts = drafts.filter(
+          (d): d is DraftComment & { path: string; line: number } => !!d.path && d.line !== undefined,
+        );
+        const results = await Promise.allSettled(
+          submittableDrafts.map(async (d) => {
+            const res = await fetch('/api/comments', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ path: d.path, line: d.line, side: d.side, body: d.body }),
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            addComment((await res.json()) as PRComment);
+            return d.id;
+          }),
+        );
+        for (const r of results) {
+          if (r.status === 'fulfilled') removeDraft(r.value);
+        }
+        const failedCount = results.filter((r) => r.status === 'rejected').length;
+        if (failedCount > 0) {
+          setToast(copy.errorGeneric);
+          return;
+        }
+        if (summary.trim()) {
+          try {
+            const res = await fetch('/api/comments', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ body: summary }),
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            addComment((await res.json()) as PRComment);
+          } catch {
+            // Inline comments already landed — close the dialog and report partial success
+            // rather than showing a generic error that implies everything failed.
+            setOpen(false);
+            setToast(copy.commitSummaryError);
+            return;
+          }
+        }
+        setOpen(false);
+        setToast(copy.commentToast);
+        return;
+      }
       const res = await fetch('/api/review', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

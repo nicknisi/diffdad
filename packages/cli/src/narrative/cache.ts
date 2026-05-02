@@ -9,6 +9,10 @@ function cachePath(owner: string, repo: string, number: number, sha: string): st
   return join(CACHE_DIR, `${owner}-${repo}-${number}-${sha}.json`);
 }
 
+function commitCachePath(owner: string, repo: string, sha: string): string {
+  return join(CACHE_DIR, `${owner}-${repo}-commit-${sha}.json`);
+}
+
 export async function getCachedNarrative(
   owner: string,
   repo: string,
@@ -45,6 +49,31 @@ export async function cacheNarrative(
   narrative: NarrativeResponse,
 ): Promise<void> {
   const path = cachePath(owner, repo, number, sha);
+  await mkdir(CACHE_DIR, { recursive: true });
+  await writeFile(path, JSON.stringify(narrative));
+}
+
+export async function getCachedCommitNarrative(
+  owner: string,
+  repo: string,
+  sha: string,
+): Promise<NarrativeResponse | null> {
+  try {
+    const path = commitCachePath(owner, repo, sha);
+    const raw = await readFile(path, 'utf-8');
+    return JSON.parse(raw) as NarrativeResponse;
+  } catch {
+    return null;
+  }
+}
+
+export async function cacheCommitNarrative(
+  owner: string,
+  repo: string,
+  sha: string,
+  narrative: NarrativeResponse,
+): Promise<void> {
+  const path = commitCachePath(owner, repo, sha);
   await mkdir(CACHE_DIR, { recursive: true });
   await writeFile(path, JSON.stringify(narrative));
 }

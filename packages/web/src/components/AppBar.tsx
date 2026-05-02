@@ -7,8 +7,13 @@ import { IconMoon, IconMonitor, IconSun, IconArrowRight } from './Icons';
 
 function repoSlug(repoUrl: string | null): string | null {
   if (!repoUrl) return null;
-  const m = repoUrl.match(/github\.com\/([^/]+\/[^/]+)/);
-  return m ? m[1] : null;
+  try {
+    const { pathname } = new URL(repoUrl);
+    const parts = pathname.replace(/^\//, '').split('/').filter(Boolean);
+    return parts.length >= 2 ? `${parts[0]}/${parts[1]}` : null;
+  } catch {
+    return null;
+  }
 }
 
 function AccentPicker({
@@ -99,6 +104,8 @@ type AppBarProps = {
 
 export function AppBar({ onOpenActivity }: AppBarProps) {
   const pr = useReviewStore((s) => s.pr);
+  const commit = useReviewStore((s) => s.commit);
+  const sourceType = useReviewStore((s) => s.sourceType);
   const theme = useReviewStore((s) => s.theme);
   const setTheme = useReviewStore((s) => s.setTheme);
   const accent = useReviewStore((s) => s.accent);
@@ -107,7 +114,8 @@ export function AppBar({ onOpenActivity }: AppBarProps) {
 
   const slug = repoSlug(repoUrl);
   const { markBg } = getAccentMeta(accent);
-  const prNum = pr ? pr.number : null;
+  const isCommit = sourceType === 'commit' && commit != null;
+  const prNum = !isCommit && pr ? pr.number : null;
 
   return (
     <header
@@ -129,12 +137,25 @@ export function AppBar({ onOpenActivity }: AppBarProps) {
           className="whitespace-nowrap rounded-[4px] bg-[var(--gray-3)] px-2 py-0.5 text-[var(--fg-1)]"
           style={{ boxShadow: 'inset 0 0 0 1px var(--gray-a5)' }}
         >
-          dad review {prNum ?? '—'}
+          {isCommit ? `dad commit ${commit.shortSha}` : `dad review ${prNum ?? '—'}`}
         </span>
         <span className="inline-flex text-[var(--fg-3)]">
           <IconArrowRight className="h-[11px] w-[11px]" />
         </span>
-        {slug && repoUrl && prNum != null ? (
+        {isCommit && slug && repoUrl ? (
+          <a
+            href={`${repoUrl}/commit/${commit.sha}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="truncate text-[13px] font-medium font-sans hover:underline"
+            title="Open commit on GitHub"
+          >
+            <span className="font-semibold" style={{ color: 'var(--purple-11)' }}>
+              {slug}
+            </span>
+            <span style={{ color: 'var(--fg-1)' }}>@{commit.shortSha}</span>
+          </a>
+        ) : slug && repoUrl && prNum != null ? (
           <a
             href={`${repoUrl}/pull/${prNum}`}
             target="_blank"

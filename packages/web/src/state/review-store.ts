@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type {
   ChapterState,
   CheckRun,
+  CommitData,
   DiffFile,
   DraftComment,
   LiveEvent,
@@ -33,6 +34,8 @@ export type BackendConfig = {
 
 type ReviewState = {
   pr: PRData | null;
+  commit: CommitData | null;
+  sourceType: 'pr' | 'commit';
   narrative: NarrativeResponse | null;
   files: DiffFile[];
   comments: PRComment[];
@@ -69,6 +72,8 @@ type ReviewState = {
     checkRuns?: CheckRun[],
     config?: BackendConfig | null,
     reviews?: PRReview[],
+    sourceType?: 'pr' | 'commit',
+    commit?: CommitData | null,
   ) => void;
   setActiveChapter: (id: string) => void;
   toggleReviewed: (idx: number) => void;
@@ -99,14 +104,36 @@ type ReviewState = {
   setPr: (pr: PRData) => void;
 };
 
-function draftStorageKey(prNumber: number): string {
-  return `diffdad.drafts.${prNumber}`;
+function repoSlugFromUrl(repoUrl: string | null): string {
+  if (!repoUrl) return 'unknown';
+  try {
+    const { hostname, pathname } = new URL(repoUrl);
+    const parts = pathname.replace(/^\//, '').split('/').filter(Boolean);
+    if (parts.length < 2) return 'unknown';
+    return `${hostname}.${parts[0]}.${parts[1]}`;
+  } catch {
+    return 'unknown';
+  }
+}
+
+function sessionId(sourceType: 'pr' | 'commit', prNumber: number, repoUrl: string | null, commitSha?: string | null): string {
+  const slug = repoSlugFromUrl(repoUrl);
+  return sourceType === 'commit' && commitSha ? `${slug}.commit.${commitSha}` : `${slug}.${prNumber}`;
+}
+
+function draftStorageKey(id: string): string {
+  return `diffdad.drafts.${id}`;
+}
+
+function reviewedStorageKey(id: string): string {
+  return `diffdad.reviewed.${id}`;
 }
 
 function persistDrafts(state: ReviewState) {
   if (!state.pr) return;
   try {
-    localStorage.setItem(draftStorageKey(state.pr.number), JSON.stringify(state.drafts));
+    const id = sessionId(state.sourceType, state.pr.number, state.repoUrl, state.commit?.sha);
+    localStorage.setItem(draftStorageKey(id), JSON.stringify(state.drafts));
   } catch {}
 }
 
@@ -116,9 +143,9 @@ function isValidDraft(d: unknown): d is DraftComment {
   return typeof obj.id === 'string' && typeof obj.body === 'string';
 }
 
-function loadDrafts(prNumber: number): DraftComment[] {
+function loadDrafts(id: string): DraftComment[] {
   try {
-    const raw = localStorage.getItem(draftStorageKey(prNumber));
+    const raw = localStorage.getItem(draftStorageKey(id));
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) return parsed.filter(isValidDraft);
@@ -139,6 +166,8 @@ export function pendingReviewComments(drafts: DraftComment[]): InlineComment[] {
 
 export const useReviewStore = create<ReviewState>((set) => ({
   pr: null,
+  commit: null,
+  sourceType: 'pr',
   narrative: null,
   files: [],
   comments: [],
@@ -167,11 +196,11 @@ export const useReviewStore = create<ReviewState>((set) => ({
   regenerating: false,
   narrationOverrides: {} as Record<string, string>,
 
-  setData: (pr, narrative, files, comments, repoUrl = null, checkRuns = [], config = null, reviews = []) => {
-    const storageKey = `diffdad.reviewed.${pr.number}`;
+  setData: (pr, narrative, files, comments, repoUrl = null, checkRuns = [], config = null, reviews = [], sourceType = 'pr', commit = null) => {
+    const id = sessionId(sourceType, pr.number, repoUrl, commit?.sha);
     let saved: Record<string, ChapterState> = {};
     try {
-      const raw = localStorage.getItem(storageKey);
+      const raw = localStorage.getItem(reviewedStorageKey(id));
       if (raw) saved = JSON.parse(raw);
     } catch {}
     const chapterStates: Record<string, ChapterState> = {};
@@ -181,6 +210,8 @@ export const useReviewStore = create<ReviewState>((set) => ({
     });
     const next: Partial<ReviewState> = {
       pr,
+      commit,
+      sourceType,
       narrative,
       files,
       comments,
@@ -188,7 +219,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
       reviews,
       repoUrl,
       chapterStates,
-      drafts: loadDrafts(pr.number),
+      drafts: loadDrafts(id),
       activeChapterId: narrative.chapters.length > 0 ? 'ch-0' : null,
       chapterDensity: {},
     };
@@ -214,7 +245,8 @@ export const useReviewStore = create<ReviewState>((set) => ({
       const updated = { ...state.chapterStates, [key]: next };
       if (state.pr) {
         try {
-          localStorage.setItem(`diffdad.reviewed.${state.pr.number}`, JSON.stringify(updated));
+          const id = sessionId(state.sourceType, state.pr.number, state.repoUrl, state.commit?.sha);
+          localStorage.setItem(reviewedStorageKey(id), JSON.stringify(updated));
         } catch {}
       }
       return { chapterStates: updated };
@@ -248,7 +280,8 @@ export const useReviewStore = create<ReviewState>((set) => ({
     set((state) => {
       if (state.pr) {
         try {
-          localStorage.removeItem(draftStorageKey(state.pr.number));
+          const id = sessionId(state.sourceType, state.pr.number, state.repoUrl, state.commit?.sha);
+          localStorage.removeItem(draftStorageKey(id));
         } catch {}
       }
       return { drafts: [] };
