@@ -88,6 +88,19 @@ export function setCliOverride(cli: string) {
   cliOverride = cli;
 }
 
+/**
+ * Pure precedence resolver — no side-effects, no I/O.
+ * Resolution order: programmatic override → DIFFDAD_CLI env → config.cliPreference → undefined (auto-detect).
+ * Exported for testing.
+ */
+export function resolveCliPreference(
+  overrideValue: string | undefined,
+  envValue: string | undefined,
+  configValue: string | undefined,
+): string | undefined {
+  return overrideValue ?? envValue ?? configValue;
+}
+
 async function callCodex(system: string, user: string): Promise<AiResult> {
   const prompt = `${system}\n\n---\n\n${user}`;
   const tmpFile = `/tmp/diffdad-codex-${Date.now()}.txt`;
@@ -104,7 +117,7 @@ async function callCodex(system: string, user: string): Promise<AiResult> {
 
 async function callLocalCli(system: string, user: string, config?: DiffDadConfig): Promise<AiResult> {
   const prompt = `${system}\n\n---\n\n${user}`;
-  const forced = cliOverride ?? process.env.DIFFDAD_CLI ?? config?.cliPreference;
+  const forced = resolveCliPreference(cliOverride, process.env.DIFFDAD_CLI, config?.cliPreference);
 
   if (forced) {
     if (forced === 'pi') {

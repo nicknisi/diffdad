@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseCommitArg, parsePrArg } from '../cli';
+import { parseCommitArg, parseGitRemoteUrl, parsePrArg } from '../cli';
 
 // ---------------------------------------------------------------------------
 // parsePrArg
@@ -117,5 +117,113 @@ describe('hex/decimal boundary — no cross-routing', () => {
       expect(parseCommitArg(`owner/repo#${str}`)).toBeNull();
       expect(parseCommitArg(`owner/repo@${str}`)).toBeNull();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseGitRemoteUrl — bare-SHA routing prerequisite
+//
+// commitCommand falls back to inferRepoFromGit() for bare SHAs; that function
+// delegates URL parsing to parseGitRemoteUrl.  These tests lock down which
+// remote URL forms are accepted so the routing stays stable.
+// ---------------------------------------------------------------------------
+
+describe('parseGitRemoteUrl', () => {
+  // SSH forms
+  it('parses SSH remote with .git suffix', () => {
+    expect(parseGitRemoteUrl('git@github.com:owner/repo.git')).toEqual({ owner: 'owner', repo: 'repo' });
+  });
+
+  it('parses SSH remote without .git suffix', () => {
+    expect(parseGitRemoteUrl('git@github.com:owner/repo')).toEqual({ owner: 'owner', repo: 'repo' });
+  });
+
+  it('parses SSH remote with mixed-case owner/repo', () => {
+    expect(parseGitRemoteUrl('git@github.com:MyOrg/MyRepo.git')).toEqual({ owner: 'MyOrg', repo: 'MyRepo' });
+  });
+
+  // HTTPS forms
+  it('parses HTTPS remote with .git suffix', () => {
+    expect(parseGitRemoteUrl('https://github.com/owner/repo.git')).toEqual({ owner: 'owner', repo: 'repo' });
+  });
+
+  it('parses HTTPS remote without .git suffix', () => {
+    expect(parseGitRemoteUrl('https://github.com/owner/repo')).toEqual({ owner: 'owner', repo: 'repo' });
+  });
+
+  it('parses HTTPS remote with trailing slash', () => {
+    expect(parseGitRemoteUrl('https://github.com/owner/repo/')).toEqual({ owner: 'owner', repo: 'repo' });
+  });
+
+  it('parses HTTP (non-TLS) remote', () => {
+    expect(parseGitRemoteUrl('http://github.com/owner/repo.git')).toEqual({ owner: 'owner', repo: 'repo' });
+  });
+
+  // Non-GitHub or malformed — must return null so inferRepoFromGit() returns null
+  it('returns null for a non-GitHub SSH remote', () => {
+    expect(parseGitRemoteUrl('git@gitlab.com:owner/repo.git')).toBeNull();
+  });
+
+  it('returns null for a non-GitHub HTTPS remote', () => {
+    expect(parseGitRemoteUrl('https://gitlab.com/owner/repo.git')).toBeNull();
+  });
+
+  it('returns null for an empty string', () => {
+    expect(parseGitRemoteUrl('')).toBeNull();
+  });
+
+  it('returns null for a bare path without a host', () => {
+    expect(parseGitRemoteUrl('/local/path/repo')).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Bare-SHA regex — commitCommand acceptance criteria
+//
+// commitCommand uses /^[0-9a-f]{4,40}$/i to identify bare SHAs before
+// attempting repo inference.  These cases document the boundary.
+// ---------------------------------------------------------------------------
+
+describe('bare SHA regex (^[0-9a-f]{4,40}$/i)', () => {
+  const BARE_SHA = /^[0-9a-f]{4,40}$/i;
+
+  it('accepts a 7-char abbreviated SHA', () => {
+    expect(BARE_SHA.test('abc1234')).toBe(true);
+  });
+
+  it('accepts a full 40-char SHA', () => {
+    expect(BARE_SHA.test('a'.repeat(40))).toBe(true);
+  });
+
+  it('accepts a 4-char minimum SHA', () => {
+    expect(BARE_SHA.test('cafe')).toBe(true);
+  });
+
+  it('accepts uppercase hex digits (case-insensitive flag)', () => {
+    expect(BARE_SHA.test('ABCDEF01')).toBe(true);
+  });
+
+  it('accepts an all-numeric (but valid hex) string — bare PR numbers also match', () => {
+    // Intentional: bare PR numbers like "139" are all-decimal and valid hex.
+    // commitCommand only reaches the bare-SHA branch when parseCommitArg AND
+    // parsePrArg both returned null, so a bare decimal number is routed as a
+    // PR number first and never reaches this branch.
+    expect(BARE_SHA.test('1234')).toBe(true);
+  });
+
+  it('rejects a 3-char string (too short)', () => {
+    expect(BARE_SHA.test('abc')).toBe(false);
+  });
+
+  it('rejects a 41-char string (too long)', () => {
+    expect(BARE_SHA.test('a'.repeat(41))).toBe(false);
+  });
+
+  it('rejects a string with non-hex characters', () => {
+    expect(BARE_SHA.test('xyz12345')).toBe(false);
+  });
+
+  it('rejects owner/repo@sha shorthand (not bare)', () => {
+    expect(BARE_SHA.test('owner/repo@abc1234')).toBe(false);
   });
 });

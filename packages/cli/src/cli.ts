@@ -130,6 +130,28 @@ export function parseCommitArg(arg: string): ParsedCommit | null {
   return null;
 }
 
+/**
+ * Parses a GitHub remote URL (SSH or HTTPS) into owner/repo.
+ * Exported for testing.
+ */
+export function parseGitRemoteUrl(url: string): { owner: string; repo: string } | null {
+  // git@github.com:owner/repo(.git)?
+  const sshMatch = url.match(/^git@github\.com:([^/\s]+)\/([^/\s]+?)(?:\.git)?$/i);
+  if (sshMatch) {
+    const [, owner, repo] = sshMatch;
+    if (owner && repo) return { owner, repo };
+  }
+
+  // https://github.com/owner/repo(.git)?
+  const httpsMatch = url.match(/^https?:\/\/github\.com\/([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/i);
+  if (httpsMatch) {
+    const [, owner, repo] = httpsMatch;
+    if (owner && repo) return { owner, repo };
+  }
+
+  return null;
+}
+
 export async function inferRepoFromGit(): Promise<{ owner: string; repo: string } | null> {
   try {
     const proc = Bun.spawn(['git', 'remote', 'get-url', 'origin'], {
@@ -142,21 +164,7 @@ export async function inferRepoFromGit(): Promise<{ owner: string; repo: string 
     const url = (await new Response(proc.stdout).text()).trim();
     if (!url) return null;
 
-    // git@github.com:owner/repo(.git)?
-    const sshMatch = url.match(/^git@github\.com:([^/\s]+)\/([^/\s]+?)(?:\.git)?$/i);
-    if (sshMatch) {
-      const [, owner, repo] = sshMatch;
-      if (owner && repo) return { owner, repo };
-    }
-
-    // https://github.com/owner/repo(.git)?
-    const httpsMatch = url.match(/^https?:\/\/github\.com\/([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/i);
-    if (httpsMatch) {
-      const [, owner, repo] = httpsMatch;
-      if (owner && repo) return { owner, repo };
-    }
-
-    return null;
+    return parseGitRemoteUrl(url);
   } catch {
     return null;
   }
