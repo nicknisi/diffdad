@@ -106,8 +106,14 @@ type ReviewState = {
 
 function repoSlugFromUrl(repoUrl: string | null): string {
   if (!repoUrl) return 'unknown';
-  const m = repoUrl.match(/github\.com\/([^/]+\/[^/]+)/);
-  return m?.[1]?.replace('/', '.') ?? 'unknown';
+  try {
+    const { hostname, pathname } = new URL(repoUrl);
+    const parts = pathname.replace(/^\//, '').split('/').filter(Boolean);
+    if (parts.length < 2) return 'unknown';
+    return `${hostname}.${parts[0]}.${parts[1]}`;
+  } catch {
+    return 'unknown';
+  }
 }
 
 function sessionId(sourceType: 'pr' | 'commit', prNumber: number, repoUrl: string | null, commitSha?: string | null): string {

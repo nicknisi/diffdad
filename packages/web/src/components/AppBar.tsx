@@ -7,8 +7,13 @@ import { IconMoon, IconMonitor, IconSun, IconArrowRight } from './Icons';
 
 function repoSlug(repoUrl: string | null): string | null {
   if (!repoUrl) return null;
-  const m = repoUrl.match(/github\.com\/([^/]+\/[^/]+)/);
-  return m ? m[1] : null;
+  try {
+    const { pathname } = new URL(repoUrl);
+    const parts = pathname.replace(/^\//, '').split('/').filter(Boolean);
+    return parts.length >= 2 ? `${parts[0]}/${parts[1]}` : null;
+  } catch {
+    return null;
+  }
 }
 
 function AccentPicker({
