@@ -24,6 +24,7 @@ export const copy = {
   blocker: 'Grounded until tests pass.',
   nudge: 'Measure twice, commit once.',
   errorGeneric: 'Something went sideways. Try again?',
+  commitSummaryError: 'Inline comments posted. Summary comment failed — try posting it separately.',
   offline: 'Not on my branch. Check your connection.',
   allReviewed: 'Every chapter reviewed. Proud of you, champ.',
   noDrafts: 'No pending comments. Clean slate.',

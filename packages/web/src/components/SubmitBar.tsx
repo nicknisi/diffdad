@@ -58,13 +58,21 @@ export function SubmitBar() {
           return;
         }
         if (summary.trim()) {
-          const res = await fetch('/api/comments', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ body: summary }),
-          });
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          addComment((await res.json()) as PRComment);
+          try {
+            const res = await fetch('/api/comments', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ body: summary }),
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            addComment((await res.json()) as PRComment);
+          } catch {
+            // Inline comments already landed — close the dialog and report partial success
+            // rather than showing a generic error that implies everything failed.
+            setOpen(false);
+            setToast(copy.commitSummaryError);
+            return;
+          }
         }
         setOpen(false);
         setToast(copy.commentToast);
