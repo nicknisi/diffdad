@@ -482,7 +482,7 @@ async function commitCommand(commitArg: string | undefined): Promise<number> {
       commit,
       pr: prMetadata,
       files,
-      comments,
+      comments: ctx.comments,
     });
   }
 
