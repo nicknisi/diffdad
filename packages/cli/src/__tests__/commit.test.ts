@@ -112,20 +112,22 @@ describe('resolveCommitCommentLines', () => {
     expect(result[0]?.line).toBeUndefined();
   });
 
-  it('resolves a position that points at the hunk header to hunk.newStart', () => {
+  it('leaves line undefined for a position that points at a hunk header (no code line to anchor to)', () => {
     const comments: PRComment[] = [
       { id: 1, author: 'user', body: 'x', createdAt: '', updatedAt: '', path: 'src/foo.ts', position: 1 },
     ];
     const result = resolveCommitCommentLines(comments, [singleHunkFile]);
-    expect(result[0]?.line).toBe(1); // hunk header → newStart = 1
+    // hunk headers don't correspond to a code line — resolving them to newStart breaks
+    // the diffPosition ↔ positionToLine roundtrip, so we leave the comment unresolved.
+    expect(result[0]?.line).toBeUndefined();
   });
 
-  it('resolves the second hunk header position to that hunk newStart', () => {
+  it('leaves line undefined for the second hunk header position', () => {
     const comments: PRComment[] = [
       { id: 1, author: 'user', body: 'x', createdAt: '', updatedAt: '', path: 'src/bar.ts', position: 4 },
     ];
     const result = resolveCommitCommentLines(comments, [multiHunkFile]);
-    expect(result[0]?.line).toBe(9); // second hunk header → newStart = 9
+    expect(result[0]?.line).toBeUndefined();
   });
 
   it('resolves positions across multiple hunks', () => {

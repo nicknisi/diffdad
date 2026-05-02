@@ -21,7 +21,7 @@ import type { NarrativeResponse } from './narrative/types';
  * When `side` is `'RIGHT'` or omitted, add/context lines are matched by their
  * new-side line number.
  */
-function diffPosition(
+export function diffPosition(
   files: DiffFile[],
   filePath: string,
   line: number,
@@ -57,7 +57,7 @@ function diffPosition(
  * The caller must persist this side so that `diffPosition` can later resolve
  * a reply back to the correct diff position.
  */
-function positionToLine(
+export function positionToLine(
   files: DiffFile[],
   filePath: string,
   position: number,
@@ -68,7 +68,7 @@ function positionToLine(
   let pos = 0;
   for (const hunk of file.hunks) {
     pos++; // hunk header
-    if (pos === position) return { line: hunk.newStart }; // pointed at the header itself
+    if (pos === position) return undefined; // hunk headers don't correspond to a code line
     for (const line of hunk.lines) {
       pos++;
       if (pos === position) {
