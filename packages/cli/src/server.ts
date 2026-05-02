@@ -336,6 +336,9 @@ export function createServer(ctx: ServerContext) {
         }
 
         let regenerating = false;
+        // Commits are immutable: once all checks complete they can never change again.
+        // Track this so we can stop polling checks and avoid burning API quota.
+        let commitChecksSettled = false;
         const interval = setInterval(async () => {
           try {
             if (ctx.sourceType === 'commit') {
@@ -351,9 +354,18 @@ export function createServer(ctx: ServerContext) {
               }
               ctx.comments = fresh;
 
-              const freshChecks = await ctx.github.getCheckRuns(ctx.owner, ctx.repo, ctx.headSha);
-              ctx.checkRuns = freshChecks;
-              send('checks', freshChecks);
+              if (!commitChecksSettled) {
+                const freshChecks = await ctx.github.getCheckRuns(ctx.owner, ctx.repo, ctx.headSha);
+                const checksChanged = JSON.stringify(freshChecks) !== JSON.stringify(ctx.checkRuns);
+                if (checksChanged) {
+                  ctx.checkRuns = freshChecks;
+                  send('checks', freshChecks);
+                }
+                // All checks completed → SHA is immutable, no need to ever poll again
+                if (freshChecks.length > 0 && freshChecks.every((ch) => ch.status === 'completed')) {
+                  commitChecksSettled = true;
+                }
+              }
               return;
             }
 
