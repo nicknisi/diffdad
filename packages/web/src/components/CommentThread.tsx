@@ -144,6 +144,7 @@ export function CommentThread({ comments, path, line, side, chapterIndex, inRepl
       body: trimmed,
       path,
       line,
+      side,
       chapterIndex,
     });
     setDraftSavedAt(Date.now());

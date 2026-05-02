@@ -112,6 +112,7 @@ export type DraftComment = {
   body: string;
   path?: string;
   line?: number;
+  side?: 'LEFT' | 'RIGHT';
   chapterIndex?: number;
 };
 

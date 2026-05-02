@@ -42,7 +42,7 @@ export function SubmitBar() {
             const res = await fetch('/api/comments', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ path: d.path, line: d.line, body: d.body }),
+              body: JSON.stringify({ path: d.path, line: d.line, side: d.side, body: d.body }),
             });
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             addComment((await res.json()) as PRComment);
