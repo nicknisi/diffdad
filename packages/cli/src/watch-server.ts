@@ -272,7 +272,6 @@ export function createWatchServer(ctx: WatchServerContext) {
   }
 
   async function refreshCommits(newCommits: LocalCommit[], newHeadSha: string) {
-    const previousShas = new Set(ctx.commits.map((c) => c.sha));
     ctx.commits = newCommits;
     ctx.headSha = newHeadSha;
     // Drop unified — branch moved.
@@ -301,12 +300,6 @@ export function createWatchServer(ctx: WatchServerContext) {
       headSha: ctx.headSha,
       commits: summaries,
     });
-
-    // Narrate any new commits in background (oldest first).
-    for (const c of newCommits) {
-      if (previousShas.has(c.sha)) continue;
-      void narrateCommit(c.sha, { broadcastWhenDone: true });
-    }
   }
 
   async function selectionFromQuery(c: { req: { query: (k: string) => string | undefined } }): Promise<{
