@@ -41,6 +41,7 @@ export function applyNarrativeResponse(data: NarrativeApiResponse) {
   if (data.generating && !data.narrative) {
     useReviewStore.setState({
       pr: data.pr,
+      narrative: null,
       files: data.files,
       comments: data.comments,
       checkRuns: data.checkRuns ?? [],
