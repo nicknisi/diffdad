@@ -27,7 +27,30 @@ const defaultFavicon = `data:image/svg+xml,${encodeURIComponent(
       name="description"
       content="Turn GitHub PRs into narrated stories. dad reads the whole pull request, groups changes by behavior into chapters, and walks you through them with prose, risk levels, and inline comments."
     />
+    <link rel="canonical" href="https://diff.dad/" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://diff.dad/" />
+    <meta property="og:title" content="diff.dad — your PRs, told as a story" />
+    <meta
+      property="og:description"
+      content="A storytelling PR reviewer. Semantic chapters, risk levels, inline GitHub comments. brew install dad."
+    />
+    <meta property="og:image" content="https://diff.dad/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="diff.dad — your PRs, told as a story" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="diff.dad — your PRs, told as a story" />
+    <meta name="twitter:description" content="A storytelling PR reviewer. brew install dad." />
+    <meta name="twitter:image" content="https://diff.dad/twitter.png" />
+    <meta name="twitter:image:alt" content="diff.dad — your PRs, told as a story" />
+
     <link rel="icon" type="image/svg+xml" href={defaultFavicon} />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
