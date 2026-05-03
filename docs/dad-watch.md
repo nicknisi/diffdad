@@ -4,15 +4,20 @@
 
 Diff Dad already does a good job turning *other people's* PRs into narrated stories. The problem this PR addresses is the symmetric one: **reviewing your own in-progress work**, especially when most of that work was written by an AI agent.
 
-The honest observation that motivated this PR was that reviewing your own agent's code is a tenuous activity. When Claude (or Cursor, or Codex) writes 80% of a feature, the human's review pass tends to skim — the code "looks right," it compiles, the tests pass, and confirmation bias does the rest. Bugs slip through that a fresh reviewer would catch in five seconds. By the time the PR opens, the author is no longer a fresh reviewer of their own work, and the actual reviewer is now the second person to nod at the same code instead of the first to scrutinize it.
+The honest observation that motivated this PR was that reviewing your own agent's code is a tenuous activity. When Claude (or Cursor, or Codex) writes 80% of a feature, the human's review pass tends to skim — the code "looks right," it compiles, the tests pass, and confirmation bias does the rest. Bugs slip through that a fresh reviewer would catch in five seconds. Worse, in a long agent-driven session, the human often *doesn't actually know* what the agent built in detail: they prompted, the agent worked, they nodded at the result. By the time the PR opens, the author is no longer a fresh reviewer of their own work — they're a half-informed observer of work that was mostly done without them.
 
-The pitch for `dad watch` is simple: **be the fresh reviewer your agent's work needs, before the PR opens.** As you commit, Dad narrates each commit through a "scrutinize" lens — not "here's what you did, great job" but "here's what you did, and here's what a senior reviewer would push back on, what tests are missing, what error paths aren't handled, what looks subtle and risky." Optionally, on demand, you can fold the whole branch into a single coherent story to see how the feature reads end-to-end.
+`dad watch` is meant to address both halves of that:
+
+1. **Help you understand what's being built.** As each commit lands, Dad narrates it in plain prose: what changed at the behavioral level, what consequences that has, what subtle assumptions are baked in. This is the *comprehension* layer — you stop being a half-informed observer and become someone who actually knows what's in their feature. You can't review what you can't articulate; this gets you to the point where you could.
+2. **Scrutinize what was built.** On top of the comprehension, the scrutinize lens explicitly asks "what would a senior reviewer push back on, what tests are missing, what error paths aren't handled, what looks subtle and risky." This is the *review* layer — and it works precisely because the comprehension layer made the change legible enough to actually critique.
+
+These aren't separate features; they're sequential outputs of the same narration. The narrative section of each chapter explains the change (understand); the callouts and missing-items list flag what to question (scrutinize). Optionally, on demand, you can fold the whole branch into a single coherent story to see how the feature reads end-to-end — same two layers, applied to the unified diff.
 
 The framing the user landed on during design — and the one that should guide future iteration — is:
 
 > Dad helps me practice for the real world of code reviews.
 
-That phrasing matters. It's not about generating PR descriptions, not about replacing review, not about making you feel good. It's about training your own attention so the eventual human review (yours, your teammates') has a better chance of catching what matters.
+That phrasing matters. It's not about generating PR descriptions, not about replacing review, not about making you feel good. It's about (a) catching you up on what your agent actually did, then (b) training your own attention so the eventual human review (yours, your teammates') has a better chance of catching what matters.
 
 ## What's in scope for this PR
 
@@ -211,9 +216,9 @@ Things that are more likely to bite than the obvious bugs:
 
 ## Success looks like
 
-- You finish a feature with the help of an agent.
+- You finish a feature with the help of an agent and you can actually *describe* what it built — not just "it works", but the behavioral changes, the assumptions made, the moving parts. The narration filled in the gap between "I prompted" and "I understand."
 - For each commit, Dad's narration surfaced at least one absence, callout, or "verify that…" note that you actually acted on.
-- When you open the PR, your description is informed by Dad's unified view — you didn't have to write it from scratch.
+- When you open the PR, your description is informed by Dad's unified view — you didn't have to write it from scratch, and the things you say in it match what's actually in the diff because you read the story before posting.
 - Your teammates' reviews catch fewer things you should have caught yourself.
 - You trust Dad more when it flags concerns than when it's quiet — i.e., it's calibrated, not just verbose.
 
