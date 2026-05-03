@@ -1,0 +1,32 @@
+---
+import DadMark from './DadMark.astro';
+import InstallPill from './InstallPill.astro';
+---
+
+<div class="wrap">
+  <div class="my-10 mb-20 bg-ink rounded-[22px] px-14 py-12 text-on-ink grid grid-cols-1 md:grid-cols-[1.4fr_1fr] gap-10 items-center relative overflow-hidden">
+    <div>
+      <h3 class="font-serif text-[40px] leading-[1.1] font-semibold m-0 mb-3 tracking-[-0.02em]">
+        Try it on your <em class="text-accent italic">next</em> PR.
+      </h3>
+      <p class="text-on-ink opacity-80 m-0 mb-[22px] text-base max-w-[480px]">
+        One brew install, your existing Claude subscription, and a fresh pot of coffee. Dad'll take
+        it from here.
+      </p>
+      <div class="flex gap-3 flex-wrap">
+        <InstallPill cmd="brew install dad" variant="accent" />
+        <a
+          href="https://github.com/nicknisi/diffdad"
+          target="_blank"
+          rel="noreferrer"
+          class="inline-flex items-center gap-2 px-[18px] py-3 rounded-[10px] font-mono text-sm no-underline text-on-ink border border-on-ink hover:bg-on-ink hover:text-ink transition-colors"
+        >
+          View on GitHub →
+        </a>
+      </div>
+    </div>
+    <div class="flex justify-center">
+      <DadMark size={220} showWink={true} showBadge={false} />
+    </div>
+  </div>
+</div>

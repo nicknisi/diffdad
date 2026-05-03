@@ -1,0 +1,42 @@
+---
+---
+
+<section id="install" class="py-16">
+  <div class="wrap">
+    <div class="section-eye">// install</div>
+    <h2 class="font-serif font-semibold text-[44px] leading-[1.1] tracking-[-0.02em] m-0 mb-[18px] text-balance">
+      One binary. <em class="italic text-accent-2">No assembly required.</em>
+    </h2>
+    <p class="text-lg text-ink-2 max-w-[620px] m-0 mb-10">
+      Homebrew gets you a standalone binary — nothing else needed. Building from source needs
+      <a href="https://bun.sh" target="_blank" rel="noreferrer" class="underline decoration-muted-2 underline-offset-[3px]">Bun</a>,
+      which is fast, like a dad on the way to Costco at 7am.
+    </p>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div class="bg-card border border-line rounded-2xl p-6 pb-5">
+        <div class="font-mono text-[11px] text-muted uppercase tracking-[0.1em] mb-[10px]">recommended · "the easy way"</div>
+        <h4 class="font-serif text-[22px] font-semibold m-0 mb-[14px]">Homebrew</h4>
+        <div class="bg-[#14202E] text-[#E6EAF2] rounded-[10px] px-4 py-[14px] font-mono text-[13px] leading-[1.7] overflow-x-auto">
+          <div><span class="text-[#6B7B9A]">$</span> brew tap nicknisi/diffdad https://github.com/nicknisi/diffdad</div>
+          <div><span class="text-[#6B7B9A]">$</span> brew install dad</div>
+        </div>
+        <div class="mt-3 text-[13px] text-muted">Standalone binary. No node, no bun, no nonsense.</div>
+      </div>
+
+      <div class="bg-card border border-line rounded-2xl p-6 pb-5">
+        <div class="font-mono text-[11px] text-muted uppercase tracking-[0.1em] mb-[10px]">for hackers · "the dad way"</div>
+        <h4 class="font-serif text-[22px] font-semibold m-0 mb-[14px]">From source</h4>
+        <div class="bg-[#14202E] text-[#E6EAF2] rounded-[10px] px-4 py-[14px] font-mono text-[13px] leading-[1.7] overflow-x-auto">
+          <div><span class="text-[#6B7B9A]">$</span> git clone https://github.com/nicknisi/diffdad <span class="text-[#6B7B9A]">\</span></div>
+          <div>&nbsp;&nbsp;&nbsp;&nbsp;&amp;&amp; cd diffdad</div>
+          <div><span class="text-[#6B7B9A]">$</span> bun install &amp;&amp; bun run build</div>
+          <div><span class="text-[#6B7B9A]">$</span> bun link</div>
+        </div>
+        <div class="mt-3 text-[13px] text-muted">
+          Requires <a href="https://bun.sh" target="_blank" rel="noreferrer" class="underline decoration-muted-2 underline-offset-[3px]">Bun</a>. Hack on the CLI or web UI to your heart's content.
+        </div>
+      </div>
+    </div>
+  </div>
+</section>

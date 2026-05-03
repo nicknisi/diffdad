@@ -14,6 +14,8 @@
     "test": "bun test packages/cli/src/__tests__/",
     "dad": "bun packages/cli/src/cli.ts",
     "dev": "bun run --filter '@diffdad/web' dev",
+    "site:dev": "bun run --filter '@diffdad/site' dev",
+    "site:build": "bun run --filter '@diffdad/site' build",
     "release": "./scripts/release.sh"
   },
   "devDependencies": {

@@ -75,7 +75,8 @@ function processInline(text: string): string {
   return renderInline(escapeNonHtml(text));
 }
 
-const MERMAID_PRE_STYLE = 'background:var(--gray-2);border:1px solid var(--gray-a4);padding:0.75rem;border-radius:6px;font-size:0.875rem;overflow-x:auto';
+const MERMAID_PRE_STYLE =
+  'background:var(--gray-2);border:1px solid var(--gray-a4);padding:0.75rem;border-radius:6px;font-size:0.875rem;overflow-x:auto';
 
 function mermaidBlockHtml(source: string, svgCache: Record<string, string>): string {
   const cached = svgCache[source];
@@ -92,7 +93,23 @@ const HTML_COMMENT_RE = /<!--[\s\S]*?-->/g;
 const SANITIZE_CONFIG = {
   USE_PROFILES: { html: true, svg: true, svgFilters: true },
   ADD_TAGS: ['details', 'summary', 'sub', 'sup', 'foreignObject', 'style'],
-  ADD_ATTR: ['style', 'class', 'open', 'align', 'dominant-baseline', 'text-anchor', 'transform-origin', 'marker-end', 'marker-start', 'refX', 'refY', 'markerWidth', 'markerHeight', 'orient', 'markerUnits'],
+  ADD_ATTR: [
+    'style',
+    'class',
+    'open',
+    'align',
+    'dominant-baseline',
+    'text-anchor',
+    'transform-origin',
+    'marker-end',
+    'marker-start',
+    'refX',
+    'refY',
+    'markerWidth',
+    'markerHeight',
+    'orient',
+    'markerUnits',
+  ],
 } as const;
 
 type RenderResult = { html: string; mermaidSources: string[] };
@@ -335,7 +352,11 @@ export function Markdown({ source }: Props) {
         const { default: mermaid } = await import('mermaid');
         if (cancelled) return;
         if (mermaidTheme !== theme) {
-          mermaid.initialize({ startOnLoad: false, theme: theme === 'dark' ? 'dark' : 'default', fontFamily: 'inherit' });
+          mermaid.initialize({
+            startOnLoad: false,
+            theme: theme === 'dark' ? 'dark' : 'default',
+            fontFamily: 'inherit',
+          });
           mermaidTheme = theme;
         }
 
@@ -358,7 +379,9 @@ export function Markdown({ source }: Props) {
       }
     })();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [pending.join('\0'), theme]);
 
   return <div className="markdown-body" dangerouslySetInnerHTML={{ __html: safeHtml }} />;
