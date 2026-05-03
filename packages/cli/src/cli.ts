@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { resolveGitHubToken } from './auth';
-import { readConfig, runConfig } from './config';
+import { readConfig, resetConfig, runConfig, showConfig } from './config';
 import { GitHubClient } from './github/client';
 import { cacheNarrative, clearCache, getCachedNarrative } from './narrative/cache';
 import { generateNarrative, setCliOverride } from './narrative/engine';
@@ -51,6 +51,8 @@ Usage:
   dad <pr>                           Review a PR (shorthand for dad review)
   dad review <pr>                    Review a PR
   dad config                         Configure dad (interactive)
+  dad config show                    Print the current config (secrets redacted)
+  dad config reset [--yes]           Delete the saved config
   dad cache clear                    Clear all cached narratives
   dad --help, -h                     Show this help
 
@@ -284,7 +286,17 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
   await new Promise(() => {});
 }
 
-async function configCommand(): Promise<number> {
+async function configCommand(sub?: string): Promise<number> {
+  if (sub === 'show') return await showConfig();
+  if (sub === 'reset') {
+    const yes = Bun.argv.includes('--yes') || Bun.argv.includes('-y');
+    return await resetConfig({ yes });
+  }
+  if (sub) {
+    console.error(`error: unknown config subcommand: ${sub}`);
+    console.error('usage: dad config [show|reset]');
+    return 2;
+  }
   return await runConfig();
 }
 
@@ -317,7 +329,7 @@ async function main(argv: string[]): Promise<number> {
     case 'review':
       return await reviewCommand(rest[0]);
     case 'config':
-      return await configCommand();
+      return await configCommand(rest[0]);
     case 'cache': {
       if (rest[0] === 'clear') {
         const count = await clearCache();
