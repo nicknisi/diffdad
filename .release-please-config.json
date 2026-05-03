@@ -3,8 +3,16 @@
   "release-type": "node",
   "include-component-in-tag": false,
   "packages": {
-    "packages/cli": {
-      "include-paths": ["packages/cli", "packages/web"]
+    ".": {
+      "package-name": "diffdad",
+      "exclude-paths": ["packages/site"],
+      "extra-files": [
+        {
+          "type": "json",
+          "path": "packages/cli/package.json",
+          "jsonpath": "$.version"
+        }
+      ]
     }
   }
 }
