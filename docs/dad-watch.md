@@ -4,6 +4,10 @@
 
 Diff Dad does a good job turning *other people's* PRs into narrated stories. The symmetric problem — and the one this design addresses — is **reviewing your own in-progress work**, especially when most of that work was written by an AI agent.
 
+The core value proposition:
+
+> Dad is a guardrail for the awkward modern workflow where an agent produced a lot of the code and the human author is no longer a fully informed reviewer.
+
 The honest observation that motivates this design: reviewing your own agent's code is a tenuous activity. When Claude (or Cursor, or Codex) writes 80% of a feature, the human's review pass tends to skim — the code "looks right," it compiles, the tests pass, and confirmation bias does the rest. Bugs slip through that a fresh reviewer would catch in five seconds. Worse, in a long agent-driven session, the human often *doesn't actually know* what the agent built in detail: they prompted, the agent worked, they nodded at the result. By the time the PR opens, the author is no longer a fresh reviewer of their own work — they're a half-informed observer of work that was mostly done without them.
 
 `dad watch` should address both halves of that:
