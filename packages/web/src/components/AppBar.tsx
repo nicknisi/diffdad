@@ -109,30 +109,35 @@ export function AppBar({ onOpenActivity }: AppBarProps) {
 
   const slug = repoSlug(repoUrl);
   const { markBg } = getAccentMeta(accent);
-  const prNum = pr ? pr.number : null;
+  const isWatch = mode === 'watch' || !!watch;
+  const prNum = !isWatch && pr ? pr.number : null;
 
-  const cliLabel = mode === 'watch' && watch ? `dad watch ${watch.branch}` : `dad review ${prNum ?? '—'}`;
+  const cliLabel = isWatch ? (watch ? `dad watch ${watch.branch}` : 'dad watch') : `dad review ${prNum ?? '—'}`;
 
   let target: { href: string | null; primary: string; secondary?: string; title: string } = {
     href: null,
     primary: '—',
     title: '',
   };
-  if (mode === 'watch' && watch) {
-    if (slug && repoUrl) {
-      target = {
-        href: `${repoUrl}/tree/${encodeURIComponent(watch.branch)}`,
-        primary: slug,
-        secondary: `${watch.branch} → ${watch.base}`,
-        title: 'Open branch on GitHub',
-      };
+  if (isWatch) {
+    if (watch) {
+      if (slug && repoUrl) {
+        target = {
+          href: `${repoUrl}/tree/${watch.branch}`,
+          primary: slug,
+          secondary: `${watch.branch} → ${watch.base}`,
+          title: 'Open branch on GitHub',
+        };
+      } else {
+        target = {
+          href: null,
+          primary: watch.branch,
+          secondary: `→ ${watch.base}`,
+          title: '',
+        };
+      }
     } else {
-      target = {
-        href: null,
-        primary: watch.branch,
-        secondary: `→ ${watch.base}`,
-        title: '',
-      };
+      target = { href: null, primary: '—', title: '' };
     }
   } else if (slug && repoUrl && prNum != null) {
     target = {
