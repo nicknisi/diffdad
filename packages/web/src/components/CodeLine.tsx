@@ -44,6 +44,7 @@ export function CodeLine({ line, lineKey, lang, dimmed }: Props) {
         gridTemplateColumns: '36px 36px 14px 1fr',
         background: rowBg,
         color: 'var(--gray-12)',
+        minWidth: 'max-content',
       }}
     >
       <span
@@ -73,12 +74,12 @@ export function CodeLine({ line, lineKey, lang, dimmed }: Props) {
       </span>
       {highlighted ? (
         <pre
-          className="m-0 overflow-x-hidden whitespace-pre px-3"
+          className="m-0 whitespace-pre px-3"
           style={{ lineHeight: '19px' }}
           dangerouslySetInnerHTML={{ __html: highlighted }}
         />
       ) : (
-        <pre className="m-0 overflow-x-hidden whitespace-pre px-3" style={{ lineHeight: '19px' }}>
+        <pre className="m-0 whitespace-pre px-3" style={{ lineHeight: '19px' }}>
           {line.content}
         </pre>
       )}
