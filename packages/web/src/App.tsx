@@ -128,16 +128,26 @@ export default function App() {
       <div className="min-h-screen bg-[var(--bg-page)] pb-20 text-[var(--fg-1)]">
         <AppBar onOpenActivity={() => setActivityOpen(true)} />
         <WatchHeader />
-        <CommitTimeline />
-        {narrative ? (
-          view === 'story' ? (
-            <StoryView />
-          ) : (
-            <ClassicView />
-          )
-        ) : (
-          <BranchSkeletonView message={copy.loadingMessages[loadingMsgIndex]!} />
-        )}
+        <div className="flex">
+          <aside
+            className="sticky w-[260px] shrink-0 self-start overflow-y-auto border-r border-[var(--gray-a4)] bg-[var(--bg-page)]"
+            style={{ top: 'calc(52px + 96px)', maxHeight: 'calc(100vh - 52px - 96px)' }}
+            aria-label="Commit timeline sidebar"
+          >
+            <CommitTimeline />
+          </aside>
+          <main className="min-w-0 flex-1">
+            {narrative ? (
+              view === 'story' ? (
+                <StoryView />
+              ) : (
+                <ClassicView />
+              )
+            ) : (
+              <BranchSkeletonView message={copy.loadingMessages[loadingMsgIndex]!} />
+            )}
+          </main>
+        </div>
         <ActivityDrawer open={activityOpen} onClose={() => setActivityOpen(false)} />
         <ShortcutsHelp open={shortcutsHelpOpen} onClose={() => setShortcutsHelpOpen(false)} />
       </div>

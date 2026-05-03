@@ -47,7 +47,6 @@ export function CommitTimeline() {
     setError(null);
     setWatchLoading(true);
     try {
-      // If unified isn't ready yet, ask the server to start generating.
       if (!watch?.unifiedReady) {
         await fetch('/api/narrative/unified', { method: 'POST' });
       }
@@ -60,61 +59,67 @@ export function CommitTimeline() {
     }
   }
 
-  if (watch.commits.length === 0) {
-    return (
-      <section
-        className="sticky z-10 bg-[var(--bg-page)] px-6 py-3"
-        style={{ top: 'calc(52px + 96px)', boxShadow: 'inset 0 -1px 0 var(--gray-a4)' }}
-      >
-        <p className="text-[13px] text-[var(--fg-3)]">No commits ahead of {watch.base} yet — waiting for new commits.</p>
-      </section>
-    );
-  }
-
   return (
-    <section
-      className="sticky z-10 bg-[var(--bg-page)] px-6 py-3"
-      style={{ top: 'calc(52px + 96px)', boxShadow: 'inset 0 -1px 0 var(--gray-a4)' }}
+    <nav
+      aria-label="Branch timeline"
+      className="flex h-full flex-col gap-3 px-4 py-4 text-[13px]"
     >
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          onClick={selectUnified}
-          disabled={watchLoading}
-          className="shrink-0 rounded-[6px] px-2.5 py-1 text-[12.5px] font-medium transition-colors disabled:opacity-60"
-          style={
-            isUnified
-              ? {
-                  background: 'var(--purple-3)',
-                  color: 'var(--purple-11)',
-                  boxShadow: 'inset 0 0 0 1px var(--purple-a5)',
-                }
-              : { background: 'var(--gray-2)', color: 'var(--fg-2)', boxShadow: 'inset 0 0 0 1px var(--gray-a4)' }
-          }
-          title={watch.unifiedReady ? 'Whole-branch story (already generated)' : 'Generate the whole-branch story'}
-        >
-          {watch.unifiedReady ? '◉ Whole branch' : '○ Whole branch'}
-        </button>
-        <div className="flex-1 overflow-x-auto">
-          <ol className="flex items-center gap-2 whitespace-nowrap">
-            {watch.commits.map((c) => (
-              <CommitChip
-                key={c.sha}
-                commit={c}
-                selected={selectedSha === c.sha}
-                onSelect={() => selectCommit(c.sha)}
-                disabled={watchLoading}
-              />
-            ))}
-          </ol>
-        </div>
+      <button
+        type="button"
+        onClick={selectUnified}
+        disabled={watchLoading}
+        className="rounded-[8px] px-3 py-2 text-left text-[13px] font-medium transition-colors disabled:opacity-60"
+        style={
+          isUnified
+            ? {
+                background: 'var(--purple-3)',
+                color: 'var(--purple-11)',
+                boxShadow: 'inset 0 0 0 1px var(--purple-a5)',
+              }
+            : {
+                background: 'var(--gray-2)',
+                color: 'var(--fg-2)',
+                boxShadow: 'inset 0 0 0 1px var(--gray-a4)',
+              }
+        }
+        title={watch.unifiedReady ? 'Whole-branch story (already generated)' : 'Generate the whole-branch story'}
+      >
+        <span className="mr-1.5">{watch.unifiedReady ? '◉' : '○'}</span>
+        Whole branch
+        <span className="ml-2 text-[11px] font-normal opacity-70">
+          {watch.commits.length} {watch.commits.length === 1 ? 'commit' : 'commits'}
+        </span>
+      </button>
+
+      <div
+        className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[var(--fg-3)]"
+        style={{ paddingLeft: '4px' }}
+      >
+        Commits
       </div>
-      {error ? <p className="mt-2 text-[12px] text-[var(--red-11)]">{error}</p> : null}
-    </section>
+
+      {watch.commits.length === 0 ? (
+        <p className="px-1 text-[12px] text-[var(--fg-3)]">No commits ahead of {watch.base}.</p>
+      ) : (
+        <ol className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
+          {[...watch.commits].reverse().map((c) => (
+            <CommitRow
+              key={c.sha}
+              commit={c}
+              selected={selectedSha === c.sha}
+              onSelect={() => selectCommit(c.sha)}
+              disabled={watchLoading}
+            />
+          ))}
+        </ol>
+      )}
+
+      {error ? <p className="px-1 text-[12px] text-[var(--red-11)]">{error}</p> : null}
+    </nav>
   );
 }
 
-function CommitChip({
+function CommitRow({
   commit,
   selected,
   onSelect,
@@ -125,15 +130,20 @@ function CommitChip({
   onSelect: () => void;
   disabled: boolean;
 }) {
-  const stateStyle: React.CSSProperties = selected
+  const rowStyle: React.CSSProperties = selected
     ? {
         background: 'var(--brand-3, var(--purple-3))',
         color: 'var(--brand-11, var(--purple-11))',
         boxShadow: 'inset 0 0 0 1px var(--brand-a6, var(--purple-a6))',
       }
+    : { background: 'transparent', color: 'var(--fg-1)' };
+
+  const indicator = commit.hasNarrative ? '✓' : '○';
+  const indicatorColor = selected
+    ? 'var(--brand-11, var(--purple-11))'
     : commit.hasNarrative
-      ? { background: 'var(--gray-2)', color: 'var(--fg-1)', boxShadow: 'inset 0 0 0 1px var(--gray-a5)' }
-      : { background: 'transparent', color: 'var(--fg-3)', boxShadow: 'inset 0 0 0 1px var(--gray-a4)' };
+      ? 'var(--green-11)'
+      : 'var(--fg-3)';
 
   return (
     <li>
@@ -141,15 +151,30 @@ function CommitChip({
         type="button"
         onClick={onSelect}
         disabled={disabled}
-        className="inline-flex items-center gap-2 rounded-[6px] px-2.5 py-1 text-left text-[12.5px] transition-colors disabled:opacity-60"
-        style={stateStyle}
+        className="group flex w-full items-start gap-2 rounded-[6px] px-2 py-1.5 text-left transition-colors hover:bg-[var(--gray-2)] disabled:opacity-60"
+        style={rowStyle}
         title={`${commit.shortSha}  ${commit.subject}\n${commit.author} · ${shortDate(commit.date)}\n+${commit.additions} −${commit.deletions} across ${commit.changedFiles} ${commit.changedFiles === 1 ? 'file' : 'files'}${
-          commit.hasNarrative ? '' : '\n(narration pending)'
+          commit.hasNarrative ? '' : '\n(narration pending — click to generate)'
         }`}
       >
-        <span className="font-mono text-[11.5px] opacity-80">{commit.shortSha}</span>
-        <span className="max-w-[200px] truncate font-medium">{commit.subject}</span>
-        {!commit.hasNarrative ? <span className="text-[11px] opacity-70">…</span> : null}
+        <span
+          aria-hidden
+          className="mt-[1px] w-3 shrink-0 text-center font-mono text-[11px]"
+          style={{ color: indicatorColor }}
+        >
+          {indicator}
+        </span>
+        <span className="flex min-w-0 flex-1 flex-col gap-[1px]">
+          <span className="truncate text-[13px] font-medium leading-tight">{commit.subject}</span>
+          <span className="flex items-center gap-2 text-[11px] text-[var(--fg-3)]">
+            <span className="font-mono">{commit.shortSha}</span>
+            <span aria-hidden>·</span>
+            <span>
+              <span style={{ color: 'var(--green-11)' }}>+{commit.additions}</span>{' '}
+              <span style={{ color: 'var(--red-11)' }}>−{commit.deletions}</span>
+            </span>
+          </span>
+        </span>
       </button>
     </li>
   );
