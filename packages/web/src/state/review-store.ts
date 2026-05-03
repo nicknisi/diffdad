@@ -127,14 +127,16 @@ function loadDrafts(prNumber: number): DraftComment[] {
   return [];
 }
 
-type InlineComment = { path: string; line: number; body: string };
+type InlineComment = { path: string; line: number; body: string; side?: 'LEFT' | 'RIGHT' };
 
 function isSubmittableDraft(d: DraftComment): d is DraftComment & { path: string; line: number } {
   return !!d.path && d.line !== undefined;
 }
 
 export function pendingReviewComments(drafts: DraftComment[]): InlineComment[] {
-  return drafts.filter(isSubmittableDraft).map((d) => ({ path: d.path, line: d.line, body: d.body }));
+  return drafts
+    .filter(isSubmittableDraft)
+    .map((d) => ({ path: d.path, line: d.line, body: d.body, side: d.side }));
 }
 
 export const useReviewStore = create<ReviewState>((set) => ({
