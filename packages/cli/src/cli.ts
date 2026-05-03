@@ -415,7 +415,7 @@ async function watchCommand(branchArg?: string): Promise<number> {
     skeletonKey: null,
   };
 
-  const { app, narrateCommit, refreshCommits } = createWatchServer(ctx);
+  const { app, narrateUnified, refreshCommits } = createWatchServer(ctx);
   const portFlag = Bun.argv.find((f) => f.startsWith('--port='));
   const port = portFlag ? parseInt(portFlag.split('=')[1]) : 0;
   const server = Bun.serve({ fetch: app.fetch, port, idleTimeout: 255 });
@@ -433,16 +433,15 @@ async function watchCommand(branchArg?: string): Promise<number> {
   if (commits.length === 0) {
     console.log(`  ${a.dim}No commits ahead of ${base} yet — waiting for new commits...${a.reset}`);
   } else {
-    console.log(`  ${a.yellow}Narrating ${commits.length} commit${commits.length === 1 ? '' : 's'}...${a.reset}`);
-    // Kick off narrations sequentially in the background; SSE updates the UI.
+    console.log(
+      `  ${a.yellow}Narrating whole branch${a.reset} ${a.dim}(${commits.length} commit${commits.length === 1 ? '' : 's'} as one story)${a.reset}`,
+    );
     void (async () => {
-      for (const c of commits) {
-        await narrateCommit(c.sha, { broadcastWhenDone: true });
-        if (ctx.narratives.has(c.sha)) {
-          console.log(
-            `  ${a.green}✓${a.reset} ${a.gray}${c.shortSha}${a.reset} ${a.white}${c.subject}${a.reset}`,
-          );
-        }
+      const narrative = await narrateUnified();
+      if (narrative) {
+        console.log(
+          `  ${a.green}✓${a.reset} ${a.white}whole-branch story ready${a.reset} ${a.dim}(${narrative.chapters.length} chapters)${a.reset}`,
+        );
       }
     })();
   }
@@ -478,20 +477,15 @@ async function watchCommand(branchArg?: string): Promise<number> {
 
       ctx.baseSha = freshBase;
       await refreshCommits(freshCommits, freshHead);
-      // narrateCommit is fire-and-forget inside refreshCommits, but we
-      // also want a console log per success. Hook into the cache: when
-      // narratives.has(sha) is set we log it.
-      const tickShas = added.map((c) => c.sha);
+
+      // Whole-branch story is the primary surface — regenerate it when the
+      // branch moves. Per-commit narration stays on demand.
       void (async () => {
-        for (const sha of tickShas) {
-          // Wait until it's either generated or errored.
-          while (ctx.generating.has(sha)) await new Promise((r) => setTimeout(r, 250));
-          const c = freshCommits.find((cm) => cm.sha === sha);
-          if (c && ctx.narratives.has(sha)) {
-            console.log(
-              `  ${a.green}✓${a.reset} ${a.gray}${c.shortSha}${a.reset} ${a.white}${c.subject}${a.reset}`,
-            );
-          }
+        const narrative = await narrateUnified();
+        if (narrative) {
+          console.log(
+            `  ${a.green}✓${a.reset} ${a.white}whole-branch story refreshed${a.reset} ${a.dim}(${narrative.chapters.length} chapters)${a.reset}`,
+          );
         }
       })();
     } catch (err) {
