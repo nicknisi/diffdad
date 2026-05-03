@@ -316,23 +316,22 @@ export function createWatchServer(ctx: WatchServerContext) {
     pr: PRMetadata;
   }> {
     const sha = c.req.query('sha');
-    const mode = c.req.query('mode');
 
-    if (mode === 'unified') {
-      const files = await loadFilesForRange(ctx.repoRoot, ctx.base, ctx.headSha);
-      const pr = syntheticPrForUnified(ctx, files);
-      const ready = ctx.unified && ctx.unifiedKey === `${ctx.baseSha}:${ctx.headSha}`;
-      return {
-        selection: { kind: 'unified' },
-        narrative: ready ? ctx.unified : null,
-        files,
-        pr,
-      };
+    // Explicit per-commit request.
+    if (sha) {
+      const commit = ctx.commits.find((cm) => cm.sha === sha);
+      if (commit) {
+        const files = await loadFilesForCommit(ctx.repoRoot, commit.sha);
+        const pr = syntheticPrForCommit(ctx, commit, files);
+        const narrative = ctx.narratives.get(commit.sha) ?? null;
+        return { selection: { kind: 'commit', sha: commit.sha }, narrative, files, pr };
+      }
+      // Fall through to unified default if sha unknown.
     }
 
-    const targetSha = sha ?? ctx.commits[ctx.commits.length - 1]?.sha;
-    if (!targetSha) {
-      // No commits yet — return an empty placeholder.
+    // Default and `?mode=unified` both land on the whole-branch view.
+    // 'mode' query param is now informational; default and ?mode=unified are equivalent.
+    if (ctx.commits.length === 0) {
       return {
         selection: { kind: 'pending' },
         narrative: null,
@@ -340,13 +339,13 @@ export function createWatchServer(ctx: WatchServerContext) {
         pr: syntheticPrForUnified(ctx, []),
       };
     }
-    const commit = ctx.commits.find((cm) => cm.sha === targetSha) ?? ctx.commits[ctx.commits.length - 1]!;
-    const files = await loadFilesForCommit(ctx.repoRoot, commit.sha);
-    const pr = syntheticPrForCommit(ctx, commit, files);
-    const narrative = ctx.narratives.get(commit.sha) ?? null;
+
+    const files = await loadFilesForRange(ctx.repoRoot, ctx.base, ctx.headSha);
+    const pr = syntheticPrForUnified(ctx, files);
+    const ready = ctx.unified && ctx.unifiedKey === `${ctx.baseSha}:${ctx.headSha}`;
     return {
-      selection: { kind: 'commit', sha: commit.sha },
-      narrative,
+      selection: { kind: 'unified' },
+      narrative: ready ? ctx.unified : null,
       files,
       pr,
     };
