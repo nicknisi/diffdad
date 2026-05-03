@@ -24,6 +24,16 @@ export function CommitTimeline() {
     setError(null);
     setWatchLoading(true);
     try {
+      // Kick generation if this commit hasn't been narrated yet. Server is
+      // idempotent — already-narrating SHAs early-return.
+      const target = watch?.commits.find((c) => c.sha === sha);
+      if (target && !target.hasNarrative) {
+        await fetch('/api/narrative/commit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sha }),
+        });
+      }
       const data = await fetchNarrative(`?sha=${encodeURIComponent(sha)}`);
       applyNarrativeResponse(data);
     } catch (err) {

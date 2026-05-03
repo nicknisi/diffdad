@@ -157,6 +157,7 @@ export function useLiveStream() {
           baseSha: string;
           headSha: string;
           commits: WatchCommitSummary[];
+          unifiedReady: boolean;
         };
         const store = useReviewStore.getState();
         if (store.watch) {
@@ -216,6 +217,8 @@ export function useLiveStream() {
     };
 
     const onUnifiedNarrating = () => {
+      const store = useReviewStore.getState();
+      if (store.watch) store.setWatch({ ...store.watch, unifiedReady: false });
       addLiveEvent(makeEvent('system', 'Generating whole-branch narrative…'));
     };
 

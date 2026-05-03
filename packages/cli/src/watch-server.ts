@@ -293,12 +293,14 @@ export function createWatchServer(ctx: WatchServerContext) {
     for (const sha of dropNarratives) ctx.narratives.delete(sha);
 
     const summaries = await buildCommitSummaries();
+    const unifiedReady = !!(ctx.unified && ctx.unifiedKey === `${ctx.baseSha}:${ctx.headSha}`);
     broadcast('watch-update', {
       branch: ctx.branch,
       base: ctx.base,
       baseSha: ctx.baseSha,
       headSha: ctx.headSha,
       commits: summaries,
+      unifiedReady,
     });
   }
 
@@ -429,7 +431,19 @@ export function createWatchServer(ctx: WatchServerContext) {
         send('connected', { timestamp: Date.now() });
         sseClients.add(send);
 
+        // Keepalive: watch mode only emits SSE on git changes, but Bun's
+        // idleTimeout drops idle sockets after ~4min. A comment frame every
+        // 25s keeps the connection alive without polluting the event log.
+        const keepalive = setInterval(() => {
+          try {
+            controller.enqueue(encoder.encode(`: keepalive ${Date.now()}\n\n`));
+          } catch {
+            // controller closed
+          }
+        }, 25_000);
+
         c.req.raw.signal.addEventListener('abort', () => {
+          clearInterval(keepalive);
           sseClients.delete(send);
           try {
             controller.close();
