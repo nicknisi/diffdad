@@ -1,4 +1,4 @@
-import { mkdir } from 'node:fs/promises';
+import { mkdir, rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -317,4 +317,125 @@ export async function runConfig(): Promise<number> {
   } finally {
     close();
   }
+}
+
+const SECRET_KEYS = new Set(['githubToken', 'aiApiKey']);
+
+export function redactSecret(value: string): string {
+  if (value.length === 0) return '<empty>';
+  if (value.length <= 8) return '••••';
+  return `${value.slice(0, 4)}…${value.slice(-4)} (${value.length} chars)`;
+}
+
+function formatValue(key: string, value: unknown): string {
+  if (value === null || value === undefined) return `${c.dim}<unset>${c.reset}`;
+  if (SECRET_KEYS.has(key) && typeof value === 'string') {
+    return `${c.yellow}${redactSecret(value)}${c.reset}`;
+  }
+  if (typeof value === 'string') return `${c.cyan}${value}${c.reset}`;
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return `${c.cyan}${String(value)}${c.reset}`;
+  }
+  return `${c.cyan}${JSON.stringify(value)}${c.reset}`;
+}
+
+const SECTIONS: { title: string; keys: string[] }[] = [
+  {
+    title: 'AI Provider',
+    keys: ['aiProvider', 'aiApiKey', 'aiBaseUrl', 'aiModel', 'defaultCli', 'cliModels'],
+  },
+  { title: 'GitHub', keys: ['githubToken'] },
+  {
+    title: 'Display',
+    keys: [
+      'theme',
+      'accent',
+      'storyStructure',
+      'layoutMode',
+      'displayDensity',
+      'defaultNarrationDensity',
+      'clusterBots',
+    ],
+  },
+];
+
+export async function showConfig(): Promise<number> {
+  const path = getConfigPath();
+  const file = Bun.file(path);
+  const exists = await file.exists();
+
+  process.stdout.write(`\n  ${c.purple}${c.bold}Diff Dad${c.reset} ${c.dim}— current config${c.reset}\n`);
+  process.stdout.write(`  ${c.dim}path:${c.reset} ${exists ? c.cyan : c.gray}${path}${c.reset}`);
+  if (!exists) {
+    process.stdout.write(` ${c.gray}(not created yet — run ${c.cyan}dad config${c.gray})${c.reset}\n\n`);
+    return 0;
+  }
+  process.stdout.write('\n');
+
+  let raw: Record<string, unknown>;
+  try {
+    raw = (await file.json()) as Record<string, unknown>;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    process.stdout.write(`\n  ${c.red}error reading config:${c.reset} ${msg}\n\n`);
+    return 1;
+  }
+
+  const seen = new Set<string>();
+  const longestLabel = SECTIONS.flatMap((s) => s.keys).reduce((m, k) => Math.max(m, k.length), 0);
+
+  for (const section of SECTIONS) {
+    heading(section.title);
+    for (const key of section.keys) {
+      seen.add(key);
+      const value = raw[key];
+      const label = key.padEnd(longestLabel);
+      process.stdout.write(`  ${c.dim}${label}${c.reset}  ${formatValue(key, value)}\n`);
+    }
+  }
+
+  const extraKeys = Object.keys(raw).filter((k) => !seen.has(k));
+  if (extraKeys.length > 0) {
+    heading('Other');
+    const extraPad = extraKeys.reduce((m, k) => Math.max(m, k.length), 0);
+    for (const key of extraKeys) {
+      const label = key.padEnd(extraPad);
+      process.stdout.write(`  ${c.dim}${label}${c.reset}  ${formatValue(key, raw[key])}\n`);
+    }
+  }
+
+  process.stdout.write('\n');
+  return 0;
+}
+
+export async function resetConfig(opts: { yes?: boolean } = {}): Promise<number> {
+  const path = getConfigPath();
+  const file = Bun.file(path);
+  const exists = await file.exists();
+
+  process.stdout.write(`\n  ${c.purple}${c.bold}Diff Dad${c.reset} ${c.dim}— reset config${c.reset}\n`);
+  process.stdout.write(`  ${c.dim}path:${c.reset} ${c.cyan}${path}${c.reset}\n`);
+
+  if (!exists) {
+    process.stdout.write(`  ${c.dim}nothing to reset — config does not exist${c.reset}\n\n`);
+    return 0;
+  }
+
+  if (!opts.yes) {
+    const { ask, close } = makeAsker();
+    try {
+      process.stdout.write(`  ${c.yellow}this will delete your saved API keys, tokens, and preferences${c.reset}\n`);
+      const answer = await ask(`  ${c.dim}type${c.reset} ${c.cyan}yes${c.reset} ${c.dim}to confirm:${c.reset} `);
+      if (answer.toLowerCase() !== 'yes' && answer.toLowerCase() !== 'y') {
+        process.stdout.write(`  ${c.dim}cancelled${c.reset}\n\n`);
+        return 0;
+      }
+    } finally {
+      close();
+    }
+  }
+
+  await rm(path, { force: true });
+  process.stdout.write(`\n  ${c.green}✓${c.reset} config removed\n\n`);
+  return 0;
 }
