@@ -6,7 +6,7 @@ import InstallPill from './InstallPill.astro';
   <div class="wrap">
     <div class="section-eye">// usage</div>
     <h2 class="font-serif font-semibold text-[44px] leading-[1.1] tracking-[-0.02em] m-0 mb-[18px] text-balance">
-      Five commands, three flags, <em class="italic text-accent-2">one</em> mustache.
+      Six commands, four flags, <em class="italic text-accent-2">one</em> mustache.
     </h2>
     <p class="text-lg text-ink-2 max-w-[620px] m-0 mb-10">
       The CLI fetches a PR, generates the narrative, starts a local server, and opens your browser.
@@ -18,6 +18,7 @@ import InstallPill from './InstallPill.astro';
         <div class="text-[11px] text-[#6B7B9A] tracking-[0.1em] uppercase mb-[14px]">// commands</div>
         <div class="grid grid-cols-[minmax(180px,max-content)_1fr] gap-[18px] py-1"><span class="text-[#FFF6E6]">dad &lt;pr&gt;</span><span class="text-[#8A95AD]">Open a PR as a narrated story</span></div>
         <div class="grid grid-cols-[minmax(180px,max-content)_1fr] gap-[18px] py-1"><span class="text-[#FFF6E6]">dad review &lt;pr&gt;</span><span class="text-[#8A95AD]">Same as above (explicit)</span></div>
+        <div class="grid grid-cols-[minmax(180px,max-content)_1fr] gap-[18px] py-1"><span class="text-[#FFF6E6]">dad watch [branch]</span><span class="text-[#8A95AD]">Narrate your in-progress branch (no GitHub)</span></div>
         <div class="grid grid-cols-[minmax(180px,max-content)_1fr] gap-[18px] py-1"><span class="text-[#FFF6E6]">dad config</span><span class="text-[#8A95AD]">Configure AI provider, GH token, display</span></div>
         <div class="grid grid-cols-[minmax(180px,max-content)_1fr] gap-[18px] py-1"><span class="text-[#FFF6E6]">dad cache clear</span><span class="text-[#8A95AD]">Wipe cached narratives</span></div>
         <div class="grid grid-cols-[minmax(180px,max-content)_1fr] gap-[18px] py-1"><span class="text-[#FFF6E6]">dad --version</span><span class="text-[#8A95AD]">Print version</span></div>
@@ -32,6 +33,7 @@ import InstallPill from './InstallPill.astro';
       <div class="bg-card border border-line rounded-[18px] px-6 py-[22px]">
         <h4 class="font-serif font-semibold text-xl m-0 mb-3">Flags (any position)</h4>
         <div class="grid grid-cols-[minmax(170px,max-content)_1fr] gap-[14px] py-2 text-[13px] items-baseline"><span class="font-mono text-accent-2 font-medium whitespace-nowrap">--with=claude|pi</span><span class="text-ink-2">Force a specific AI CLI</span></div>
+        <div class="grid grid-cols-[minmax(170px,max-content)_1fr] gap-[14px] py-2 text-[13px] items-baseline border-t border-line"><span class="font-mono text-accent-2 font-medium whitespace-nowrap">--base &lt;ref&gt;</span><span class="text-ink-2">Watch mode: override base (default origin/HEAD)</span></div>
         <div class="grid grid-cols-[minmax(170px,max-content)_1fr] gap-[14px] py-2 text-[13px] items-baseline border-t border-line"><span class="font-mono text-accent-2 font-medium whitespace-nowrap">--no-cache</span><span class="text-ink-2">Regenerate narrative even if cached</span></div>
         <div class="grid grid-cols-[minmax(170px,max-content)_1fr] gap-[14px] py-2 text-[13px] items-baseline border-t border-line"><span class="font-mono text-accent-2 font-medium whitespace-nowrap">--no-open</span><span class="text-ink-2">Don't auto-open the browser</span></div>
         <div class="grid grid-cols-[minmax(170px,max-content)_1fr] gap-[14px] py-2 text-[13px] items-baseline border-t border-line"><span class="font-mono text-accent-2 font-medium whitespace-nowrap">--port=3000</span><span class="text-ink-2">Use a specific port</span></div>
