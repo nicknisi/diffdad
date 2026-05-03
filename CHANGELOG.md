@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.8.0](https://github.com/nicknisi/diffdad/compare/v0.7.0...v0.8.0) (2026-05-03)
+
+
+### Features
+
+* **cli:** add `dad config show` and `dad config reset` ([#19](https://github.com/nicknisi/diffdad/issues/19)) ([b71d5e4](https://github.com/nicknisi/diffdad/commit/b71d5e4e730c7fd376a11954338e61fe18a0b8aa))
+* **cli:** configurable default CLI and per-CLI model ([#17](https://github.com/nicknisi/diffdad/issues/17)) ([13c017a](https://github.com/nicknisi/diffdad/commit/13c017ae2b7e54a1342c3c4647f24a6228c65ea3))
+
+
+### Bug Fixes
+
+* allow commenting on removed lines ([#18](https://github.com/nicknisi/diffdad/issues/18)) ([b06cee4](https://github.com/nicknisi/diffdad/commit/b06cee4105ae7e37c2251270df9044ebc0a708b7))
+
 ## [0.7.0](https://github.com/nicknisi/diffdad/compare/v0.6.1...v0.7.0) (2026-05-03)
 
 
