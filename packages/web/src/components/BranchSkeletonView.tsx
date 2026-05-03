@@ -1,5 +1,7 @@
 import { useReviewStore } from '../state/review-store';
 import type { BranchSkeleton, SkeletonFileCategory } from '../state/types';
+import { DadMark } from './DadMark';
+import { getAccentMeta } from '../lib/accents';
 
 const CATEGORY_LABELS: Record<SkeletonFileCategory, string> = {
   test: 'Tests',
@@ -23,13 +25,43 @@ const CATEGORY_ORDER: SkeletonFileCategory[] = [
 
 export function BranchSkeletonView({ message }: { message: string }) {
   const watch = useReviewStore((s) => s.watch);
+  const accent = useReviewStore((s) => s.accent);
   if (!watch) return null;
   const { skeleton } = watch;
+  const { markBg } = getAccentMeta(accent);
   return (
     <section className="px-6 py-6 text-[var(--fg-1)]">
-      <header className="mb-4">
-        <p className="text-[13px] uppercase tracking-[0.08em] text-[var(--fg-3)]">Branch skeleton</p>
-        <p className="mt-1 text-[15px] text-[var(--fg-2)]">{message}</p>
+      <header className="mb-6 flex items-center gap-4">
+        <div style={{ animation: 'generating-bob 2s ease-in-out infinite' }}>
+          <DadMark size={44} bg={markBg} shape="circle" showBadge={false} showWink />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <p className="text-[11.5px] font-semibold uppercase tracking-[0.08em] text-[var(--fg-3)]">
+            Branch skeleton · narrating…
+          </p>
+          <div className="flex items-center gap-2.5">
+            <span className="generating-dots flex gap-1">
+              <span
+                className="h-1.5 w-1.5 rounded-full"
+                style={{ background: 'var(--purple-9)', animation: 'generating-dot 1.4s ease-in-out infinite' }}
+              />
+              <span
+                className="h-1.5 w-1.5 rounded-full"
+                style={{ background: 'var(--purple-9)', animation: 'generating-dot 1.4s ease-in-out 0.2s infinite' }}
+              />
+              <span
+                className="h-1.5 w-1.5 rounded-full"
+                style={{ background: 'var(--purple-9)', animation: 'generating-dot 1.4s ease-in-out 0.4s infinite' }}
+              />
+            </span>
+            <p
+              className="text-[14px] italic text-[var(--fg-2)]"
+              style={{ animation: 'generating-fade 2.5s ease-in-out infinite' }}
+            >
+              {message}
+            </p>
+          </div>
+        </div>
       </header>
 
       <Totals skeleton={skeleton} />

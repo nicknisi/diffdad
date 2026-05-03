@@ -137,12 +137,10 @@ export default function App() {
             <CommitTimeline />
           </aside>
           <main className="min-w-0 flex-1">
-            {narrative ? (
-              view === 'story' ? (
-                <StoryView />
-              ) : (
-                <ClassicView />
-              )
+            {view === 'files' ? (
+              <ClassicView />
+            ) : narrative ? (
+              <StoryView />
             ) : (
               <BranchSkeletonView message={copy.loadingMessages[loadingMsgIndex]!} />
             )}
