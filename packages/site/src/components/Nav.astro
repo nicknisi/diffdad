@@ -1,0 +1,131 @@
+---
+import DadMark from './DadMark.astro';
+import AccentPicker from './AccentPicker.astro';
+---
+
+<nav class="flex items-center justify-between py-6">
+  <a href="#" class="flex items-center gap-3 no-underline">
+    <DadMark size={40} showBadge={false} />
+    <div class="text-[22px] font-bold tracking-[-0.02em]">
+      diff<span class="text-muted font-medium">.</span>dad
+    </div>
+  </a>
+  <div class="flex items-center gap-7 font-mono text-sm text-ink-2">
+    <a href="#story" class="no-underline text-ink-2 transition-colors hover:text-accent hidden md:inline">Example</a>
+    <a href="#install" class="no-underline text-ink-2 transition-colors hover:text-accent hidden md:inline">Install</a>
+    <a href="#usage" class="no-underline text-ink-2 transition-colors hover:text-accent hidden md:inline">Usage</a>
+    <a href="#features" class="no-underline text-ink-2 transition-colors hover:text-accent hidden md:inline">Features</a>
+
+    <AccentPicker />
+
+    <button
+      id="theme-toggle"
+      class="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-line bg-card text-ink-2 hover:bg-bg-2 hover:text-ink transition-colors"
+      aria-label="Toggle theme"
+      title="Theme: light"
+    >
+      <span data-theme-icon="light" class="text-base">☀</span>
+      <span data-theme-icon="dark" class="hidden text-base">☾</span>
+      <span data-theme-icon="auto" class="hidden text-base">◐</span>
+    </button>
+
+    <a
+      href="https://github.com/nicknisi/diffdad"
+      target="_blank"
+      rel="noreferrer"
+      class="inline-flex items-center gap-2 rounded-lg border border-transparent bg-accent px-[14px] py-2 font-mono text-[13px] font-semibold text-on-ink no-underline transition-all hover:bg-accent-2 hover:-translate-y-px"
+    >
+      <span>★</span> GitHub
+    </a>
+  </div>
+</nav>
+
+<script>
+  import { ACCENTS, DEFAULT_ACCENT, type AccentId } from '../lib/accents';
+  import { renderDadMarkSVG, ACCENT_BG } from '../lib/dad-mark';
+
+  type Theme = 'light' | 'dark' | 'auto';
+  const THEME_KEY = 'diffdad.theme';
+  const ACCENT_KEY = 'diffdad.accent';
+  const root = document.documentElement;
+  const accentIds = new Set<string>(ACCENTS.map((a) => a.id));
+
+  const getTheme = (): Theme => {
+    const t = localStorage.getItem(THEME_KEY);
+    return t === 'light' || t === 'dark' || t === 'auto' ? t : 'auto';
+  };
+  const getAccent = (): AccentId => {
+    const a = localStorage.getItem(ACCENT_KEY);
+    return a && accentIds.has(a) ? (a as AccentId) : DEFAULT_ACCENT;
+  };
+
+  const applyTheme = (theme: Theme) => {
+    const resolved = theme === 'auto' ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : theme;
+    root.classList.toggle('dark', resolved === 'dark');
+    localStorage.setItem(THEME_KEY, theme);
+
+    const btn = document.getElementById('theme-toggle');
+    btn?.setAttribute('title', `Theme: ${theme}`);
+    btn?.setAttribute('aria-label', `Theme: ${theme}`);
+    document.querySelectorAll<HTMLElement>('[data-theme-icon]').forEach((el) => {
+      el.classList.toggle('hidden', el.dataset.themeIcon !== theme);
+    });
+  };
+
+  const applyAccent = (accent: AccentId) => {
+    if (accent === 'classic') root.removeAttribute('data-accent');
+    else root.setAttribute('data-accent', accent);
+    localStorage.setItem(ACCENT_KEY, accent);
+    updateFavicon(accent);
+  };
+
+  const updateFavicon = (accent: AccentId) => {
+    const bg = ACCENT_BG[accent] ?? ACCENT_BG.dadcore;
+    const svg = renderDadMarkSVG({ size: 32, bg, shape: 'circle', showBadge: false });
+    const href = `data:image/svg+xml,${encodeURIComponent(svg)}`;
+    let link = document.querySelector<HTMLLinkElement>('link[rel="icon"][type="image/svg+xml"]');
+    if (!link) {
+      link = document.createElement('link');
+      link.rel = 'icon';
+      link.type = 'image/svg+xml';
+      document.head.appendChild(link);
+    }
+    link.href = href;
+  };
+
+  applyTheme(getTheme());
+  applyAccent(getAccent());
+
+  // React to system theme changes when in auto mode.
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    if (getTheme() === 'auto') applyTheme('auto');
+  });
+
+  document.getElementById('theme-toggle')?.addEventListener('click', () => {
+    const t = getTheme();
+    applyTheme(t === 'light' ? 'dark' : t === 'dark' ? 'auto' : 'light');
+  });
+
+  // Accent picker dropdown
+  const picker = document.querySelector<HTMLElement>('[data-accent-picker]');
+  const menu = picker?.querySelector<HTMLElement>('[data-accent-menu]');
+  const toggle = picker?.querySelector<HTMLElement>('[data-accent-toggle]');
+
+  toggle?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    menu?.classList.toggle('hidden');
+  });
+  document.addEventListener('click', (e) => {
+    if (!picker?.contains(e.target as Node)) menu?.classList.add('hidden');
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') menu?.classList.add('hidden');
+  });
+  picker?.querySelectorAll<HTMLElement>('[data-accent-option]').forEach((el) => {
+    el.addEventListener('click', () => {
+      const id = el.dataset.accentOption as AccentId;
+      applyAccent(id);
+      menu?.classList.add('hidden');
+    });
+  });
+</script>

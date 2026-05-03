@@ -1,0 +1,164 @@
+---
+const chapters = [
+  { n: 1, title: 'toSignableString — the HMAC now operates on raw bytes', risk: 'high', risklbl: 'high risk', hunks: '2 hunks' },
+  { n: 2, title: 'Parse-after-verify and public API widening', risk: 'med', risklbl: 'medium', hunks: '3 hunks' },
+  { n: 3, title: 'verifyHeader type widening', risk: 'low', risklbl: 'low risk', hunks: '1 hunk' },
+  { n: 4, title: 'Divergence regression tests', risk: 'low', risklbl: 'low risk', hunks: '1 hunk' },
+];
+---
+
+<section id="story" class="bg-bg-2 border-y border-line py-16">
+  <div class="wrap">
+    <div class="section-eye">// the example</div>
+    <h2 class="font-serif font-semibold text-[44px] leading-[1.1] tracking-[-0.02em] m-0 mb-[18px] text-balance">
+      Prose <em class="italic text-accent-2">and</em> hunks, sitting in a tree.
+    </h2>
+    <p class="text-lg text-ink-2 max-w-[620px] m-0 mb-10">
+      Each chapter weaves together the prose explanation with the actual diff hunks it's talking
+      about — interleaved, not separated. Read the story, see the code in the same breath, and
+      never lose the plot.
+    </p>
+
+    <div class="grid grid-cols-1 lg:grid-cols-[240px_1fr] gap-6 bg-card border border-line rounded-[18px] p-[18px] shadow-soft">
+      <aside class="lg:border-r lg:border-line lg:pr-[18px] text-sm">
+        <div class="font-mono text-[10px] tracking-[0.12em] text-muted uppercase mb-3">Story</div>
+        {
+          chapters.map((c, i) => (
+            <div
+              class:list={[
+                'grid grid-cols-[22px_1fr] gap-2 px-[10px] py-[10px] rounded-lg items-start leading-[1.35]',
+                i === 0 && 'bg-accent/[0.14]',
+              ]}
+            >
+              <span
+                class:list={[
+                  'inline-flex items-center justify-center w-5 h-5 rounded-full font-mono text-[11px] font-semibold',
+                  i === 0
+                    ? 'bg-accent text-on-ink border border-accent'
+                    : 'bg-card-soft text-ink-2 border border-line',
+                ]}
+              >
+                {c.n}
+              </span>
+              <span>
+                <span class="font-semibold text-ink">{c.title}</span>
+                <div class="font-mono text-[10.5px] text-muted mt-0.5 tracking-[0.04em]">
+                  {c.hunks} · {c.risklbl}
+                </div>
+              </span>
+            </div>
+          ))
+        }
+        <div class="grid grid-cols-[22px_1fr] gap-2 px-[10px] py-[10px] rounded-lg items-start leading-[1.35]">
+          <span class="inline-flex items-center justify-center w-5 h-5 font-mono text-[11px]">💬</span>
+          <span>
+            <span class="font-semibold text-ink">PR Discussion</span>
+            <div class="font-mono text-[10.5px] text-muted mt-0.5 tracking-[0.04em]">1 comment</div>
+          </span>
+        </div>
+      </aside>
+
+      <div class="px-2 py-1.5 lg:max-h-[740px] lg:overflow-y-auto">
+        <div class="bg-card-soft border border-line rounded-[10px] px-4 py-[14px] mb-6 text-sm text-ink-2">
+          <div class="font-mono text-[10px] text-muted uppercase tracking-[0.1em] mb-1">Review with care</div>
+          Widens webhook payload acceptance to raw bytes (string, Uint8Array, ArrayBuffer),
+          computing HMAC over the exact wire bytes instead of a JSON.stringify round-trip. Preserves
+          the legacy parsed-object path for back-compat.
+        </div>
+
+        <div class="flex items-center gap-[10px] mb-[14px] flex-wrap">
+          <span class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-accent text-on-ink font-mono text-[13px] font-bold">1</span>
+          <h3 class="font-serif text-[22px] font-semibold tracking-[-0.01em] m-0 flex-1 min-w-0">
+            toSignableString — the HMAC now operates on raw bytes
+          </h3>
+          <span class="risk high">high risk</span>
+          <span class="bg-card border border-line rounded-lg px-[10px] py-[5px] font-mono text-[11px] text-ink-2">Mark reviewed</span>
+        </div>
+
+        <p class="m-0 mb-[14px] text-[15px] leading-[1.6] text-ink-2">
+          <b class="text-ink font-semibold">Before:</b>
+          <code class="font-mono bg-card-soft border border-line px-[5px] py-px rounded-[3px] text-[13px]">computeSignature</code>
+          always called
+          <code class="font-mono bg-card-soft border border-line px-[5px] py-px rounded-[3px] text-[13px]">JSON.stringify(payload)</code>
+          before computing the HMAC — even when the caller had the exact bytes the server originally signed. Any
+          semantically-equivalent-but-bytewise-different JSON (whitespace, key order, unicode escapes) would produce a
+          valid signature, opening a window for byte-level mutation.
+        </p>
+        <p class="m-0 mb-[14px] text-[15px] leading-[1.6] text-ink-2">
+          <b class="text-ink font-semibold">Now:</b>
+          <code class="font-mono bg-card-soft border border-line px-[5px] py-px rounded-[3px] text-[13px]">toSignableString</code>
+          dispatches on the runtime type: strings and binary buffers pass through as-is (decoded to UTF-8 for buffers), and only
+          plain objects fall back to <code class="font-mono bg-card-soft border border-line px-[5px] py-px rounded-[3px] text-[13px]">JSON.stringify</code>. The HMAC is computed over whatever
+          <code class="font-mono bg-card-soft border border-line px-[5px] py-px rounded-[3px] text-[13px]">toSignableString</code> returns.
+        </p>
+        <p class="m-0 mb-[14px] text-[15px] leading-[1.6] text-ink-2">
+          This is the highest-risk hunk in the PR: it changes what bytes are fed into the cryptographic signature. Dad would
+          like you to give this one a real look.
+        </p>
+
+        <div class="flex flex-wrap items-center gap-1.5 my-[14px] mb-[6px]">
+          <span class="inline-flex bg-card-soft border border-line rounded-lg overflow-hidden font-mono text-[11px]">
+            <span class="px-[10px] py-[5px] text-muted">Terse</span>
+            <span class="px-[10px] py-[5px] bg-ink text-on-ink">Normal</span>
+            <span class="px-[10px] py-[5px] text-muted">Verbose</span>
+          </span>
+          <span class="font-mono text-[11px] px-[10px] py-[5px] border border-line rounded-lg bg-card-soft text-ink-2">↻ Re-narrate</span>
+          <span class="font-mono text-[11px] px-[10px] py-[5px] border border-line rounded-lg bg-card-soft text-ink-2">+ Ask AI</span>
+          <span class="font-mono text-[11px] px-[10px] py-[5px] border border-line rounded-lg bg-card-soft text-ink-2">💬 Comment on chapter</span>
+        </div>
+
+        <div class="bg-card-soft border border-line rounded-[10px] overflow-hidden my-[6px] mb-[18px]">
+          <div class="flex items-center justify-between gap-[10px] px-3 py-2 bg-card-soft border-b border-line font-mono text-[11.5px] text-ink-2">
+            <span>📄 <b class="text-ink font-semibold">src/common/crypto/signature-provider.ts</b></span>
+            <span class="text-muted">L63–L74</span>
+          </div>
+          <div class="hunk-body font-mono text-xs leading-[1.65] py-[6px] overflow-x-auto bg-card">
+            <div class="hl"><span class="ln">64</span><span class="sym"> </span><span class="src">{'  '}<span class="kw">async</span> <span class="fn">computeSignature</span>(</span></div>
+            <div class="hl"><span class="ln">65</span><span class="sym"> </span><span class="src">{'    timestamp:'} <span class="kw">any</span>,</span></div>
+            <div class="hl rm"><span class="ln">66</span><span class="sym">−</span><span class="src">{'    payload:'} <span class="kw">any</span>,</span></div>
+            <div class="hl add"><span class="ln">75</span><span class="sym">+</span><span class="src">{'    payload:'}</span></div>
+            <div class="hl add"><span class="ln">76</span><span class="sym">+</span><span class="src">{'      | '}<span class="kw">string</span></span></div>
+            <div class="hl add"><span class="ln">77</span><span class="sym">+</span><span class="src">{'      | Uint8Array'}</span></div>
+            <div class="hl add"><span class="ln">78</span><span class="sym">+</span><span class="src">{'      | ArrayBuffer'}</span></div>
+            <div class="hl add"><span class="ln">79</span><span class="sym">+</span><span class="src">{'      | Record<'}<span class="kw">string</span>{', unknown>'}</span></div>
+            <div class="hl add"><span class="ln">80</span><span class="sym">+</span><span class="src">{'      | unknown,'}</span></div>
+            <div class="hl"><span class="ln">67</span><span class="sym"> </span><span class="src">{'    secret:'} <span class="kw">string</span>,</span></div>
+            <div class="hl"><span class="ln">68</span><span class="sym"> </span><span class="src">{'  ): Promise<'}<span class="kw">string</span>{'> {'}</span></div>
+            <div class="hl rm"><span class="ln">69</span><span class="sym">−</span><span class="src">{'    payload = JSON.stringify(payload);'}</span></div>
+            <div class="hl rm"><span class="ln">70</span><span class="sym">−</span><span class="src">{'    '}<span class="kw">const</span> signedPayload = <span class="str">{'`"${timestamp}.${payload}"`'}</span>;</span></div>
+            <div class="hl add"><span class="ln">83</span><span class="sym">+</span><span class="src">{'    '}<span class="kw">const</span> signable = toSignableString(payload);</span></div>
+            <div class="hl add"><span class="ln">84</span><span class="sym">+</span><span class="src">{'    '}<span class="kw">const</span> signedPayload = <span class="str">{'`"${timestamp}.${signable}"`'}</span>;</span></div>
+            <div class="hl"><span class="ln">72</span><span class="sym"> </span><span class="src">{'    '}<span class="kw">return await</span> <span class="kw">this</span>.cryptoProvider.computeHMACSignatureAsync(</span></div>
+            <div class="hl"><span class="ln">73</span><span class="sym"> </span><span class="src">{'      signedPayload,'}</span></div>
+          </div>
+        </div>
+
+        <p class="m-0 mb-[14px] text-[15px] leading-[1.6] text-ink-2">
+          The new <code class="font-mono bg-card-soft border border-line px-[5px] py-px rounded-[3px] text-[13px]">toSignableString</code> helper is a pure function with straightforward branching. Note the fallthrough: anything that isn't a string, Uint8Array, or ArrayBuffer gets <code class="font-mono bg-card-soft border border-line px-[5px] py-px rounded-[3px] text-[13px]">JSON.stringify</code>'d — including <code class="font-mono bg-card-soft border border-line px-[5px] py-px rounded-[3px] text-[13px]">null</code>, <code class="font-mono bg-card-soft border border-line px-[5px] py-px rounded-[3px] text-[13px]">undefined</code>, numbers, or any other unexpected type. This is the legacy back-compat path. Heads up: callers who accidentally pass a non-buffer, non-string value get silent behavior rather than an error.
+        </p>
+
+        <div class="bg-card-soft border border-line rounded-[10px] overflow-hidden my-[6px] mb-[18px]">
+          <div class="flex items-center justify-between gap-[10px] px-3 py-2 bg-card-soft border-b border-line font-mono text-[11.5px] text-ink-2">
+            <span>📄 <b class="text-ink font-semibold">src/common/crypto/signature-provider.ts</b></span>
+            <span class="text-muted">L92–L99</span>
+          </div>
+          <div class="hunk-body font-mono text-xs leading-[1.65] py-[6px] overflow-x-auto bg-card">
+            <div class="hl add"><span class="ln">92</span><span class="sym">+</span><span class="src"><span class="com">{'// Raw bytes path (string / Uint8Array / ArrayBuffer) reproduces the exact'}</span></span></div>
+            <div class="hl add"><span class="ln">93</span><span class="sym">+</span><span class="src"><span class="com">{'// bytes WorkOS signed on emit. Object path is legacy back-compat — vulnerable'}</span></span></div>
+            <div class="hl add"><span class="ln">94</span><span class="sym">+</span><span class="src"><span class="com">{'// to any on-the-wire mutation that round-trips through JSON.parse →'}</span></span></div>
+            <div class="hl add"><span class="ln">95</span><span class="sym">+</span><span class="src"><span class="com">{'// JSON.stringify to the same canonical form (whitespace, key order, escapes).'}</span></span></div>
+            <div class="hl add"><span class="ln">96</span><span class="sym">+</span><span class="src"><span class="kw">function</span> <span class="fn">toSignableString</span>(</span></div>
+            <div class="hl add"><span class="ln">97</span><span class="sym">+</span><span class="src">{'  payload:'}</span></div>
+            <div class="hl add"><span class="ln">98</span><span class="sym">+</span><span class="src">{'    | '}<span class="kw">string</span></span></div>
+            <div class="hl add"><span class="ln">99</span><span class="sym">+</span><span class="src">{'    | Uint8Array | ArrayBuffer'}</span></div>
+          </div>
+        </div>
+
+        <div class="sticky bottom-[14px] mt-[18px] inline-flex items-center gap-[14px] bg-card border border-line rounded-full pl-[18px] pr-2 py-2 font-mono text-xs text-muted shadow-soft">
+          <span><b class="text-ink">0 of 4</b> chapters reviewed · <b class="text-ink">0</b> pending drafts</span>
+          <button class="bg-accent text-on-ink border-0 rounded-full px-[14px] py-[6px] font-mono text-xs font-semibold">Submit review</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>

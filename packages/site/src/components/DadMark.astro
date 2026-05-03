@@ -1,0 +1,36 @@
+---
+import { dadMarkInner } from '../lib/dad-mark';
+
+interface Props {
+  size?: number;
+  bg?: string;
+  ink?: string;
+  skin?: string;
+  blush?: string;
+  shape?: 'circle' | 'squircle' | 'none';
+  glasses?: 'round' | 'rect' | 'aviator-clear';
+  showBadge?: boolean;
+  showHat?: boolean;
+  showWink?: boolean;
+  strokeW?: number;
+  class?: string;
+}
+
+const { size = 320, bg, class: className = '', ...rest } = Astro.props;
+
+// SVG `fill` attribute doesn't accept var(), but the CSS `fill` property does.
+// When no bg is supplied, swap the badge shape's fill attribute for an inline
+// style so it tracks the active accent's --brand token.
+const useThemeBg = bg === undefined;
+const inner = dadMarkInner({ ...rest, bg: bg ?? '__BRAND__' });
+const themed = useThemeBg ? inner.replaceAll('fill="__BRAND__"', 'style="fill:var(--brand)"') : inner;
+---
+
+<svg
+  viewBox="0 0 320 320"
+  width={size}
+  height={size}
+  xmlns="http://www.w3.org/2000/svg"
+  class={className}
+  set:html={themed}
+/>

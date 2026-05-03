@@ -1,0 +1,45 @@
+---
+---
+
+<section class="py-16">
+  <div class="wrap">
+    <div class="section-eye">// configuration</div>
+    <h2 class="font-serif font-semibold text-[44px] leading-[1.1] tracking-[-0.02em] m-0 mb-[18px] text-balance">
+      Bring your own brain. <em class="italic text-accent-2">And token.</em>
+    </h2>
+    <p class="text-lg text-ink-2 max-w-[620px] m-0 mb-10">
+      Dad uses your existing Claude subscription by default — no API key needed. Swap providers any
+      time with <code class="font-mono bg-card border border-line px-[6px] py-px rounded">dad config</code>. It's like swapping out the grill propane. Easy.
+    </p>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-7">
+      <div class="bg-card border border-line rounded-[18px] p-7 pb-[26px]">
+        <h4 class="font-serif text-[22px] font-semibold m-0 mb-1.5">AI provider</h4>
+        <div class="font-mono text-sm text-muted mb-[18px]">// priority: --with &gt; dad config &gt; auto-detect</div>
+        <ul class="m-0 p-0 list-none flex flex-col gap-[10px]">
+          <li class="grid grid-cols-[max-content_1fr] gap-[14px] items-baseline text-sm text-ink-2"><span class="font-mono font-semibold text-accent-2">Claude CLI</span><span>Default. Uses your Claude subscription via <code class="font-mono">claude -p</code>.</span></li>
+          <li class="grid grid-cols-[max-content_1fr] gap-[14px] items-baseline text-sm text-ink-2"><span class="font-mono font-semibold text-ink">pi CLI</span><span>Fallback if Claude Code isn't installed.</span></li>
+          <li class="grid grid-cols-[max-content_1fr] gap-[14px] items-baseline text-sm text-ink-2"><span class="font-mono font-semibold text-ink">Anthropic API</span><span>Requires <code class="font-mono">ANTHROPIC_API_KEY</code>.</span></li>
+          <li class="grid grid-cols-[max-content_1fr] gap-[14px] items-baseline text-sm text-ink-2"><span class="font-mono font-semibold text-ink">OpenAI</span><span>Requires an OpenAI API key.</span></li>
+          <li class="grid grid-cols-[max-content_1fr] gap-[14px] items-baseline text-sm text-ink-2"><span class="font-mono font-semibold text-ink">Ollama</span><span>Local models. No key needed.</span></li>
+        </ul>
+      </div>
+
+      <div class="bg-card border border-line rounded-[18px] p-7 pb-[26px]">
+        <h4 class="font-serif text-[22px] font-semibold m-0 mb-1.5">GitHub token</h4>
+        <div class="font-mono text-sm text-muted mb-[18px]">// checks in order</div>
+        <ul class="m-0 p-0 list-none flex flex-col gap-[10px]">
+          <li class="grid grid-cols-[max-content_1fr] gap-[14px] items-baseline text-sm text-ink-2"><span class="font-mono font-semibold text-ink">1.</span><span><code class="font-mono">DIFFDAD_GITHUB_TOKEN</code> environment variable</span></li>
+          <li class="grid grid-cols-[max-content_1fr] gap-[14px] items-baseline text-sm text-ink-2"><span class="font-mono font-semibold text-ink">2.</span><span><code class="font-mono">gh auth token</code> from the GitHub CLI</span></li>
+          <li class="grid grid-cols-[max-content_1fr] gap-[14px] items-baseline text-sm text-ink-2"><span class="font-mono font-semibold text-ink">3.</span><span>Token saved via <code class="font-mono">dad config</code></span></li>
+        </ul>
+
+        <h4 class="font-serif text-[22px] font-semibold m-0 mt-[22px] mb-1.5">Caching</h4>
+        <div class="font-mono text-sm text-muted mb-1.5">// ~/.cache/diffdad/{`{owner}-{repo}-{number}-{sha}`}</div>
+        <p class="m-0 text-sm text-ink-2">
+          Same commit = instant reload. New commit = fresh narrative, automatically. Use <code class="font-mono">--no-cache</code> to force a re-tell, or <code class="font-mono">dad cache clear</code> to wipe it all.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>

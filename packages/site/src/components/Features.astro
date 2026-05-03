@@ -1,0 +1,39 @@
+---
+const feats = [
+  { ico: '§', title: 'Semantic chapters', body: 'AI groups hunks across files by behavior — not filename. Each chapter has a title, risk level, and prose explaining what changed and why.' },
+  { ico: '↔', title: 'Two-way GitHub sync', body: "Comments flow both directions — replies you post in dad land in GitHub as real review comments, and GitHub comments show up next to the matching line. No tab-juggling required." },
+  { ico: '↻', title: 'Auto re-narrates on new commits', body: 'Push a fixup? Dad notices and regenerates the story for the new SHA. Old narratives stay cached so you can flip between revisions and see how the plot thickened.' },
+  { ico: '💬', title: 'Inline comments', body: "GitHub review comments render next to the relevant lines. Bot comments (Greptile, CodeRabbit) cluster into collapsible groups so they don't bury the humans." },
+  { ico: '📡', title: 'Live SSE updates', body: 'An SSE connection polls every 10 seconds. New comments, CI status, and check runs appear in real time. Like a baby monitor, but for your PR.' },
+  { ico: '≋', title: 'Story controls', body: 'Toggle terse / normal / verbose narration per chapter. Re-narrate through different lenses (security, performance, API consumer). Choose your own adventure.' },
+  { ico: '?', title: 'Ask AI', body: "Ask follow-up questions about a specific chapter's code. Dad keeps the chapter context so answers stay grounded — no off-topic ramblings about the lawn." },
+  { ico: '✓', title: 'Submit reviews', body: 'Comment, Approve, or Request Changes — directly from the UI. Inline comments post to GitHub with your summary. Then dad pats you on the back.' },
+  { ico: '⌨', title: 'Keyboard-first', body: 'j/k to move chapters, r to mark reviewed, c to comment, ? for help. Stays out of your way like a good dad on Saturday morning.' },
+];
+---
+
+<section id="features" class="py-16">
+  <div class="wrap">
+    <div class="section-eye">// features</div>
+    <h2 class="font-serif font-semibold text-[44px] leading-[1.1] tracking-[-0.02em] m-0 mb-[18px] text-balance">
+      Built for <em class="italic text-accent-2">semantic</em> review.
+    </h2>
+    <p class="text-lg text-ink-2 max-w-[620px] m-0 mb-10">
+      Everything is local — narratives are cached, the server runs on your machine, and the
+      frontend never talks to GitHub directly. (Dad doesn't share passwords. Don't ask.)
+    </p>
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      {
+        feats.map((f) => (
+          <div class="bg-card border border-line rounded-2xl px-[22px] py-6">
+            <div class="w-10 h-10 rounded-[10px] bg-accent/[0.16] flex items-center justify-center mb-4 text-accent-2 font-mono font-bold text-base">
+              {f.ico}
+            </div>
+            <h4 class="font-serif text-xl font-semibold m-0 mb-2 tracking-[-0.01em]">{f.title}</h4>
+            <p class="m-0 text-[14.5px] text-ink-2 leading-[1.55]">{f.body}</p>
+          </div>
+        ))
+      }
+    </div>
+  </div>
+</section>

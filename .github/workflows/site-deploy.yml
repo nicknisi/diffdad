@@ -1,0 +1,64 @@
+name: Deploy site
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/site/**'
+      - '.github/workflows/site-deploy.yml'
+  pull_request:
+    paths:
+      - 'packages/site/**'
+      - '.github/workflows/site-deploy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  deployments: write
+  pull-requests: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build site
+        run: bun run site:build
+
+      - name: Resolve deploy branch
+        id: branch
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "name=pr-${{ github.event.number }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=main" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy to Cloudflare Pages
+        id: deploy
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: packages/site
+          command: pages deploy dist --project-name=diffdad-site --branch=${{ steps.branch.outputs.name }}
+
+      - name: Comment preview URL on PR
+        if: github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: site-preview
+          message: |
+            ### Site preview
+
+            - Preview: ${{ steps.deploy.outputs.deployment-url }}
+            - Branch alias: ${{ steps.deploy.outputs.pages-deployment-alias-url }}
+            - Commit: `${{ github.event.pull_request.head.sha }}`

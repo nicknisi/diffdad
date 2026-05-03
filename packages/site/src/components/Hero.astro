@@ -1,0 +1,42 @@
+---
+import DadMark from './DadMark.astro';
+import InstallPill from './InstallPill.astro';
+---
+
+<section class="grid grid-cols-1 md:grid-cols-[1.15fr_1fr] gap-16 items-center py-14 pb-20 md:pt-14 md:pb-20">
+  <div>
+    <div class="font-mono text-[13px] text-muted tracking-[0.04em] mb-[22px] inline-flex items-center gap-[10px]">
+      <span class="bg-ink text-on-ink px-[10px] py-[3px] rounded-full text-[11px] font-semibold tracking-[0.06em] uppercase">v0.6.1</span>
+      <span>// hold my coffee, I'll explain this PR</span>
+    </div>
+    <h1 class="font-serif font-semibold text-[56px] md:text-[76px] leading-[1.0] tracking-[-0.025em] m-0 mb-6 text-balance">
+      Your PRs, told as a <em class="not-italic italic text-accent-2 font-semibold">story</em> — not a wall of diffs.
+    </h1>
+    <p class="text-xl text-ink-2 max-w-[540px] m-0 mb-9 leading-[1.45]">
+      <code class="font-mono bg-card border border-line px-[6px] py-[2px] rounded text-base">dad</code> reads the whole pull request, groups changes by behavior into chapters, and walks you through them with prose, risk levels, and inline comments. Think of it as a code review with a <i>thicker mustache</i>.
+    </p>
+    <div class="flex gap-3 items-center flex-wrap">
+      <InstallPill cmd="brew install dad" />
+      <a
+        href="#story"
+        class="inline-flex items-center gap-2 px-[18px] py-3 rounded-[10px] font-mono text-sm no-underline text-ink border border-ink hover:bg-ink hover:text-on-ink transition-colors"
+      >
+        See an example →
+      </a>
+    </div>
+  </div>
+
+  <div class="hero-illo relative flex items-center justify-center">
+    <div class="relative z-[2]">
+      <DadMark size={360} showBadge={false} />
+    </div>
+    <div class="absolute z-[3] bg-card border border-line rounded-2xl px-[14px] py-3 font-serif text-sm leading-[1.35] max-w-[210px] shadow-soft top-[-10px] right-[-56px] rotate-2">
+      <div class="font-mono text-[10px] text-muted uppercase tracking-[0.08em] mb-1">Chapter 1 · low risk</div>
+      Once upon a refactor, <i>CartService</i> learned to forget — quietly, on checkout.
+    </div>
+    <div class="absolute z-[3] bg-card border border-line rounded-2xl px-[14px] py-3 font-serif text-sm leading-[1.35] max-w-[210px] shadow-soft bottom-[-10px] left-[-56px] -rotate-3">
+      <div class="font-mono text-[10px] text-muted uppercase tracking-[0.08em] mb-1">Chapter 3 · ⚠ medium</div>
+      But the cleanup task still fires hourly. We've got duplicate work, kiddo.
+    </div>
+  </div>
+</section>

@@ -8,7 +8,7 @@ export type AccentMeta = {
 };
 
 export const ACCENTS: AccentMeta[] = [
-  { id: 'classic', name: 'Classic', dot: '#6565ec', markBg: '#6565ec' },
+  { id: 'classic', name: 'Iris', dot: '#6565ec', markBg: '#6565ec' },
   { id: 'paprika', name: 'Paprika', dot: '#FF7A45', markBg: '#FF7A45' },
   { id: 'tomato', name: 'Tomato', dot: '#E05E4B', markBg: '#E05E4B' },
   { id: 'forest', name: 'Forest', dot: '#3F7D5C', markBg: '#3F7D5C' },

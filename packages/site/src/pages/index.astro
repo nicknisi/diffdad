@@ -1,0 +1,63 @@
+---
+import '../styles/global.css';
+import Nav from '../components/Nav.astro';
+import Hero from '../components/Hero.astro';
+import StoryExample from '../components/StoryExample.astro';
+import Install from '../components/Install.astro';
+import Usage from '../components/Usage.astro';
+import Features from '../components/Features.astro';
+import ProvidersAndAuth from '../components/ProvidersAndAuth.astro';
+import Shortcuts from '../components/Shortcuts.astro';
+import CTAStrip from '../components/CTAStrip.astro';
+import Footer from '../components/Footer.astro';
+import { renderDadMarkSVG, ACCENT_BG } from '../lib/dad-mark';
+import { DEFAULT_ACCENT } from '../lib/accents';
+
+const defaultFavicon = `data:image/svg+xml,${encodeURIComponent(
+  renderDadMarkSVG({ size: 32, bg: ACCENT_BG[DEFAULT_ACCENT], shape: 'circle', showBadge: false }),
+)}`;
+---
+
+<html lang="en" data-accent="dadcore">
+  <head>
+    <meta charset="utf-8" />
+    <title>diff.dad — your PRs, told as a story</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta
+      name="description"
+      content="Turn GitHub PRs into narrated stories. dad reads the whole pull request, groups changes by behavior into chapters, and walks you through them with prose, risk levels, and inline comments."
+    />
+    <link rel="icon" type="image/svg+xml" href={defaultFavicon} />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.usefathom.com/script.js" data-site="FBKWVVRO" defer is:inline></script>
+    <script is:inline>
+      // Pre-paint: apply stored theme + accent before render to avoid FOUC.
+      (() => {
+        const root = document.documentElement;
+        const t = localStorage.getItem('diffdad.theme') || 'auto';
+        const a = localStorage.getItem('diffdad.accent') || 'dadcore';
+        const resolved = t === 'auto' ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : t;
+        if (resolved === 'dark') root.classList.add('dark');
+        if (a && a !== 'classic') root.setAttribute('data-accent', a);
+        else root.removeAttribute('data-accent');
+      })();
+    </script>
+  </head>
+  <body>
+    <div class="wrap"><Nav /></div>
+    <div class="wrap"><Hero /></div>
+    <StoryExample />
+    <Install />
+    <Usage />
+    <Features />
+    <ProvidersAndAuth />
+    <Shortcuts />
+    <CTAStrip />
+    <Footer />
+  </body>
+</html>

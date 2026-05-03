@@ -1,0 +1,44 @@
+---
+interface Props {
+  cmd?: string;
+  variant?: 'default' | 'accent';
+}
+
+const { cmd = 'brew install dad', variant = 'default' } = Astro.props;
+const isAccent = variant === 'accent';
+---
+
+<button
+  class:list={[
+    'install-pill inline-flex items-center gap-3 rounded-[10px] border-0 px-[18px] py-3 font-mono text-sm cursor-pointer transition-colors',
+    isAccent ? 'bg-accent text-[#14202E]' : 'bg-ink text-on-ink',
+  ]}
+  data-cmd={cmd}
+>
+  <span class:list={['dim', isAccent ? 'text-[rgb(20_32_46_/_0.55)]' : 'text-[#6B7B9A]']}>$</span>
+  <span>{cmd}</span>
+  <span
+    class:list={[
+      'copy rounded-md px-2 py-1 text-[11px] tracking-[0.04em]',
+      isAccent ? 'bg-[rgb(20_32_46_/_0.15)] text-[#14202E]' : 'bg-white/[0.08]',
+    ]}
+  >
+    COPY
+  </span>
+</button>
+
+<script>
+  document.querySelectorAll<HTMLButtonElement>('.install-pill').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const cmd = btn.dataset.cmd ?? '';
+      navigator.clipboard?.writeText(cmd);
+      const copy = btn.querySelector('.copy');
+      if (!copy) return;
+      const prev = copy.textContent;
+      copy.textContent = 'NICE';
+      setTimeout(() => {
+        copy.textContent = prev;
+      }, 1400);
+    });
+  });
+</script>

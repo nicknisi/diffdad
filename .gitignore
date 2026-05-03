@@ -8,3 +8,5 @@ bun.lockb
 .env.local
 dad
 *.bun-build
+.astro/
+.vscode/

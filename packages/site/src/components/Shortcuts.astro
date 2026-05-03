@@ -1,0 +1,41 @@
+---
+const rows: Array<[string, string]> = [
+  ['j / k', 'Next / previous chapter'],
+  ['r', 'Toggle reviewed on current chapter'],
+  ['c', 'Open comment composer on hovered line'],
+  ['?', 'Show shortcuts help'],
+  ['Esc', 'Close open panels'],
+];
+---
+
+<section class="py-16">
+  <div class="wrap">
+    <div class="section-eye">// keyboard</div>
+    <h2 class="font-serif font-semibold text-[44px] leading-[1.1] tracking-[-0.02em] m-0 mb-[18px] text-balance">
+      Drive it from the <em class="italic text-accent-2">home row.</em>
+    </h2>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-y-[10px] gap-x-7">
+      {
+        rows.map((r, i) => (
+          <div
+            class:list={[
+              'grid grid-cols-[max-content_1fr] gap-[18px] items-center py-2',
+              i >= 2 && 'border-t border-line md:border-t',
+              i < 2 && 'md:border-t-0',
+            ]}
+          >
+            <div class="inline-flex gap-1">
+              {r[0].split(' / ').map((k, j) => (
+                <>
+                  {j > 0 && <span class="text-muted px-1">or</span>}
+                  <kbd class="font-mono bg-card border border-line border-b-2 rounded-md px-2 py-[3px] text-xs text-ink">{k}</kbd>
+                </>
+              ))}
+            </div>
+            <div class="text-sm text-ink-2">{r[1]}</div>
+          </div>
+        ))
+      }
+    </div>
+  </div>
+</section>
