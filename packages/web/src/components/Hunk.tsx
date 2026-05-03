@@ -330,13 +330,15 @@ function HunkLines({
         <div key={lineKey}>
           <CodeLine line={line} lineKey={lineKey} lang={lang} dimmed={dimmed} />
           {hasThread && (
-            <CollapsibleThread
-              comments={lineComments}
-              file={file}
-              lineNumber={line.lineNumber.new}
-              isNewThread={openLine === lineKey && lineComments.length === 0}
-              onClose={() => (openLine === lineKey ? setOpenLine(null) : undefined)}
-            />
+            <div className="sticky left-0" style={{ width: '100cqw' }}>
+              <CollapsibleThread
+                comments={lineComments}
+                file={file}
+                lineNumber={line.lineNumber.new}
+                isNewThread={openLine === lineKey && lineComments.length === 0}
+                onClose={() => (openLine === lineKey ? setOpenLine(null) : undefined)}
+              />
+            </div>
           )}
         </div>
       );
@@ -345,7 +347,7 @@ function HunkLines({
   );
 
   return (
-    <div>
+    <div style={{ minWidth: 'max-content' }}>
       {initialGroups.map((group, gi) => {
         if (group.kind === 'lines') {
           return group.indices.map((i) => renderLine(i, false));
@@ -353,7 +355,11 @@ function HunkLines({
         if (expandedFolds.has(gi)) {
           return group.indices.map((i) => renderLine(i, true));
         }
-        return <FoldedLines key={`fold-${gi}`} count={group.count} onExpand={() => expandFold(gi)} />;
+        return (
+          <div key={`fold-${gi}`} className="sticky left-0" style={{ width: '100cqw' }}>
+            <FoldedLines count={group.count} onExpand={() => expandFold(gi)} />
+          </div>
+        );
       })}
     </div>
   );
@@ -451,17 +457,19 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight }: Props) {
         </div>
       </div>
       {clusterBots && botComments.length > 0 && <BotCluster comments={botComments} />}
-      <HunkLines
-        file={file}
-        hunk={hunk}
-        hunkIndex={hunkIndex}
-        lang={lang}
-        highlight={highlight}
-        comments={comments}
-        openLine={openLine}
-        setOpenLine={setOpenLine}
-        clusterBots={clusterBots}
-      />
+      <div className="overflow-x-auto" style={{ containerType: 'inline-size' }}>
+        <HunkLines
+          file={file}
+          hunk={hunk}
+          hunkIndex={hunkIndex}
+          lang={lang}
+          highlight={highlight}
+          comments={comments}
+          openLine={openLine}
+          setOpenLine={setOpenLine}
+          clusterBots={clusterBots}
+        />
+      </div>
     </div>
   );
 }
