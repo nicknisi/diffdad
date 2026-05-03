@@ -5,6 +5,7 @@ import { useLiveStream } from './hooks/useLiveStream';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { ActivityDrawer } from './components/ActivityDrawer';
 import { AppBar } from './components/AppBar';
+import { BranchSkeletonView } from './components/BranchSkeletonView';
 import { ClassicView } from './components/ClassicView';
 import { CommitTimeline } from './components/CommitTimeline';
 import { GeneratingScreen } from './components/GeneratingScreen';
@@ -135,11 +136,7 @@ export default function App() {
             <ClassicView />
           )
         ) : (
-          <GeneratingScreen
-            compact
-            message={copy.loadingMessages[loadingMsgIndex]!}
-            subtitle="Pick another commit while you wait."
-          />
+          <BranchSkeletonView message={copy.loadingMessages[loadingMsgIndex]!} />
         )}
         <ActivityDrawer open={activityOpen} onClose={() => setActivityOpen(false)} />
         <ShortcutsHelp open={shortcutsHelpOpen} onClose={() => setShortcutsHelpOpen(false)} />
