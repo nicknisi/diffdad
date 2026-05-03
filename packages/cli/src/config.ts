@@ -6,6 +6,15 @@ import { resolveGitHubToken } from './auth';
 
 export type AiProvider = 'anthropic' | 'openai' | 'openai-compatible' | 'ollama';
 
+export type LocalCli = 'claude' | 'codex' | 'pi';
+export const LOCAL_CLIS: readonly LocalCli[] = ['claude', 'codex', 'pi'] as const;
+
+export const DEFAULT_CLI_MODELS: Readonly<Record<LocalCli, string>> = {
+  claude: 'sonnet',
+  codex: '',
+  pi: '',
+};
+
 export type StoryStructure = 'chapters' | 'linear' | 'outline';
 export type LayoutMode = 'toc' | 'linear';
 export type DisplayDensity = 'comfortable' | 'compact';
@@ -19,6 +28,8 @@ export interface DiffDadConfig {
   aiApiKey?: string;
   aiModel?: string;
   aiBaseUrl?: string;
+  defaultCli?: LocalCli;
+  cliModels?: Partial<Record<LocalCli, string>>;
   storyStructure?: StoryStructure;
   layoutMode?: LayoutMode;
   displayDensity?: DisplayDensity;
@@ -170,12 +181,42 @@ export async function runConfig(): Promise<number> {
     let aiApiKey: string | undefined = existing.aiApiKey;
     let aiBaseUrl: string | undefined = existing.aiBaseUrl;
     let aiModel: string | undefined = existing.aiModel;
+    let defaultCli: LocalCli | undefined = existing.defaultCli;
+    let cliModels: Partial<Record<LocalCli, string>> | undefined = existing.cliModels;
 
     if (useClaudeCli) {
-      process.stdout.write(`\n  ${c.green}✓${c.reset} Using local CLI ${c.dim}(claude → codex → pi)${c.reset}\n`);
+      process.stdout.write(`\n  ${c.green}✓${c.reset} Using local CLI\n`);
       aiApiKey = undefined;
       aiBaseUrl = undefined;
       aiModel = undefined;
+
+      defaultCli = await pickOne(
+        ask,
+        'preferred CLI',
+        [
+          { value: 'claude' as LocalCli, display: 'claude' },
+          { value: 'codex' as LocalCli, display: 'codex' },
+          { value: 'pi' as LocalCli, display: 'pi' },
+        ],
+        existing.defaultCli ?? 'claude',
+      );
+
+      const updatedModels: Partial<Record<LocalCli, string>> = { ...existing.cliModels };
+      for (const cli of LOCAL_CLIS) {
+        const fallback = DEFAULT_CLI_MODELS[cli];
+        const currentModel = existing.cliModels?.[cli] ?? fallback;
+        const display = currentModel.length > 0 ? currentModel : `${cli} default`;
+        const answer = await ask(`  ${c.dim}${cli} model${c.reset} ${c.gray}(${display})${c.reset}: `);
+        if (answer.length === 0) {
+          if (currentModel.length > 0) updatedModels[cli] = currentModel;
+          else delete updatedModels[cli];
+        } else if (answer === '-' || answer.toLowerCase() === 'default') {
+          delete updatedModels[cli];
+        } else {
+          updatedModels[cli] = answer;
+        }
+      }
+      cliModels = Object.keys(updatedModels).length > 0 ? updatedModels : undefined;
     } else if (provider) {
       const defaults = PROVIDER_DEFAULTS[provider];
       process.stdout.write('\n');
@@ -303,6 +344,10 @@ export async function runConfig(): Promise<number> {
       delete next.aiApiKey;
       delete next.aiBaseUrl;
       delete next.aiModel;
+      if (defaultCli) next.defaultCli = defaultCli;
+      else delete next.defaultCli;
+      if (cliModels) next.cliModels = cliModels;
+      else delete next.cliModels;
     } else {
       if (aiApiKey !== undefined) next.aiApiKey = aiApiKey;
       else delete next.aiApiKey;
