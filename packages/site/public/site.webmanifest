@@ -1,0 +1,14 @@
+{
+  "name": "diff.dad",
+  "short_name": "diff.dad",
+  "description": "Your PRs, told as a story.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F4EFE6",
+  "theme_color": "#FF7A45",
+  "icons": [
+    { "src": "/favicon-32x32.png", "sizes": "32x32", "type": "image/png" },
+    { "src": "/icon-512x512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icon-512x512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
