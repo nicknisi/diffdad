@@ -19,6 +19,7 @@ import {
   getCommitStats,
   type LocalCommit,
 } from './git/local';
+import { buildBranchSkeleton, type BranchSkeleton } from './watch/skeleton';
 
 export type WatchServerContext = {
   repoRoot: string;
@@ -34,6 +35,8 @@ export type WatchServerContext = {
   generating: Set<string>;
   unifiedGenerating: boolean;
   remoteSlug: { owner: string; repo: string } | null;
+  skeleton: BranchSkeleton | null;
+  skeletonKey: string | null;
 };
 
 type CommitSummary = {
@@ -56,6 +59,7 @@ type WatchPayload = {
   commits: CommitSummary[];
   selection: { kind: 'commit'; sha: string } | { kind: 'unified' } | { kind: 'pending' };
   unifiedReady: boolean;
+  skeleton: BranchSkeleton;
 };
 
 function syntheticPrForCommit(ctx: WatchServerContext, commit: LocalCommit, files: DiffFile[]): PRMetadata {
@@ -183,6 +187,16 @@ export function createWatchServer(ctx: WatchServerContext) {
     return out;
   }
 
+  async function getSkeleton(): Promise<BranchSkeleton> {
+    const key = `${ctx.baseSha}:${ctx.headSha}`;
+    if (ctx.skeleton && ctx.skeletonKey === key) return ctx.skeleton;
+    const files = await loadFilesForRange(ctx.repoRoot, ctx.base, ctx.headSha);
+    const skeleton = buildBranchSkeleton(files);
+    ctx.skeleton = skeleton;
+    ctx.skeletonKey = key;
+    return skeleton;
+  }
+
   async function narrateCommit(sha: string, opts: { broadcastWhenDone?: boolean } = {}): Promise<NarrativeResponse | null> {
     if (ctx.narratives.has(sha)) return ctx.narratives.get(sha)!;
     if (ctx.generating.has(sha)) return null;
@@ -264,6 +278,8 @@ export function createWatchServer(ctx: WatchServerContext) {
     // Drop unified — branch moved.
     ctx.unified = null;
     ctx.unifiedKey = null;
+    ctx.skeleton = null;
+    ctx.skeletonKey = null;
     const newShas = new Set(newCommits.map((c) => c.sha));
     const dropStats: string[] = [];
     for (const sha of commitStats.keys()) {
@@ -339,6 +355,7 @@ export function createWatchServer(ctx: WatchServerContext) {
   app.get('/api/narrative', async (c) => {
     const config = await readConfig();
     const summaries = await buildCommitSummaries();
+    const skeleton = await getSkeleton();
     const { selection, narrative, files, pr } = await selectionFromQuery(c);
     const unifiedReady = !!(ctx.unified && ctx.unifiedKey === `${ctx.baseSha}:${ctx.headSha}`);
 
@@ -350,6 +367,7 @@ export function createWatchServer(ctx: WatchServerContext) {
       commits: summaries,
       selection,
       unifiedReady,
+      skeleton,
     };
 
     const repoUrl = ctx.remoteSlug

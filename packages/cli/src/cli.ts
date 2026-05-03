@@ -411,6 +411,8 @@ async function watchCommand(branchArg?: string): Promise<number> {
     generating: new Set(),
     unifiedGenerating: false,
     remoteSlug,
+    skeleton: null,
+    skeletonKey: null,
   };
 
   const { app, narrateCommit, refreshCommits } = createWatchServer(ctx);
