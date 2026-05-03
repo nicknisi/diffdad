@@ -2,13 +2,28 @@ name: Release
 
 on:
   push:
-    tags: ['v*']
+    branches: [main]
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.rp.outputs.release_created }}
+      tag_name: ${{ steps.rp.outputs.tag_name }}
+    steps:
+      - id: rp
+        uses: googleapis/release-please-action@v4
+        with:
+          config-file: .release-please-config.json
+          manifest-file: .release-please-manifest.json
+
   build:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created }}
     strategy:
       matrix:
         include:
@@ -51,23 +66,22 @@ jobs:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.artifact }}.tar.gz
 
-  release:
-    needs: build
+  attach-binaries:
+    needs: [release-please, build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
         with:
           merge-multiple: true
 
-      - name: Attach binaries to release
-        uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.release-please.outputs.tag_name }}
           files: '*.tar.gz'
 
   update-formula:
-    needs: release
+    needs: [release-please, build]
     runs-on: ubuntu-latest
-    if: ${{ !contains(github.ref_name, '-') }}
     steps:
       - name: Checkout tap repo
         uses: actions/checkout@v4
@@ -82,7 +96,7 @@ jobs:
 
       - name: Update formula
         env:
-          VERSION: ${{ github.ref_name }}
+          VERSION: ${{ needs.release-please.outputs.tag_name }}
         run: |
           VER="${VERSION#v}"
           SHA_ARM64=$(shasum -a 256 dad-darwin-arm64.tar.gz | cut -d' ' -f1)
@@ -106,5 +120,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Formula/dad.rb
-          git diff --cached --quiet || git commit -m "formula: update to ${{ github.ref_name }}"
+          git diff --cached --quiet || git commit -m "formula: update to ${{ needs.release-please.outputs.tag_name }}"
           git push
