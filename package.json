@@ -1,7 +1,6 @@
 {
   "name": "diffdad",
   "private": true,
-  "version": "0.6.1",
   "workspaces": [
     "packages/*"
   ],
@@ -15,8 +14,7 @@
     "dad": "bun packages/cli/src/cli.ts",
     "dev": "bun run --filter '@diffdad/web' dev",
     "site:dev": "bun run --filter '@diffdad/site' dev",
-    "site:build": "bun run --filter '@diffdad/site' build",
-    "release": "./scripts/release.sh"
+    "site:build": "bun run --filter '@diffdad/site' build"
   },
   "devDependencies": {
     "oxfmt": "^0.47.0",
