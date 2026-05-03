@@ -274,22 +274,38 @@ function HunkLines({
 }) {
   const normFile = normalizePath(file);
 
-  const commentLineIndices = useMemo(() => {
-    const set = new Set<number>();
-    hunk.lines.forEach((line, i) => {
-      const hasComment = comments.some((c) => {
-        if (normalizePath(c.path) !== normFile) return false;
-        if (c.line === undefined) return false;
-        if (clusterBots && c.author.endsWith('[bot]')) return false;
-        if (c.side === 'LEFT') {
-          return line.lineNumber.old !== undefined && c.line === line.lineNumber.old;
+  // Map<commentId, lineIndex> — resolves each comment to one row in the hunk.
+  // A comment posted on a change in GitHub can land on the unchanged line just
+  // above the removal/addition because the side+line pair still matches the
+  // context line at the same blob position. Push the anchor down to the change
+  // so the thread renders below the changed line, matching GitHub's view.
+  const commentLineMap = useMemo(() => {
+    const map = new Map<number, number>();
+    for (const c of comments) {
+      if (normalizePath(c.path) !== normFile) continue;
+      if (c.line === undefined) continue;
+      if (clusterBots && c.author.endsWith('[bot]')) continue;
+      const isLeft = c.side === 'LEFT';
+      let matchIdx = -1;
+      for (let i = 0; i < hunk.lines.length; i++) {
+        const ln = hunk.lines[i]!.lineNumber;
+        const hit = isLeft ? ln.old === c.line : ln.new === c.line;
+        if (!hit) continue;
+        const isContext = hunk.lines[i]!.type === 'context';
+        const next = hunk.lines[i + 1];
+        if (isContext && next && next.type !== 'context') {
+          matchIdx = i + 1;
+        } else {
+          matchIdx = i;
         }
-        return line.lineNumber.new !== undefined && c.line === line.lineNumber.new;
-      });
-      if (hasComment) set.add(i);
-    });
-    return set;
+        break;
+      }
+      if (matchIdx !== -1) map.set(c.id, matchIdx);
+    }
+    return map;
   }, [hunk.lines, comments, normFile, clusterBots]);
+
+  const commentLineIndices = useMemo(() => new Set(commentLineMap.values()), [commentLineMap]);
 
   const openLineKeys = useMemo(() => {
     const set = new Set<string>();
@@ -316,15 +332,7 @@ function HunkLines({
     (i: number, dimmed: boolean) => {
       const line = hunk.lines[i]!;
       const lineKey = `${file}:${hunkIndex}:${i}`;
-      const lineComments: PRComment[] = comments.filter((c) => {
-        if (normalizePath(c.path) !== normFile) return false;
-        if (c.line === undefined) return false;
-        if (clusterBots && c.author.endsWith('[bot]')) return false;
-        if (c.side === 'LEFT') {
-          return line.lineNumber.old !== undefined && c.line === line.lineNumber.old;
-        }
-        return line.lineNumber.new !== undefined && c.line === line.lineNumber.new;
-      });
+      const lineComments: PRComment[] = comments.filter((c) => commentLineMap.get(c.id) === i);
       const hasThread = openLine === lineKey || lineComments.length > 0;
       return (
         <div key={lineKey}>
@@ -341,7 +349,7 @@ function HunkLines({
         </div>
       );
     },
-    [hunk.lines, file, hunkIndex, comments, normFile, clusterBots, openLine, setOpenLine, lang],
+    [hunk.lines, file, hunkIndex, comments, commentLineMap, openLine, setOpenLine, lang],
   );
 
   return (
