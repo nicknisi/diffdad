@@ -1,4 +1,5 @@
 import DOMPurify from 'dompurify';
+import { useEffect, useMemo, useState } from 'react';
 import { highlightLine } from '../../lib/shiki';
 import { useResolvedTheme } from '../../state/review-store';
 import { useHighlighter } from '../../hooks/useHighlighter';
@@ -18,21 +19,21 @@ function escapeHtml(s: string): string {
 
 function renderInline(text: string): string {
   let out = text;
-  // Images: ![alt](url)
+  // ![alt](url)
   out = out.replace(
     /!\[([^\]]*)\]\(([^)]+)\)/g,
     '<img alt="$1" src="$2" class="inline-block max-h-[1.4em] align-text-bottom" />',
   );
-  // Links: [text](url)
+  // [text](url)
   out = out.replace(
     /\[([^\]]+)\]\(([^)]+)\)/g,
     '<a href="$2" target="_blank" rel="noopener noreferrer" style="color:var(--brand);text-decoration:underline">$1</a>',
   );
-  // Bold
+  // **bold**
   out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  // Italic
+  // *italic* — leading [^*] avoids matching inside **bold**
   out = out.replace(/(^|[^*])\*([^*]+)\*/g, '$1<em>$2</em>');
-  // Inline code
+  // `code`
   out = out.replace(
     /`([^`]+)`/g,
     '<code style="background:var(--gray-a3);border-radius:3px;padding:1px 5px;font-size:0.9em">$1</code>',
@@ -42,7 +43,7 @@ function renderInline(text: string): string {
     /(^|\s)@([\w-]+)/g,
     '$1<span style="background:var(--purple-a3);border-radius:3px;padding:1px 5px;color:var(--purple-11)">@$2</span>',
   );
-  // Repo refs: owner/repo#123
+  // owner/repo#123
   out = out.replace(/([\w-]+\/[\w-]+#\d+)/g, '<a href="#" style="color:var(--brand);text-decoration:underline">$1</a>');
   return out;
 }
@@ -74,14 +75,33 @@ function processInline(text: string): string {
   return renderInline(escapeNonHtml(text));
 }
 
+const MERMAID_PRE_STYLE = 'background:var(--gray-2);border:1px solid var(--gray-a4);padding:0.75rem;border-radius:6px;font-size:0.875rem;overflow-x:auto';
+
+function mermaidBlockHtml(source: string, svgCache: Record<string, string>): string {
+  const cached = svgCache[source];
+  if (cached) {
+    return `<div class="mermaid-rendered" style="overflow-x:auto">${cached}</div>`;
+  }
+  return `<pre class="mermaid-pending" style="${MERMAID_PRE_STYLE}">${escapeHtml(source)}</pre>`;
+}
+
 const HTML_BLOCK_RE =
   /^<\/?(?:h[1-6]|p|div|details|summary|table|thead|tbody|tr|th|td|ul|ol|li|hr|br|pre|blockquote|section|article|aside|nav|header|footer|sub|sup|dl|dt|dd)[\s>/]/i;
 const HTML_COMMENT_RE = /<!--[\s\S]*?-->/g;
 
-function renderMarkdown(src: string, theme: 'light' | 'dark' = 'light'): string {
+const SANITIZE_CONFIG = {
+  USE_PROFILES: { html: true, svg: true, svgFilters: true },
+  ADD_TAGS: ['details', 'summary', 'sub', 'sup', 'foreignObject', 'style'],
+  ADD_ATTR: ['style', 'class', 'open', 'align', 'dominant-baseline', 'text-anchor', 'transform-origin', 'marker-end', 'marker-start', 'refX', 'refY', 'markerWidth', 'markerHeight', 'orient', 'markerUnits'],
+} as const;
+
+type RenderResult = { html: string; mermaidSources: string[] };
+
+function renderMarkdown(src: string, theme: 'light' | 'dark', svgCache: Record<string, string>): RenderResult {
   const cleaned = src.replace(HTML_COMMENT_RE, '');
   const lines = cleaned.split(/\r?\n/);
   const out: string[] = [];
+  const mermaidSources: string[] = [];
   let i = 0;
   let para: string[] = [];
 
@@ -94,6 +114,11 @@ function renderMarkdown(src: string, theme: 'light' | 'dark' = 'light'): string 
     }
     out.push(`<p class="mb-3 text-base leading-relaxed" style="color:var(--fg-1)">${processInline(joined)}</p>`);
     para = [];
+  }
+
+  function registerMermaid(source: string): string {
+    mermaidSources.push(source);
+    return mermaidBlockHtml(source, svgCache);
   }
 
   while (i < lines.length) {
@@ -111,6 +136,11 @@ function renderMarkdown(src: string, theme: 'light' | 'dark' = 'light'): string 
         i++;
       }
       i++;
+      if (lang === 'mermaid') {
+        out.push(registerMermaid(buf.join('\n')));
+        continue;
+      }
+
       const langLabel = lang
         ? `<div class="mb-1 text-xs font-mono uppercase" style="color:var(--fg-3)">${escapeHtml(lang)}</div>`
         : '';
@@ -139,7 +169,10 @@ function renderMarkdown(src: string, theme: 'light' | 'dark' = 'light'): string 
         }
         if (htmlBuf.length > 200) break;
       }
-      out.push(htmlBuf.join('\n'));
+      const htmlBlock = htmlBuf.join('\n').replace(/```mermaid\s*\n([\s\S]*?)```/g, (_, rawSrc) => {
+        return registerMermaid(rawSrc.trim());
+      });
+      out.push(htmlBlock);
       continue;
     }
 
@@ -273,18 +306,60 @@ function renderMarkdown(src: string, theme: 'light' | 'dark' = 'light'): string 
   }
   flushPara();
 
-  return out.join('');
+  return { html: out.join(''), mermaidSources };
 }
+
+let mermaidUid = 0;
+let mermaidTheme: string | null = null;
 
 export function Markdown({ source }: Props) {
   const theme = useResolvedTheme();
   useHighlighter();
+  const [svgCache, setSvgCache] = useState<Record<string, string>>({});
 
-  const rawHtml = renderMarkdown(source, theme);
-  const safeHtml = DOMPurify.sanitize(rawHtml, {
-    USE_PROFILES: { html: true },
-    ADD_TAGS: ['details', 'summary', 'sub', 'sup'],
-    ADD_ATTR: ['style', 'class', 'open', 'align'],
-  });
+  const { html: rawHtml, mermaidSources } = useMemo(
+    () => renderMarkdown(source, theme, svgCache),
+    [source, theme, svgCache],
+  );
+  const safeHtml = useMemo(() => DOMPurify.sanitize(rawHtml, SANITIZE_CONFIG), [rawHtml]);
+
+  const pending = mermaidSources.filter((s) => !svgCache[s]);
+
+  useEffect(() => {
+    if (pending.length === 0) return;
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const { default: mermaid } = await import('mermaid');
+        if (cancelled) return;
+        if (mermaidTheme !== theme) {
+          mermaid.initialize({ startOnLoad: false, theme: theme === 'dark' ? 'dark' : 'default', fontFamily: 'inherit' });
+          mermaidTheme = theme;
+        }
+
+        const newEntries: Record<string, string> = {};
+        for (const src of pending) {
+          if (cancelled) return;
+          try {
+            const { svg } = await mermaid.render(`mermaid-${mermaidUid++}`, src);
+            newEntries[src] = svg;
+          } catch (err) {
+            console.error('[mermaid] render error:', err);
+            newEntries[src] = `<pre style="${MERMAID_PRE_STYLE};color:var(--fg-2)">${escapeHtml(src)}</pre>`;
+          }
+        }
+        if (!cancelled && Object.keys(newEntries).length > 0) {
+          setSvgCache((prev) => ({ ...prev, ...newEntries }));
+        }
+      } catch (err) {
+        console.error('[mermaid] import error:', err);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [pending.join('\0'), theme]);
+
   return <div className="markdown-body" dangerouslySetInnerHTML={{ __html: safeHtml }} />;
 }
