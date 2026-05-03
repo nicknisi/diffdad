@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type {
+  AppMode,
   ChapterState,
   CheckRun,
   DiffFile,
@@ -10,6 +11,7 @@ import type {
   PRComment,
   PRData,
   PRReview,
+  WatchData,
 } from './types';
 import type { AccentId } from '../lib/accents';
 
@@ -60,6 +62,9 @@ type ReviewState = {
   clusterBots: boolean;
   regenerating: boolean;
   narrativeProgressChars: number;
+  mode: AppMode;
+  watch: WatchData | null;
+  watchLoading: boolean;
 
   setData: (
     pr: PRData,
@@ -99,6 +104,10 @@ type ReviewState = {
   setRegenerating: (v: boolean) => void;
   setNarrativeProgressChars: (chars: number) => void;
   setPr: (pr: PRData) => void;
+  setMode: (mode: AppMode) => void;
+  setWatch: (watch: WatchData | null) => void;
+  setWatchLoading: (loading: boolean) => void;
+  patchWatch: (patch: Partial<WatchData>) => void;
 };
 
 function draftStorageKey(prNumber: number): string {
@@ -168,6 +177,9 @@ export const useReviewStore = create<ReviewState>((set) => ({
   clusterBots: true,
   regenerating: false,
   narrativeProgressChars: 0,
+  mode: 'pr',
+  watch: null,
+  watchLoading: false,
   narrationOverrides: {} as Record<string, string>,
 
   setData: (pr, narrative, files, comments, repoUrl = null, checkRuns = [], config = null, reviews = []) => {
@@ -299,6 +311,11 @@ export const useReviewStore = create<ReviewState>((set) => ({
   setRegenerating: (regenerating) => set({ regenerating }),
   setNarrativeProgressChars: (narrativeProgressChars) => set({ narrativeProgressChars }),
   setPr: (pr) => set({ pr }),
+  setMode: (mode) => set({ mode }),
+  setWatch: (watch) => set({ watch }),
+  setWatchLoading: (watchLoading) => set({ watchLoading }),
+  patchWatch: (patch) =>
+    set((state) => (state.watch ? { watch: { ...state.watch, ...patch } } : state)),
   setNarrationOverride: (chapterKey: string, text: string) =>
     set((s) => ({ narrationOverrides: { ...s.narrationOverrides, [chapterKey]: text } })),
   clearNarrationOverride: (chapterKey: string) =>

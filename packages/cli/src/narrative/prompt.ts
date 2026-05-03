@@ -5,6 +5,8 @@ export type PreviousNarrativeContext = {
   previousChapterTitles?: string[];
 };
 
+export type NarrativeMode = 'narrate' | 'scrutinize';
+
 export interface NarrativePromptInput {
   title: string;
   description: string;
@@ -13,6 +15,7 @@ export interface NarrativePromptInput {
   fileTree: string[];
   skippedFiles?: string[];
   previousContext?: PreviousNarrativeContext;
+  mode?: NarrativeMode;
 }
 
 export interface PromptCapStats {
@@ -274,6 +277,23 @@ You are output-token-bound. Every chapter and sentence costs the reader real wai
 Output format — return ONLY valid JSON, no prose around it, matching this schema:
 ${RESPONSE_SCHEMA}`;
 
+const SCRUTINIZE_ADDENDUM = `
+
+---
+
+## Scrutinize Mode
+
+This narrative is for a developer reviewing their *own* in-progress work — typically code an AI agent just wrote — before sending it for human review. Your job here is not to celebrate the change but to **stress-test** it.
+
+Shift your priorities:
+- **Lead with what's questionable.** Each chapter should surface what a senior reviewer would push back on: implicit assumptions, hidden coupling, ordering dependencies, error paths that aren't handled, edge cases that aren't covered, validation that was skipped, race conditions, off-by-ones.
+- **Hunt for absences, not just presence.** Use the "missing" array aggressively. Missing tests for new behavior, missing error handling, missing input validation, missing cleanup on failure paths, missing docs for public surface changes, missing migrations. Be specific — "no test for the empty-input case in foo()" beats "needs more tests."
+- **Treat callouts as the real product.** Prefer "concern" and "warning" callouts over "nit". Each callout should be specific enough that the reader can verify it in under a minute. If you can't be specific, don't write the callout.
+- **Be honest about what you can't tell from the diff.** If a change *might* be wrong but you can't verify without running the code, say so explicitly in the chapter narrative ("verify that X actually fires when Y").
+- **Default verdict to caution.** Reserve "safe" for genuinely mechanical changes. If you flagged a single warning callout or a non-trivial absence, the verdict should be "caution" or "risky".
+
+The reviewer trusts you more when you find real problems than when you tell them everything is fine. Err toward skepticism.`;
+
 function formatHunkLine(line: DiffLine): string {
   const prefix = line.type === 'add' ? '+' : line.type === 'remove' ? '-' : ' ';
   return `${prefix}${line.content}`;
@@ -327,7 +347,8 @@ function formatFile(
 }
 
 export function buildNarrativePrompt(input: NarrativePromptInput): NarrativePrompt {
-  const { title, description, labels, files, fileTree, skippedFiles, previousContext } = input;
+  const { title, description, labels, files, fileTree, skippedFiles, previousContext, mode = 'narrate' } = input;
+  const system = mode === 'scrutinize' ? SYSTEM_PROMPT + SCRUTINIZE_ADDENDUM : SYSTEM_PROMPT;
 
   const truncatedTree = fileTree.slice(0, FILE_TREE_LIMIT);
   const labelLine = labels.length > 0 ? labels.join(', ') : '(none)';
@@ -426,5 +447,5 @@ export function buildNarrativePrompt(input: NarrativePromptInput): NarrativeProm
     truncatedFiles: truncatedFileDetails,
     droppedFiles,
   };
-  return { system: SYSTEM_PROMPT, user, stats };
+  return { system, user, stats };
 }

@@ -104,6 +104,35 @@ export type DraftComment = {
   chapterIndex?: number;
 };
 
+export type WatchCommitSummary = {
+  sha: string;
+  shortSha: string;
+  subject: string;
+  author: string;
+  date: string;
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+  hasNarrative: boolean;
+};
+
+export type WatchSelection =
+  | { kind: 'commit'; sha: string }
+  | { kind: 'unified' }
+  | { kind: 'pending' };
+
+export type WatchData = {
+  branch: string;
+  base: string;
+  baseSha: string;
+  headSha: string;
+  commits: WatchCommitSummary[];
+  selection: WatchSelection;
+  unifiedReady: boolean;
+};
+
+export type AppMode = 'pr' | 'watch';
+
 export type LiveEventKind = 'comment' | 'ci' | 'commit' | 'system';
 
 export type LiveStatus = 'connected' | 'connecting' | 'disconnected';

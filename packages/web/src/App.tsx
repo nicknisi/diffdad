@@ -6,11 +6,13 @@ import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { ActivityDrawer } from './components/ActivityDrawer';
 import { AppBar } from './components/AppBar';
 import { ClassicView } from './components/ClassicView';
+import { CommitTimeline } from './components/CommitTimeline';
 import { GeneratingScreen } from './components/GeneratingScreen';
 import { PRHeader } from './components/PRHeader';
 import { ShortcutsHelp } from './components/ShortcutsHelp';
 import { StoryView } from './components/StoryView';
 import { SubmitBar } from './components/SubmitBar';
+import { WatchHeader } from './components/WatchHeader';
 import { copy } from './lib/microcopy';
 import { getAccentMeta } from './lib/accents';
 import { renderDadMarkSVG } from './components/DadMark';
@@ -21,15 +23,18 @@ export default function App() {
   const view = useReviewStore((s) => s.view);
   const pr = useReviewStore((s) => s.pr);
   const narrative = useReviewStore((s) => s.narrative);
+  const mode = useReviewStore((s) => s.mode);
   const shortcutsHelpOpen = useReviewStore((s) => s.shortcutsHelpOpen);
   const setShortcutsHelpOpen = useReviewStore((s) => s.setShortcutsHelpOpen);
   const { loading, generating, setGenerating, error } = useNarrative();
 
   useEffect(() => {
-    if (pr) {
+    if (mode === 'watch' && pr) {
+      document.title = `${pr.title} — Diff Dad (watch)`;
+    } else if (pr) {
       document.title = `#${pr.number} ${pr.title} — Diff Dad`;
     }
-  }, [pr]);
+  }, [pr, mode]);
   useLiveStream();
   useKeyboardShortcuts();
   const [activityOpen, setActivityOpen] = useState(false);
@@ -114,6 +119,31 @@ export default function App() {
           <p className="mt-2 text-sm text-[var(--fg-3)]">{error}</p>
         </div>
       </main>
+    );
+  }
+
+  if (mode === 'watch') {
+    return (
+      <div className="min-h-screen bg-[var(--bg-page)] pb-20 text-[var(--fg-1)]">
+        <AppBar onOpenActivity={() => setActivityOpen(true)} />
+        <WatchHeader />
+        <CommitTimeline />
+        {narrative ? (
+          view === 'story' ? (
+            <StoryView />
+          ) : (
+            <ClassicView />
+          )
+        ) : (
+          <div className="mx-auto max-w-[880px] px-6 py-12 text-[var(--fg-3)]">
+            <p className="text-[14px]">
+              Narration in progress for this commit… Click another commit in the timeline above while you wait.
+            </p>
+          </div>
+        )}
+        <ActivityDrawer open={activityOpen} onClose={() => setActivityOpen(false)} />
+        <ShortcutsHelp open={shortcutsHelpOpen} onClose={() => setShortcutsHelpOpen(false)} />
+      </div>
     );
   }
 

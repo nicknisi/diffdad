@@ -1,10 +1,22 @@
 #!/usr/bin/env bun
 import { resolveGitHubToken } from './auth';
 import { readConfig, resetConfig, runConfig, showConfig } from './config';
+import {
+  branchExists,
+  detectBaseBranch,
+  findRepoRoot,
+  getCurrentBranch,
+  getHeadSha,
+  getRemoteSlug,
+  listCommits,
+  mergeBase,
+  repoFingerprint,
+} from './git/local';
 import { GitHubClient } from './github/client';
 import { cacheNarrative, clearCache, getCachedNarrative } from './narrative/cache';
 import { generateNarrative, setCliOverride } from './narrative/engine';
 import { createServer } from './server';
+import { createWatchServer, type WatchServerContext } from './watch-server';
 
 const a = {
   reset: '\x1b[0m',
@@ -50,6 +62,8 @@ const USAGE = `dad - GitHub PRs as narrated stories
 Usage:
   dad <pr>                           Review a PR (shorthand for dad review)
   dad review <pr>                    Review a PR
+  dad watch [branch]                 Narrate the current (or given) branch as you work
+                                     Options: --base <ref>  (override base, default: origin/HEAD)
   dad config                         Configure dad (interactive)
   dad config show                    Print the current config (secrets redacted)
   dad config reset [--yes]           Delete the saved config
@@ -317,6 +331,185 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
   await new Promise(() => {});
 }
 
+function getFlag(name: string): string | undefined {
+  const prefix = `--${name}=`;
+  const eq = Bun.argv.find((a) => a.startsWith(prefix));
+  if (eq) return eq.slice(prefix.length);
+  const idx = Bun.argv.findIndex((a) => a === `--${name}`);
+  if (idx !== -1 && Bun.argv[idx + 1] && !Bun.argv[idx + 1]!.startsWith('--')) {
+    return Bun.argv[idx + 1];
+  }
+  return undefined;
+}
+
+async function watchCommand(branchArg?: string): Promise<number> {
+  let repoRoot: string;
+  try {
+    repoRoot = await findRepoRoot();
+  } catch {
+    console.error(`\n  ${a.red}${a.bold}error:${a.reset} not inside a git repository.\n`);
+    return 1;
+  }
+
+  let branch: string;
+  if (branchArg) {
+    if (!(await branchExists(branchArg, repoRoot))) {
+      console.error(`\n  ${a.red}${a.bold}error:${a.reset} branch ${a.cyan}${branchArg}${a.reset} not found.\n`);
+      return 1;
+    }
+    branch = branchArg;
+  } else {
+    try {
+      branch = await getCurrentBranch(repoRoot);
+    } catch {
+      console.error(
+        `\n  ${a.red}${a.bold}error:${a.reset} couldn't determine current branch (detached HEAD?). Pass a branch name.\n`,
+      );
+      return 1;
+    }
+  }
+
+  const baseFlag = getFlag('base');
+  let base: string;
+  try {
+    base = baseFlag ?? (await detectBaseBranch(repoRoot));
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`\n  ${a.red}${a.bold}error:${a.reset} ${msg}\n`);
+    return 1;
+  }
+
+  if (!(await branchExists(base, repoRoot))) {
+    console.error(`\n  ${a.red}${a.bold}error:${a.reset} base ref ${a.cyan}${base}${a.reset} not found.\n`);
+    return 1;
+  }
+
+  const withFlag = Bun.argv.find((f) => f.startsWith('--with='));
+  if (withFlag) setCliOverride(withFlag.split('=')[1]!);
+
+  const headSha = await getHeadSha(branch, repoRoot);
+  const baseSha = await mergeBase(base, branch, repoRoot);
+  const commits = await listCommits(baseSha, headSha, repoRoot);
+  const remoteSlug = await getRemoteSlug(repoRoot);
+
+  console.log(`\n  ${a.purple}${a.bold}Diff Dad${a.reset}  ${a.dim}—${a.reset}  ${a.white}watch mode${a.reset}`);
+  console.log(
+    `  ${a.dim}branch:${a.reset} ${a.cyan}${branch}${a.reset}  ${a.dim}base:${a.reset} ${a.cyan}${base}${a.reset}  ${a.dim}commits:${a.reset} ${a.white}${commits.length}${a.reset}`,
+  );
+
+  const ctx: WatchServerContext = {
+    repoRoot,
+    repoFp: repoFingerprint(repoRoot),
+    branch,
+    base,
+    baseSha,
+    headSha,
+    commits,
+    narratives: new Map(),
+    unified: null,
+    unifiedKey: null,
+    generating: new Set(),
+    unifiedGenerating: false,
+    remoteSlug,
+  };
+
+  const { app, narrateCommit, refreshCommits } = createWatchServer(ctx);
+  const portFlag = Bun.argv.find((f) => f.startsWith('--port='));
+  const port = portFlag ? parseInt(portFlag.split('=')[1]) : 0;
+  const server = Bun.serve({ fetch: app.fetch, port, idleTimeout: 255 });
+  const url = `http://localhost:${server.port}`;
+
+  console.log(`\n  ${a.purple}${a.bold}${url}${a.reset}`);
+  const joke = DAD_JOKES[Math.floor(Math.random() * DAD_JOKES.length)];
+  console.log(`\n  ${a.italic}${a.gray}"${joke}"${a.reset}\n`);
+
+  if (!Bun.argv.includes('--no-open')) {
+    const { default: open } = await import('open');
+    await open(url);
+  }
+
+  if (commits.length === 0) {
+    console.log(`  ${a.dim}No commits ahead of ${base} yet — waiting for new commits...${a.reset}`);
+  } else {
+    console.log(`  ${a.yellow}Narrating ${commits.length} commit${commits.length === 1 ? '' : 's'}...${a.reset}`);
+    // Kick off narrations sequentially in the background; SSE updates the UI.
+    void (async () => {
+      for (const c of commits) {
+        await narrateCommit(c.sha, { broadcastWhenDone: true });
+        if (ctx.narratives.has(c.sha)) {
+          console.log(
+            `  ${a.green}✓${a.reset} ${a.gray}${c.shortSha}${a.reset} ${a.white}${c.subject}${a.reset}`,
+          );
+        }
+      }
+    })();
+  }
+
+  // Poll for new commits on the branch.
+  const pollMs = 2000;
+  let polling = false;
+  const interval = setInterval(async () => {
+    if (polling) return;
+    polling = true;
+    try {
+      const freshHead = await getHeadSha(branch, repoRoot);
+      if (freshHead === ctx.headSha) return;
+
+      // Recompute merge-base in case the base ref has moved (e.g. someone
+      // pulled main while you were working).
+      const freshBase = await mergeBase(base, branch, repoRoot);
+      const freshCommits = await listCommits(freshBase, freshHead, repoRoot);
+      const oldShas = new Set(ctx.commits.map((c) => c.sha));
+      const added = freshCommits.filter((c) => !oldShas.has(c.sha));
+      const newShas = new Set(freshCommits.map((c) => c.sha));
+      const dropped = ctx.commits.filter((c) => !newShas.has(c.sha));
+
+      if (dropped.length > 0) {
+        console.log(
+          `  ${a.yellow}↻${a.reset} History rewritten ${a.dim}(dropped ${dropped.length}, added ${added.length})${a.reset}`,
+        );
+      } else if (added.length > 0) {
+        const labels = added.map((c) => `${c.shortSha} ${c.subject}`).join('\n      ');
+        console.log(`  ${a.green}+${a.reset} ${added.length} new commit${added.length === 1 ? '' : 's'}:`);
+        console.log(`      ${a.dim}${labels}${a.reset}`);
+      }
+
+      ctx.baseSha = freshBase;
+      await refreshCommits(freshCommits, freshHead);
+      // narrateCommit is fire-and-forget inside refreshCommits, but we
+      // also want a console log per success. Hook into the cache: when
+      // narratives.has(sha) is set we log it.
+      const tickShas = added.map((c) => c.sha);
+      void (async () => {
+        for (const sha of tickShas) {
+          // Wait until it's either generated or errored.
+          while (ctx.generating.has(sha)) await new Promise((r) => setTimeout(r, 250));
+          const c = freshCommits.find((cm) => cm.sha === sha);
+          if (c && ctx.narratives.has(sha)) {
+            console.log(
+              `  ${a.green}✓${a.reset} ${a.gray}${c.shortSha}${a.reset} ${a.white}${c.subject}${a.reset}`,
+            );
+          }
+        }
+      })();
+    } catch (err) {
+      // Swallow polling errors — branch may be momentarily unreadable
+      // during a rebase, etc.
+      void err;
+    } finally {
+      polling = false;
+    }
+  }, pollMs);
+
+  // Keep the process alive forever.
+  process.on('SIGINT', () => {
+    clearInterval(interval);
+    console.log(`\n  ${a.dim}Goodbye.${a.reset}\n`);
+    process.exit(0);
+  });
+  await new Promise(() => {});
+}
+
 async function configCommand(sub?: string): Promise<number> {
   if (sub === 'show') return await showConfig();
   if (sub === 'reset') {
@@ -359,6 +552,8 @@ async function main(argv: string[]): Promise<number> {
   switch (cmd) {
     case 'review':
       return await reviewCommand(rest[0]);
+    case 'watch':
+      return await watchCommand(rest[0]);
     case 'config':
       return await configCommand(rest[0]);
     case 'cache': {
