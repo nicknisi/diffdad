@@ -294,7 +294,7 @@ async function main(argv: string[]): Promise<number> {
     return 0;
   }
   if (argv.includes('--version')) {
-    const pkg = await import('../../../package.json');
+    const pkg = await import('../package.json');
     console.log(pkg.version ?? '0.0.0');
     return 0;
   }
@@ -308,7 +308,7 @@ async function main(argv: string[]): Promise<number> {
   }
 
   if (cmd === '-v' || cmd === '-V') {
-    const pkg = await import('../../../package.json');
+    const pkg = await import('../package.json');
     console.log(pkg.version ?? '0.0.0');
     return 0;
   }
