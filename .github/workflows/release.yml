@@ -70,9 +70,12 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ !contains(github.ref_name, '-') }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout tap repo
+        uses: actions/checkout@v4
         with:
-          ref: main
+          repository: nicknisi/homebrew-diffdad
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
 
       - uses: actions/download-artifact@v4
         with:
@@ -86,6 +89,7 @@ jobs:
           SHA_ARM64=$(shasum -a 256 dad-darwin-arm64.tar.gz | cut -d' ' -f1)
           SHA_X86_64=$(shasum -a 256 dad-darwin-x86_64.tar.gz | cut -d' ' -f1)
           SHA_LINUX=$(shasum -a 256 dad-linux-x86_64.tar.gz | cut -d' ' -f1)
+          cd tap
           sed -i "s/version \".*\"/version \"${VER}\"/" Formula/dad.rb
           python3 -c "
           import re, sys
@@ -99,6 +103,7 @@ jobs:
 
       - name: Commit formula
         run: |
+          cd tap
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Formula/dad.rb

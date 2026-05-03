@@ -14,7 +14,13 @@
 ### Homebrew
 
 ```sh
-brew tap nicknisi/diffdad https://github.com/nicknisi/diffdad
+brew install nicknisi/diffdad/dad
+```
+
+Or, equivalently:
+
+```sh
+brew tap nicknisi/diffdad
 brew install dad
 ```
 
