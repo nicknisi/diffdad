@@ -44,7 +44,7 @@ export default function App() {
     if (narrative && generating) setGenerating(false);
   }, [narrative, generating, setGenerating]);
 
-  const showLoadingMessages = loading || generating;
+  const showLoadingMessages = loading || generating || (mode === 'watch' && !narrative);
   useEffect(() => {
     if (!showLoadingMessages) return;
     const t = setInterval(() => setLoadingMsgIndex((i) => (i + 1) % copy.loadingMessages.length), 2500);
@@ -135,11 +135,11 @@ export default function App() {
             <ClassicView />
           )
         ) : (
-          <div className="mx-auto max-w-[880px] px-6 py-12 text-[var(--fg-3)]">
-            <p className="text-[14px]">
-              Narration in progress for this commit… Click another commit in the timeline above while you wait.
-            </p>
-          </div>
+          <GeneratingScreen
+            compact
+            message={copy.loadingMessages[loadingMsgIndex]!}
+            subtitle="Pick another commit while you wait."
+          />
         )}
         <ActivityDrawer open={activityOpen} onClose={() => setActivityOpen(false)} />
         <ShortcutsHelp open={shortcutsHelpOpen} onClose={() => setShortcutsHelpOpen(false)} />

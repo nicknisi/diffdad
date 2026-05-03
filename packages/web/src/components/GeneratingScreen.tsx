@@ -5,6 +5,8 @@ import { getAccentMeta } from '../lib/accents';
 
 type Props = {
   message: string;
+  compact?: boolean;
+  subtitle?: string;
 };
 
 function formatElapsed(ms: number): string {
@@ -13,10 +15,11 @@ function formatElapsed(ms: number): string {
   return m > 0 ? `${m}m ${String(s % 60).padStart(2, '0')}s` : `${s}s`;
 }
 
-export function GeneratingScreen({ message }: Props) {
+export function GeneratingScreen({ message, compact = false, subtitle }: Props) {
   const pr = useReviewStore((s) => s.pr);
   const files = useReviewStore((s) => s.files);
   const accent = useReviewStore((s) => s.accent);
+  const mode = useReviewStore((s) => s.mode);
   const progressChars = useReviewStore((s) => s.narrativeProgressChars);
   const { markBg } = getAccentMeta(accent);
 
@@ -27,14 +30,19 @@ export function GeneratingScreen({ message }: Props) {
     return () => clearInterval(id);
   }, []);
 
+  const wrapperClass = compact
+    ? 'flex flex-col items-center justify-center px-6 py-16'
+    : 'flex min-h-screen flex-col items-center justify-center bg-[var(--bg-page)] px-6';
+  const markSize = compact ? 48 : 64;
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center bg-[var(--bg-page)] px-6">
+    <main className={wrapperClass}>
       <div className="flex flex-col items-center gap-6 text-center">
         <div style={{ animation: 'generating-bob 2s ease-in-out infinite' }}>
-          <DadMark size={64} bg={markBg} shape="circle" showBadge={false} showWink />
+          <DadMark size={markSize} bg={markBg} shape="circle" showBadge={false} showWink />
         </div>
 
-        {pr && (
+        {!compact && pr && mode === 'pr' && (
           <div className="space-y-1">
             <h1 className="m-0 text-[22px] font-bold tracking-tight text-[var(--fg-1)]">
               <span className="font-normal text-[var(--fg-3)]">#{pr.number}</span> {pr.title}
@@ -49,6 +57,8 @@ export function GeneratingScreen({ message }: Props) {
             </div>
           </div>
         )}
+
+        {subtitle ? <p className="text-[13px] text-[var(--fg-3)]">{subtitle}</p> : null}
 
         <div className="flex items-center gap-3">
           <div className="generating-dots flex gap-1">

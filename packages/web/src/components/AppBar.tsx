@@ -104,10 +104,44 @@ export function AppBar({ onOpenActivity }: AppBarProps) {
   const accent = useReviewStore((s) => s.accent);
   const setAccent = useReviewStore((s) => s.setAccent);
   const repoUrl = useReviewStore((s) => s.repoUrl);
+  const mode = useReviewStore((s) => s.mode);
+  const watch = useReviewStore((s) => s.watch);
 
   const slug = repoSlug(repoUrl);
   const { markBg } = getAccentMeta(accent);
   const prNum = pr ? pr.number : null;
+
+  const cliLabel = mode === 'watch' && watch ? `dad watch ${watch.branch}` : `dad review ${prNum ?? '—'}`;
+
+  let target: { href: string | null; primary: string; secondary?: string; title: string } = {
+    href: null,
+    primary: '—',
+    title: '',
+  };
+  if (mode === 'watch' && watch) {
+    if (slug && repoUrl) {
+      target = {
+        href: `${repoUrl}/tree/${encodeURIComponent(watch.branch)}`,
+        primary: slug,
+        secondary: `${watch.branch} → ${watch.base}`,
+        title: 'Open branch on GitHub',
+      };
+    } else {
+      target = {
+        href: null,
+        primary: watch.branch,
+        secondary: `→ ${watch.base}`,
+        title: '',
+      };
+    }
+  } else if (slug && repoUrl && prNum != null) {
+    target = {
+      href: `${repoUrl}/pull/${prNum}`,
+      primary: slug,
+      secondary: `#${prNum}`,
+      title: 'Open PR on GitHub',
+    };
+  }
 
   return (
     <header
@@ -129,26 +163,39 @@ export function AppBar({ onOpenActivity }: AppBarProps) {
           className="whitespace-nowrap rounded-[4px] bg-[var(--gray-3)] px-2 py-0.5 text-[var(--fg-1)]"
           style={{ boxShadow: 'inset 0 0 0 1px var(--gray-a5)' }}
         >
-          dad review {prNum ?? '—'}
+          {cliLabel}
         </span>
         <span className="inline-flex text-[var(--fg-3)]">
           <IconArrowRight className="h-[11px] w-[11px]" />
         </span>
-        {slug && repoUrl && prNum != null ? (
+        {target.href ? (
           <a
-            href={`${repoUrl}/pull/${prNum}`}
+            href={target.href}
             target="_blank"
             rel="noopener noreferrer"
             className="truncate text-[13px] font-medium font-sans hover:underline"
-            title="Open PR on GitHub"
+            title={target.title}
           >
             <span className="font-semibold" style={{ color: 'var(--purple-11)' }}>
-              {slug}
+              {target.primary}
             </span>
-            <span style={{ color: 'var(--fg-1)' }}>#{prNum}</span>
+            {target.secondary ? (
+              <span className="ml-1" style={{ color: 'var(--fg-1)' }}>
+                {target.secondary}
+              </span>
+            ) : null}
           </a>
         ) : (
-          <span className="text-[var(--fg-3)]">—</span>
+          <span className="truncate text-[13px] font-medium font-sans">
+            <span className="font-semibold" style={{ color: 'var(--purple-11)' }}>
+              {target.primary}
+            </span>
+            {target.secondary ? (
+              <span className="ml-1" style={{ color: 'var(--fg-1)' }}>
+                {target.secondary}
+              </span>
+            ) : null}
+          </span>
         )}
         <span className="ml-auto font-mono text-[11px] font-medium text-[var(--fg-3)]">pid 41278</span>
       </div>
