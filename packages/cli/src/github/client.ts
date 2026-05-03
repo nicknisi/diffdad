@@ -284,7 +284,7 @@ export class GitHubClient {
     number: number,
     event: 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES',
     body?: string,
-    comments?: { path: string; line: number; body: string }[],
+    comments?: { path: string; line: number; body: string; side?: 'LEFT' | 'RIGHT' }[],
   ): Promise<void> {
     await this.fetch(`/repos/${owner}/${repo}/pulls/${number}/reviews`, {
       method: 'POST',

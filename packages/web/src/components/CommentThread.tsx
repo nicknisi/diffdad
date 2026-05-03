@@ -9,6 +9,7 @@ type Props = {
   comments: PRComment[];
   path?: string;
   line?: number;
+  side?: 'LEFT' | 'RIGHT';
   chapterIndex?: number;
   inReplyToId?: number;
   onClose?: () => void;
@@ -58,7 +59,7 @@ function draftKeyFor(path?: string, line?: number, chapterIndex?: number): strin
   return null;
 }
 
-export function CommentThread({ comments, path, line, chapterIndex, inReplyToId, onClose, autoFocus }: Props) {
+export function CommentThread({ comments, path, line, side, chapterIndex, inReplyToId, onClose, autoFocus }: Props) {
   const { postComment } = useComments();
   const drafts = useReviewStore((s) => s.drafts);
   const addDraft = useReviewStore((s) => s.addDraft);
@@ -133,6 +134,7 @@ export function CommentThread({ comments, path, line, chapterIndex, inReplyToId,
       body: trimmed,
       path,
       line,
+      side,
       chapterIndex,
     });
     setDraftSavedAt(Date.now());
@@ -153,7 +155,7 @@ export function CommentThread({ comments, path, line, chapterIndex, inReplyToId,
     setSubmitting(true);
     setError(null);
     try {
-      await postComment(trimmed, { path, line, inReplyToId: replyTarget });
+      await postComment(trimmed, { path, line, side, inReplyToId: replyTarget });
       setBody('');
       clearDraftForKey();
       onClose?.();

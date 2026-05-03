@@ -399,7 +399,11 @@ export function createServer(ctx: ServerContext) {
   });
 
   app.post('/api/review', async (c) => {
-    let payload: { event?: string; body?: string; comments?: { path: string; line: number; body: string }[] };
+    let payload: {
+      event?: string;
+      body?: string;
+      comments?: { path: string; line: number; body: string; side?: 'LEFT' | 'RIGHT' }[];
+    };
     try {
       payload = (await c.req.json()) as typeof payload;
     } catch {

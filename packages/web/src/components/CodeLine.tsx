@@ -83,7 +83,7 @@ export function CodeLine({ line, lineKey, lang, dimmed }: Props) {
           {line.content}
         </pre>
       )}
-      {line.lineNumber.new !== undefined && (
+      {(line.lineNumber.new !== undefined || line.lineNumber.old !== undefined) && (
         <button
           type="button"
           aria-label="Comment on line"
