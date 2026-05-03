@@ -121,6 +121,32 @@ export type WatchSelection =
   | { kind: 'unified' }
   | { kind: 'pending' };
 
+export type SkeletonFileCategory =
+  | 'test'
+  | 'config'
+  | 'schema'
+  | 'migration'
+  | 'docs'
+  | 'public-api'
+  | 'source';
+
+export type SkeletonFile = {
+  path: string;
+  category: SkeletonFileCategory;
+  additions: number;
+  deletions: number;
+  isNewFile: boolean;
+  isDeleted: boolean;
+};
+
+export type BranchSkeleton = {
+  totals: { additions: number; deletions: number; changedFiles: number };
+  byCategory: Record<SkeletonFileCategory, number>;
+  touchedDirs: { dir: string; count: number }[];
+  notable: SkeletonFile[];
+  files: SkeletonFile[];
+};
+
 export type WatchData = {
   branch: string;
   base: string;
@@ -129,6 +155,7 @@ export type WatchData = {
   commits: WatchCommitSummary[];
   selection: WatchSelection;
   unifiedReady: boolean;
+  skeleton: BranchSkeleton;
 };
 
 export type AppMode = 'pr' | 'watch';
