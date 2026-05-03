@@ -47,6 +47,7 @@ export function NarrationAnchor({ chapterIndex }: Props) {
   const setChapterDensity = useReviewStore((s) => s.setChapterDensity);
   const activeDensity = chapterDensityMap[chapterKey] ?? globalDensity;
 
+  const mode = useReviewStore((s) => s.mode);
   const narrationOverrides = useReviewStore((s) => s.narrationOverrides);
   const setNarrationOverride = useReviewStore((s) => (s as any).setNarrationOverride) as (
     key: string,
@@ -263,15 +264,17 @@ export function NarrationAnchor({ chapterIndex }: Props) {
           Ask AI
         </button>
 
-        <button
-          type="button"
-          onClick={() => setCommentOpen((v) => !v)}
-          className="inline-flex items-center gap-1 rounded-[4px] px-1.5 py-[3px] text-[12px] font-medium hover:bg-[var(--gray-a3)] hover:text-[var(--fg-2)]"
-          style={commentOpen ? { background: 'var(--gray-a3)', color: 'var(--fg-1)' } : { color: 'var(--fg-3)' }}
-        >
-          <IconChat className="h-[11px] w-[11px]" />
-          Comment on chapter
-        </button>
+        {mode !== 'watch' ? (
+          <button
+            type="button"
+            onClick={() => setCommentOpen((v) => !v)}
+            className="inline-flex items-center gap-1 rounded-[4px] px-1.5 py-[3px] text-[12px] font-medium hover:bg-[var(--gray-a3)] hover:text-[var(--fg-2)]"
+            style={commentOpen ? { background: 'var(--gray-a3)', color: 'var(--fg-1)' } : { color: 'var(--fg-3)' }}
+          >
+            <IconChat className="h-[11px] w-[11px]" />
+            Comment on chapter
+          </button>
+        ) : null}
       </div>
 
       {askOpen && (

@@ -5,6 +5,7 @@ import { useLiveStream } from './hooks/useLiveStream';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { ActivityDrawer } from './components/ActivityDrawer';
 import { AppBar } from './components/AppBar';
+import { AddendumsView } from './components/AddendumsView';
 import { BranchSkeletonView } from './components/BranchSkeletonView';
 import { ClassicView } from './components/ClassicView';
 import { CommitTimeline } from './components/CommitTimeline';
@@ -140,7 +141,10 @@ export default function App() {
             {view === 'files' ? (
               <ClassicView />
             ) : narrative ? (
-              <StoryView />
+              <>
+                <StoryView />
+                <AddendumsView />
+              </>
             ) : (
               <BranchSkeletonView message={copy.loadingMessages[loadingMsgIndex]!} />
             )}

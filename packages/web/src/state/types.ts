@@ -147,6 +147,15 @@ export type BranchSkeleton = {
   files: SkeletonFile[];
 };
 
+export type Addendum = {
+  sha: string;
+  shortSha: string;
+  subject: string;
+  additions: number;
+  deletions: number;
+  narrative: NarrativeResponse | null;
+};
+
 export type WatchData = {
   branch: string;
   base: string;
@@ -155,6 +164,8 @@ export type WatchData = {
   commits: WatchCommitSummary[];
   selection: WatchSelection;
   unifiedReady: boolean;
+  unifiedHeadSha: string | null;
+  addendums: Addendum[];
   skeleton: BranchSkeleton;
 };
 

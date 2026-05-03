@@ -270,6 +270,7 @@ function HunkLines({
   openLine,
   setOpenLine,
   clusterBots,
+  commentsEnabled,
 }: {
   file: string;
   hunk: DiffHunk;
@@ -280,6 +281,7 @@ function HunkLines({
   openLine: string | null;
   setOpenLine: (key: string | null) => void;
   clusterBots: boolean;
+  commentsEnabled: boolean;
 }) {
   const normFile = normalizePath(file);
 
@@ -346,7 +348,7 @@ function HunkLines({
       return (
         <div key={lineKey}>
           <CodeLine line={line} lineKey={lineKey} lang={lang} dimmed={dimmed} />
-          {hasThread && (
+          {hasThread && commentsEnabled && (
             <div className="sticky left-0" style={{ width: '100cqw' }}>
               <CollapsibleThread
                 comments={lineComments}
@@ -388,6 +390,8 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight }: Props) {
   const comments = useReviewStore((s) => s.comments);
   const setOpenLine = useReviewStore((s) => s.setOpenLine);
   const repoUrl = useReviewStore((s) => s.repoUrl);
+  const mode = useReviewStore((s) => s.mode);
+  const commentsEnabled = mode !== 'watch';
   const headSha = useReviewStore((s) => s.pr?.headSha ?? null);
   const clusterBots = useReviewStore((s) => s.clusterBots);
   const lang = guessLang(file);
@@ -486,6 +490,7 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight }: Props) {
           openLine={openLine}
           setOpenLine={setOpenLine}
           clusterBots={clusterBots}
+          commentsEnabled={commentsEnabled}
         />
       </div>
     </div>

@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { applyNarrativeResponse, fetchNarrative } from './useNarrative';
 import { useReviewStore } from '../state/review-store';
 import type {
+  Addendum,
   CheckRun,
   DiffFile,
   LiveEvent,
@@ -158,6 +159,8 @@ export function useLiveStream() {
           headSha: string;
           commits: WatchCommitSummary[];
           unifiedReady: boolean;
+          unifiedHeadSha: string | null;
+          addendums: Addendum[];
         };
         const store = useReviewStore.getState();
         if (store.watch) {
@@ -184,10 +187,31 @@ export function useLiveStream() {
         const { sha } = JSON.parse(e.data) as { sha: string };
         const store = useReviewStore.getState();
         if (store.watch) {
-          const updated = store.watch.commits.map((c) =>
+          const updatedCommits = store.watch.commits.map((c) =>
             c.sha === sha ? { ...c, hasNarrative: true } : c,
           );
-          store.setWatch({ ...store.watch, commits: updated });
+          // If this commit is in the addendum chain, fetch its narrative and
+          // patch the matching addendum entry inline. Avoids a full /api/narrative
+          // refetch and lets the addendum card swap from "Narrating…" to content.
+          const isAddendum = store.watch.addendums.some((a) => a.sha === sha);
+          let updatedAddendums = store.watch.addendums;
+          if (isAddendum) {
+            try {
+              const data = await fetchNarrative(`?sha=${encodeURIComponent(sha)}`);
+              if (data.narrative) {
+                updatedAddendums = store.watch.addendums.map((a) =>
+                  a.sha === sha ? { ...a, narrative: data.narrative! } : a,
+                );
+              }
+            } catch {
+              // leave as null; the user can refresh
+            }
+          }
+          store.setWatch({
+            ...store.watch,
+            commits: updatedCommits,
+            addendums: updatedAddendums,
+          });
         }
         // If the user is currently looking at this commit, refresh the narrative.
         if (store.watch?.selection.kind === 'commit' && store.watch.selection.sha === sha) {

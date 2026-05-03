@@ -408,6 +408,7 @@ async function watchCommand(branchArg?: string): Promise<number> {
     narratives: new Map(),
     unified: null,
     unifiedKey: null,
+    unifiedHeadSha: null,
     generating: new Set(),
     unifiedGenerating: false,
     remoteSlug,
@@ -478,16 +479,25 @@ async function watchCommand(branchArg?: string): Promise<number> {
       ctx.baseSha = freshBase;
       await refreshCommits(freshCommits, freshHead);
 
-      // Whole-branch story is the primary surface — regenerate it when the
-      // branch moves. Per-commit narration stays on demand.
-      void (async () => {
-        const narrative = await narrateUnified();
-        if (narrative) {
-          console.log(
-            `  ${a.green}✓${a.reset} ${a.white}whole-branch story refreshed${a.reset} ${a.dim}(${narrative.chapters.length} chapters)${a.reset}`,
-          );
-        }
-      })();
+      // Whole-branch story regenerates only on history rewrite (rebase /
+      // amend / squash). On a simple linear advance the unified story
+      // stays put and refreshCommits fires per-commit "addendum" narration
+      // for each new SHA — the story doesn't get jumbled, but you still
+      // see what just changed.
+      if (dropped.length > 0) {
+        void (async () => {
+          const narrative = await narrateUnified();
+          if (narrative) {
+            console.log(
+              `  ${a.green}✓${a.reset} ${a.white}whole-branch story regenerated${a.reset} ${a.dim}(${narrative.chapters.length} chapters)${a.reset}`,
+            );
+          }
+        })();
+      } else if (added.length > 0) {
+        console.log(
+          `  ${a.dim}(addendum narration in progress for ${added.length} new commit${added.length === 1 ? '' : 's'})${a.reset}`,
+        );
+      }
     } catch (err) {
       // Swallow polling errors — branch may be momentarily unreadable
       // during a rebase, etc.

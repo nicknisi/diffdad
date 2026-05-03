@@ -138,32 +138,18 @@ function CommitRow({
       }
     : { background: 'transparent', color: 'var(--fg-1)' };
 
-  const indicator = commit.hasNarrative ? '✓' : '○';
-  const indicatorColor = selected
-    ? 'var(--brand-11, var(--purple-11))'
-    : commit.hasNarrative
-      ? 'var(--green-11)'
-      : 'var(--fg-3)';
+  const buttonLabel = commit.hasNarrative ? 'View' : 'Narrate';
+  const buttonTitle = commit.hasNarrative
+    ? `View ${commit.shortSha}'s narrative`
+    : `Generate a narrative for ${commit.shortSha} (one model call)`;
 
   return (
     <li>
-      <button
-        type="button"
-        onClick={onSelect}
-        disabled={disabled}
-        className="group flex w-full items-start gap-2 rounded-[6px] px-2 py-1.5 text-left transition-colors hover:bg-[var(--gray-2)] disabled:opacity-60"
+      <div
+        className="group flex w-full items-start gap-2 rounded-[6px] px-2 py-1.5 text-left transition-colors"
         style={rowStyle}
-        title={`${commit.shortSha}  ${commit.subject}\n${commit.author} · ${shortDate(commit.date)}\n+${commit.additions} −${commit.deletions} across ${commit.changedFiles} ${commit.changedFiles === 1 ? 'file' : 'files'}${
-          commit.hasNarrative ? '' : '\n(narration pending — click to generate)'
-        }`}
+        title={`${commit.shortSha}  ${commit.subject}\n${commit.author} · ${shortDate(commit.date)}\n+${commit.additions} −${commit.deletions} across ${commit.changedFiles} ${commit.changedFiles === 1 ? 'file' : 'files'}`}
       >
-        <span
-          aria-hidden
-          className="mt-[1px] w-3 shrink-0 text-center font-mono text-[11px]"
-          style={{ color: indicatorColor }}
-        >
-          {indicator}
-        </span>
         <span className="flex min-w-0 flex-1 flex-col gap-[1px]">
           <span className="truncate text-[13px] font-medium leading-tight">{commit.subject}</span>
           <span className="flex items-center gap-2 text-[11px] text-[var(--fg-3)]">
@@ -175,7 +161,29 @@ function CommitRow({
             </span>
           </span>
         </span>
-      </button>
+        <button
+          type="button"
+          onClick={onSelect}
+          disabled={disabled}
+          title={buttonTitle}
+          className="shrink-0 rounded-[5px] px-2 py-0.5 text-[11px] font-medium transition-colors disabled:opacity-60"
+          style={
+            commit.hasNarrative
+              ? {
+                  background: 'var(--gray-3)',
+                  color: 'var(--fg-2)',
+                  boxShadow: 'inset 0 0 0 1px var(--gray-a5)',
+                }
+              : {
+                  background: 'transparent',
+                  color: 'var(--fg-2)',
+                  boxShadow: 'inset 0 0 0 1px var(--gray-a5)',
+                }
+          }
+        >
+          {buttonLabel}
+        </button>
+      </div>
     </li>
   );
 }

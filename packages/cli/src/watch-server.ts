@@ -32,11 +32,24 @@ export type WatchServerContext = {
   narratives: Map<string, NarrativeResponse>;
   unified: NarrativeResponse | null;
   unifiedKey: string | null;
+  // The headSha the unified narrative was generated against. Commits that
+  // landed AFTER this point are "addendums" — visible-but-separate updates
+  // appended to the main story instead of forcing a regeneration.
+  unifiedHeadSha: string | null;
   generating: Set<string>;
   unifiedGenerating: boolean;
   remoteSlug: { owner: string; repo: string } | null;
   skeleton: BranchSkeleton | null;
   skeletonKey: string | null;
+};
+
+export type AddendumEntry = {
+  sha: string;
+  shortSha: string;
+  subject: string;
+  additions: number;
+  deletions: number;
+  narrative: NarrativeResponse | null; // null while generation is in flight
 };
 
 type CommitSummary = {
@@ -59,6 +72,8 @@ type WatchPayload = {
   commits: CommitSummary[];
   selection: { kind: 'commit'; sha: string } | { kind: 'unified' } | { kind: 'pending' };
   unifiedReady: boolean;
+  unifiedHeadSha: string | null;
+  addendums: AddendumEntry[];
   skeleton: BranchSkeleton;
 };
 
@@ -236,17 +251,20 @@ export function createWatchServer(ctx: WatchServerContext) {
     }
   }
 
-  async function narrateUnified(): Promise<NarrativeResponse | null> {
+  async function narrateUnified(opts: { force?: boolean } = {}): Promise<NarrativeResponse | null> {
     const key = `${ctx.baseSha}:${ctx.headSha}`;
-    if (ctx.unified && ctx.unifiedKey === key) return ctx.unified;
+    if (!opts.force && ctx.unified && ctx.unifiedKey === key) return ctx.unified;
     if (ctx.unifiedGenerating) return null;
 
-    const cached = await getCachedUnifiedNarrative(ctx.repoFp, ctx.baseSha, ctx.headSha);
-    if (cached) {
-      ctx.unified = cached;
-      ctx.unifiedKey = key;
-      broadcast('unified-narrative', { ready: true });
-      return cached;
+    if (!opts.force) {
+      const cached = await getCachedUnifiedNarrative(ctx.repoFp, ctx.baseSha, ctx.headSha);
+      if (cached) {
+        ctx.unified = cached;
+        ctx.unifiedKey = key;
+        ctx.unifiedHeadSha = ctx.headSha;
+        broadcast('unified-narrative', { ready: true });
+        return cached;
+      }
     }
 
     ctx.unifiedGenerating = true;
@@ -258,6 +276,7 @@ export function createWatchServer(ctx: WatchServerContext) {
       const { narrative } = await generateNarrative(pr, files, [], config, undefined, 'scrutinize');
       ctx.unified = narrative;
       ctx.unifiedKey = key;
+      ctx.unifiedHeadSha = ctx.headSha;
       await cacheUnifiedNarrative(ctx.repoFp, ctx.baseSha, ctx.headSha, narrative);
       broadcast('unified-narrative', { ready: true });
       return narrative;
@@ -271,14 +290,35 @@ export function createWatchServer(ctx: WatchServerContext) {
     }
   }
 
+  /**
+   * Decide whether the branch update is a simple linear advance (old SHAs all
+   * still present, new SHAs appended) or a history rewrite (a previously-known
+   * SHA disappeared — rebase, amend, squash, reset).
+   */
+  function isSimpleAdvance(prevCommits: LocalCommit[], next: LocalCommit[]): boolean {
+    if (next.length < prevCommits.length) return false;
+    for (let i = 0; i < prevCommits.length; i++) {
+      if (next[i]?.sha !== prevCommits[i]?.sha) return false;
+    }
+    return true;
+  }
+
   async function refreshCommits(newCommits: LocalCommit[], newHeadSha: string) {
+    const prevCommits = ctx.commits;
+    const advance = isSimpleAdvance(prevCommits, newCommits);
+
     ctx.commits = newCommits;
     ctx.headSha = newHeadSha;
-    // Drop unified — branch moved.
-    ctx.unified = null;
-    ctx.unifiedKey = null;
+    // Skeleton always invalidates — totals change with any new commit.
     ctx.skeleton = null;
     ctx.skeletonKey = null;
+    if (!advance) {
+      // History rewrite: the unified story no longer corresponds to a real
+      // ancestor of HEAD. Drop it; cli polling tick will regenerate.
+      ctx.unified = null;
+      ctx.unifiedKey = null;
+      ctx.unifiedHeadSha = null;
+    }
     const newShas = new Set(newCommits.map((c) => c.sha));
     const dropStats: string[] = [];
     for (const sha of commitStats.keys()) {
@@ -294,6 +334,7 @@ export function createWatchServer(ctx: WatchServerContext) {
 
     const summaries = await buildCommitSummaries();
     const unifiedReady = !!(ctx.unified && ctx.unifiedKey === `${ctx.baseSha}:${ctx.headSha}`);
+    const addendums = await buildAddendums();
     broadcast('watch-update', {
       branch: ctx.branch,
       base: ctx.base,
@@ -301,7 +342,40 @@ export function createWatchServer(ctx: WatchServerContext) {
       headSha: ctx.headSha,
       commits: summaries,
       unifiedReady,
+      unifiedHeadSha: ctx.unifiedHeadSha,
+      addendums,
     });
+
+    // On simple advance, fire per-commit narration for each new SHA. These
+    // become the addendum chain — visible "what just changed" notes appended
+    // to the main story instead of forcing a unified regeneration.
+    if (advance) {
+      const prevShas = new Set(prevCommits.map((c) => c.sha));
+      for (const c of newCommits) {
+        if (prevShas.has(c.sha)) continue;
+        void narrateCommit(c.sha, { broadcastWhenDone: true });
+      }
+    }
+  }
+
+  async function buildAddendums(): Promise<AddendumEntry[]> {
+    if (!ctx.unifiedHeadSha) return [];
+    const idx = ctx.commits.findIndex((c) => c.sha === ctx.unifiedHeadSha);
+    if (idx < 0) return [];
+    const tail = ctx.commits.slice(idx + 1);
+    const out: AddendumEntry[] = [];
+    for (const c of tail) {
+      const stats = await getCommitStatsCached(c.sha);
+      out.push({
+        sha: c.sha,
+        shortSha: c.shortSha,
+        subject: c.subject,
+        additions: stats.additions,
+        deletions: stats.deletions,
+        narrative: ctx.narratives.get(c.sha) ?? null,
+      });
+    }
+    return out;
   }
 
   async function selectionFromQuery(c: { req: { query: (k: string) => string | undefined } }): Promise<{
@@ -352,6 +426,7 @@ export function createWatchServer(ctx: WatchServerContext) {
     const skeleton = await getSkeleton();
     const { selection, narrative, files, pr } = await selectionFromQuery(c);
     const unifiedReady = !!(ctx.unified && ctx.unifiedKey === `${ctx.baseSha}:${ctx.headSha}`);
+    const addendums = await buildAddendums();
 
     const watch: WatchPayload = {
       branch: ctx.branch,
@@ -361,6 +436,8 @@ export function createWatchServer(ctx: WatchServerContext) {
       commits: summaries,
       selection,
       unifiedReady,
+      unifiedHeadSha: ctx.unifiedHeadSha,
+      addendums,
       skeleton,
     };
 
@@ -397,7 +474,18 @@ export function createWatchServer(ctx: WatchServerContext) {
   });
 
   app.post('/api/narrative/unified', async (c) => {
-    void narrateUnified();
+    let body: { force?: boolean } = {};
+    try {
+      body = (await c.req.json()) as { force?: boolean };
+    } catch {
+      // empty body is allowed
+    }
+    if (body.force) {
+      ctx.unified = null;
+      ctx.unifiedKey = null;
+      ctx.unifiedHeadSha = null;
+    }
+    void narrateUnified({ force: !!body.force });
     return c.json({ ok: true, generating: ctx.unifiedGenerating });
   });
 
