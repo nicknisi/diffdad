@@ -52,6 +52,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: '4'
           workingDirectory: packages/site
           command: pages deploy dist --project-name=diffdad-site --branch=${{ steps.branch.outputs.name }}
 
