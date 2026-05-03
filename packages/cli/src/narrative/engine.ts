@@ -3,7 +3,7 @@ import { generateText } from 'ai';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createOpenAI } from '@ai-sdk/openai';
 import type { LanguageModelV1 } from 'ai';
-import type { DiffDadConfig } from '../config';
+import { DEFAULT_CLI_MODELS, LOCAL_CLIS, type DiffDadConfig, type LocalCli } from '../config';
 import type { DiffFile, PRMetadata } from '../github/types';
 import { buildNarrativePrompt, type PreviousNarrativeContext } from './prompt';
 import type { NarrativeResponse } from './types';
@@ -88,51 +88,73 @@ export function setCliOverride(cli: string) {
   cliOverride = cli;
 }
 
-async function callCodex(system: string, user: string): Promise<AiResult> {
+function resolveCliModel(cli: LocalCli, config: DiffDadConfig): string | undefined {
+  const envOverride = process.env[`DIFFDAD_${cli.toUpperCase()}_MODEL`];
+  if (envOverride && envOverride.length > 0) return envOverride;
+  const fromConfig = config.cliModels?.[cli];
+  if (fromConfig && fromConfig.length > 0) return fromConfig;
+  const fallback = DEFAULT_CLI_MODELS[cli];
+  return fallback.length > 0 ? fallback : undefined;
+}
+
+async function callClaude(system: string, user: string, config: DiffDadConfig): Promise<AiResult> {
+  const prompt = `${system}\n\n---\n\n${user}`;
+  const args = ['claude', '-p', '--output-format', 'text'];
+  const model = resolveCliModel('claude', config);
+  if (model) args.push('--model', model);
+  const r = await spawnCli(args, prompt);
+  return { ...r, provider: model ? `claude (${model})` : 'claude' };
+}
+
+async function callPi(system: string, user: string, config: DiffDadConfig): Promise<AiResult> {
+  const args = ['pi', '-p', '--system-prompt', system, '--no-tools'];
+  const model = resolveCliModel('pi', config);
+  if (model) args.push('--model', model);
+  const r = await spawnCli(args, user);
+  return { ...r, provider: model ? `pi (${model})` : 'pi' };
+}
+
+async function callCodex(system: string, user: string, config: DiffDadConfig): Promise<AiResult> {
   const prompt = `${system}\n\n---\n\n${user}`;
   const tmpFile = `/tmp/diffdad-codex-${Date.now()}.txt`;
+  const args = ['codex', 'exec', '--skip-git-repo-check', '--ignore-rules', '-o', tmpFile];
+  const model = resolveCliModel('codex', config);
+  if (model) args.push('--model', model);
   try {
-    const r = await spawnCli(['codex', 'exec', '--skip-git-repo-check', '--ignore-rules', '-o', tmpFile], prompt);
+    const r = await spawnCli(args, prompt);
     const output = await Bun.file(tmpFile)
       .text()
       .catch(() => r.text);
-    return { text: output, truncated: false, provider: 'codex' };
+    return { text: output, truncated: false, provider: model ? `codex (${model})` : 'codex' };
   } finally {
     rm(tmpFile, { force: true }).catch(() => {});
   }
 }
 
-async function callLocalCli(system: string, user: string): Promise<AiResult> {
-  const prompt = `${system}\n\n---\n\n${user}`;
+async function callByCli(cli: LocalCli, system: string, user: string, config: DiffDadConfig): Promise<AiResult> {
+  if (cli === 'claude') return callClaude(system, user, config);
+  if (cli === 'pi') return callPi(system, user, config);
+  return callCodex(system, user, config);
+}
+
+async function callLocalCli(system: string, user: string, config: DiffDadConfig): Promise<AiResult> {
   const forced = cliOverride ?? process.env.DIFFDAD_CLI;
 
   if (forced) {
-    if (forced === 'pi') {
-      const r = await spawnCli(['pi', '-p', '--system-prompt', system, '--no-tools'], user);
-      return { ...r, provider: 'pi' };
+    if (!LOCAL_CLIS.includes(forced as LocalCli)) {
+      throw new Error(`Unknown --with value: "${forced}". Use "claude", "codex", or "pi".`);
     }
-    if (forced === 'claude') {
-      const r = await spawnCli(['claude', '-p', '--output-format', 'text'], prompt);
-      return { ...r, provider: 'claude' };
-    }
-    if (forced === 'codex') {
-      return callCodex(system, user);
-    }
-    throw new Error(`Unknown --with value: "${forced}". Use "claude", "codex", or "pi".`);
+    return callByCli(forced as LocalCli, system, user, config);
   }
 
-  if (await whichExists('claude')) {
-    const r = await spawnCli(['claude', '-p', '--output-format', 'text'], prompt);
-    return { ...r, provider: 'claude' };
-  }
+  const order: LocalCli[] = config.defaultCli
+    ? [config.defaultCli, ...LOCAL_CLIS.filter((c) => c !== config.defaultCli)]
+    : [...LOCAL_CLIS];
 
-  if (await whichExists('codex')) {
-    return callCodex(system, user);
-  }
-
-  if (await whichExists('pi')) {
-    const r = await spawnCli(['pi', '-p', '--system-prompt', system, '--no-tools'], user);
-    return { ...r, provider: 'pi' };
+  for (const cli of order) {
+    if (await whichExists(cli)) {
+      return callByCli(cli, system, user, config);
+    }
   }
 
   throw new Error(
@@ -147,11 +169,11 @@ export async function callAi(
   maxTokens?: number,
 ): Promise<AiResult> {
   if (cliOverride) {
-    return callLocalCli(system, user);
+    return callLocalCli(system, user, config);
   }
 
   if (!hasConfiguredProvider(config)) {
-    return callLocalCli(system, user);
+    return callLocalCli(system, user, config);
   }
 
   const provider = config.aiProvider ?? 'anthropic';
