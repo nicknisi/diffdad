@@ -131,6 +131,59 @@ describe('isMechanicalFile', () => {
   });
 });
 
+function bigFile(file: string, hunkCount: number, linesPerHunk: number): DiffFile {
+  return {
+    file,
+    isNewFile: false,
+    isDeleted: false,
+    hunks: Array.from({ length: hunkCount }, (_, h) => ({
+      header: `@@ -${h * 100} +${h * 100} @@`,
+      oldStart: h * 100,
+      oldCount: linesPerHunk,
+      newStart: h * 100,
+      newCount: linesPerHunk,
+      lines: Array.from({ length: linesPerHunk }, (_, i) => ({
+        type: 'add' as const,
+        content: `line ${h}-${i}`,
+        lineNumber: { new: h * 100 + i },
+      })),
+    })),
+  };
+}
+
+describe('diff size caps', () => {
+  it('truncates a file that exceeds the per-file line cap and notes it', () => {
+    const huge = bigFile('src/huge.ts', 10, 200);
+    const { user } = buildNarrativePrompt({
+      title: 't',
+      description: '',
+      labels: [],
+      files: [huge],
+      fileTree: [],
+    });
+
+    expect(user).toContain('[FILE TRUNCATED:');
+    expect(user).toContain('Files truncated to fit prompt budget');
+    expect(user).toContain('src/huge.ts');
+    expect(user).not.toContain('line 9-0');
+  });
+
+  it('drops files entirely when the global line budget is exhausted', () => {
+    // Per-file cap is 800; global budget is 12000. 16 files * 800 = 12800 → last file dropped.
+    const files = Array.from({ length: 16 }, (_, i) => bigFile(`src/file${i}.ts`, 5, 200));
+    const { user } = buildNarrativePrompt({
+      title: 't',
+      description: '',
+      labels: [],
+      files,
+      fileTree: [],
+    });
+
+    expect(user).toContain('Files entirely omitted because the prompt budget was exhausted');
+    expect(user).toContain('src/file15.ts');
+  });
+});
+
 describe('partitionMechanicalFiles', () => {
   it('splits files into narrate vs skipped', () => {
     const files = [

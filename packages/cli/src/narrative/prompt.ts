@@ -21,6 +21,7 @@ export interface NarrativePrompt {
 }
 
 const FILE_TREE_LIMIT = 200;
+const MAX_TOTAL_DIFF_LINES = 12000;
 
 const MECHANICAL_BASENAMES = new Set([
   'package-lock.json',
@@ -267,7 +268,9 @@ function formatHunk(hunk: DiffHunk, index: number): string {
   return `[hunkIndex=${index}]\n${hunk.header}\n${body}`;
 }
 
-function formatFile(file: DiffFile): string {
+const MAX_LINES_PER_FILE = 800;
+
+function formatFile(file: DiffFile, lineBudget: number): { text: string; linesUsed: number; truncated: boolean } {
   const header = `diff --git a/${file.file} b/${file.file}`;
   const fromPath = file.isNewFile ? '/dev/null' : `a/${file.file}`;
   const toPath = file.isDeleted ? '/dev/null' : `b/${file.file}`;
@@ -277,8 +280,31 @@ function formatFile(file: DiffFile): string {
   const meta = [header];
   if (fileMarkers) meta.push(fileMarkers);
   meta.push(`--- ${fromPath}`, `+++ ${toPath}`);
-  const hunks = file.hunks.map((h, i) => formatHunk(h, i)).join('\n');
-  return `${meta.join('\n')}\n${hunks}`;
+
+  const cap = Math.min(MAX_LINES_PER_FILE, lineBudget);
+  let linesUsed = 0;
+  let truncated = false;
+  const includedHunks: string[] = [];
+  let omittedHunks = 0;
+  let omittedLines = 0;
+
+  for (let i = 0; i < file.hunks.length; i++) {
+    const h = file.hunks[i];
+    if (linesUsed + h.lines.length > cap) {
+      truncated = true;
+      omittedHunks = file.hunks.length - i;
+      for (let j = i; j < file.hunks.length; j++) omittedLines += file.hunks[j].lines.length;
+      break;
+    }
+    includedHunks.push(formatHunk(h, i));
+    linesUsed += h.lines.length;
+  }
+
+  let body = includedHunks.join('\n');
+  if (truncated) {
+    body += `\n[FILE TRUNCATED: ${omittedHunks} more hunk(s), ${omittedLines} more line(s) omitted to fit prompt budget]`;
+  }
+  return { text: `${meta.join('\n')}\n${body}`, linesUsed, truncated };
 }
 
 export function buildNarrativePrompt(input: NarrativePromptInput): NarrativePrompt {
@@ -288,7 +314,22 @@ export function buildNarrativePrompt(input: NarrativePromptInput): NarrativeProm
   const labelLine = labels.length > 0 ? labels.join(', ') : '(none)';
   const descriptionBlock = description.trim().length > 0 ? description : '(no description provided)';
   const treeBlock = truncatedTree.length > 0 ? truncatedTree.join('\n') : '(empty)';
-  const diffBlock = files.length > 0 ? files.map(formatFile).join('\n') : '(no file changes)';
+
+  let lineBudget = MAX_TOTAL_DIFF_LINES;
+  const truncatedFiles: string[] = [];
+  const fileBlocks: string[] = [];
+  const droppedFiles: string[] = [];
+  for (const file of files) {
+    if (lineBudget <= 0) {
+      droppedFiles.push(file.file);
+      continue;
+    }
+    const formatted = formatFile(file, lineBudget);
+    fileBlocks.push(formatted.text);
+    lineBudget -= formatted.linesUsed;
+    if (formatted.truncated) truncatedFiles.push(file.file);
+  }
+  const diffBlock = fileBlocks.length > 0 ? fileBlocks.join('\n') : '(no file changes)';
 
   const parts = [
     `PR title: ${title}`,
@@ -309,6 +350,20 @@ export function buildNarrativePrompt(input: NarrativePromptInput): NarrativeProm
     parts.push(
       '',
       `Mechanical files omitted from the diff above (lockfiles, generated, minified — do not narrate, but mention briefly if relevant): ${skippedFiles.join(', ')}`,
+    );
+  }
+
+  if (truncatedFiles.length > 0) {
+    parts.push(
+      '',
+      `Files truncated to fit prompt budget (later hunks omitted; the [FILE TRUNCATED: ...] marker shows what was cut): ${truncatedFiles.join(', ')}`,
+    );
+  }
+
+  if (droppedFiles.length > 0) {
+    parts.push(
+      '',
+      `Files entirely omitted because the prompt budget was exhausted before reaching them. Mention them in your narrative without trying to describe specific changes: ${droppedFiles.join(', ')}`,
     );
   }
 
