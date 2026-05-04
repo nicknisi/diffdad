@@ -335,7 +335,7 @@ export async function generateNarrative(
           onProgress({ delta, chars });
         }
       : undefined;
-    const result = await callAi(config, system, user, 8192, onChunk, NARRATIVE_JSON_SCHEMA);
+    const result = await callAi(config, system, user, 4096, onChunk, NARRATIVE_JSON_SCHEMA);
 
     const json = extractJson(result.text);
     try {

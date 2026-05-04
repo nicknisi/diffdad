@@ -255,6 +255,10 @@ Assign an overall verdict:
 
 Pick the chapter that best anchors the rest of the change. Often this is the core behavioral change, not the first file alphabetically.
 
+## Brevity
+
+You are output-token-bound. Every chapter and sentence costs the reader real wait time. Aim for **3–6 chapters total**, not more, even on large PRs — group aggressively. Keep each narrative section to **1–3 sentences**. Use callouts and the missing array only when they add real value; omit them when they don't. Cut anything restating what the diff already shows.
+
 Output format — return ONLY valid JSON, no prose around it, matching this schema:
 ${RESPONSE_SCHEMA}`;
 
