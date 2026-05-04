@@ -98,11 +98,27 @@ function resolveCliModel(cli: LocalCli, config: DiffDadConfig): string | undefin
 }
 
 async function callClaude(system: string, user: string, config: DiffDadConfig): Promise<AiResult> {
-  const prompt = `${system}\n\n---\n\n${user}`;
-  const args = ['claude', '-p', '--output-format', 'text'];
+  const args = [
+    'claude',
+    '-p',
+    '--output-format',
+    'text',
+    '--system-prompt',
+    system,
+    '--tools',
+    '',
+    '--disable-slash-commands',
+    '--strict-mcp-config',
+    '--mcp-config',
+    '{}',
+    '--setting-sources',
+    '',
+    '--no-session-persistence',
+    '--exclude-dynamic-system-prompt-sections',
+  ];
   const model = resolveCliModel('claude', config);
   if (model) args.push('--model', model);
-  const r = await spawnCli(args, prompt);
+  const r = await spawnCli(args, user);
   return { ...r, provider: model ? `claude (${model})` : 'claude' };
 }
 
@@ -178,10 +194,23 @@ export async function callAi(
 
   const provider = config.aiProvider ?? 'anthropic';
   const model = getModel(config);
+  const cacheSystem = provider === 'anthropic';
   const result = await generateText({
     model,
-    system,
-    messages: [{ role: 'user', content: user }],
+    messages: [
+      {
+        role: 'system',
+        content: system,
+        ...(cacheSystem
+          ? {
+              experimental_providerMetadata: {
+                anthropic: { cacheControl: { type: 'ephemeral' } },
+              },
+            }
+          : {}),
+      },
+      { role: 'user', content: user },
+    ],
     maxTokens,
   });
   return {
@@ -225,7 +254,7 @@ export async function generateNarrative(
 
   const MAX_RETRIES = 2;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    const result = await callAi(config, system, user, 16384);
+    const result = await callAi(config, system, user, 8192);
 
     const json = extractJson(result.text);
     try {
