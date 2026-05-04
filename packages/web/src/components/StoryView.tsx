@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useScrollTracker } from '../hooks/useScrollTracker';
 import { normalizePath } from '../lib/paths';
 import { useReviewStore } from '../state/review-store';
@@ -164,8 +164,28 @@ function Discussion() {
   );
 }
 
+function formatElapsed(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  return m > 0 ? `${m}m ${String(s % 60).padStart(2, '0')}s` : `${s}s`;
+}
+
 function RegeneratingBanner() {
   const regenerating = useReviewStore((s) => s.regenerating);
+  const progressChars = useReviewStore((s) => s.narrativeProgressChars);
+  const [elapsedMs, setElapsedMs] = useState(0);
+
+  useEffect(() => {
+    if (!regenerating) {
+      setElapsedMs(0);
+      return;
+    }
+    const startedAt = Date.now();
+    setElapsedMs(0);
+    const id = setInterval(() => setElapsedMs(Date.now() - startedAt), 500);
+    return () => clearInterval(id);
+  }, [regenerating]);
+
   if (!regenerating) return null;
   return (
     <div
@@ -180,6 +200,10 @@ function RegeneratingBanner() {
       </span>
       <span className="text-[13.5px] font-medium" style={{ color: 'var(--purple-12)' }}>
         New commits detected — regenerating narrative...
+      </span>
+      <span className="ml-auto text-[12px] tabular-nums" style={{ color: 'var(--purple-11)' }}>
+        {formatElapsed(elapsedMs)}
+        {progressChars > 0 ? ` — ${progressChars.toLocaleString()} chars` : ''}
       </span>
     </div>
   );

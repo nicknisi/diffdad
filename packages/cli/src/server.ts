@@ -307,21 +307,51 @@ export function createServer(ctx: ServerContext) {
                   console.log(`  \x1b[38;5;78m✓\x1b[0m Using cached narrative \x1b[2m(${newSha})\x1b[0m`);
                 } else {
                   const config = await readConfig();
-                  const { narrative: generated, provider } = await generateNarrative(
-                    ctx.pr,
-                    freshFiles,
-                    [],
-                    config,
-                    {
-                      previousTldr: prevTldr,
-                      previousChapterTitles: prevChapterTitles,
-                    },
-                    ({ chars }) => broadcast('narrative-progress', { chars }),
-                  );
+                  const regenStartedAt = Date.now();
+                  const isTty = Boolean(process.stdout.isTTY);
+                  const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+                  let spinnerFrame = 0;
+                  let totalChars = 0;
+                  const fmtRegenElapsed = () => {
+                    const s = Math.floor((Date.now() - regenStartedAt) / 1000);
+                    const m = Math.floor(s / 60);
+                    return m > 0 ? `${m}m${String(s % 60).padStart(2, '0')}s` : `${s}s`;
+                  };
+                  const renderRegen = () => {
+                    if (!isTty) return;
+                    const frame = spinnerFrames[spinnerFrame++ % spinnerFrames.length];
+                    const chars = totalChars > 0 ? `\x1b[2m — ${totalChars.toLocaleString()} chars\x1b[0m` : '';
+                    process.stdout.write(`\r  \x1b[2m${frame} ${fmtRegenElapsed()} elapsed\x1b[0m${chars}`);
+                  };
+                  renderRegen();
+                  const heartbeat = setInterval(renderRegen, 250);
+                  let generated;
+                  let provider: string;
+                  try {
+                    const result = await generateNarrative(
+                      ctx.pr,
+                      freshFiles,
+                      [],
+                      config,
+                      {
+                        previousTldr: prevTldr,
+                        previousChapterTitles: prevChapterTitles,
+                      },
+                      ({ chars }) => {
+                        totalChars = chars;
+                        broadcast('narrative-progress', { chars });
+                      },
+                    );
+                    generated = result.narrative;
+                    provider = result.provider;
+                  } finally {
+                    clearInterval(heartbeat);
+                    if (isTty) process.stdout.write('\r\x1b[2K');
+                  }
                   ctx.narrative = generated;
                   await cacheNarrative(ctx.owner, ctx.repo, ctx.pr.number, ctx.headSha, generated);
                   console.log(
-                    `  \x1b[38;5;78m✓\x1b[0m ${generated.chapters.length} chapters regenerated \x1b[2mvia ${provider}\x1b[0m`,
+                    `  \x1b[38;5;78m✓\x1b[0m ${generated.chapters.length} chapters regenerated \x1b[2mvia ${provider} in ${fmtRegenElapsed()}\x1b[0m`,
                   );
                 }
 
