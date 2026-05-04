@@ -39,11 +39,11 @@ describe('tryParsePartialJson', () => {
     expect(parsed.x.startsWith('a "b')).toBe(true);
   });
 
-  it('handles nested objects', () => {
+  it('handles nested objects without throwing', () => {
     const partial = '{"a":{"b":{"c":';
+    expect(() => tryParsePartialJson(partial)).not.toThrow();
+    // Returns null or a partially-closed object; either is acceptable.
     const parsed = tryParsePartialJson(partial);
-    // Either returns a parse with truncated value, or fallback to last-safe.
-    // Either way should not throw.
-    expect(parsed).not.toThrow;
+    expect(parsed === null || typeof parsed === 'object').toBe(true);
   });
 });
