@@ -138,9 +138,9 @@ export async function runConfig(): Promise<number> {
     heading('AI Provider');
     const currentProviderLabel = existing.aiProvider ?? 'local CLI (no API key)';
     current(currentProviderLabel);
-    option('0', `${c.green}Local CLI${c.reset}`, '— auto-detects claude, codex, or pi (no API key)');
-    option('1', 'Anthropic API', '— requires ANTHROPIC_API_KEY');
-    option('2', 'OpenAI', '— requires OPENAI_API_KEY');
+    option('0', `${c.green}Local CLI${c.reset}`, '— auto-detects claude, codex, or pi (no API key, but ~5-10× slower)');
+    option('1', `${c.green}Anthropic API${c.reset}`, '— recommended; uses ANTHROPIC_API_KEY, fastest');
+    option('2', 'OpenAI', '— uses OPENAI_API_KEY');
     option('3', 'Ollama', '— local models via ollama');
     process.stdout.write('\n');
 

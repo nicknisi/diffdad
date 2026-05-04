@@ -61,6 +61,7 @@ type ReviewState = {
   regenerating: boolean;
   narrativeProgressChars: number;
   narrationOverrides: Record<string, string>;
+  aiPath: 'api' | 'local-cli' | null;
 
   setData: (
     pr: PRData,
@@ -99,6 +100,7 @@ type ReviewState = {
   setClusterBots: (v: boolean) => void;
   setRegenerating: (v: boolean) => void;
   setNarrativeProgressChars: (chars: number) => void;
+  setAiPath: (path: 'api' | 'local-cli' | null) => void;
   setPr: (pr: PRData) => void;
   setNarrationOverride: (chapterKey: string, text: string) => void;
   clearNarrationOverride: (chapterKey: string) => void;
@@ -173,6 +175,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
   clusterBots: true,
   regenerating: false,
   narrativeProgressChars: 0,
+  aiPath: null,
   narrationOverrides: {} as Record<string, string>,
 
   setData: (pr, narrative, files, comments, repoUrl = null, checkRuns = [], config = null, reviews = []) => {
@@ -303,6 +306,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
   setClusterBots: (clusterBots) => set({ clusterBots }),
   setRegenerating: (regenerating) => set({ regenerating }),
   setNarrativeProgressChars: (narrativeProgressChars) => set({ narrativeProgressChars }),
+  setAiPath: (aiPath) => set({ aiPath }),
   setPr: (pr) => set({ pr }),
   applyPartialNarrative: (pr, narrative, files, comments) =>
     set((state) => {

@@ -18,6 +18,7 @@ export function GeneratingScreen({ message }: Props) {
   const files = useReviewStore((s) => s.files);
   const accent = useReviewStore((s) => s.accent);
   const progressChars = useReviewStore((s) => s.narrativeProgressChars);
+  const aiPath = useReviewStore((s) => s.aiPath);
   const { markBg } = getAccentMeta(accent);
 
   const [elapsedMs, setElapsedMs] = useState(0);
@@ -77,6 +78,22 @@ export function GeneratingScreen({ message }: Props) {
           {formatElapsed(elapsedMs)} elapsed
           {progressChars > 0 ? ` — ${progressChars.toLocaleString()} characters` : ''}
         </div>
+
+        {aiPath === 'local-cli' && (
+          <div
+            className="mt-4 max-w-md rounded-[8px] px-4 py-3 text-[12.5px] leading-[18px]"
+            style={{
+              background: 'var(--yellow-2)',
+              boxShadow: 'inset 0 0 0 1px var(--yellow-a4)',
+              color: 'var(--yellow-12)',
+            }}
+          >
+            <b className="font-bold">This may take several minutes.</b> Diff Dad is using the local{' '}
+            <code className="font-mono text-[12px]">claude</code> CLI, which has significant per-call harness overhead
+            and buffers output. Set <code className="font-mono text-[12px]">ANTHROPIC_API_KEY</code> in your environment
+            for ~5-10× faster generation with live streaming.
+          </div>
+        )}
       </div>
     </main>
   );

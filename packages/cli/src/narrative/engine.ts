@@ -22,8 +22,35 @@ const DEFAULT_OLLAMA_BASE_URL = 'http://localhost:11434/v1';
 
 const NARRATIVE_MAX_TOKENS = 16384;
 
-function hasConfiguredProvider(config: DiffDadConfig): boolean {
-  return config.aiProvider !== undefined;
+/**
+ * If the user has an env-var API key set but didn't run `dad config`, route
+ * through the API path anyway. The local-CLI path is significantly slower
+ * (Claude Code harness overhead + buffered piped stdout), so we should never
+ * default to it when an API path is freely available.
+ *
+ * Returns the inferred provider config, or null if no env key is set.
+ */
+export function inferProviderFromEnv(): Pick<DiffDadConfig, 'aiProvider' | 'aiApiKey'> | null {
+  if (process.env.ANTHROPIC_API_KEY) {
+    return { aiProvider: 'anthropic', aiApiKey: process.env.ANTHROPIC_API_KEY };
+  }
+  if (process.env.OPENAI_API_KEY) {
+    return { aiProvider: 'openai', aiApiKey: process.env.OPENAI_API_KEY };
+  }
+  return null;
+}
+
+/** Resolved AI path the engine will take for a given config + env. */
+export type AiPath = 'api' | 'local-cli';
+
+export function resolveAiPath(config: DiffDadConfig): { path: AiPath; effectiveConfig: DiffDadConfig } {
+  if (cliOverride) return { path: 'local-cli', effectiveConfig: config };
+  if (config.aiProvider !== undefined) return { path: 'api', effectiveConfig: config };
+  const inferred = inferProviderFromEnv();
+  if (inferred) {
+    return { path: 'api', effectiveConfig: { ...config, ...inferred } };
+  }
+  return { path: 'local-cli', effectiveConfig: config };
 }
 
 export function getModel(config: DiffDadConfig): LanguageModelV1 {
@@ -242,16 +269,13 @@ export async function callAi(
   maxTokens?: number,
   onChunk?: AiChunkHandler,
 ): Promise<AiResult> {
-  if (cliOverride) {
-    return callLocalCli(system, user, config, onChunk);
+  const { path, effectiveConfig } = resolveAiPath(config);
+  if (path === 'local-cli') {
+    return callLocalCli(system, user, effectiveConfig, onChunk);
   }
 
-  if (!hasConfiguredProvider(config)) {
-    return callLocalCli(system, user, config, onChunk);
-  }
-
-  const provider = config.aiProvider ?? 'anthropic';
-  const model = getModel(config);
+  const provider = effectiveConfig.aiProvider ?? 'anthropic';
+  const model = getModel(effectiveConfig);
   const cacheSystem = provider === 'anthropic';
   const stream = streamText({
     model,
@@ -282,7 +306,7 @@ export async function callAi(
   return {
     text,
     truncated: finishReason === 'length',
-    provider: `${provider} (${config.aiModel ?? 'default'})`,
+    provider: `${provider} (${effectiveConfig.aiModel ?? 'default'})`,
   };
 }
 
@@ -419,8 +443,25 @@ const RESET = '\x1b[0m';
 
 function logPromptStats(stats: PromptCapStats, mechanicalSkipped: number): void {
   const lines: string[] = [];
+  const totalFiles = stats.inputFileCount + mechanicalSkipped;
+  const anythingCapped = stats.truncatedFiles.length > 0 || stats.droppedFiles.length > 0;
+
+  // Plain summary when nothing was cut: just N files, M lines.
+  if (!anythingCapped) {
+    const fileSummary =
+      mechanicalSkipped > 0
+        ? `${stats.narratedFileCount} of ${totalFiles} files (${mechanicalSkipped} mechanical skipped)`
+        : `${stats.narratedFileCount} ${stats.narratedFileCount === 1 ? 'file' : 'files'}`;
+    const lineLabel = stats.narratedLineCount === 1 ? 'line' : 'lines';
+    lines.push(`${DIM}Prompt: ${fileSummary}, ${stats.narratedLineCount.toLocaleString()} ${lineLabel}${RESET}`);
+    for (const l of lines) console.error(`  ${l}`);
+    return;
+  }
+
+  // Caps fired — show what was cut and surface the cap values inline so the
+  // user understands why.
   lines.push(
-    `${DIM}Prompt: ${stats.narratedFileCount}/${stats.inputFileCount + mechanicalSkipped} files, ${stats.narratedLineCount.toLocaleString()}/${stats.inputLineCount.toLocaleString()} lines (caps: ${stats.perFileCap}/file, ${stats.globalCap.toLocaleString()} total)${RESET}`,
+    `${DIM}Prompt: ${stats.narratedFileCount}/${totalFiles} files, ${stats.narratedLineCount.toLocaleString()}/${stats.inputLineCount.toLocaleString()} lines${RESET}`,
   );
   if (mechanicalSkipped > 0) {
     lines.push(`${DIM}  • Skipped ${mechanicalSkipped} mechanical file(s) (lockfiles, generated, minified)${RESET}`);
@@ -428,7 +469,7 @@ function logPromptStats(stats: PromptCapStats, mechanicalSkipped: number): void 
   if (stats.truncatedFiles.length > 0) {
     const totalDroppedLines = stats.truncatedFiles.reduce((s, t) => s + t.linesDropped, 0);
     lines.push(
-      `${YELLOW}  ⚠ Per-file cap hit on ${stats.truncatedFiles.length} file(s): ${totalDroppedLines.toLocaleString()} line(s) truncated${RESET}`,
+      `${YELLOW}  ⚠ Per-file cap (${stats.perFileCap}) hit on ${stats.truncatedFiles.length} file(s): ${totalDroppedLines.toLocaleString()} line(s) truncated${RESET}`,
     );
     for (const t of stats.truncatedFiles) {
       lines.push(
@@ -437,7 +478,9 @@ function logPromptStats(stats: PromptCapStats, mechanicalSkipped: number): void 
     }
   }
   if (stats.droppedFiles.length > 0) {
-    lines.push(`${YELLOW}  ⚠ Global cap exhausted: ${stats.droppedFiles.length} file(s) dropped entirely${RESET}`);
+    lines.push(
+      `${YELLOW}  ⚠ Global cap (${stats.globalCap.toLocaleString()}) exhausted: ${stats.droppedFiles.length} file(s) dropped entirely${RESET}`,
+    );
     for (const f of stats.droppedFiles) {
       lines.push(`${DIM}      ${f}${RESET}`);
     }

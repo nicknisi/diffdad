@@ -7,7 +7,7 @@ import type { GitHubClient } from './github/client';
 import { mapCommentsToChapters } from './github/comments';
 import type { CheckRun, DiffFile, PRComment, PRMetadata, PRReview } from './github/types';
 import { cacheNarrative, getCachedNarrative } from './narrative/cache';
-import { callAi, generateNarrative } from './narrative/engine';
+import { callAi, generateNarrative, resolveAiPath } from './narrative/engine';
 import type { NarrativeResponse } from './narrative/types';
 
 export type ServerContext = {
@@ -54,6 +54,7 @@ export function createServer(ctx: ServerContext) {
 
   app.get('/api/narrative', async (c) => {
     const config = await readConfig();
+    const { path: aiPath } = resolveAiPath(config);
     if (!ctx.narrative) {
       return c.json({
         generating: true,
@@ -63,6 +64,7 @@ export function createServer(ctx: ServerContext) {
         checkRuns: ctx.checkRuns,
         reviews: ctx.reviews,
         repoUrl: `https://github.com/${ctx.owner}/${ctx.repo}`,
+        aiPath,
         config: {
           theme: config.theme ?? 'auto',
           storyStructure: config.storyStructure ?? 'chapters',
@@ -91,6 +93,7 @@ export function createServer(ctx: ServerContext) {
       checkRuns: ctx.checkRuns,
       reviews: ctx.reviews,
       repoUrl: `https://github.com/${ctx.owner}/${ctx.repo}`,
+      aiPath,
       config: {
         theme: config.theme ?? 'auto',
         storyStructure: config.storyStructure ?? 'chapters',
