@@ -64,6 +64,90 @@ export function partitionMechanicalFiles(files: DiffFile[]): { narrate: DiffFile
   return { narrate, skipped };
 }
 
+export const NARRATIVE_JSON_SCHEMA = {
+  type: 'object',
+  required: ['title', 'chapters'],
+  properties: {
+    title: { type: 'string' },
+    tldr: { type: 'string' },
+    verdict: { type: 'string', enum: ['safe', 'caution', 'risky'] },
+    chapters: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['title', 'summary', 'risk', 'sections'],
+        properties: {
+          title: { type: 'string' },
+          summary: { type: 'string' },
+          risk: { type: 'string', enum: ['low', 'medium', 'high'] },
+          sections: {
+            type: 'array',
+            items: {
+              oneOf: [
+                {
+                  type: 'object',
+                  required: ['type', 'content'],
+                  properties: {
+                    type: { type: 'string', enum: ['narrative'] },
+                    content: { type: 'string' },
+                  },
+                },
+                {
+                  type: 'object',
+                  required: ['type', 'file', 'startLine', 'endLine', 'hunkIndex'],
+                  properties: {
+                    type: { type: 'string', enum: ['diff'] },
+                    file: { type: 'string' },
+                    startLine: { type: 'number' },
+                    endLine: { type: 'number' },
+                    hunkIndex: { type: 'number' },
+                  },
+                },
+              ],
+            },
+          },
+          callouts: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: ['file', 'line', 'level', 'message'],
+              properties: {
+                file: { type: 'string' },
+                line: { type: 'number' },
+                level: { type: 'string', enum: ['nit', 'concern', 'warning'] },
+                message: { type: 'string' },
+              },
+            },
+          },
+          reshow: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: ['ref'],
+              properties: {
+                ref: { type: 'number' },
+                file: { type: 'string' },
+                framing: { type: 'string' },
+                highlight: {
+                  type: 'object',
+                  required: ['from', 'to'],
+                  properties: { from: { type: 'number' }, to: { type: 'number' } },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    missing: { type: 'array', items: { type: 'string' } },
+    suggestedStart: {
+      type: 'object',
+      required: ['chapter', 'reason'],
+      properties: { chapter: { type: 'number' }, reason: { type: 'string' } },
+    },
+  },
+} as const;
+
 const RESPONSE_SCHEMA = `{
   "title": "string — overall narrative title for the PR",
   "tldr": "string — 1-2 sentence plain-language summary: what this PR does and why",

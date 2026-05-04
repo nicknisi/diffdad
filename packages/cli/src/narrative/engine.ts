@@ -7,7 +7,12 @@ import type { LanguageModelV1 } from 'ai';
 export type AiChunkHandler = (delta: string) => void;
 import { DEFAULT_CLI_MODELS, LOCAL_CLIS, type DiffDadConfig, type LocalCli } from '../config';
 import type { DiffFile, PRMetadata } from '../github/types';
-import { buildNarrativePrompt, partitionMechanicalFiles, type PreviousNarrativeContext } from './prompt';
+import {
+  NARRATIVE_JSON_SCHEMA,
+  buildNarrativePrompt,
+  partitionMechanicalFiles,
+  type PreviousNarrativeContext,
+} from './prompt';
 import type { NarrativeResponse } from './types';
 
 const DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-6';
@@ -126,6 +131,7 @@ async function callClaude(
   user: string,
   config: DiffDadConfig,
   onChunk?: AiChunkHandler,
+  jsonSchema?: object,
 ): Promise<AiResult> {
   const args = [
     'claude',
@@ -145,6 +151,7 @@ async function callClaude(
     '--no-session-persistence',
     '--exclude-dynamic-system-prompt-sections',
   ];
+  if (jsonSchema) args.push('--json-schema', JSON.stringify(jsonSchema));
   const model = resolveCliModel('claude', config);
   if (model) args.push('--model', model);
   const r = await spawnCli(args, user, onChunk);
@@ -192,8 +199,9 @@ async function callByCli(
   user: string,
   config: DiffDadConfig,
   onChunk?: AiChunkHandler,
+  jsonSchema?: object,
 ): Promise<AiResult> {
-  if (cli === 'claude') return callClaude(system, user, config, onChunk);
+  if (cli === 'claude') return callClaude(system, user, config, onChunk, jsonSchema);
   if (cli === 'pi') return callPi(system, user, config, onChunk);
   return callCodex(system, user, config, onChunk);
 }
@@ -203,6 +211,7 @@ async function callLocalCli(
   user: string,
   config: DiffDadConfig,
   onChunk?: AiChunkHandler,
+  jsonSchema?: object,
 ): Promise<AiResult> {
   const forced = cliOverride ?? process.env.DIFFDAD_CLI;
 
@@ -210,7 +219,7 @@ async function callLocalCli(
     if (!LOCAL_CLIS.includes(forced as LocalCli)) {
       throw new Error(`Unknown --with value: "${forced}". Use "claude", "codex", or "pi".`);
     }
-    return callByCli(forced as LocalCli, system, user, config, onChunk);
+    return callByCli(forced as LocalCli, system, user, config, onChunk, jsonSchema);
   }
 
   const order: LocalCli[] = config.defaultCli
@@ -219,7 +228,7 @@ async function callLocalCli(
 
   for (const cli of order) {
     if (await whichExists(cli)) {
-      return callByCli(cli, system, user, config, onChunk);
+      return callByCli(cli, system, user, config, onChunk, jsonSchema);
     }
   }
 
@@ -234,13 +243,14 @@ export async function callAi(
   user: string,
   maxTokens?: number,
   onChunk?: AiChunkHandler,
+  jsonSchema?: object,
 ): Promise<AiResult> {
   if (cliOverride) {
-    return callLocalCli(system, user, config, onChunk);
+    return callLocalCli(system, user, config, onChunk, jsonSchema);
   }
 
   if (!hasConfiguredProvider(config)) {
-    return callLocalCli(system, user, config, onChunk);
+    return callLocalCli(system, user, config, onChunk, jsonSchema);
   }
 
   const provider = config.aiProvider ?? 'anthropic';
@@ -325,7 +335,7 @@ export async function generateNarrative(
           onProgress({ delta, chars });
         }
       : undefined;
-    const result = await callAi(config, system, user, 8192, onChunk);
+    const result = await callAi(config, system, user, 8192, onChunk, NARRATIVE_JSON_SCHEMA);
 
     const json = extractJson(result.text);
     try {
