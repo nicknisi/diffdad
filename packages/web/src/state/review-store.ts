@@ -136,9 +136,7 @@ function isSubmittableDraft(d: DraftComment): d is DraftComment & { path: string
 }
 
 export function pendingReviewComments(drafts: DraftComment[]): InlineComment[] {
-  return drafts
-    .filter(isSubmittableDraft)
-    .map((d) => ({ path: d.path, line: d.line, body: d.body, side: d.side }));
+  return drafts.filter(isSubmittableDraft).map((d) => ({ path: d.path, line: d.line, body: d.body, side: d.side }));
 }
 
 export const useReviewStore = create<ReviewState>((set) => ({
