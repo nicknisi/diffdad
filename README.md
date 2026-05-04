@@ -69,22 +69,23 @@ Instead of reviewing files one by one, Diff Dad groups code changes into **chapt
 
 ### AI Provider
 
-By default, Diff Dad uses `claude -p` (the Claude Code CLI), which runs on your existing Claude subscription — no API key needed. If Claude Code isn't installed, it falls back to `pi`. You can force a specific CLI with the `--with` flag:
+Diff Dad picks a provider in this order:
 
-```sh
-dad --with=claude owner/repo#123
-dad --with=pi owner/repo#123
-```
+1. `--with=<cli>` flag (forces a local CLI)
+2. Provider configured via `dad config`
+3. **`ANTHROPIC_API_KEY` env var** — auto-routes through the Anthropic API (recommended; ~5-10× faster than the local CLI, with live streaming)
+4. `claude -p` (Claude Code CLI), then `pi` — uses your existing subscription, no API key needed, but significantly slower due to harness overhead
 
-For API-based providers instead of local CLIs, run `dad config`:
+Run `dad config` to choose between:
 
-- **Claude CLI** (default) — uses your Claude subscription
-- **pi CLI** (fallback) — uses your pi subscription
-- **Anthropic API** — requires `ANTHROPIC_API_KEY`
+- **Anthropic API** — requires `ANTHROPIC_API_KEY` (recommended)
 - **OpenAI** — requires OpenAI API key
 - **Ollama** — local models, no key needed
+- **Claude CLI / pi CLI** — uses your existing subscription, no API key
 
-When a provider is configured via `dad config`, it takes priority over CLI discovery. The `--with` flag always takes top priority.
+```sh
+dad --with=claude owner/repo#123    # force the Claude CLI even if a key is set
+```
 
 ### GitHub Token
 
@@ -100,9 +101,19 @@ Narratives are cached at `~/.cache/diffdad/` keyed by `{owner}-{repo}-{number}-{
 
 ## Features
 
+### Reviewer Surface
+
+Before the chapters, Diff Dad surfaces what a reviewer needs first:
+
+- **TL;DR + verdict** — one-line summary plus a `safe` / `caution` / `risky` call
+- **Reading plan** — an ordered list of where to start and what to look at next, with one-click jumps to the relevant chapter
+- **Concerns** — Socratic questions about likely defect classes (logic, state, timing, validation, security, test gaps, API contracts, error handling) with citations to the diff
+
+Per-file risk is computed from churn, criticality keywords (`auth`, `migration`, `payment`, …), inbound import refs, and test-gap heuristics, then fed to the LLM as hints so the reading plan is risk-ordered.
+
 ### Semantic Chapters
 
-The AI groups hunks across files by behavior, not by filename. Each chapter has a title, risk level (low/medium/high), and narrative prose explaining the change. Chapters can reference the same hunk when it's relevant to multiple behaviors.
+The AI groups hunks across files by behavior, not by filename. Each chapter has a title, a **why-it-matters** block, and narrative prose explaining the change. Chapters can reference the same hunk when it's relevant to multiple behaviors.
 
 ### Inline Comments
 
