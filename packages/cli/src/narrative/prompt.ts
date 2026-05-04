@@ -11,6 +11,7 @@ export interface NarrativePromptInput {
   labels: string[];
   files: DiffFile[];
   fileTree: string[];
+  skippedFiles?: string[];
   previousContext?: PreviousNarrativeContext;
 }
 
@@ -20,6 +21,48 @@ export interface NarrativePrompt {
 }
 
 const FILE_TREE_LIMIT = 200;
+
+const MECHANICAL_BASENAMES = new Set([
+  'package-lock.json',
+  'pnpm-lock.yaml',
+  'yarn.lock',
+  'bun.lock',
+  'bun.lockb',
+  'composer.lock',
+  'Gemfile.lock',
+  'Pipfile.lock',
+  'poetry.lock',
+  'uv.lock',
+  'cargo.lock',
+  'go.sum',
+]);
+
+const MECHANICAL_PATH_REGEXES: RegExp[] = [
+  /\.min\.(js|css|mjs)$/i,
+  /\.map$/i,
+  /(^|\/)dist\//,
+  /(^|\/)build\//,
+  /(^|\/)\.next\//,
+  /(^|\/)node_modules\//,
+  /(^|\/)vendor\//,
+];
+
+export function isMechanicalFile(path: string): boolean {
+  const basename = path.split('/').pop() ?? path;
+  if (MECHANICAL_BASENAMES.has(basename)) return true;
+  if (basename.toLowerCase() === 'cargo.lock') return true;
+  return MECHANICAL_PATH_REGEXES.some((re) => re.test(path));
+}
+
+export function partitionMechanicalFiles(files: DiffFile[]): { narrate: DiffFile[]; skipped: DiffFile[] } {
+  const narrate: DiffFile[] = [];
+  const skipped: DiffFile[] = [];
+  for (const f of files) {
+    if (isMechanicalFile(f.file)) skipped.push(f);
+    else narrate.push(f);
+  }
+  return { narrate, skipped };
+}
 
 const RESPONSE_SCHEMA = `{
   "title": "string — overall narrative title for the PR",
@@ -155,7 +198,7 @@ function formatFile(file: DiffFile): string {
 }
 
 export function buildNarrativePrompt(input: NarrativePromptInput): NarrativePrompt {
-  const { title, description, labels, files, fileTree, previousContext } = input;
+  const { title, description, labels, files, fileTree, skippedFiles, previousContext } = input;
 
   const truncatedTree = fileTree.slice(0, FILE_TREE_LIMIT);
   const labelLine = labels.length > 0 ? labels.join(', ') : '(none)';
@@ -177,6 +220,13 @@ export function buildNarrativePrompt(input: NarrativePromptInput): NarrativeProm
     'Unified diff:',
     diffBlock,
   ];
+
+  if (skippedFiles && skippedFiles.length > 0) {
+    parts.push(
+      '',
+      `Mechanical files omitted from the diff above (lockfiles, generated, minified — do not narrate, but mention briefly if relevant): ${skippedFiles.join(', ')}`,
+    );
+  }
 
   if (previousContext?.previousTldr || previousContext?.previousChapterTitles?.length) {
     parts.push(
