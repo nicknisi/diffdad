@@ -102,6 +102,8 @@ type ReviewState = {
   setPr: (pr: PRData) => void;
   setNarrationOverride: (chapterKey: string, text: string) => void;
   clearNarrationOverride: (chapterKey: string) => void;
+  /** Update narrative incrementally as it streams in. Preserves chapter states and drafts. */
+  applyPartialNarrative: (pr: PRData, narrative: NarrativeResponse, files?: DiffFile[], comments?: PRComment[]) => void;
 };
 
 function draftStorageKey(prNumber: number): string {
@@ -302,6 +304,24 @@ export const useReviewStore = create<ReviewState>((set) => ({
   setRegenerating: (regenerating) => set({ regenerating }),
   setNarrativeProgressChars: (narrativeProgressChars) => set({ narrativeProgressChars }),
   setPr: (pr) => set({ pr }),
+  applyPartialNarrative: (pr, narrative, files, comments) =>
+    set((state) => {
+      const next: Partial<ReviewState> = { pr, narrative };
+      if (files) next.files = files;
+      if (comments) next.comments = comments;
+      // Initialize chapter states for any newly streamed chapters without
+      // clobbering ones the user has already marked reviewed.
+      const chapterStates: Record<string, ChapterState> = { ...state.chapterStates };
+      narrative.chapters.forEach((_, idx) => {
+        const key = `ch-${idx}`;
+        if (!chapterStates[key]) chapterStates[key] = 'reading';
+      });
+      next.chapterStates = chapterStates;
+      if (state.activeChapterId === null && narrative.chapters.length > 0) {
+        next.activeChapterId = 'ch-0';
+      }
+      return next;
+    }),
   setNarrationOverride: (chapterKey: string, text: string) =>
     set((s) => ({ narrationOverrides: { ...s.narrationOverrides, [chapterKey]: text } })),
   clearNarrationOverride: (chapterKey: string) =>

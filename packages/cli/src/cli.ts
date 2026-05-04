@@ -287,14 +287,18 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
     };
     render();
     const heartbeat = setInterval(render, 250);
-    const onProgress = ({ chars }: { chars: number }) => {
-      totalChars = chars;
-      broadcast('narrative-progress', { chars });
-    };
     let generated;
     let usedProvider: string;
     try {
-      const result = await generateNarrative(metadata, files, [], config, undefined, onProgress);
+      const result = await generateNarrative(metadata, files, [], config, undefined, {
+        onProgress: ({ chars }) => {
+          totalChars = chars;
+          broadcast('narrative-progress', { chars });
+        },
+        onPartial: (partial) => {
+          broadcast('narrative.partial', { narrative: partial, pr: metadata, files, comments });
+        },
+      });
       generated = result.narrative;
       usedProvider = result.provider;
     } finally {

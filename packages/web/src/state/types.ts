@@ -19,11 +19,36 @@ export type PRData = {
 
 export type NarrativeResponse = {
   title: string;
-  tldr?: string;
-  verdict?: 'safe' | 'caution' | 'risky';
+  tldr: string;
+  verdict: 'safe' | 'caution' | 'risky';
+  readingPlan: ReadingPlanStep[];
+  concerns: Concern[];
   chapters: Chapter[];
   missing?: string[];
-  suggestedStart?: { chapter: number; reason: string };
+};
+
+export type ReadingPlanStep = {
+  step: string;
+  chapterIndex?: number;
+  why?: string;
+};
+
+export type ConcernCategory =
+  | 'logic'
+  | 'state'
+  | 'timing'
+  | 'validation'
+  | 'security'
+  | 'test-gap'
+  | 'api-contract'
+  | 'error-handling';
+
+export type Concern = {
+  question: string;
+  file: string;
+  line: number;
+  category: ConcernCategory;
+  why: string;
 };
 
 export type Callout = {
@@ -36,6 +61,7 @@ export type Callout = {
 export type Chapter = {
   title: string;
   summary: string;
+  whyMatters: string;
   risk: 'low' | 'medium' | 'high';
   sections: Section[];
   callouts?: Callout[];

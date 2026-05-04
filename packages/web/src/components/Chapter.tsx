@@ -240,8 +240,27 @@ export function Chapter({ index, chapter }: Props) {
     </button>
   );
 
+  const whyMatters = chapter.whyMatters?.trim();
   const body = (
     <div className={compact ? 'space-y-3' : 'space-y-4'}>
+      {whyMatters ? (
+        <div
+          className="ml-[34px] rounded-[8px] px-3.5 py-2.5 text-[13.5px] leading-[20px]"
+          style={{
+            background: 'var(--gray-2)',
+            boxShadow: 'inset 0 0 0 1px var(--gray-a4)',
+            color: 'var(--fg-2)',
+          }}
+        >
+          <span
+            className="mr-1.5 inline-block text-[10px] font-bold uppercase tracking-[0.06em]"
+            style={{ color: 'var(--fg-3)' }}
+          >
+            Why this matters
+          </span>
+          <span style={{ color: 'var(--fg-1)' }}>{whyMatters}</span>
+        </div>
+      ) : null}
       {chapter.sections.map((section, i) => {
         if (section.type === 'narrative') {
           return (

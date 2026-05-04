@@ -45,8 +45,10 @@ describe('buildNarrativePrompt', () => {
       fileTree: ['src/constants.ts', 'src/index.ts'],
     });
 
-    expect(system).toContain('semantic');
+    expect(system).toContain('Diff Dad');
     expect(system).toContain('chapters');
+    expect(system).toContain('concerns');
+    expect(system).toContain('whyMatters');
 
     expect(user).toContain('Add y constant');
     expect(user).toContain('src/constants.ts');

@@ -147,6 +147,21 @@ export function useLiveStream() {
       }
     };
 
+    const onNarrativePartial = (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data) as {
+          narrative: NarrativeResponse;
+          pr: PRData;
+          files: DiffFile[];
+          comments: PRComment[];
+        };
+        useReviewStore.getState().applyPartialNarrative(data.pr, data.narrative, data.files, data.comments);
+        setLastEventAt(Date.now());
+      } catch {
+        // ignore
+      }
+    };
+
     es.addEventListener('connected', onConnected);
     es.addEventListener('comment', onComment as EventListener);
     es.addEventListener('comments', onComments as EventListener);
@@ -156,6 +171,7 @@ export function useLiveStream() {
     es.addEventListener('regenerating', onRegenerating as EventListener);
     es.addEventListener('narrative-progress', onNarrativeProgress as EventListener);
     es.addEventListener('narrative', onNarrative as EventListener);
+    es.addEventListener('narrative.partial', onNarrativePartial as EventListener);
 
     es.onopen = () => {
       setLiveStatus('connected');
@@ -175,6 +191,7 @@ export function useLiveStream() {
       es.removeEventListener('regenerating', onRegenerating as EventListener);
       es.removeEventListener('narrative-progress', onNarrativeProgress as EventListener);
       es.removeEventListener('narrative', onNarrative as EventListener);
+      es.removeEventListener('narrative.partial', onNarrativePartial as EventListener);
       es.close();
     };
   }, []);

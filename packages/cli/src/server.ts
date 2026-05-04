@@ -337,9 +337,19 @@ export function createServer(ctx: ServerContext) {
                         previousTldr: prevTldr,
                         previousChapterTitles: prevChapterTitles,
                       },
-                      ({ chars }) => {
-                        totalChars = chars;
-                        broadcast('narrative-progress', { chars });
+                      {
+                        onProgress: ({ chars }) => {
+                          totalChars = chars;
+                          broadcast('narrative-progress', { chars });
+                        },
+                        onPartial: (partial) => {
+                          broadcast('narrative.partial', {
+                            narrative: partial,
+                            pr: ctx.pr,
+                            files: freshFiles,
+                            comments: ctx.comments,
+                          });
+                        },
                       },
                     );
                     generated = result.narrative;

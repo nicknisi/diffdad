@@ -1,12 +1,16 @@
 import { homedir } from 'os';
 import { join } from 'path';
 import { readdir, readFile, rm, writeFile, mkdir } from 'fs/promises';
-import type { NarrativeResponse } from './types';
+import { normalizeNarrative, type NarrativeResponse } from './types';
 
 const CACHE_DIR = join(homedir(), '.cache', 'diffdad');
 
+// Cache schema version. Bump when the NarrativeResponse shape changes in a way
+// that would make older cached entries unreadable.
+const SCHEMA_VERSION = 2;
+
 function cachePath(owner: string, repo: string, number: number, sha: string): string {
-  return join(CACHE_DIR, `${owner}-${repo}-${number}-${sha}.json`);
+  return join(CACHE_DIR, `${owner}-${repo}-${number}-${sha}.v${SCHEMA_VERSION}.json`);
 }
 
 export async function getCachedNarrative(
@@ -18,7 +22,7 @@ export async function getCachedNarrative(
   try {
     const path = cachePath(owner, repo, number, sha);
     const raw = await readFile(path, 'utf-8');
-    return JSON.parse(raw) as NarrativeResponse;
+    return normalizeNarrative(JSON.parse(raw));
   } catch {
     return null;
   }
