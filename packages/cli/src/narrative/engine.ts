@@ -7,12 +7,7 @@ import type { LanguageModelV1 } from 'ai';
 export type AiChunkHandler = (delta: string) => void;
 import { DEFAULT_CLI_MODELS, LOCAL_CLIS, type DiffDadConfig, type LocalCli } from '../config';
 import type { DiffFile, PRMetadata } from '../github/types';
-import {
-  NARRATIVE_JSON_SCHEMA,
-  buildNarrativePrompt,
-  partitionMechanicalFiles,
-  type PreviousNarrativeContext,
-} from './prompt';
+import { buildNarrativePrompt, partitionMechanicalFiles, type PreviousNarrativeContext } from './prompt';
 import type { NarrativeResponse } from './types';
 
 const DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-6';
@@ -335,7 +330,7 @@ export async function generateNarrative(
           onProgress({ delta, chars });
         }
       : undefined;
-    const result = await callAi(config, system, user, 4096, onChunk, NARRATIVE_JSON_SCHEMA);
+    const result = await callAi(config, system, user, 4096, onChunk);
 
     const json = extractJson(result.text);
     try {
