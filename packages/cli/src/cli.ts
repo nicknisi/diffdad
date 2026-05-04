@@ -269,7 +269,25 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
       `  ${a.yellow}Generating narrative${a.reset} ${a.gray}via${a.reset} ${a.cyan}${providerHint}${a.reset}`,
     );
     console.log(`  ${a.italic}${a.gray}"${waitJoke}"${a.reset}`);
-    const { narrative: generated, provider: usedProvider } = await generateNarrative(metadata, files, [], config);
+    const isTty = Boolean(process.stdout.isTTY);
+    let lastRender = 0;
+    const onProgress = ({ chars }: { chars: number }) => {
+      broadcast('narrative-progress', { chars });
+      if (!isTty) return;
+      const now = Date.now();
+      if (now - lastRender < 100) return;
+      lastRender = now;
+      process.stdout.write(`\r  ${a.dim}${chars.toLocaleString()} chars generated...${a.reset}`);
+    };
+    const { narrative: generated, provider: usedProvider } = await generateNarrative(
+      metadata,
+      files,
+      [],
+      config,
+      undefined,
+      onProgress,
+    );
+    if (isTty) process.stdout.write('\r\x1b[2K');
     ctx.narrative = generated;
     await cacheNarrative(parsed.owner, parsed.repo, parsed.number, metadata.headSha, generated);
     console.log(

@@ -1,8 +1,10 @@
 import { rm } from 'fs/promises';
-import { generateText } from 'ai';
+import { streamText } from 'ai';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createOpenAI } from '@ai-sdk/openai';
 import type { LanguageModelV1 } from 'ai';
+
+export type AiChunkHandler = (delta: string) => void;
 import { DEFAULT_CLI_MODELS, LOCAL_CLIS, type DiffDadConfig, type LocalCli } from '../config';
 import type { DiffFile, PRMetadata } from '../github/types';
 import { buildNarrativePrompt, type PreviousNarrativeContext } from './prompt';
@@ -59,25 +61,47 @@ async function whichExists(cmd: string): Promise<boolean> {
   }
 }
 
-async function spawnCli(args: string[], input: string): Promise<{ text: string; truncated: boolean }> {
+async function spawnCli(
+  args: string[],
+  input: string,
+  onChunk?: AiChunkHandler,
+): Promise<{ text: string; truncated: boolean }> {
   const proc = Bun.spawn(args, {
     stdin: new Response(input),
     stdout: 'pipe',
     stderr: 'pipe',
   });
 
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
+  const decoder = new TextDecoder();
+  let text = '';
+  const reader = proc.stdout.getReader();
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = decoder.decode(value, { stream: true });
+      if (chunk.length > 0) {
+        text += chunk;
+        onChunk?.(chunk);
+      }
+    }
+    const tail = decoder.decode();
+    if (tail.length > 0) {
+      text += tail;
+      onChunk?.(tail);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const [stderr, exitCode] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
 
   if (exitCode !== 0) {
     const msg = stderr.trim() || `${args[0]} exited with code ${exitCode}`;
     throw new Error(`${args[0]} failed: ${msg}`);
   }
 
-  return { text: stdout, truncated: false };
+  return { text, truncated: false };
 }
 
 export type AiResult = { text: string; truncated: boolean; provider: string };
@@ -97,7 +121,12 @@ function resolveCliModel(cli: LocalCli, config: DiffDadConfig): string | undefin
   return fallback.length > 0 ? fallback : undefined;
 }
 
-async function callClaude(system: string, user: string, config: DiffDadConfig): Promise<AiResult> {
+async function callClaude(
+  system: string,
+  user: string,
+  config: DiffDadConfig,
+  onChunk?: AiChunkHandler,
+): Promise<AiResult> {
   const args = [
     'claude',
     '-p',
@@ -118,26 +147,36 @@ async function callClaude(system: string, user: string, config: DiffDadConfig): 
   ];
   const model = resolveCliModel('claude', config);
   if (model) args.push('--model', model);
-  const r = await spawnCli(args, user);
+  const r = await spawnCli(args, user, onChunk);
   return { ...r, provider: model ? `claude (${model})` : 'claude' };
 }
 
-async function callPi(system: string, user: string, config: DiffDadConfig): Promise<AiResult> {
+async function callPi(
+  system: string,
+  user: string,
+  config: DiffDadConfig,
+  onChunk?: AiChunkHandler,
+): Promise<AiResult> {
   const args = ['pi', '-p', '--system-prompt', system, '--no-tools'];
   const model = resolveCliModel('pi', config);
   if (model) args.push('--model', model);
-  const r = await spawnCli(args, user);
+  const r = await spawnCli(args, user, onChunk);
   return { ...r, provider: model ? `pi (${model})` : 'pi' };
 }
 
-async function callCodex(system: string, user: string, config: DiffDadConfig): Promise<AiResult> {
+async function callCodex(
+  system: string,
+  user: string,
+  config: DiffDadConfig,
+  onChunk?: AiChunkHandler,
+): Promise<AiResult> {
   const prompt = `${system}\n\n---\n\n${user}`;
   const tmpFile = `/tmp/diffdad-codex-${Date.now()}.txt`;
   const args = ['codex', 'exec', '--skip-git-repo-check', '--ignore-rules', '-o', tmpFile];
   const model = resolveCliModel('codex', config);
   if (model) args.push('--model', model);
   try {
-    const r = await spawnCli(args, prompt);
+    const r = await spawnCli(args, prompt, onChunk);
     const output = await Bun.file(tmpFile)
       .text()
       .catch(() => r.text);
@@ -147,20 +186,31 @@ async function callCodex(system: string, user: string, config: DiffDadConfig): P
   }
 }
 
-async function callByCli(cli: LocalCli, system: string, user: string, config: DiffDadConfig): Promise<AiResult> {
-  if (cli === 'claude') return callClaude(system, user, config);
-  if (cli === 'pi') return callPi(system, user, config);
-  return callCodex(system, user, config);
+async function callByCli(
+  cli: LocalCli,
+  system: string,
+  user: string,
+  config: DiffDadConfig,
+  onChunk?: AiChunkHandler,
+): Promise<AiResult> {
+  if (cli === 'claude') return callClaude(system, user, config, onChunk);
+  if (cli === 'pi') return callPi(system, user, config, onChunk);
+  return callCodex(system, user, config, onChunk);
 }
 
-async function callLocalCli(system: string, user: string, config: DiffDadConfig): Promise<AiResult> {
+async function callLocalCli(
+  system: string,
+  user: string,
+  config: DiffDadConfig,
+  onChunk?: AiChunkHandler,
+): Promise<AiResult> {
   const forced = cliOverride ?? process.env.DIFFDAD_CLI;
 
   if (forced) {
     if (!LOCAL_CLIS.includes(forced as LocalCli)) {
       throw new Error(`Unknown --with value: "${forced}". Use "claude", "codex", or "pi".`);
     }
-    return callByCli(forced as LocalCli, system, user, config);
+    return callByCli(forced as LocalCli, system, user, config, onChunk);
   }
 
   const order: LocalCli[] = config.defaultCli
@@ -169,7 +219,7 @@ async function callLocalCli(system: string, user: string, config: DiffDadConfig)
 
   for (const cli of order) {
     if (await whichExists(cli)) {
-      return callByCli(cli, system, user, config);
+      return callByCli(cli, system, user, config, onChunk);
     }
   }
 
@@ -183,19 +233,20 @@ export async function callAi(
   system: string,
   user: string,
   maxTokens?: number,
+  onChunk?: AiChunkHandler,
 ): Promise<AiResult> {
   if (cliOverride) {
-    return callLocalCli(system, user, config);
+    return callLocalCli(system, user, config, onChunk);
   }
 
   if (!hasConfiguredProvider(config)) {
-    return callLocalCli(system, user, config);
+    return callLocalCli(system, user, config, onChunk);
   }
 
   const provider = config.aiProvider ?? 'anthropic';
   const model = getModel(config);
   const cacheSystem = provider === 'anthropic';
-  const result = await generateText({
+  const stream = streamText({
     model,
     messages: [
       {
@@ -213,9 +264,17 @@ export async function callAi(
     ],
     maxTokens,
   });
+
+  let text = '';
+  for await (const delta of stream.textStream) {
+    if (delta.length === 0) continue;
+    text += delta;
+    onChunk?.(delta);
+  }
+  const finishReason = await stream.finishReason;
   return {
-    text: result.text,
-    truncated: result.finishReason === 'length',
+    text,
+    truncated: finishReason === 'length',
     provider: `${provider} (${config.aiModel ?? 'default'})`,
   };
 }
@@ -236,12 +295,15 @@ function extractJson(text: string): string {
   return trimmed;
 }
 
+export type NarrativeProgressHandler = (info: { delta: string; chars: number }) => void;
+
 export async function generateNarrative(
   pr: PRMetadata,
   files: DiffFile[],
   fileTree: string[],
   config: DiffDadConfig,
   previousContext?: PreviousNarrativeContext,
+  onProgress?: NarrativeProgressHandler,
 ): Promise<{ narrative: NarrativeResponse; provider: string }> {
   const { system, user } = buildNarrativePrompt({
     title: pr.title,
@@ -254,7 +316,14 @@ export async function generateNarrative(
 
   const MAX_RETRIES = 2;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    const result = await callAi(config, system, user, 8192);
+    let chars = 0;
+    const onChunk: AiChunkHandler | undefined = onProgress
+      ? (delta) => {
+          chars += delta.length;
+          onProgress({ delta, chars });
+        }
+      : undefined;
+    const result = await callAi(config, system, user, 8192, onChunk);
 
     const json = extractJson(result.text);
     try {

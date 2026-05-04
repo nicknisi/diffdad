@@ -103,6 +103,17 @@ export function useLiveStream() {
           makeEvent('system', `New commits detected (${data.previousSha} → ${data.newSha}). Regenerating narrative...`),
         );
         useReviewStore.getState().setRegenerating(true);
+        useReviewStore.getState().setNarrativeProgressChars(0);
+      } catch {
+        // ignore
+      }
+    };
+
+    const onNarrativeProgress = (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data) as { chars: number };
+        useReviewStore.getState().setNarrativeProgressChars(data.chars);
+        setLastEventAt(Date.now());
       } catch {
         // ignore
       }
@@ -128,6 +139,7 @@ export function useLiveStream() {
           state.reviews,
         );
         useReviewStore.getState().setRegenerating(false);
+        useReviewStore.getState().setNarrativeProgressChars(0);
         setLastEventAt(Date.now());
         addLiveEvent(makeEvent('system', `Narrative updated (${data.narrative.chapters.length} chapters)`));
       } catch {
@@ -142,6 +154,7 @@ export function useLiveStream() {
     es.addEventListener('reviews', onReviews as EventListener);
     es.addEventListener('pr', onPr as EventListener);
     es.addEventListener('regenerating', onRegenerating as EventListener);
+    es.addEventListener('narrative-progress', onNarrativeProgress as EventListener);
     es.addEventListener('narrative', onNarrative as EventListener);
 
     es.onopen = () => {
@@ -160,6 +173,7 @@ export function useLiveStream() {
       es.removeEventListener('reviews', onReviews as EventListener);
       es.removeEventListener('pr', onPr as EventListener);
       es.removeEventListener('regenerating', onRegenerating as EventListener);
+      es.removeEventListener('narrative-progress', onNarrativeProgress as EventListener);
       es.removeEventListener('narrative', onNarrative as EventListener);
       es.close();
     };

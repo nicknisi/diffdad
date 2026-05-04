@@ -10,6 +10,7 @@ export function GeneratingScreen({ message }: Props) {
   const pr = useReviewStore((s) => s.pr);
   const files = useReviewStore((s) => s.files);
   const accent = useReviewStore((s) => s.accent);
+  const progressChars = useReviewStore((s) => s.narrativeProgressChars);
   const { markBg } = getAccentMeta(accent);
 
   return (
@@ -57,6 +58,12 @@ export function GeneratingScreen({ message }: Props) {
             {message}
           </p>
         </div>
+
+        {progressChars > 0 && (
+          <div className="text-[12px] tabular-nums text-[var(--fg-3)]">
+            {progressChars.toLocaleString()} characters generated
+          </div>
+        )}
       </div>
     </main>
   );
