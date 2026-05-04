@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useReviewStore } from '../state/review-store';
 import { DadMark } from './DadMark';
 import { getAccentMeta } from '../lib/accents';
@@ -6,12 +7,25 @@ type Props = {
   message: string;
 };
 
+function formatElapsed(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  return m > 0 ? `${m}m ${String(s % 60).padStart(2, '0')}s` : `${s}s`;
+}
+
 export function GeneratingScreen({ message }: Props) {
   const pr = useReviewStore((s) => s.pr);
   const files = useReviewStore((s) => s.files);
   const accent = useReviewStore((s) => s.accent);
   const progressChars = useReviewStore((s) => s.narrativeProgressChars);
   const { markBg } = getAccentMeta(accent);
+
+  const [elapsedMs, setElapsedMs] = useState(0);
+  useEffect(() => {
+    const startedAt = Date.now();
+    const id = setInterval(() => setElapsedMs(Date.now() - startedAt), 500);
+    return () => clearInterval(id);
+  }, []);
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center bg-[var(--bg-page)] px-6">
@@ -59,11 +73,10 @@ export function GeneratingScreen({ message }: Props) {
           </p>
         </div>
 
-        {progressChars > 0 && (
-          <div className="text-[12px] tabular-nums text-[var(--fg-3)]">
-            {progressChars.toLocaleString()} characters generated
-          </div>
-        )}
+        <div className="text-[12px] tabular-nums text-[var(--fg-3)]">
+          {formatElapsed(elapsedMs)} elapsed
+          {progressChars > 0 ? ` — ${progressChars.toLocaleString()} characters` : ''}
+        </div>
       </div>
     </main>
   );
