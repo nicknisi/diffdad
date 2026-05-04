@@ -305,7 +305,8 @@ export const useReviewStore = create<ReviewState>((set) => ({
   setCollapseNarration: (collapseNarration) => set({ collapseNarration }),
   setClusterBots: (clusterBots) => set({ clusterBots }),
   setRegenerating: (regenerating) => set({ regenerating }),
-  setNarrativeProgressChars: (narrativeProgressChars) => set({ narrativeProgressChars }),
+  setNarrativeProgressChars: (narrativeProgressChars) =>
+    set((state) => (state.narrativeProgressChars === narrativeProgressChars ? state : { narrativeProgressChars })),
   setAiPath: (aiPath) => set({ aiPath }),
   setPr: (pr) => set({ pr }),
   applyPartialNarrative: (pr, narrative, files, comments) =>

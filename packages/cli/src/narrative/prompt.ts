@@ -1,9 +1,6 @@
 import type { DiffFile, DiffHunk, DiffLine } from '../github/types';
-import { isMechanicalFile, partitionMechanicalFiles, type DroppedFile } from './diff-filter';
+import { type DroppedFile } from './diff-filter';
 import { computeRisk, formatRiskHints, type FileRisk } from './risk';
-
-// Re-export so callers can keep importing these from prompt.ts.
-export { isMechanicalFile, partitionMechanicalFiles };
 
 export type PreviousNarrativeContext = {
   previousTldr?: string;

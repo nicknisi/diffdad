@@ -5,12 +5,8 @@ import { createOpenAI } from '@ai-sdk/openai';
 import type { LanguageModelV1 } from 'ai';
 import { DEFAULT_CLI_MODELS, LOCAL_CLIS, type DiffDadConfig, type LocalCli } from '../config';
 import type { DiffFile, PRMetadata } from '../github/types';
-import {
-  buildNarrativePrompt,
-  partitionMechanicalFiles,
-  type PreviousNarrativeContext,
-  type PromptCapStats,
-} from './prompt';
+import { buildNarrativePrompt, type PreviousNarrativeContext, type PromptCapStats } from './prompt';
+import { partitionMechanicalFiles } from './diff-filter';
 import { normalizeNarrative, type NarrativeResponse } from './types';
 
 export type AiChunkHandler = (delta: string) => void;
@@ -526,22 +522,24 @@ export async function generateNarrative(
     let buffer = '';
     let lastEmittedHash = '';
 
+    const emitPartialIfChanged = (onPartial: NarrativePartialHandler) => {
+      const parsed = tryParsePartialJson(buffer);
+      if (!parsed) return;
+      const partial = normalizeNarrative(parsed);
+      // Cheap dedupe: only emit when the JSON shape grew.
+      const hash = `${partial.title.length}|${partial.tldr.length}|${partial.verdict}|${partial.concerns.length}|${partial.readingPlan.length}|${partial.chapters.length}`;
+      if (hash === lastEmittedHash) return;
+      lastEmittedHash = hash;
+      onPartial(partial);
+    };
+
     const onChunk: AiChunkHandler | undefined =
       options.onProgress || options.onPartial
         ? (delta) => {
             chars += delta.length;
             buffer += delta;
             options.onProgress?.({ delta, chars });
-            if (options.onPartial) {
-              const parsed = tryParsePartialJson(buffer);
-              if (!parsed) return;
-              const partial = normalizeNarrative(parsed);
-              // Cheap dedupe: only emit when the JSON shape grew.
-              const hash = `${partial.title.length}|${partial.tldr.length}|${partial.verdict}|${partial.concerns.length}|${partial.readingPlan.length}|${partial.chapters.length}`;
-              if (hash === lastEmittedHash) return;
-              lastEmittedHash = hash;
-              options.onPartial(partial);
-            }
+            if (options.onPartial) emitPartialIfChanged(options.onPartial);
           }
         : undefined;
 

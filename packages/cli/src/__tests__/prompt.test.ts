@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { buildNarrativePrompt, isMechanicalFile, partitionMechanicalFiles } from '../narrative/prompt';
+import { buildNarrativePrompt } from '../narrative/prompt';
+import { isMechanicalFile, partitionMechanicalFiles } from '../narrative/diff-filter';
 import type { DiffFile } from '../github/types';
 
 function fakeFile(file: string): DiffFile {
