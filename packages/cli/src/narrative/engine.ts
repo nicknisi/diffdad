@@ -145,7 +145,7 @@ async function callClaude(
     '--disable-slash-commands',
     '--strict-mcp-config',
     '--mcp-config',
-    '{}',
+    '{"mcpServers":{}}',
     '--setting-sources',
     '',
     '--no-session-persistence',
