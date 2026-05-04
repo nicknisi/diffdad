@@ -59,6 +59,7 @@ type ReviewState = {
   collapseNarration: boolean;
   clusterBots: boolean;
   regenerating: boolean;
+  narrativeProgressChars: number;
 
   setData: (
     pr: PRData,
@@ -96,6 +97,7 @@ type ReviewState = {
   setCollapseNarration: (v: boolean) => void;
   setClusterBots: (v: boolean) => void;
   setRegenerating: (v: boolean) => void;
+  setNarrativeProgressChars: (chars: number) => void;
   setPr: (pr: PRData) => void;
 };
 
@@ -134,9 +136,7 @@ function isSubmittableDraft(d: DraftComment): d is DraftComment & { path: string
 }
 
 export function pendingReviewComments(drafts: DraftComment[]): InlineComment[] {
-  return drafts
-    .filter(isSubmittableDraft)
-    .map((d) => ({ path: d.path, line: d.line, body: d.body, side: d.side }));
+  return drafts.filter(isSubmittableDraft).map((d) => ({ path: d.path, line: d.line, body: d.body, side: d.side }));
 }
 
 export const useReviewStore = create<ReviewState>((set) => ({
@@ -167,6 +167,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
   collapseNarration: false,
   clusterBots: true,
   regenerating: false,
+  narrativeProgressChars: 0,
   narrationOverrides: {} as Record<string, string>,
 
   setData: (pr, narrative, files, comments, repoUrl = null, checkRuns = [], config = null, reviews = []) => {
@@ -296,6 +297,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
   setCollapseNarration: (collapseNarration) => set({ collapseNarration }),
   setClusterBots: (clusterBots) => set({ clusterBots }),
   setRegenerating: (regenerating) => set({ regenerating }),
+  setNarrativeProgressChars: (narrativeProgressChars) => set({ narrativeProgressChars }),
   setPr: (pr) => set({ pr }),
   setNarrationOverride: (chapterKey: string, text: string) =>
     set((s) => ({ narrationOverrides: { ...s.narrationOverrides, [chapterKey]: text } })),

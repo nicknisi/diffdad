@@ -11,15 +11,155 @@ export interface NarrativePromptInput {
   labels: string[];
   files: DiffFile[];
   fileTree: string[];
+  skippedFiles?: string[];
   previousContext?: PreviousNarrativeContext;
+}
+
+export interface PromptCapStats {
+  perFileCap: number;
+  globalCap: number;
+  inputFileCount: number;
+  inputLineCount: number;
+  narratedFileCount: number;
+  narratedLineCount: number;
+  truncatedFiles: { file: string; hunksDropped: number; linesDropped: number }[];
+  droppedFiles: string[];
 }
 
 export interface NarrativePrompt {
   system: string;
   user: string;
+  stats: PromptCapStats;
 }
 
 const FILE_TREE_LIMIT = 200;
+const MAX_TOTAL_DIFF_LINES = 12000;
+
+const MECHANICAL_BASENAMES = new Set([
+  'package-lock.json',
+  'pnpm-lock.yaml',
+  'yarn.lock',
+  'bun.lock',
+  'bun.lockb',
+  'composer.lock',
+  'Gemfile.lock',
+  'Pipfile.lock',
+  'poetry.lock',
+  'uv.lock',
+  'cargo.lock',
+  'go.sum',
+]);
+
+const MECHANICAL_PATH_REGEXES: RegExp[] = [
+  /\.min\.(js|css|mjs)$/i,
+  /\.map$/i,
+  /(^|\/)dist\//,
+  /(^|\/)build\//,
+  /(^|\/)\.next\//,
+  /(^|\/)node_modules\//,
+  /(^|\/)vendor\//,
+];
+
+export function isMechanicalFile(path: string): boolean {
+  const basename = path.split('/').pop() ?? path;
+  if (MECHANICAL_BASENAMES.has(basename)) return true;
+  if (basename.toLowerCase() === 'cargo.lock') return true;
+  return MECHANICAL_PATH_REGEXES.some((re) => re.test(path));
+}
+
+export function partitionMechanicalFiles(files: DiffFile[]): { narrate: DiffFile[]; skipped: DiffFile[] } {
+  const narrate: DiffFile[] = [];
+  const skipped: DiffFile[] = [];
+  for (const f of files) {
+    if (isMechanicalFile(f.file)) skipped.push(f);
+    else narrate.push(f);
+  }
+  return { narrate, skipped };
+}
+
+export const NARRATIVE_JSON_SCHEMA = {
+  type: 'object',
+  required: ['title', 'chapters'],
+  properties: {
+    title: { type: 'string' },
+    tldr: { type: 'string' },
+    verdict: { type: 'string', enum: ['safe', 'caution', 'risky'] },
+    chapters: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['title', 'summary', 'risk', 'sections'],
+        properties: {
+          title: { type: 'string' },
+          summary: { type: 'string' },
+          risk: { type: 'string', enum: ['low', 'medium', 'high'] },
+          sections: {
+            type: 'array',
+            items: {
+              oneOf: [
+                {
+                  type: 'object',
+                  required: ['type', 'content'],
+                  properties: {
+                    type: { type: 'string', enum: ['narrative'] },
+                    content: { type: 'string' },
+                  },
+                },
+                {
+                  type: 'object',
+                  required: ['type', 'file', 'startLine', 'endLine', 'hunkIndex'],
+                  properties: {
+                    type: { type: 'string', enum: ['diff'] },
+                    file: { type: 'string' },
+                    startLine: { type: 'number' },
+                    endLine: { type: 'number' },
+                    hunkIndex: { type: 'number' },
+                  },
+                },
+              ],
+            },
+          },
+          callouts: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: ['file', 'line', 'level', 'message'],
+              properties: {
+                file: { type: 'string' },
+                line: { type: 'number' },
+                level: { type: 'string', enum: ['nit', 'concern', 'warning'] },
+                message: { type: 'string' },
+              },
+            },
+          },
+          reshow: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: ['ref'],
+              properties: {
+                ref: { type: 'number' },
+                file: { type: 'string' },
+                framing: { type: 'string' },
+                highlight: {
+                  type: 'object',
+                  required: ['from', 'to'],
+                  properties: { from: { type: 'number' }, to: { type: 'number' } },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    missing: { type: 'array', items: { type: 'string' } },
+    suggestedStart: {
+      type: 'object',
+      required: ['chapter', 'reason'],
+      properties: { chapter: { type: 'number' }, reason: { type: 'string' } },
+    },
+  },
+} as const;
 
 const RESPONSE_SCHEMA = `{
   "title": "string — overall narrative title for the PR",
@@ -127,6 +267,10 @@ Assign an overall verdict:
 
 Pick the chapter that best anchors the rest of the change. Often this is the core behavioral change, not the first file alphabetically.
 
+## Brevity
+
+You are output-token-bound. Every chapter and sentence costs the reader real wait time. Aim for **3–6 chapters total**, not more, even on large PRs — group aggressively. Keep each narrative section to **1–3 sentences**. Use callouts and the missing array only when they add real value; omit them when they don't. Cut anything restating what the diff already shows.
+
 Output format — return ONLY valid JSON, no prose around it, matching this schema:
 ${RESPONSE_SCHEMA}`;
 
@@ -140,7 +284,12 @@ function formatHunk(hunk: DiffHunk, index: number): string {
   return `[hunkIndex=${index}]\n${hunk.header}\n${body}`;
 }
 
-function formatFile(file: DiffFile): string {
+const MAX_LINES_PER_FILE = 800;
+
+function formatFile(
+  file: DiffFile,
+  lineBudget: number,
+): { text: string; linesUsed: number; truncated: boolean; hunksDropped: number; linesDropped: number } {
   const header = `diff --git a/${file.file} b/${file.file}`;
   const fromPath = file.isNewFile ? '/dev/null' : `a/${file.file}`;
   const toPath = file.isDeleted ? '/dev/null' : `b/${file.file}`;
@@ -150,18 +299,69 @@ function formatFile(file: DiffFile): string {
   const meta = [header];
   if (fileMarkers) meta.push(fileMarkers);
   meta.push(`--- ${fromPath}`, `+++ ${toPath}`);
-  const hunks = file.hunks.map((h, i) => formatHunk(h, i)).join('\n');
-  return `${meta.join('\n')}\n${hunks}`;
+
+  const cap = Math.min(MAX_LINES_PER_FILE, lineBudget);
+  let linesUsed = 0;
+  let truncated = false;
+  const includedHunks: string[] = [];
+  let omittedHunks = 0;
+  let omittedLines = 0;
+
+  for (let i = 0; i < file.hunks.length; i++) {
+    const h = file.hunks[i];
+    if (linesUsed + h.lines.length > cap) {
+      truncated = true;
+      omittedHunks = file.hunks.length - i;
+      for (let j = i; j < file.hunks.length; j++) omittedLines += file.hunks[j].lines.length;
+      break;
+    }
+    includedHunks.push(formatHunk(h, i));
+    linesUsed += h.lines.length;
+  }
+
+  let body = includedHunks.join('\n');
+  if (truncated) {
+    body += `\n[FILE TRUNCATED: ${omittedHunks} more hunk(s), ${omittedLines} more line(s) omitted to fit prompt budget]`;
+  }
+  return { text: `${meta.join('\n')}\n${body}`, linesUsed, truncated, hunksDropped: omittedHunks, linesDropped: omittedLines };
 }
 
 export function buildNarrativePrompt(input: NarrativePromptInput): NarrativePrompt {
-  const { title, description, labels, files, fileTree, previousContext } = input;
+  const { title, description, labels, files, fileTree, skippedFiles, previousContext } = input;
 
   const truncatedTree = fileTree.slice(0, FILE_TREE_LIMIT);
   const labelLine = labels.length > 0 ? labels.join(', ') : '(none)';
   const descriptionBlock = description.trim().length > 0 ? description : '(no description provided)';
   const treeBlock = truncatedTree.length > 0 ? truncatedTree.join('\n') : '(empty)';
-  const diffBlock = files.length > 0 ? files.map(formatFile).join('\n') : '(no file changes)';
+
+  let lineBudget = MAX_TOTAL_DIFF_LINES;
+  const truncatedFileDetails: { file: string; hunksDropped: number; linesDropped: number }[] = [];
+  const truncatedFiles: string[] = [];
+  const fileBlocks: string[] = [];
+  const droppedFiles: string[] = [];
+  let inputLineCount = 0;
+  let narratedLineCount = 0;
+  for (const file of files) {
+    const fileLineCount = file.hunks.reduce((sum, h) => sum + h.lines.length, 0);
+    inputLineCount += fileLineCount;
+    if (lineBudget <= 0) {
+      droppedFiles.push(file.file);
+      continue;
+    }
+    const formatted = formatFile(file, lineBudget);
+    fileBlocks.push(formatted.text);
+    lineBudget -= formatted.linesUsed;
+    narratedLineCount += formatted.linesUsed;
+    if (formatted.truncated) {
+      truncatedFiles.push(file.file);
+      truncatedFileDetails.push({
+        file: file.file,
+        hunksDropped: formatted.hunksDropped,
+        linesDropped: formatted.linesDropped,
+      });
+    }
+  }
+  const diffBlock = fileBlocks.length > 0 ? fileBlocks.join('\n') : '(no file changes)';
 
   const parts = [
     `PR title: ${title}`,
@@ -177,6 +377,27 @@ export function buildNarrativePrompt(input: NarrativePromptInput): NarrativeProm
     'Unified diff:',
     diffBlock,
   ];
+
+  if (skippedFiles && skippedFiles.length > 0) {
+    parts.push(
+      '',
+      `Mechanical files omitted from the diff above (lockfiles, generated, minified — do not narrate, but mention briefly if relevant): ${skippedFiles.join(', ')}`,
+    );
+  }
+
+  if (truncatedFiles.length > 0) {
+    parts.push(
+      '',
+      `Files truncated to fit prompt budget (later hunks omitted; the [FILE TRUNCATED: ...] marker shows what was cut): ${truncatedFiles.join(', ')}`,
+    );
+  }
+
+  if (droppedFiles.length > 0) {
+    parts.push(
+      '',
+      `Files entirely omitted because the prompt budget was exhausted before reaching them. Mention them in your narrative without trying to describe specific changes: ${droppedFiles.join(', ')}`,
+    );
+  }
 
   if (previousContext?.previousTldr || previousContext?.previousChapterTitles?.length) {
     parts.push(
@@ -195,5 +416,15 @@ export function buildNarrativePrompt(input: NarrativePromptInput): NarrativeProm
   }
 
   const user = parts.join('\n');
-  return { system: SYSTEM_PROMPT, user };
+  const stats: PromptCapStats = {
+    perFileCap: MAX_LINES_PER_FILE,
+    globalCap: MAX_TOTAL_DIFF_LINES,
+    inputFileCount: files.length,
+    inputLineCount,
+    narratedFileCount: fileBlocks.length,
+    narratedLineCount,
+    truncatedFiles: truncatedFileDetails,
+    droppedFiles,
+  };
+  return { system: SYSTEM_PROMPT, user, stats };
 }

@@ -269,11 +269,42 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
       `  ${a.yellow}Generating narrative${a.reset} ${a.gray}via${a.reset} ${a.cyan}${providerHint}${a.reset}`,
     );
     console.log(`  ${a.italic}${a.gray}"${waitJoke}"${a.reset}`);
-    const { narrative: generated, provider: usedProvider } = await generateNarrative(metadata, files, [], config);
+    const isTty = Boolean(process.stdout.isTTY);
+    const startedAt = Date.now();
+    let totalChars = 0;
+    const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+    let spinnerFrame = 0;
+    const fmtElapsed = () => {
+      const s = Math.floor((Date.now() - startedAt) / 1000);
+      const m = Math.floor(s / 60);
+      return m > 0 ? `${m}m${String(s % 60).padStart(2, '0')}s` : `${s}s`;
+    };
+    const render = () => {
+      if (!isTty) return;
+      const frame = spinnerFrames[spinnerFrame++ % spinnerFrames.length];
+      const chars = totalChars > 0 ? `${a.gray} — ${totalChars.toLocaleString()} chars${a.reset}` : '';
+      process.stdout.write(`\r  ${a.dim}${frame} ${fmtElapsed()} elapsed${a.reset}${chars}`);
+    };
+    render();
+    const heartbeat = setInterval(render, 250);
+    const onProgress = ({ chars }: { chars: number }) => {
+      totalChars = chars;
+      broadcast('narrative-progress', { chars });
+    };
+    let generated;
+    let usedProvider: string;
+    try {
+      const result = await generateNarrative(metadata, files, [], config, undefined, onProgress);
+      generated = result.narrative;
+      usedProvider = result.provider;
+    } finally {
+      clearInterval(heartbeat);
+      if (isTty) process.stdout.write('\r\x1b[2K');
+    }
     ctx.narrative = generated;
     await cacheNarrative(parsed.owner, parsed.repo, parsed.number, metadata.headSha, generated);
     console.log(
-      `  ${a.green}✓${a.reset} ${generated.chapters.length} chapters generated ${a.dim}via ${usedProvider}${a.reset}`,
+      `  ${a.green}✓${a.reset} ${generated.chapters.length} chapters generated ${a.dim}via ${usedProvider} in ${fmtElapsed()}${a.reset}`,
     );
     broadcast('narrative', {
       narrative: generated,
