@@ -15,9 +15,21 @@ export interface NarrativePromptInput {
   previousContext?: PreviousNarrativeContext;
 }
 
+export interface PromptCapStats {
+  perFileCap: number;
+  globalCap: number;
+  inputFileCount: number;
+  inputLineCount: number;
+  narratedFileCount: number;
+  narratedLineCount: number;
+  truncatedFiles: { file: string; hunksDropped: number; linesDropped: number }[];
+  droppedFiles: string[];
+}
+
 export interface NarrativePrompt {
   system: string;
   user: string;
+  stats: PromptCapStats;
 }
 
 const FILE_TREE_LIMIT = 200;
@@ -274,7 +286,10 @@ function formatHunk(hunk: DiffHunk, index: number): string {
 
 const MAX_LINES_PER_FILE = 800;
 
-function formatFile(file: DiffFile, lineBudget: number): { text: string; linesUsed: number; truncated: boolean } {
+function formatFile(
+  file: DiffFile,
+  lineBudget: number,
+): { text: string; linesUsed: number; truncated: boolean; hunksDropped: number; linesDropped: number } {
   const header = `diff --git a/${file.file} b/${file.file}`;
   const fromPath = file.isNewFile ? '/dev/null' : `a/${file.file}`;
   const toPath = file.isDeleted ? '/dev/null' : `b/${file.file}`;
@@ -308,7 +323,7 @@ function formatFile(file: DiffFile, lineBudget: number): { text: string; linesUs
   if (truncated) {
     body += `\n[FILE TRUNCATED: ${omittedHunks} more hunk(s), ${omittedLines} more line(s) omitted to fit prompt budget]`;
   }
-  return { text: `${meta.join('\n')}\n${body}`, linesUsed, truncated };
+  return { text: `${meta.join('\n')}\n${body}`, linesUsed, truncated, hunksDropped: omittedHunks, linesDropped: omittedLines };
 }
 
 export function buildNarrativePrompt(input: NarrativePromptInput): NarrativePrompt {
@@ -320,10 +335,15 @@ export function buildNarrativePrompt(input: NarrativePromptInput): NarrativeProm
   const treeBlock = truncatedTree.length > 0 ? truncatedTree.join('\n') : '(empty)';
 
   let lineBudget = MAX_TOTAL_DIFF_LINES;
+  const truncatedFileDetails: { file: string; hunksDropped: number; linesDropped: number }[] = [];
   const truncatedFiles: string[] = [];
   const fileBlocks: string[] = [];
   const droppedFiles: string[] = [];
+  let inputLineCount = 0;
+  let narratedLineCount = 0;
   for (const file of files) {
+    const fileLineCount = file.hunks.reduce((sum, h) => sum + h.lines.length, 0);
+    inputLineCount += fileLineCount;
     if (lineBudget <= 0) {
       droppedFiles.push(file.file);
       continue;
@@ -331,7 +351,15 @@ export function buildNarrativePrompt(input: NarrativePromptInput): NarrativeProm
     const formatted = formatFile(file, lineBudget);
     fileBlocks.push(formatted.text);
     lineBudget -= formatted.linesUsed;
-    if (formatted.truncated) truncatedFiles.push(file.file);
+    narratedLineCount += formatted.linesUsed;
+    if (formatted.truncated) {
+      truncatedFiles.push(file.file);
+      truncatedFileDetails.push({
+        file: file.file,
+        hunksDropped: formatted.hunksDropped,
+        linesDropped: formatted.linesDropped,
+      });
+    }
   }
   const diffBlock = fileBlocks.length > 0 ? fileBlocks.join('\n') : '(no file changes)';
 
@@ -388,5 +416,15 @@ export function buildNarrativePrompt(input: NarrativePromptInput): NarrativeProm
   }
 
   const user = parts.join('\n');
-  return { system: SYSTEM_PROMPT, user };
+  const stats: PromptCapStats = {
+    perFileCap: MAX_LINES_PER_FILE,
+    globalCap: MAX_TOTAL_DIFF_LINES,
+    inputFileCount: files.length,
+    inputLineCount,
+    narratedFileCount: fileBlocks.length,
+    narratedLineCount,
+    truncatedFiles: truncatedFileDetails,
+    droppedFiles,
+  };
+  return { system: SYSTEM_PROMPT, user, stats };
 }

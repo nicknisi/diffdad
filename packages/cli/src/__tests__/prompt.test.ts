@@ -184,6 +184,43 @@ describe('diff size caps', () => {
   });
 });
 
+describe('buildNarrativePrompt stats', () => {
+  it('reports input vs narrated counts and per-file truncation details', () => {
+    const huge = bigFile('src/huge.ts', 10, 200);
+    const small = bigFile('src/small.ts', 1, 5);
+    const { stats } = buildNarrativePrompt({
+      title: 't',
+      description: '',
+      labels: [],
+      files: [huge, small],
+      fileTree: [],
+    });
+
+    expect(stats.inputFileCount).toBe(2);
+    expect(stats.inputLineCount).toBe(10 * 200 + 5);
+    expect(stats.narratedFileCount).toBe(2);
+    expect(stats.narratedLineCount).toBeLessThan(stats.inputLineCount);
+    expect(stats.truncatedFiles).toHaveLength(1);
+    expect(stats.truncatedFiles[0].file).toBe('src/huge.ts');
+    expect(stats.truncatedFiles[0].linesDropped).toBeGreaterThan(0);
+    expect(stats.droppedFiles).toEqual([]);
+  });
+
+  it('reports dropped files when the global budget is exhausted', () => {
+    const files = Array.from({ length: 16 }, (_, i) => bigFile(`src/file${i}.ts`, 5, 200));
+    const { stats } = buildNarrativePrompt({
+      title: 't',
+      description: '',
+      labels: [],
+      files,
+      fileTree: [],
+    });
+
+    expect(stats.droppedFiles.length).toBeGreaterThan(0);
+    expect(stats.droppedFiles).toContain('src/file15.ts');
+  });
+});
+
 describe('partitionMechanicalFiles', () => {
   it('splits files into narrate vs skipped', () => {
     const files = [

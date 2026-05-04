@@ -7,7 +7,12 @@ import type { LanguageModelV1 } from 'ai';
 export type AiChunkHandler = (delta: string) => void;
 import { DEFAULT_CLI_MODELS, LOCAL_CLIS, type DiffDadConfig, type LocalCli } from '../config';
 import type { DiffFile, PRMetadata } from '../github/types';
-import { buildNarrativePrompt, partitionMechanicalFiles, type PreviousNarrativeContext } from './prompt';
+import {
+  buildNarrativePrompt,
+  partitionMechanicalFiles,
+  type PreviousNarrativeContext,
+  type PromptCapStats,
+} from './prompt';
 import type { NarrativeResponse } from './types';
 
 const DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-6';
@@ -302,6 +307,38 @@ function extractJson(text: string): string {
 
 export type NarrativeProgressHandler = (info: { delta: string; chars: number }) => void;
 
+const DIM = '\x1b[2m';
+const YELLOW = '\x1b[38;5;221m';
+const RESET = '\x1b[0m';
+
+function logPromptStats(stats: PromptCapStats, mechanicalSkipped: number): void {
+  const lines: string[] = [];
+  lines.push(
+    `${DIM}Prompt: ${stats.narratedFileCount}/${stats.inputFileCount + mechanicalSkipped} files, ${stats.narratedLineCount.toLocaleString()}/${stats.inputLineCount.toLocaleString()} lines (caps: ${stats.perFileCap}/file, ${stats.globalCap.toLocaleString()} total)${RESET}`,
+  );
+  if (mechanicalSkipped > 0) {
+    lines.push(`${DIM}  • Skipped ${mechanicalSkipped} mechanical file(s) (lockfiles, generated, minified)${RESET}`);
+  }
+  if (stats.truncatedFiles.length > 0) {
+    const totalDroppedLines = stats.truncatedFiles.reduce((s, t) => s + t.linesDropped, 0);
+    lines.push(
+      `${YELLOW}  ⚠ Per-file cap hit on ${stats.truncatedFiles.length} file(s): ${totalDroppedLines.toLocaleString()} line(s) truncated${RESET}`,
+    );
+    for (const t of stats.truncatedFiles) {
+      lines.push(`${DIM}      ${t.file}: dropped ${t.hunksDropped} hunk(s), ${t.linesDropped.toLocaleString()} line(s)${RESET}`);
+    }
+  }
+  if (stats.droppedFiles.length > 0) {
+    lines.push(
+      `${YELLOW}  ⚠ Global cap exhausted: ${stats.droppedFiles.length} file(s) dropped entirely${RESET}`,
+    );
+    for (const f of stats.droppedFiles) {
+      lines.push(`${DIM}      ${f}${RESET}`);
+    }
+  }
+  for (const l of lines) console.error(`  ${l}`);
+}
+
 export async function generateNarrative(
   pr: PRMetadata,
   files: DiffFile[],
@@ -311,7 +348,7 @@ export async function generateNarrative(
   onProgress?: NarrativeProgressHandler,
 ): Promise<{ narrative: NarrativeResponse; provider: string }> {
   const { narrate, skipped } = partitionMechanicalFiles(files);
-  const { system, user } = buildNarrativePrompt({
+  const { system, user, stats } = buildNarrativePrompt({
     title: pr.title,
     description: pr.body,
     labels: pr.labels,
@@ -320,6 +357,7 @@ export async function generateNarrative(
     skippedFiles: skipped.map((f) => f.file),
     previousContext,
   });
+  logPromptStats(stats, skipped.length);
 
   const MAX_RETRIES = 2;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
