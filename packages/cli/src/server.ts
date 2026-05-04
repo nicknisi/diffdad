@@ -39,7 +39,14 @@ export function createServer(ctx: ServerContext) {
   let hadClients = false;
   let exitTimer: ReturnType<typeof setTimeout> | null = null;
 
+  let narrativeProgressChars = 0;
+
   function broadcast(event: string, data: unknown) {
+    if (event === 'narrative-progress') {
+      narrativeProgressChars = (data as { chars?: number }).chars ?? 0;
+    } else if (event === 'regenerating' || event === 'narrative') {
+      narrativeProgressChars = 0;
+    }
     for (const send of sseClients) {
       send(event, data);
     }
@@ -235,6 +242,7 @@ export function createServer(ctx: ServerContext) {
         };
 
         send('connected', { timestamp: Date.now() });
+        if (narrativeProgressChars > 0) send('narrative-progress', { chars: narrativeProgressChars });
         sseClients.add(send);
         hadClients = true;
         if (exitTimer) {
