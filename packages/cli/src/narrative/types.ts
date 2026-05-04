@@ -79,6 +79,44 @@ export type NarrativeSection =
       hunkIndex: number;
     };
 
+const CONCERN_CATEGORIES: ConcernCategory[] = [
+  'logic',
+  'state',
+  'timing',
+  'validation',
+  'security',
+  'test-gap',
+  'api-contract',
+  'error-handling',
+];
+
+function normalizeReadingPlanStep(input: unknown): ReadingPlanStep | null {
+  if (!input || typeof input !== 'object') return null;
+  const obj = input as Record<string, unknown>;
+  if (typeof obj.step !== 'string' || obj.step.length === 0) return null;
+  return {
+    step: obj.step,
+    chapterIndex: typeof obj.chapterIndex === 'number' ? obj.chapterIndex : undefined,
+    why: typeof obj.why === 'string' ? obj.why : undefined,
+  };
+}
+
+function normalizeConcern(input: unknown): Concern | null {
+  if (!input || typeof input !== 'object') return null;
+  const obj = input as Record<string, unknown>;
+  if (typeof obj.question !== 'string' || obj.question.length === 0) return null;
+  const category = CONCERN_CATEGORIES.includes(obj.category as ConcernCategory)
+    ? (obj.category as ConcernCategory)
+    : 'logic';
+  return {
+    question: obj.question,
+    file: typeof obj.file === 'string' ? obj.file : '',
+    line: typeof obj.line === 'number' ? obj.line : 0,
+    category,
+    why: typeof obj.why === 'string' ? obj.why : '',
+  };
+}
+
 /**
  * Normalize a parsed narrative (e.g. from cache or LLM JSON) so missing fields
  * don't crash callers that assume the shape. Tolerant of older shapes.
@@ -86,14 +124,20 @@ export type NarrativeSection =
 export function normalizeNarrative(input: unknown): NarrativeResponse {
   const obj = (input ?? {}) as Record<string, unknown>;
   const chapters = Array.isArray(obj.chapters) ? (obj.chapters as Record<string, unknown>[]) : [];
+  const readingPlan = Array.isArray(obj.readingPlan)
+    ? obj.readingPlan.map(normalizeReadingPlanStep).filter((s): s is ReadingPlanStep => s !== null)
+    : [];
+  const concerns = Array.isArray(obj.concerns)
+    ? obj.concerns.map(normalizeConcern).filter((c): c is Concern => c !== null)
+    : [];
   return {
     title: typeof obj.title === 'string' ? obj.title : '',
     tldr: typeof obj.tldr === 'string' ? obj.tldr : '',
     verdict: (obj.verdict === 'safe' || obj.verdict === 'caution' || obj.verdict === 'risky'
       ? obj.verdict
       : 'caution') as NarrativeResponse['verdict'],
-    readingPlan: Array.isArray(obj.readingPlan) ? (obj.readingPlan as ReadingPlanStep[]) : [],
-    concerns: Array.isArray(obj.concerns) ? (obj.concerns as Concern[]) : [],
+    readingPlan,
+    concerns,
     chapters: chapters.map((c) => ({
       title: typeof c.title === 'string' ? c.title : '',
       summary: typeof c.summary === 'string' ? c.summary : '',

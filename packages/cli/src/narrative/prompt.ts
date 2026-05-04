@@ -1,5 +1,4 @@
 import type { DiffFile, DiffHunk, DiffLine } from '../github/types';
-import { type DroppedFile } from './diff-filter';
 import { computeRisk, formatRiskHints, type FileRisk } from './risk';
 
 export type PreviousNarrativeContext = {
@@ -27,8 +26,6 @@ export interface PromptCapStats {
   narratedLineCount: number;
   truncatedFiles: { file: string; hunksDropped: number; linesDropped: number }[];
   droppedFiles: string[];
-  /** Files dropped by classifyFile/diff-filter (lockfiles, snapshots, etc), with reasons. */
-  filteredFiles: DroppedFile[];
 }
 
 export interface NarrativePrompt {
@@ -349,7 +346,6 @@ export function buildNarrativePrompt(input: NarrativePromptInput): NarrativeProm
     narratedLineCount,
     truncatedFiles: truncatedFileDetails,
     droppedFiles,
-    filteredFiles: [],
   };
   return { system: SYSTEM_PROMPT, user, stats, keptFiles: files, risks };
 }

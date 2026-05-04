@@ -526,8 +526,16 @@ export async function generateNarrative(
       const parsed = tryParsePartialJson(buffer);
       if (!parsed) return;
       const partial = normalizeNarrative(parsed);
-      // Cheap dedupe: only emit when the JSON shape grew.
-      const hash = `${partial.title.length}|${partial.tldr.length}|${partial.verdict}|${partial.concerns.length}|${partial.readingPlan.length}|${partial.chapters.length}`;
+      // Dedupe on total parseable string length so mid-string growth — a
+      // chapter's prose getting longer, a concern's question filling in —
+      // re-emits even when array counts stop changing.
+      const planChars = partial.readingPlan.reduce((s, p) => s + p.step.length + (p.why?.length ?? 0), 0);
+      const concernChars = partial.concerns.reduce((s, c) => s + c.question.length + c.why.length, 0);
+      const chapterChars = partial.chapters.reduce(
+        (s, c) => s + c.title.length + c.summary.length + c.whyMatters.length,
+        0,
+      );
+      const hash = `${partial.title.length}|${partial.tldr.length}|${partial.verdict}|${partial.readingPlan.length}|${partial.concerns.length}|${partial.chapters.length}|${planChars}|${concernChars}|${chapterChars}`;
       if (hash === lastEmittedHash) return;
       lastEmittedHash = hash;
       onPartial(partial);

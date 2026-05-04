@@ -115,9 +115,16 @@ function detectTestGap(file: DiffFile, allFiles: DiffFile[]): boolean {
   if (isTestPath(file.file)) return false;
   if (file.isDeleted) return false;
 
-  // What "area" does this file live in? Take the parent directory.
-  const dir = file.file.split('/').slice(0, -1).join('/');
-  const adjacentTests = allFiles.some((f) => f !== file && isTestPath(f.file) && f.file.startsWith(dir));
+  // What "area" does this file live in? Take the parent directory. For
+  // root-level files (no slash) only count tests that are also at the root,
+  // otherwise any test anywhere would suppress the gap signal.
+  const segments = file.file.split('/');
+  const dir = segments.slice(0, -1).join('/');
+  const adjacentTests = allFiles.some((f) => {
+    if (f === file || !isTestPath(f.file)) return false;
+    if (dir === '') return !f.file.includes('/');
+    return f.file.startsWith(dir + '/');
+  });
   if (adjacentTests) return false;
 
   // No tests in the same dir. Check broader: any test file mentions this module by import.

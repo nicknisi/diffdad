@@ -58,12 +58,21 @@ async function runOne(
   let provider = describeProvider(narrativeConfig);
 
   try {
+    const startedAt = Date.now();
+    let timeToFirstPartialMs: number | undefined;
     const result = await generateNarrative(
       fixture.pr,
       fixture.files,
       fixture.fileTree ?? fixture.files.map((f) => f.file),
       narrativeConfig,
+      undefined,
+      {
+        onPartial: () => {
+          if (timeToFirstPartialMs === undefined) timeToFirstPartialMs = Date.now() - startedAt;
+        },
+      },
     );
+    const totalMs = Date.now() - startedAt;
     provider = result.provider;
     const proseWordCount = countProseWords(result.narrative);
     let scores = { comprehensiveness: 0, rationality: 0, conciseness: 0, expressiveness: 0 };
@@ -90,8 +99,8 @@ async function runOne(
     return {
       fixtureId: fixture.id,
       provider,
-      timeToFirstPartialMs: result.timeToFirstPartialMs,
-      totalMs: result.totalMs,
+      timeToFirstPartialMs,
+      totalMs,
       proseWordCount,
       scores,
       scoreNotes,
