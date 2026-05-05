@@ -9,6 +9,7 @@ import type { CheckRun, DiffFile, PRComment, PRMetadata, PRReview } from './gith
 import { cacheNarrative, getCachedNarrative } from './narrative/cache';
 import { callAi, generateNarrative, resolveAiPath } from './narrative/engine';
 import type { NarrativeResponse } from './narrative/types';
+import type { RecapResponse } from './recap/types';
 
 export type ServerContext = {
   narrative: NarrativeResponse | null;
@@ -21,6 +22,8 @@ export type ServerContext = {
   owner: string;
   repo: string;
   headSha: string;
+  /** Populated when the server is run for `dad recap`. */
+  recap?: RecapResponse | null;
 };
 
 type PostCommentBody = {
@@ -131,6 +134,35 @@ export function createServer(ctx: ServerContext) {
               };
             }),
         ),
+      },
+    });
+  });
+
+  app.get('/api/recap', async (c) => {
+    const config = await readConfig();
+    const { path: aiPath } = resolveAiPath(config);
+    if (!ctx.recap) {
+      return c.json({
+        generating: true,
+        pr: ctx.pr,
+        repoUrl: `https://github.com/${ctx.owner}/${ctx.repo}`,
+        aiPath,
+        config: {
+          theme: config.theme ?? 'auto',
+          accent: config.accent ?? 'classic',
+        },
+      });
+    }
+    return c.json({
+      recap: ctx.recap,
+      pr: ctx.pr,
+      checkRuns: ctx.checkRuns,
+      reviews: ctx.reviews,
+      repoUrl: `https://github.com/${ctx.owner}/${ctx.repo}`,
+      aiPath,
+      config: {
+        theme: config.theme ?? 'auto',
+        accent: config.accent ?? 'classic',
       },
     });
   });

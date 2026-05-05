@@ -1,5 +1,5 @@
 import { parseDiff } from './diff-parser';
-import type { CheckRun, DiffFile, PRComment, PRMetadata, PRReview } from './types';
+import type { CheckRun, DiffFile, ForcePushEvent, IssueRef, PRComment, PRCommit, PRMetadata, PRReview } from './types';
 
 const GITHUB_API = 'https://api.github.com';
 
@@ -356,5 +356,87 @@ export class GitHubClient {
         comments: ghComments?.length ? ghComments : undefined,
       }),
     });
+  }
+
+  /** Commits on a PR's head branch from the merge-base forward, oldest first. */
+  async getPRCommits(owner: string, repo: string, number: number): Promise<PRCommit[]> {
+    const out: PRCommit[] = [];
+    // GitHub caps to 250 commits across pages; one fetch with per_page=100 covers most PRs.
+    for (let page = 1; page <= 3; page++) {
+      const res = await this.fetch(`/repos/${owner}/${repo}/pulls/${number}/commits?per_page=100&page=${page}`);
+      const data = (await res.json()) as Array<{
+        sha: string;
+        commit: { message: string; author: { name: string; date: string } | null };
+        author: { login: string } | null;
+      }>;
+      for (const c of data) {
+        out.push({
+          sha: c.sha,
+          message: c.commit.message,
+          author: c.author?.login ?? c.commit.author?.name ?? '',
+          authoredAt: c.commit.author?.date ?? '',
+        });
+      }
+      if (data.length < 100) break;
+    }
+    return out;
+  }
+
+  /** Force-push timeline events for the PR's head branch, oldest first. */
+  async getForcePushEvents(owner: string, repo: string, number: number): Promise<ForcePushEvent[]> {
+    const out: ForcePushEvent[] = [];
+    for (let page = 1; page <= 5; page++) {
+      const res = await this.fetch(
+        `/repos/${owner}/${repo}/issues/${number}/timeline?per_page=100&page=${page}`,
+        {},
+        'application/vnd.github.mockingbird-preview+json',
+      );
+      const data = (await res.json()) as Array<{
+        event: string;
+        commit_id?: string | null;
+        commit_url?: string | null;
+        actor?: { login?: string } | null;
+        created_at?: string;
+        // head_ref_force_pushed events use these fields:
+        before_commit?: { sha?: string } | null;
+        after_commit?: { sha?: string } | null;
+      }>;
+      for (const ev of data) {
+        if (ev.event !== 'head_ref_force_pushed') continue;
+        out.push({
+          beforeSha: ev.before_commit?.sha ?? null,
+          afterSha: ev.after_commit?.sha ?? null,
+          actor: ev.actor?.login ?? '',
+          createdAt: ev.created_at ?? '',
+        });
+      }
+      if (data.length < 100) break;
+    }
+    return out;
+  }
+
+  async getIssue(owner: string, repo: string, number: number): Promise<IssueRef | null> {
+    try {
+      const res = await this.fetch(`/repos/${owner}/${repo}/issues/${number}`);
+      const data = (await res.json()) as {
+        number: number;
+        title: string;
+        body: string | null;
+        state: 'open' | 'closed';
+        html_url: string;
+        pull_request?: unknown;
+      };
+      // /issues/N returns PRs too — skip if this is actually a PR.
+      if (data.pull_request) return null;
+      return {
+        number: data.number,
+        title: data.title,
+        body: data.body ?? '',
+        state: data.state,
+        url: data.html_url,
+      };
+    } catch {
+      return null;
+    }
   }
 }
