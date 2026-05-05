@@ -323,7 +323,13 @@ function formatFile(
   if (truncated) {
     body += `\n[FILE TRUNCATED: ${omittedHunks} more hunk(s), ${omittedLines} more line(s) omitted to fit prompt budget]`;
   }
-  return { text: `${meta.join('\n')}\n${body}`, linesUsed, truncated, hunksDropped: omittedHunks, linesDropped: omittedLines };
+  return {
+    text: `${meta.join('\n')}\n${body}`,
+    linesUsed,
+    truncated,
+    hunksDropped: omittedHunks,
+    linesDropped: omittedLines,
+  };
 }
 
 export function buildNarrativePrompt(input: NarrativePromptInput): NarrativePrompt {
