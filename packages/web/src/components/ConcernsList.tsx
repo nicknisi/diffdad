@@ -234,7 +234,10 @@ function ConcernRow({ concern, onDismiss }: { concern: Concern; onDismiss: () =>
           {error && <div className="mt-1 text-sm text-red-600 dark:text-red-400">{error}</div>}
           <div className="mt-2 flex items-center justify-between gap-2">
             <span className="text-[11px] text-[var(--fg-3)]">
-              Will post inline at <span className="font-mono">{concern.file}:{concern.line}</span>
+              Will post inline at{' '}
+              <span className="font-mono">
+                {concern.file}:{concern.line}
+              </span>
             </span>
             <div className="flex items-center gap-2">
               <button
@@ -341,11 +344,7 @@ export function ConcernsList() {
           const key = concernKey(concern);
           const isDismissed = dismissed.has(key);
           return (
-            <div
-              key={key}
-              className="transition-opacity"
-              style={{ opacity: isDismissed ? 0.45 : 1 }}
-            >
+            <div key={key} className="transition-opacity" style={{ opacity: isDismissed ? 0.45 : 1 }}>
               <ConcernRow concern={concern} onDismiss={() => dismiss(concern)} />
             </div>
           );

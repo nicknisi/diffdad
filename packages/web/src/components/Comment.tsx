@@ -211,15 +211,18 @@ export function Comment({ comment, replies = [], isReply = false, showFilePath =
               ))}
           </div>
         )}
-        {!showFilePath && comment.startLine !== undefined && comment.line !== undefined && comment.startLine !== comment.line && (
-          <div
-            className="mt-1 mb-1 inline-flex items-center gap-1 rounded-[3px] px-1.5 py-px font-mono text-[11px]"
-            style={{ background: 'var(--purple-3)', color: 'var(--purple-11)' }}
-            title="Multi-line comment"
-          >
-            L{Math.min(comment.startLine, comment.line)}–L{Math.max(comment.startLine, comment.line)}
-          </div>
-        )}
+        {!showFilePath &&
+          comment.startLine !== undefined &&
+          comment.line !== undefined &&
+          comment.startLine !== comment.line && (
+            <div
+              className="mt-1 mb-1 inline-flex items-center gap-1 rounded-[3px] px-1.5 py-px font-mono text-[11px]"
+              style={{ background: 'var(--purple-3)', color: 'var(--purple-11)' }}
+              title="Multi-line comment"
+            >
+              L{Math.min(comment.startLine, comment.line)}–L{Math.max(comment.startLine, comment.line)}
+            </div>
+          )}
         <div className="mt-[3px] text-[13.5px] leading-[19px] text-[var(--fg-1)]">
           <Markdown source={comment.body} />
         </div>

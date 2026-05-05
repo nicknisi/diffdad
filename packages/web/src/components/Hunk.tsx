@@ -390,8 +390,7 @@ function HunkLines({
       const line = hunk.lines[i]!;
       const lineKey = `${file}:${hunkIndex}:${i}`;
       const lineComments: PRComment[] = comments.filter((c) => commentLineMap.get(c.id) === i);
-      const inSelection =
-        rangeStartIdx !== null && rangeEndIdx !== null && i >= rangeStartIdx && i <= rangeEndIdx;
+      const inSelection = rangeStartIdx !== null && rangeEndIdx !== null && i >= rangeStartIdx && i <= rangeEndIdx;
       const isOpenLine = openLine === lineKey;
       // The thread anchors wherever the user just clicked (`openLine`). When a
       // multi-line range exists, the OTHER end of the range becomes the

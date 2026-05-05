@@ -204,9 +204,13 @@ export function CommentThread({
       })}
       <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-panel)] p-2">
         {startLine !== undefined && line !== undefined && startLine !== line && (
-          <div className="mb-2 inline-flex items-center gap-1.5 rounded-[4px] px-2 py-0.5 font-mono text-[11px]"
-               style={{ background: 'var(--purple-3)', color: 'var(--purple-11)' }}>
-            <span>L{Math.min(startLine, line)}–L{Math.max(startLine, line)}</span>
+          <div
+            className="mb-2 inline-flex items-center gap-1.5 rounded-[4px] px-2 py-0.5 font-mono text-[11px]"
+            style={{ background: 'var(--purple-3)', color: 'var(--purple-11)' }}
+          >
+            <span>
+              L{Math.min(startLine, line)}–L{Math.max(startLine, line)}
+            </span>
             <span className="font-sans text-[10.5px] uppercase tracking-[0.05em]">multi-line</span>
           </div>
         )}

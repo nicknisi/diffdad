@@ -46,9 +46,7 @@ export function SubmitDialog({ open, onClose, onSubmit }: Props) {
     setDraftError(null);
     try {
       const reviewedChapters = narrative
-        ? narrative.chapters
-            .map((_, idx) => idx)
-            .filter((idx) => chapterStates[`ch-${idx}`] === 'reviewed')
+        ? narrative.chapters.map((_, idx) => idx).filter((idx) => chapterStates[`ch-${idx}`] === 'reviewed')
         : [];
       const pendingComments = drafts.map((d) => ({ path: d.path, line: d.line, body: d.body }));
       const res = await fetch('/api/ai', {
