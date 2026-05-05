@@ -148,21 +148,6 @@ export function useLiveStream() {
       }
     };
 
-    const onNarrativePartial = (e: MessageEvent) => {
-      try {
-        const data = JSON.parse(e.data) as {
-          narrative: NarrativeResponse;
-          pr: PRData;
-          files: DiffFile[];
-          comments: PRComment[];
-        };
-        useReviewStore.getState().applyPartialNarrative(data.pr, data.narrative, data.files, data.comments);
-        setLastEventAt(Date.now());
-      } catch {
-        // ignore
-      }
-    };
-
     const onRecap = (e: MessageEvent) => {
       try {
         const data = JSON.parse(e.data) as { recap: RecapResponse };
@@ -197,7 +182,6 @@ export function useLiveStream() {
     es.addEventListener('regenerating', onRegenerating as EventListener);
     es.addEventListener('narrative-progress', onNarrativeProgress as EventListener);
     es.addEventListener('narrative', onNarrative as EventListener);
-    es.addEventListener('narrative.partial', onNarrativePartial as EventListener);
     es.addEventListener('recap', onRecap as EventListener);
     es.addEventListener('recap-generating', onRecapGenerating as EventListener);
     es.addEventListener('recap-error', onRecapError as EventListener);
@@ -220,7 +204,6 @@ export function useLiveStream() {
       es.removeEventListener('regenerating', onRegenerating as EventListener);
       es.removeEventListener('narrative-progress', onNarrativeProgress as EventListener);
       es.removeEventListener('narrative', onNarrative as EventListener);
-      es.removeEventListener('narrative.partial', onNarrativePartial as EventListener);
       es.removeEventListener('recap', onRecap as EventListener);
       es.removeEventListener('recap-generating', onRecapGenerating as EventListener);
       es.removeEventListener('recap-error', onRecapError as EventListener);
