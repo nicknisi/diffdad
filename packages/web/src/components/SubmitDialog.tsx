@@ -49,6 +49,7 @@ export function SubmitDialog({ open, onClose, onSubmit }: Props) {
         ? narrative.chapters.map((_, idx) => idx).filter((idx) => chapterStates[`ch-${idx}`] === 'reviewed')
         : [];
       const pendingComments = drafts.map((d) => ({ path: d.path, line: d.line, body: d.body }));
+      const trimmedDraft = summary.trim();
       const res = await fetch('/api/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -57,6 +58,7 @@ export function SubmitDialog({ open, onClose, onSubmit }: Props) {
           resolution,
           reviewedChapters,
           pendingComments,
+          userDraft: trimmedDraft || undefined,
         }),
       });
       if (!res.ok) {
@@ -168,10 +170,20 @@ export function SubmitDialog({ open, onClose, onSubmit }: Props) {
               disabled={drafting}
               className="inline-flex items-center gap-1 rounded-[5px] px-2 py-[3px] text-[11.5px] font-medium hover:bg-[var(--gray-a3)] disabled:cursor-not-allowed disabled:opacity-60"
               style={{ color: 'var(--brand)' }}
-              title="Generate a summary from your reviewed chapters and drafts"
+              title={
+                summary.trim()
+                  ? 'Polish the text you wrote, keeping your voice and points'
+                  : 'Draft a summary from your reviewed chapters and inline comments'
+              }
             >
               <IconSpark className="h-[11px] w-[11px]" />
-              {drafting ? 'Drafting…' : summary.trim() ? 'Re-draft with AI' : 'Draft with AI'}
+              {drafting
+                ? summary.trim()
+                  ? 'Polishing…'
+                  : 'Drafting…'
+                : summary.trim()
+                  ? 'Polish my draft'
+                  : 'Draft with AI'}
             </button>
             {draftError && (
               <span className="text-[11px] text-red-600 dark:text-red-400" title={draftError}>

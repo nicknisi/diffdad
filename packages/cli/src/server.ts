@@ -144,6 +144,7 @@ export function createServer(ctx: ServerContext) {
       resolution?: 'comment' | 'approve' | 'request_changes';
       reviewedChapters?: number[];
       pendingComments?: { path?: string; line?: number; body?: string }[];
+      userDraft?: string;
     };
     try {
       body = await c.req.json();
@@ -194,8 +195,17 @@ export function createServer(ctx: ServerContext) {
             ? 'You are requesting changes. Lead with the specific blockers the reviewer raised (drawn from inline comments). Be direct but constructive.'
             : 'You are leaving general feedback without a verdict. Summarize what was reviewed and the open questions the reviewer raised.';
 
-      const systemPrompt = `You are drafting the summary comment for a GitHub PR review. ${stance} Write 2–4 sentences. First-person ("I"). Plain markdown. No headings. No bullet lists. No greetings or sign-offs.`;
-      const userPrompt = `PR TLDR:\n${tldr}\n\nReviewed chapters:\n${reviewedSection}\n\nDrafted inline comments:\n${draftSection}\n\nConcerns the narrative raised:\n${concerns || '(none)'}`;
+      const userDraft = typeof body.userDraft === 'string' ? body.userDraft.trim() : '';
+      const polishing = userDraft.length > 0;
+
+      // When the reviewer has already typed something, preserve their voice
+      // and points; we polish their draft. Otherwise, generate from scratch.
+      const systemPrompt = polishing
+        ? `You are polishing a reviewer's draft of a GitHub PR review summary. ${stance} Keep the reviewer's voice, structure, and any specific points they made. Tighten prose, fix grammar, and fold in 1–2 supporting details from the review context only if they directly reinforce what the reviewer wrote — do not introduce unrelated topics. Return only the polished text. 2–4 sentences. First-person ("I"). Plain markdown. No headings. No bullet lists. No greetings or sign-offs.`
+        : `You are drafting the summary comment for a GitHub PR review. ${stance} Write 2–4 sentences. First-person ("I"). Plain markdown. No headings. No bullet lists. No greetings or sign-offs.`;
+      const userPrompt = polishing
+        ? `Reviewer's draft (polish this — preserve their voice and points):\n"""\n${userDraft}\n"""\n\nReview context (use only for grammar/wording cues; do not introduce new topics):\n\nPR TLDR:\n${tldr}\n\nReviewed chapters:\n${reviewedSection}\n\nDrafted inline comments:\n${draftSection}\n\nConcerns the narrative raised:\n${concerns || '(none)'}`
+        : `PR TLDR:\n${tldr}\n\nReviewed chapters:\n${reviewedSection}\n\nDrafted inline comments:\n${draftSection}\n\nConcerns the narrative raised:\n${concerns || '(none)'}`;
 
       try {
         const result = await callAi(config, systemPrompt, userPrompt);

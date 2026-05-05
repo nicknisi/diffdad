@@ -173,6 +173,32 @@ type InlineComment = {
   startSide?: 'LEFT' | 'RIGHT';
 };
 
+/** Server-streamed narratives can arrive with chapters/sections/etc. still
+ * filling in (especially during live regeneration). Render code assumes the
+ * usual array fields exist, so normalize at the store boundary — if we don't
+ * a `.map` or `.filter` on `undefined` mid-stream will crash the React tree
+ * and the user sees a blank page. */
+function sanitizeNarrative(n: NarrativeResponse): NarrativeResponse {
+  return {
+    ...n,
+    chapters: Array.isArray(n.chapters)
+      ? n.chapters.map((ch) => ({
+          ...ch,
+          title: typeof ch?.title === 'string' ? ch.title : '',
+          summary: typeof ch?.summary === 'string' ? ch.summary : '',
+          whyMatters: typeof ch?.whyMatters === 'string' ? ch.whyMatters : '',
+          risk: ch?.risk === 'high' || ch?.risk === 'medium' ? ch.risk : 'low',
+          sections: Array.isArray(ch?.sections) ? ch.sections : [],
+          callouts: Array.isArray(ch?.callouts) ? ch.callouts : undefined,
+          reshow: Array.isArray(ch?.reshow) ? ch.reshow : undefined,
+        }))
+      : [],
+    concerns: Array.isArray(n.concerns) ? n.concerns : [],
+    readingPlan: Array.isArray(n.readingPlan) ? n.readingPlan : [],
+    missing: Array.isArray(n.missing) ? n.missing : undefined,
+  };
+}
+
 function isSubmittableDraft(d: DraftComment): d is DraftComment & { path: string; line: number } {
   return !!d.path && d.line !== undefined;
 }
@@ -224,6 +250,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
   narrationOverrides: {} as Record<string, string>,
 
   setData: (pr, narrative, files, comments, repoUrl = null, checkRuns = [], config = null, reviews = []) => {
+    const safeNarrative = sanitizeNarrative(narrative);
     const storageKey = `diffdad.reviewed.${pr.number}`;
     let saved: Record<string, ChapterState> = {};
     try {
@@ -231,13 +258,13 @@ export const useReviewStore = create<ReviewState>((set) => ({
       if (raw) saved = JSON.parse(raw);
     } catch {}
     const chapterStates: Record<string, ChapterState> = {};
-    narrative.chapters.forEach((_, idx) => {
+    safeNarrative.chapters.forEach((_, idx) => {
       const key = `ch-${idx}`;
       chapterStates[key] = saved[key] === 'reviewed' ? 'reviewed' : 'reading';
     });
     const next: Partial<ReviewState> = {
       pr,
-      narrative,
+      narrative: safeNarrative,
       files,
       comments,
       checkRuns,
@@ -245,7 +272,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
       repoUrl,
       chapterStates,
       drafts: loadDrafts(pr.number),
-      activeChapterId: narrative.chapters.length > 0 ? 'ch-0' : null,
+      activeChapterId: safeNarrative.chapters.length > 0 ? 'ch-0' : null,
       chapterDensity: {},
     };
     if (config) {
@@ -395,18 +422,19 @@ export const useReviewStore = create<ReviewState>((set) => ({
   setPr: (pr) => set({ pr }),
   applyPartialNarrative: (pr, narrative, files, comments) =>
     set((state) => {
-      const next: Partial<ReviewState> = { pr, narrative };
+      const safeNarrative = sanitizeNarrative(narrative);
+      const next: Partial<ReviewState> = { pr, narrative: safeNarrative };
       if (files) next.files = files;
       if (comments) next.comments = comments;
       // Initialize chapter states for any newly streamed chapters without
       // clobbering ones the user has already marked reviewed.
       const chapterStates: Record<string, ChapterState> = { ...state.chapterStates };
-      narrative.chapters.forEach((_, idx) => {
+      safeNarrative.chapters.forEach((_, idx) => {
         const key = `ch-${idx}`;
         if (!chapterStates[key]) chapterStates[key] = 'reading';
       });
       next.chapterStates = chapterStates;
-      if (state.activeChapterId === null && narrative.chapters.length > 0) {
+      if (state.activeChapterId === null && safeNarrative.chapters.length > 0) {
         next.activeChapterId = 'ch-0';
       }
       return next;
