@@ -73,3 +73,27 @@ export type CheckRun = {
   detailsUrl: string | null;
   output: { title?: string; summary?: string };
 };
+
+export type PRCommit = {
+  sha: string;
+  message: string;
+  author: string;
+  authoredAt: string;
+};
+
+export type ForcePushEvent = {
+  /** Commit SHA the branch pointed to before the force push (may be null for initial push). */
+  beforeSha: string | null;
+  /** Commit SHA the branch points to after the force push. */
+  afterSha: string | null;
+  actor: string;
+  createdAt: string;
+};
+
+export type IssueRef = {
+  number: number;
+  title: string;
+  body: string;
+  state: 'open' | 'closed';
+  url: string;
+};

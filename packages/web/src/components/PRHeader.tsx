@@ -232,6 +232,17 @@ export function PRHeader() {
             >
               Files
             </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={view === 'recap'}
+              onClick={() => setView('recap')}
+              className={`${baseBtn} ${view === 'recap' ? activeBtn : inactiveBtn}`}
+              style={view === 'recap' ? activeBtnStyle : undefined}
+              title="Goal, decisions, blockers — for landing on someone else's WIP"
+            >
+              Recap
+            </button>
           </div>
           <button
             type="button"

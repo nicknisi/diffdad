@@ -4,6 +4,7 @@ import { readConfig, resetConfig, runConfig, showConfig } from './config';
 import { GitHubClient } from './github/client';
 import { cacheNarrative, clearCache, getCachedNarrative } from './narrative/cache';
 import { generateNarrative, resolveAiPath, setCliOverride } from './narrative/engine';
+import { getCachedRecap } from './recap/cache';
 import { createServer } from './server';
 
 const a = {
@@ -49,7 +50,10 @@ const USAGE = `dad - GitHub PRs as narrated stories
 
 Usage:
   dad <pr>                           Review a PR (shorthand for dad review)
-  dad review <pr>                    Review a PR
+  dad review <pr>                    Review a PR. The Recap tab in the UI
+                                     lazily generates an orientation view —
+                                     goal, decisions, blockers, mental model
+                                     — when you first click it.
   dad config                         Configure dad (interactive)
   dad config show                    Print the current config (secrets redacted)
   dad config reset [--yes]           Delete the saved config
@@ -124,6 +128,27 @@ export async function inferRepoFromGit(): Promise<{ owner: string; repo: string 
   }
 }
 
+async function resolvePrArg(prArg: string): Promise<ParsedPr | number> {
+  let parsed = parsePrArg(prArg);
+  if (parsed) return parsed;
+  const trimmed = prArg.trim();
+  if (/^\d+$/.test(trimmed)) {
+    const inferred = await inferRepoFromGit();
+    if (!inferred) {
+      console.error(
+        `error: bare PR number "${trimmed}" requires being inside a git repo with a GitHub "origin" remote`,
+      );
+      return 2;
+    }
+    parsed = { owner: inferred.owner, repo: inferred.repo, number: Number(trimmed) };
+    console.log(`  ${a.dim}Inferred repo from git remote: ${a.cyan}${inferred.owner}/${inferred.repo}${a.reset}`);
+    return parsed;
+  }
+  console.error(`error: could not parse PR argument: ${prArg}`);
+  console.error('expected: https://github.com/owner/repo/pull/123, owner/repo#123, or a bare PR number (e.g. 139)');
+  return 2;
+}
+
 async function reviewCommand(prArg: string | undefined): Promise<number> {
   if (!prArg) {
     console.error('error: missing PR argument');
@@ -131,25 +156,9 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
     return 2;
   }
 
-  let parsed = parsePrArg(prArg);
-  if (!parsed) {
-    const trimmed = prArg.trim();
-    if (/^\d+$/.test(trimmed)) {
-      const inferred = await inferRepoFromGit();
-      if (!inferred) {
-        console.error(
-          `error: bare PR number "${trimmed}" requires being inside a git repo with a GitHub "origin" remote`,
-        );
-        return 2;
-      }
-      parsed = { owner: inferred.owner, repo: inferred.repo, number: Number(trimmed) };
-      console.log(`  ${a.dim}Inferred repo from git remote: ${a.cyan}${inferred.owner}/${inferred.repo}${a.reset}`);
-    } else {
-      console.error(`error: could not parse PR argument: ${prArg}`);
-      console.error('expected: https://github.com/owner/repo/pull/123, owner/repo#123, or a bare PR number (e.g. 139)');
-      return 2;
-    }
-  }
+  const resolved = await resolvePrArg(prArg);
+  if (typeof resolved === 'number') return resolved;
+  const parsed = resolved;
 
   const token = await resolveGitHubToken();
   if (!token) {
@@ -228,6 +237,7 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
 
   const noCache = Bun.argv.includes('--no-cache');
   const cached = noCache ? null : await getCachedNarrative(parsed.owner, parsed.repo, parsed.number, metadata.headSha);
+  const cachedRecap = noCache ? null : await getCachedRecap(parsed.owner, parsed.repo, parsed.number, metadata.headSha);
 
   const ctx = {
     narrative: cached,
@@ -240,6 +250,9 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
     owner: parsed.owner,
     repo: parsed.repo,
     headSha: metadata.headSha,
+    recap: cachedRecap,
+    recapGenerating: false,
+    recapError: null,
   };
 
   const { app, broadcast } = createServer(ctx);

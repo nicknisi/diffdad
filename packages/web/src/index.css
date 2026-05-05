@@ -552,6 +552,59 @@ code {
   }
 }
 
+@keyframes recap-shimmer {
+  0% {
+    background-position: -180% 0;
+  }
+  100% {
+    background-position: 180% 0;
+  }
+}
+
+@keyframes recap-pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 var(--purple-a8);
+  }
+  70% {
+    box-shadow: 0 0 0 8px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+@keyframes recap-phase-in {
+  0% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.recap-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--gray-3) 0%,
+    var(--gray-3) 25%,
+    var(--gray-a4) 50%,
+    var(--gray-3) 75%,
+    var(--gray-3) 100%
+  );
+  background-size: 200% 100%;
+  animation: recap-shimmer 2.4s ease-in-out infinite;
+}
+
+.recap-pulse {
+  animation: recap-pulse-ring 1.6s ease-out infinite;
+}
+
+.recap-phase-in {
+  animation: recap-phase-in 320ms ease-out;
+}
+
 .live-dot {
   animation: live-pulse 2s ease-in-out infinite;
 }
