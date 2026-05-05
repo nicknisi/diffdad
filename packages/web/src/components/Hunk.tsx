@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useReviewStore } from '../state/review-store';
 import type { DiffHunk, PRComment } from '../state/types';
 import { CodeLine } from './CodeLine';
@@ -479,6 +479,7 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight }: Props) {
   const commentRangeStart = useReviewStore((s) => s.commentRangeStart);
   const comments = useReviewStore((s) => s.comments);
   const setOpenLine = useReviewStore((s) => s.setOpenLine);
+  const clearCommentRange = useReviewStore((s) => s.clearCommentRange);
   const repoUrl = useReviewStore((s) => s.repoUrl);
   const headSha = useReviewStore((s) => s.pr?.headSha ?? null);
   const clusterBots = useReviewStore((s) => s.clusterBots);
@@ -486,7 +487,11 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight }: Props) {
 
   // Resolve a multi-line selection to local indices within this hunk.
   // `openLine` and `commentRangeStart` are line keys; we match by file +
-  // hunkIndex to ignore selections in other hunks.
+  // hunkIndex to ignore selections in other hunks. Multi-line comments must
+  // live on a single diff side (LEFT/old or RIGHT/new) — GitHub stores
+  // start_line/line on the same side and old vs new line numbers aren't
+  // comparable. If the user shift-clicks across sides, drop the range and
+  // fall back to a single-line comment at the most recently clicked line.
   const { rangeStartIdx, rangeEndIdx } = useMemo(() => {
     const myPrefix = `${file}:${hunkIndex}:`;
     if (!openLine || !openLine.startsWith(myPrefix)) {
@@ -500,8 +505,27 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight }: Props) {
     if (Number.isNaN(a) || Number.isNaN(b)) {
       return { rangeStartIdx: null, rangeEndIdx: null };
     }
+    const lineA = hunk.lines[a];
+    const lineB = hunk.lines[b];
+    if (!lineA || !lineB) {
+      return { rangeStartIdx: null, rangeEndIdx: null };
+    }
+    const sideOf = (t: typeof lineA.type): 'LEFT' | 'RIGHT' => (t === 'remove' ? 'LEFT' : 'RIGHT');
+    if (sideOf(lineA.type) !== sideOf(lineB.type)) {
+      return { rangeStartIdx: null, rangeEndIdx: null };
+    }
     return { rangeStartIdx: Math.min(a, b), rangeEndIdx: Math.max(a, b) };
-  }, [openLine, commentRangeStart, file, hunkIndex]);
+  }, [openLine, commentRangeStart, file, hunkIndex, hunk.lines]);
+
+  // If the user shift-clicked across sides we silently dropped the range
+  // above. Clear the stale anchor so a subsequent same-side shift-click
+  // starts fresh from the visible openLine, not the now-invisible anchor.
+  useEffect(() => {
+    if (!openLine || !commentRangeStart) return;
+    const myPrefix = `${file}:${hunkIndex}:`;
+    if (!openLine.startsWith(myPrefix) || !commentRangeStart.startsWith(myPrefix)) return;
+    if (rangeStartIdx === null) clearCommentRange();
+  }, [openLine, commentRangeStart, rangeStartIdx, file, hunkIndex, clearCommentRange]);
 
   const rangeStart = hunk.oldStart;
   const rangeEnd = hunk.oldStart + Math.max(hunk.oldCount, 0);

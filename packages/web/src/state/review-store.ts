@@ -86,6 +86,9 @@ type ReviewState = {
    * already set within the same hunk, anchor a range from the current
    * `openLine` to `key`. */
   openCommentAt: (key: string, extend?: boolean) => void;
+  /** Drop the multi-line range anchor without closing the active thread.
+   * Used when a range becomes invalid (e.g. user extended across diff sides). */
+  clearCommentRange: () => void;
   addComment: (comment: PRComment) => void;
   setComments: (comments: PRComment[]) => void;
   addDraft: (draft: DraftComment) => void;
@@ -259,6 +262,8 @@ export const useReviewStore = create<ReviewState>((set) => ({
     }),
 
   setOpenLine: (key) => set({ openLine: key, commentRangeStart: null }),
+
+  clearCommentRange: () => set({ commentRangeStart: null }),
 
   openCommentAt: (key, extend = false) =>
     set((state) => {

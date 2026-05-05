@@ -86,7 +86,7 @@ function findHunkForConcern(files: DiffFile[], file: string, line: number) {
   return null;
 }
 
-function ConcernRow({ concern, onDismiss }: { concern: Concern; onDismiss: () => void }) {
+function ConcernRow({ concern, onDismiss, dimmed }: { concern: Concern; onDismiss: () => void; dimmed?: boolean }) {
   const files = useReviewStore((s) => s.files);
   const addDraft = useReviewStore((s) => s.addDraft);
   const drafts = useReviewStore((s) => s.drafts);
@@ -166,8 +166,12 @@ function ConcernRow({ concern, onDismiss }: { concern: Concern; onDismiss: () =>
 
   return (
     <li
-      className="flex flex-col gap-1.5 rounded-[8px] px-3.5 py-3"
-      style={{ background: 'var(--bg-panel)', boxShadow: 'inset 0 0 0 1px var(--gray-a5)' }}
+      className="flex flex-col gap-1.5 rounded-[8px] px-3.5 py-3 transition-opacity"
+      style={{
+        background: 'var(--bg-panel)',
+        boxShadow: 'inset 0 0 0 1px var(--gray-a5)',
+        opacity: dimmed ? 0.45 : 1,
+      }}
     >
       <div className="flex flex-wrap items-center gap-2">
         <CategoryBadge category={concern.category} />
@@ -343,11 +347,7 @@ export function ConcernsList() {
         {renderList.map((concern) => {
           const key = concernKey(concern);
           const isDismissed = dismissed.has(key);
-          return (
-            <div key={key} className="transition-opacity" style={{ opacity: isDismissed ? 0.45 : 1 }}>
-              <ConcernRow concern={concern} onDismiss={() => dismiss(concern)} />
-            </div>
-          );
+          return <ConcernRow key={key} concern={concern} onDismiss={() => dismiss(concern)} dimmed={isDismissed} />;
         })}
       </ul>
     </section>
