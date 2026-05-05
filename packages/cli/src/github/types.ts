@@ -27,6 +27,8 @@ export type PRComment = {
   path?: string;
   line?: number;
   side?: 'LEFT' | 'RIGHT';
+  startLine?: number;
+  startSide?: 'LEFT' | 'RIGHT';
   inReplyToId?: number;
   diffHunk?: string;
 };

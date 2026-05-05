@@ -10,7 +10,7 @@ export function useScrollTracker() {
 
     function onScroll() {
       if (!narrative) return;
-      const offset = window.scrollY + 120;
+      const offset = window.scrollY + 180;
       const discussionEl = document.querySelector('[data-chid="discussion"]');
       if (discussionEl && (discussionEl as HTMLElement).offsetTop <= offset) {
         setActiveChapter('discussion');

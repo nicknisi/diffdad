@@ -43,6 +43,16 @@ type ReviewState = {
   activeChapterId: string | null;
   drafts: DraftComment[];
   openLine: string | null;
+  /** Anchor of an in-progress multi-line selection. `lineKey` of the first
+   * line clicked; `openLine` is the most recently shift-clicked line. The
+   * effective range is min..max of these two by line index within the same
+   * hunk. Null when the active comment is single-line. */
+  commentRangeStart: string | null;
+  /** Live state of a click-and-drag from a `+` gutter button. While set, the
+   * range between `startKey` and `endKey` is highlighted but the comment
+   * composer is NOT opened — that happens on mouseup, when the drag is
+   * committed to `openLine` / `commentRangeStart`. */
+  commentDrag: { startKey: string; endKey: string } | null;
   theme: Theme;
   accent: AccentId;
   density: Density;
@@ -52,6 +62,7 @@ type ReviewState = {
   liveEvents: LiveEvent[];
   lastEventAt: number;
   shortcutsHelpOpen: boolean;
+  submitOpen: boolean;
   storyStructure: StoryStructure;
   visualStyle: VisualStyle;
   layoutMode: LayoutMode;
@@ -76,6 +87,22 @@ type ReviewState = {
   setActiveChapter: (id: string) => void;
   toggleReviewed: (idx: number) => void;
   setOpenLine: (key: string | null) => void;
+  /** Open a comment thread on `key`. When `extend` is true and `openLine` is
+   * already set within the same hunk, anchor a range from the current
+   * `openLine` to `key`. */
+  openCommentAt: (key: string, extend?: boolean) => void;
+  /** Drop the multi-line range anchor without closing the active thread.
+   * Used when a range becomes invalid (e.g. user extended across diff sides). */
+  clearCommentRange: () => void;
+  /** Begin a click-and-drag selection. */
+  startCommentDrag: (key: string) => void;
+  /** Update the drag end as the mouse moves. */
+  updateCommentDrag: (key: string) => void;
+  /** Commit the current drag: a same-key drag becomes a single-line click;
+   * a cross-key drag becomes a multi-line range with the composer opened. */
+  endCommentDrag: () => void;
+  /** Discard the in-progress drag without opening a composer. */
+  cancelCommentDrag: () => void;
   addComment: (comment: PRComment) => void;
   setComments: (comments: PRComment[]) => void;
   addDraft: (draft: DraftComment) => void;
@@ -92,6 +119,7 @@ type ReviewState = {
   setCheckRuns: (checkRuns: CheckRun[]) => void;
   setReviews: (reviews: PRReview[]) => void;
   setShortcutsHelpOpen: (open: boolean) => void;
+  setSubmitOpen: (open: boolean) => void;
   setStoryStructure: (s: StoryStructure) => void;
   setVisualStyle: (s: VisualStyle) => void;
   setLayoutMode: (m: LayoutMode) => void;
@@ -136,14 +164,54 @@ function loadDrafts(prNumber: number): DraftComment[] {
   return [];
 }
 
-type InlineComment = { path: string; line: number; body: string; side?: 'LEFT' | 'RIGHT' };
+type InlineComment = {
+  path: string;
+  line: number;
+  body: string;
+  side?: 'LEFT' | 'RIGHT';
+  startLine?: number;
+  startSide?: 'LEFT' | 'RIGHT';
+};
+
+/** Server-streamed narratives can arrive with chapters/sections/etc. still
+ * filling in (especially during live regeneration). Render code assumes the
+ * usual array fields exist, so normalize at the store boundary — if we don't
+ * a `.map` or `.filter` on `undefined` mid-stream will crash the React tree
+ * and the user sees a blank page. */
+function sanitizeNarrative(n: NarrativeResponse): NarrativeResponse {
+  return {
+    ...n,
+    chapters: Array.isArray(n.chapters)
+      ? n.chapters.map((ch) => ({
+          ...ch,
+          title: typeof ch?.title === 'string' ? ch.title : '',
+          summary: typeof ch?.summary === 'string' ? ch.summary : '',
+          whyMatters: typeof ch?.whyMatters === 'string' ? ch.whyMatters : '',
+          risk: ch?.risk === 'high' || ch?.risk === 'medium' ? ch.risk : 'low',
+          sections: Array.isArray(ch?.sections) ? ch.sections : [],
+          callouts: Array.isArray(ch?.callouts) ? ch.callouts : undefined,
+          reshow: Array.isArray(ch?.reshow) ? ch.reshow : undefined,
+        }))
+      : [],
+    concerns: Array.isArray(n.concerns) ? n.concerns : [],
+    readingPlan: Array.isArray(n.readingPlan) ? n.readingPlan : [],
+    missing: Array.isArray(n.missing) ? n.missing : undefined,
+  };
+}
 
 function isSubmittableDraft(d: DraftComment): d is DraftComment & { path: string; line: number } {
   return !!d.path && d.line !== undefined;
 }
 
 export function pendingReviewComments(drafts: DraftComment[]): InlineComment[] {
-  return drafts.filter(isSubmittableDraft).map((d) => ({ path: d.path, line: d.line, body: d.body, side: d.side }));
+  return drafts.filter(isSubmittableDraft).map((d) => ({
+    path: d.path,
+    line: d.line,
+    body: d.body,
+    side: d.side,
+    startLine: d.startLine,
+    startSide: d.startSide,
+  }));
 }
 
 export const useReviewStore = create<ReviewState>((set) => ({
@@ -158,6 +226,8 @@ export const useReviewStore = create<ReviewState>((set) => ({
   activeChapterId: null,
   drafts: [],
   openLine: null,
+  commentRangeStart: null,
+  commentDrag: null,
   theme: (localStorage.getItem('diffdad.theme') as Theme) || 'auto',
   accent: (localStorage.getItem('diffdad.accent') as AccentId) || 'classic',
   density: 'normal',
@@ -167,6 +237,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
   liveEvents: [],
   lastEventAt: Date.now(),
   shortcutsHelpOpen: false,
+  submitOpen: false,
   storyStructure: 'chapters',
   visualStyle: 'stripe',
   layoutMode: 'toc',
@@ -179,6 +250,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
   narrationOverrides: {} as Record<string, string>,
 
   setData: (pr, narrative, files, comments, repoUrl = null, checkRuns = [], config = null, reviews = []) => {
+    const safeNarrative = sanitizeNarrative(narrative);
     const storageKey = `diffdad.reviewed.${pr.number}`;
     let saved: Record<string, ChapterState> = {};
     try {
@@ -186,13 +258,13 @@ export const useReviewStore = create<ReviewState>((set) => ({
       if (raw) saved = JSON.parse(raw);
     } catch {}
     const chapterStates: Record<string, ChapterState> = {};
-    narrative.chapters.forEach((_, idx) => {
+    safeNarrative.chapters.forEach((_, idx) => {
       const key = `ch-${idx}`;
       chapterStates[key] = saved[key] === 'reviewed' ? 'reviewed' : 'reading';
     });
     const next: Partial<ReviewState> = {
       pr,
-      narrative,
+      narrative: safeNarrative,
       files,
       comments,
       checkRuns,
@@ -200,7 +272,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
       repoUrl,
       chapterStates,
       drafts: loadDrafts(pr.number),
-      activeChapterId: narrative.chapters.length > 0 ? 'ch-0' : null,
+      activeChapterId: safeNarrative.chapters.length > 0 ? 'ch-0' : null,
       chapterDensity: {},
     };
     if (config) {
@@ -231,7 +303,45 @@ export const useReviewStore = create<ReviewState>((set) => ({
       return { chapterStates: updated };
     }),
 
-  setOpenLine: (key) => set({ openLine: key }),
+  setOpenLine: (key) => set({ openLine: key, commentRangeStart: null }),
+
+  clearCommentRange: () => set({ commentRangeStart: null }),
+
+  startCommentDrag: (key) => set({ commentDrag: { startKey: key, endKey: key } }),
+
+  updateCommentDrag: (key) =>
+    set((state) => {
+      if (!state.commentDrag) return state;
+      if (state.commentDrag.endKey === key) return state;
+      return { commentDrag: { startKey: state.commentDrag.startKey, endKey: key } };
+    }),
+
+  endCommentDrag: () =>
+    set((state) => {
+      const drag = state.commentDrag;
+      if (!drag) return state;
+      if (drag.startKey === drag.endKey) {
+        return { commentDrag: null, openLine: drag.startKey, commentRangeStart: null };
+      }
+      return { commentDrag: null, openLine: drag.endKey, commentRangeStart: drag.startKey };
+    }),
+
+  cancelCommentDrag: () => set({ commentDrag: null }),
+
+  openCommentAt: (key, extend = false) =>
+    set((state) => {
+      // Only extend within the same hunk. lineKey format: `${file}:${hunkIndex}:${lineIdx}`.
+      function hunkPrefix(k: string): string {
+        const lastColon = k.lastIndexOf(':');
+        return lastColon === -1 ? k : k.slice(0, lastColon);
+      }
+      if (extend && state.openLine && state.openLine !== key && hunkPrefix(state.openLine) === hunkPrefix(key)) {
+        // Anchor the range at whichever side the user already had open.
+        const anchor = state.commentRangeStart ?? state.openLine;
+        return { openLine: key, commentRangeStart: anchor };
+      }
+      return { openLine: key, commentRangeStart: null };
+    }),
 
   addComment: (comment) =>
     set((state) => {
@@ -297,6 +407,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
   setReviews: (reviews) => set({ reviews }),
 
   setShortcutsHelpOpen: (shortcutsHelpOpen) => set({ shortcutsHelpOpen }),
+  setSubmitOpen: (submitOpen) => set({ submitOpen }),
 
   setStoryStructure: (storyStructure) => set({ storyStructure }),
   setVisualStyle: (visualStyle) => set({ visualStyle }),
@@ -311,18 +422,19 @@ export const useReviewStore = create<ReviewState>((set) => ({
   setPr: (pr) => set({ pr }),
   applyPartialNarrative: (pr, narrative, files, comments) =>
     set((state) => {
-      const next: Partial<ReviewState> = { pr, narrative };
+      const safeNarrative = sanitizeNarrative(narrative);
+      const next: Partial<ReviewState> = { pr, narrative: safeNarrative };
       if (files) next.files = files;
       if (comments) next.comments = comments;
       // Initialize chapter states for any newly streamed chapters without
       // clobbering ones the user has already marked reviewed.
       const chapterStates: Record<string, ChapterState> = { ...state.chapterStates };
-      narrative.chapters.forEach((_, idx) => {
+      safeNarrative.chapters.forEach((_, idx) => {
         const key = `ch-${idx}`;
         if (!chapterStates[key]) chapterStates[key] = 'reading';
       });
       next.chapterStates = chapterStates;
-      if (state.activeChapterId === null && narrative.chapters.length > 0) {
+      if (state.activeChapterId === null && safeNarrative.chapters.length > 0) {
         next.activeChapterId = 'ch-0';
       }
       return next;

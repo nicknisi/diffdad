@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { pendingReviewComments, useReviewStore } from '../state/review-store';
+import { IconSpark } from './Icons';
 
 type Resolution = 'comment' | 'approve' | 'request_changes';
 
@@ -30,9 +31,48 @@ const OPTIONS: { value: Resolution; label: string; desc: string }[] = [
 export function SubmitDialog({ open, onClose, onSubmit }: Props) {
   const [resolution, setResolution] = useState<Resolution>('comment');
   const [summary, setSummary] = useState('');
+  const [drafting, setDrafting] = useState(false);
+  const [draftError, setDraftError] = useState<string | null>(null);
   const draftCount = useReviewStore((s) => pendingReviewComments(s.drafts).length);
+  const drafts = useReviewStore((s) => s.drafts);
+  const chapterStates = useReviewStore((s) => s.chapterStates);
+  const narrative = useReviewStore((s) => s.narrative);
 
   if (!open) return null;
+
+  async function autoDraftSummary() {
+    if (drafting) return;
+    setDrafting(true);
+    setDraftError(null);
+    try {
+      const reviewedChapters = narrative
+        ? narrative.chapters.map((_, idx) => idx).filter((idx) => chapterStates[`ch-${idx}`] === 'reviewed')
+        : [];
+      const pendingComments = drafts.map((d) => ({ path: d.path, line: d.line, body: d.body }));
+      const trimmedDraft = summary.trim();
+      const res = await fetch('/api/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'summarize',
+          resolution,
+          reviewedChapters,
+          pendingComments,
+          userDraft: trimmedDraft || undefined,
+        }),
+      });
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(err.error ?? `HTTP ${res.status}`);
+      }
+      const data = (await res.json()) as { text: string };
+      setSummary(data.text);
+    } catch (err) {
+      setDraftError(err instanceof Error ? err.message : 'Failed to draft summary');
+    } finally {
+      setDrafting(false);
+    }
+  }
 
   const submitLabel =
     resolution === 'approve' ? 'Approve' : resolution === 'request_changes' ? 'Request changes' : 'Submit comment';
@@ -103,19 +143,55 @@ export function SubmitDialog({ open, onClose, onSubmit }: Props) {
             );
           })}
         </div>
-        <textarea
-          value={summary}
-          onChange={(e) => setSummary(e.target.value)}
-          placeholder="Leave a summary comment (optional)…"
-          className="block w-full resize-y px-3 py-2.5 text-[13.5px] leading-[19px] text-[var(--fg-1)] outline-none"
+        <div
+          className="relative"
           style={{
-            minHeight: 80,
-            border: 0,
             borderRadius: 8,
             boxShadow: 'inset 0 0 0 1px var(--gray-a5)',
-            background: 'transparent',
           }}
-        />
+        >
+          <textarea
+            value={summary}
+            onChange={(e) => setSummary(e.target.value)}
+            placeholder="Leave a summary comment (optional)…"
+            disabled={drafting}
+            className="block w-full resize-y px-3 py-2.5 pr-3 pb-9 text-[13.5px] leading-[19px] text-[var(--fg-1)] outline-none disabled:opacity-60"
+            style={{
+              minHeight: 96,
+              border: 0,
+              borderRadius: 8,
+              background: 'transparent',
+            }}
+          />
+          <div className="absolute bottom-1.5 left-1.5 right-1.5 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => void autoDraftSummary()}
+              disabled={drafting}
+              className="inline-flex items-center gap-1 rounded-[5px] px-2 py-[3px] text-[11.5px] font-medium hover:bg-[var(--gray-a3)] disabled:cursor-not-allowed disabled:opacity-60"
+              style={{ color: 'var(--brand)' }}
+              title={
+                summary.trim()
+                  ? 'Polish the text you wrote, keeping your voice and points'
+                  : 'Draft a summary from your reviewed chapters and inline comments'
+              }
+            >
+              <IconSpark className="h-[11px] w-[11px]" />
+              {drafting
+                ? summary.trim()
+                  ? 'Polishing…'
+                  : 'Drafting…'
+                : summary.trim()
+                  ? 'Polish my draft'
+                  : 'Draft with AI'}
+            </button>
+            {draftError && (
+              <span className="text-[11px] text-red-600 dark:text-red-400" title={draftError}>
+                {draftError.length > 60 ? `${draftError.slice(0, 60)}…` : draftError}
+              </span>
+            )}
+          </div>
+        </div>
         <div className="mt-3.5 flex justify-end gap-2">
           <button
             type="button"

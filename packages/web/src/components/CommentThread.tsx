@@ -10,6 +10,8 @@ type Props = {
   path?: string;
   line?: number;
   side?: 'LEFT' | 'RIGHT';
+  startLine?: number;
+  startSide?: 'LEFT' | 'RIGHT';
   chapterIndex?: number;
   inReplyToId?: number;
   onClose?: () => void;
@@ -59,7 +61,18 @@ function draftKeyFor(path?: string, line?: number, chapterIndex?: number): strin
   return null;
 }
 
-export function CommentThread({ comments, path, line, side, chapterIndex, inReplyToId, onClose, autoFocus }: Props) {
+export function CommentThread({
+  comments,
+  path,
+  line,
+  side,
+  startLine,
+  startSide,
+  chapterIndex,
+  inReplyToId,
+  onClose,
+  autoFocus,
+}: Props) {
   const { postComment } = useComments();
   const drafts = useReviewStore((s) => s.drafts);
   const addDraft = useReviewStore((s) => s.addDraft);
@@ -135,6 +148,8 @@ export function CommentThread({ comments, path, line, side, chapterIndex, inRepl
       path,
       line,
       side,
+      startLine,
+      startSide,
       chapterIndex,
     });
     setDraftSavedAt(Date.now());
@@ -155,7 +170,7 @@ export function CommentThread({ comments, path, line, side, chapterIndex, inRepl
     setSubmitting(true);
     setError(null);
     try {
-      await postComment(trimmed, { path, line, side, inReplyToId: replyTarget });
+      await postComment(trimmed, { path, line, side, startLine, startSide, inReplyToId: replyTarget });
       setBody('');
       clearDraftForKey();
       onClose?.();
@@ -188,6 +203,17 @@ export function CommentThread({ comments, path, line, side, chapterIndex, inRepl
         );
       })}
       <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-panel)] p-2">
+        {startLine !== undefined && line !== undefined && startLine !== line && (
+          <div
+            className="mb-2 inline-flex items-center gap-1.5 rounded-[4px] px-2 py-0.5 font-mono text-[11px]"
+            style={{ background: 'var(--purple-3)', color: 'var(--purple-11)' }}
+          >
+            <span>
+              L{Math.min(startLine, line)}–L{Math.max(startLine, line)}
+            </span>
+            <span className="font-sans text-[10.5px] uppercase tracking-[0.05em]">multi-line</span>
+          </div>
+        )}
         {hasConflict && (
           <div className="mb-2 flex items-center justify-between gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200">
             <span>

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useReviewStore } from '../state/review-store';
 import type { DiffHunk, PRComment } from '../state/types';
 import { CodeLine } from './CodeLine';
@@ -22,6 +22,8 @@ function CollapsibleThread({
   file,
   lineNumber,
   side,
+  startLineNumber,
+  startSide,
   isNewThread,
   onClose,
 }: {
@@ -29,6 +31,8 @@ function CollapsibleThread({
   file: string;
   lineNumber: number | undefined;
   side: 'LEFT' | 'RIGHT';
+  startLineNumber?: number;
+  startSide?: 'LEFT' | 'RIGHT';
   isNewThread: boolean;
   onClose: () => void;
 }) {
@@ -72,6 +76,8 @@ function CollapsibleThread({
         path={file}
         line={lineNumber}
         side={side}
+        startLine={startLineNumber}
+        startSide={startSide}
         onClose={onClose}
         autoFocus={isNewThread}
       />
@@ -79,20 +85,24 @@ function CollapsibleThread({
   );
 }
 
-function BotCluster({ comments }: { comments: PRComment[] }) {
+type BotThread = { root: PRComment; replies: PRComment[] };
+
+function BotCluster({ threads }: { threads: BotThread[] }) {
   const [expanded, setExpanded] = useState(false);
+
+  const allComments = useMemo(() => threads.flatMap((t) => [t.root, ...t.replies]), [threads]);
 
   const uniqueAuthors = useMemo(() => {
     const seen = new Set<string>();
     const ordered: string[] = [];
-    for (const c of comments) {
+    for (const c of threads.map((t) => t.root)) {
       if (!seen.has(c.author)) {
         seen.add(c.author);
         ordered.push(c.author);
       }
     }
     return ordered;
-  }, [comments]);
+  }, [threads]);
 
   const avatarStack = uniqueAuthors.slice(0, 3);
   const displayNames = uniqueAuthors.map((a) => getAuthorInfo(a).displayName);
@@ -100,7 +110,8 @@ function BotCluster({ comments }: { comments: PRComment[] }) {
     displayNames.length <= 2
       ? displayNames.join(', ')
       : `${displayNames.slice(0, 2).join(', ')} +${displayNames.length - 2}`;
-  const count = comments.length;
+  const count = threads.length;
+  const replyCount = allComments.length - count;
 
   return (
     <div
@@ -138,6 +149,11 @@ function BotCluster({ comments }: { comments: PRComment[] }) {
         <span className="flex flex-col text-[13px] leading-tight">
           <b className="font-medium">
             {count} bot {count === 1 ? 'suggestion' : 'suggestions'}
+            {replyCount > 0 && (
+              <span className="ml-1.5 font-normal text-[var(--fg-3)]">
+                · {replyCount} {replyCount === 1 ? 'reply' : 'replies'}
+              </span>
+            )}
           </b>
           <span className="text-[11.5px] font-normal text-[var(--fg-3)]">from {namesLabel}</span>
         </span>
@@ -159,12 +175,12 @@ function BotCluster({ comments }: { comments: PRComment[] }) {
       </button>
       {expanded && (
         <div className="border-t border-dashed bg-[var(--bg-panel)] py-1.5" style={{ borderColor: 'var(--purple-a5)' }}>
-          {comments.map((c) => (
-            <div key={c.id} className="grid grid-cols-[56px_minmax(0,1fr)] items-start gap-2.5 px-3 py-1.5">
+          {threads.map((t) => (
+            <div key={t.root.id} className="grid grid-cols-[56px_minmax(0,1fr)] items-start gap-2.5 px-3 py-1.5">
               <div className="pt-1.5 text-right font-mono text-[11.5px] font-medium" style={{ color: 'var(--fg-3)' }}>
-                L{c.line ?? ''}
+                L{t.root.line ?? ''}
               </div>
-              <Comment comment={c} />
+              <Comment comment={t.root} replies={t.replies} />
             </div>
           ))}
         </div>
@@ -269,7 +285,10 @@ function HunkLines({
   comments,
   openLine,
   setOpenLine,
-  clusterBots,
+  clusteredIds,
+  rangeStartIdx,
+  rangeEndIdx,
+  isDragging,
 }: {
   file: string;
   hunk: DiffHunk;
@@ -279,7 +298,10 @@ function HunkLines({
   comments: PRComment[];
   openLine: string | null;
   setOpenLine: (key: string | null) => void;
-  clusterBots: boolean;
+  clusteredIds: Set<number>;
+  rangeStartIdx: number | null;
+  rangeEndIdx: number | null;
+  isDragging: boolean;
 }) {
   const normFile = normalizePath(file);
 
@@ -293,7 +315,7 @@ function HunkLines({
     for (const c of comments) {
       if (normalizePath(c.path) !== normFile) continue;
       if (c.line === undefined) continue;
-      if (clusterBots && c.author.endsWith('[bot]')) continue;
+      if (clusteredIds.has(c.id)) continue;
       const isLeft = c.side === 'LEFT';
       let matchIdx = -1;
       for (let i = 0; i < hunk.lines.length; i++) {
@@ -312,9 +334,37 @@ function HunkLines({
       if (matchIdx !== -1) map.set(c.id, matchIdx);
     }
     return map;
-  }, [hunk.lines, comments, normFile, clusterBots]);
+  }, [hunk.lines, comments, normFile, clusteredIds]);
 
-  const commentLineIndices = useMemo(() => new Set(commentLineMap.values()), [commentLineMap]);
+  // Indices covered by an existing multi-line comment (start..end). Used to
+  // pin those lines in the fold builder and to show a subtle left-border tint
+  // so reviewers see the original range without needing to expand context.
+  const existingMultiLineRanges = useMemo(() => {
+    const set = new Set<number>();
+    for (const c of comments) {
+      if (normalizePath(c.path) !== normFile) continue;
+      if (c.startLine === undefined || c.line === undefined) continue;
+      if (c.startLine === c.line) continue;
+      const lo = Math.min(c.startLine, c.line);
+      const hi = Math.max(c.startLine, c.line);
+      const onLeft = c.side === 'LEFT';
+      for (let i = 0; i < hunk.lines.length; i++) {
+        const ln = hunk.lines[i]!.lineNumber;
+        const num = onLeft ? ln.old : ln.new;
+        if (num !== undefined && num >= lo && num <= hi) set.add(i);
+      }
+    }
+    return set;
+  }, [comments, hunk.lines, normFile]);
+
+  const commentLineIndices = useMemo(() => {
+    const set = new Set(commentLineMap.values());
+    if (rangeStartIdx !== null && rangeEndIdx !== null) {
+      for (let i = rangeStartIdx; i <= rangeEndIdx; i++) set.add(i);
+    }
+    for (const i of existingMultiLineRanges) set.add(i);
+    return set;
+  }, [commentLineMap, rangeStartIdx, rangeEndIdx, existingMultiLineRanges]);
 
   const openLineKeys = useMemo(() => {
     const set = new Set<string>();
@@ -342,10 +392,41 @@ function HunkLines({
       const line = hunk.lines[i]!;
       const lineKey = `${file}:${hunkIndex}:${i}`;
       const lineComments: PRComment[] = comments.filter((c) => commentLineMap.get(c.id) === i);
-      const hasThread = openLine === lineKey || lineComments.length > 0;
+      const inSelection = rangeStartIdx !== null && rangeEndIdx !== null && i >= rangeStartIdx && i <= rangeEndIdx;
+      // Hide the in-progress composer while a click-and-drag is live; we only
+      // want the highlight to track the cursor, not a flickering textarea.
+      const isOpenLine = openLine === lineKey && !isDragging;
+      // The thread anchors wherever the user just clicked (`openLine`). When a
+      // multi-line range exists, the OTHER end of the range becomes the
+      // `startLine` so GitHub gets a valid (start_line, line) pair.
+      const oppositeIdx =
+        isOpenLine && rangeStartIdx !== null && rangeEndIdx !== null
+          ? i === rangeEndIdx
+            ? rangeStartIdx
+            : rangeEndIdx
+          : null;
+      const oppositeLine = oppositeIdx !== null ? hunk.lines[oppositeIdx] : undefined;
+      const startLineNumber = oppositeLine
+        ? oppositeLine.type === 'remove'
+          ? oppositeLine.lineNumber.old
+          : oppositeLine.lineNumber.new
+        : undefined;
+      const startSideForThread = oppositeLine
+        ? oppositeLine.type === 'remove'
+          ? ('LEFT' as const)
+          : ('RIGHT' as const)
+        : undefined;
+      const hasThread = isOpenLine || lineComments.length > 0;
       return (
         <div key={lineKey}>
-          <CodeLine line={line} lineKey={lineKey} lang={lang} dimmed={dimmed} />
+          <CodeLine
+            line={line}
+            lineKey={lineKey}
+            lang={lang}
+            dimmed={dimmed}
+            inSelection={inSelection}
+            inExistingRange={existingMultiLineRanges.has(i)}
+          />
           {hasThread && (
             <div className="sticky left-0" style={{ width: '100cqw' }}>
               <CollapsibleThread
@@ -353,6 +434,8 @@ function HunkLines({
                 file={file}
                 lineNumber={line.type === 'remove' ? line.lineNumber.old : line.lineNumber.new}
                 side={line.type === 'remove' ? 'LEFT' : 'RIGHT'}
+                startLineNumber={startLineNumber}
+                startSide={startSideForThread}
                 isNewThread={openLine === lineKey && lineComments.length === 0}
                 onClose={() => (openLine === lineKey ? setOpenLine(null) : undefined)}
               />
@@ -361,7 +444,20 @@ function HunkLines({
         </div>
       );
     },
-    [hunk.lines, file, hunkIndex, comments, commentLineMap, openLine, setOpenLine, lang],
+    [
+      hunk.lines,
+      file,
+      hunkIndex,
+      comments,
+      commentLineMap,
+      openLine,
+      setOpenLine,
+      lang,
+      rangeStartIdx,
+      rangeEndIdx,
+      isDragging,
+      existingMultiLineRanges,
+    ],
   );
 
   return (
@@ -385,12 +481,74 @@ function HunkLines({
 
 export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight }: Props) {
   const openLine = useReviewStore((s) => s.openLine);
+  const commentRangeStart = useReviewStore((s) => s.commentRangeStart);
+  const commentDrag = useReviewStore((s) => s.commentDrag);
   const comments = useReviewStore((s) => s.comments);
   const setOpenLine = useReviewStore((s) => s.setOpenLine);
+  const clearCommentRange = useReviewStore((s) => s.clearCommentRange);
   const repoUrl = useReviewStore((s) => s.repoUrl);
   const headSha = useReviewStore((s) => s.pr?.headSha ?? null);
   const clusterBots = useReviewStore((s) => s.clusterBots);
   const lang = guessLang(file);
+
+  // Resolve a multi-line selection to local indices within this hunk. While
+  // a click-and-drag is in flight (`commentDrag` set), the live drag wins so
+  // the range highlight follows the cursor without prematurely opening the
+  // composer. Otherwise we read from `openLine` / `commentRangeStart` which
+  // are committed state. Multi-line comments must live on a single diff
+  // side — old and new line numbers are not comparable — so cross-side
+  // ranges are dropped to a single-line comment at the active line.
+  const { rangeStartIdx, rangeEndIdx, isDragging } = useMemo(() => {
+    const myPrefix = `${file}:${hunkIndex}:`;
+    let aKey: string | null = null;
+    let bKey: string | null = null;
+    let dragging = false;
+    if (commentDrag) {
+      aKey = commentDrag.endKey;
+      bKey = commentDrag.startKey;
+      dragging = true;
+    } else {
+      aKey = openLine;
+      bKey = commentRangeStart;
+    }
+    if (!aKey || !aKey.startsWith(myPrefix)) {
+      return { rangeStartIdx: null, rangeEndIdx: null, isDragging: dragging };
+    }
+    if (!bKey || !bKey.startsWith(myPrefix)) {
+      return { rangeStartIdx: null, rangeEndIdx: null, isDragging: dragging };
+    }
+    const a = Number(aKey.slice(myPrefix.length));
+    const b = Number(bKey.slice(myPrefix.length));
+    if (Number.isNaN(a) || Number.isNaN(b)) {
+      return { rangeStartIdx: null, rangeEndIdx: null, isDragging: dragging };
+    }
+    if (a === b) {
+      return { rangeStartIdx: null, rangeEndIdx: null, isDragging: dragging };
+    }
+    const lineA = hunk.lines[a];
+    const lineB = hunk.lines[b];
+    if (!lineA || !lineB) {
+      return { rangeStartIdx: null, rangeEndIdx: null, isDragging: dragging };
+    }
+    const sideOf = (t: typeof lineA.type): 'LEFT' | 'RIGHT' => (t === 'remove' ? 'LEFT' : 'RIGHT');
+    if (sideOf(lineA.type) !== sideOf(lineB.type)) {
+      return { rangeStartIdx: null, rangeEndIdx: null, isDragging: dragging };
+    }
+    return { rangeStartIdx: Math.min(a, b), rangeEndIdx: Math.max(a, b), isDragging: dragging };
+  }, [openLine, commentRangeStart, commentDrag, file, hunkIndex, hunk.lines]);
+
+  // If a shift-click extended a range across diff sides we silently dropped
+  // it above. Clear the stale anchor so the next same-side shift-click
+  // starts fresh from the visible openLine. Skipped while a drag is in
+  // flight — the live drag derives its own range and we'd otherwise clobber
+  // committed state mid-drag.
+  useEffect(() => {
+    if (commentDrag) return;
+    if (!openLine || !commentRangeStart) return;
+    const myPrefix = `${file}:${hunkIndex}:`;
+    if (!openLine.startsWith(myPrefix) || !commentRangeStart.startsWith(myPrefix)) return;
+    if (rangeStartIdx === null) clearCommentRange();
+  }, [openLine, commentRangeStart, commentDrag, rangeStartIdx, file, hunkIndex, clearCommentRange]);
 
   const rangeStart = hunk.oldStart;
   const rangeEnd = hunk.oldStart + Math.max(hunk.oldCount, 0);
@@ -399,16 +557,64 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight }: Props) {
   const hunkStart = hunk.newStart;
   const hunkEnd = hunk.newStart + Math.max(hunk.newCount - 1, 0);
 
-  // Bot comments scoped to this hunk's line range and file
-  const botComments = useMemo(() => {
+  // Bot threads scoped to this hunk's line range and file. A "thread" is a
+  // bot's root comment plus any human/bot replies that descend from it. Without
+  // gathering replies, a human reply to a bot comment would render as a
+  // disconnected thread on the same line — visually orphaned from the bot
+  // suggestion that prompted it.
+  const { botThreads, clusteredIds } = useMemo(() => {
     const normFile = normalizePath(file);
-    return comments.filter((c) => {
+    const inHunk = comments.filter((c) => {
       if (normalizePath(c.path) !== normFile) return false;
-      if (!c.author.endsWith('[bot]')) return false;
       if (c.line === undefined) return false;
       return c.line >= hunkStart && c.line <= hunkEnd;
     });
-  }, [comments, file, hunkStart, hunkEnd]);
+
+    if (!clusterBots) {
+      return { botThreads: [] as BotThread[], clusteredIds: new Set<number>() };
+    }
+
+    const inHunkById = new Map(inHunk.map((c) => [c.id, c]));
+    const botRoots = inHunk.filter((c) => c.inReplyToId == null && c.author.endsWith('[bot]'));
+    const repliesByParent = new Map<number, PRComment[]>();
+    for (const c of inHunk) {
+      if (c.inReplyToId != null && inHunkById.has(c.inReplyToId)) {
+        const list = repliesByParent.get(c.inReplyToId) ?? [];
+        list.push(c);
+        repliesByParent.set(c.inReplyToId, list);
+      }
+    }
+
+    const cluster = new Set<number>();
+    const threads: BotThread[] = botRoots.map((root) => {
+      const replies: PRComment[] = [];
+      const stack = [root.id];
+      while (stack.length > 0) {
+        const parentId = stack.pop()!;
+        const children = repliesByParent.get(parentId) ?? [];
+        for (const child of children) {
+          replies.push(child);
+          cluster.add(child.id);
+          stack.push(child.id);
+        }
+      }
+      cluster.add(root.id);
+      replies.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      return { root, replies };
+    });
+
+    // Also pull in any orphan reply (parent missing from this hunk) authored by
+    // a bot, so they aren't stranded.
+    for (const c of inHunk) {
+      if (cluster.has(c.id)) continue;
+      if (c.inReplyToId != null && !inHunkById.has(c.inReplyToId) && c.author.endsWith('[bot]')) {
+        threads.push({ root: c, replies: [] });
+        cluster.add(c.id);
+      }
+    }
+
+    return { botThreads: threads, clusteredIds: cluster };
+  }, [comments, file, hunkStart, hunkEnd, clusterBots]);
 
   const githubUrl =
     repoUrl && headSha
@@ -474,7 +680,7 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight }: Props) {
           )}
         </div>
       </div>
-      {clusterBots && botComments.length > 0 && <BotCluster comments={botComments} />}
+      {botThreads.length > 0 && <BotCluster threads={botThreads} />}
       <div className="overflow-x-auto" style={{ containerType: 'inline-size' }}>
         <HunkLines
           file={file}
@@ -485,7 +691,10 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight }: Props) {
           comments={comments}
           openLine={openLine}
           setOpenLine={setOpenLine}
-          clusterBots={clusterBots}
+          clusteredIds={clusteredIds}
+          rangeStartIdx={rangeStartIdx}
+          rangeEndIdx={rangeEndIdx}
+          isDragging={isDragging}
         />
       </div>
     </div>

@@ -201,9 +201,28 @@ export function Comment({ comment, replies = [], isReply = false, showFilePath =
             style={{ background: 'var(--gray-3)', color: 'var(--fg-3)' }}
           >
             {comment.path}
-            {comment.line !== undefined && <span>:L{comment.line}</span>}
+            {comment.line !== undefined &&
+              (comment.startLine !== undefined && comment.startLine !== comment.line ? (
+                <span>
+                  :L{Math.min(comment.startLine, comment.line)}–L{Math.max(comment.startLine, comment.line)}
+                </span>
+              ) : (
+                <span>:L{comment.line}</span>
+              ))}
           </div>
         )}
+        {!showFilePath &&
+          comment.startLine !== undefined &&
+          comment.line !== undefined &&
+          comment.startLine !== comment.line && (
+            <div
+              className="mt-1 mb-1 inline-flex items-center gap-1 rounded-[3px] px-1.5 py-px font-mono text-[11px]"
+              style={{ background: 'var(--purple-3)', color: 'var(--purple-11)' }}
+              title="Multi-line comment"
+            >
+              L{Math.min(comment.startLine, comment.line)}–L{Math.max(comment.startLine, comment.line)}
+            </div>
+          )}
         <div className="mt-[3px] text-[13.5px] leading-[19px] text-[var(--fg-1)]">
           <Markdown source={comment.body} />
         </div>
