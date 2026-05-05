@@ -1,4 +1,4 @@
-import DOMPurify from 'dompurify';
+import DOMPurify, { type Config } from 'dompurify';
 import { useEffect, useMemo, useState } from 'react';
 import { highlightLine } from '../../lib/shiki';
 import { useResolvedTheme } from '../../state/review-store';
@@ -90,7 +90,7 @@ const HTML_BLOCK_RE =
   /^<\/?(?:h[1-6]|p|div|details|summary|table|thead|tbody|tr|th|td|ul|ol|li|hr|br|pre|blockquote|section|article|aside|nav|header|footer|sub|sup|dl|dt|dd)[\s>/]/i;
 const HTML_COMMENT_RE = /<!--[\s\S]*?-->/g;
 
-const SANITIZE_CONFIG = {
+const SANITIZE_CONFIG: Config = {
   USE_PROFILES: { html: true, svg: true, svgFilters: true },
   ADD_TAGS: ['details', 'summary', 'sub', 'sup', 'foreignObject', 'style'],
   ADD_ATTR: [

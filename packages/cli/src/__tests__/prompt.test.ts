@@ -201,8 +201,8 @@ describe('buildNarrativePrompt stats', () => {
     expect(stats.narratedFileCount).toBe(2);
     expect(stats.narratedLineCount).toBeLessThan(stats.inputLineCount);
     expect(stats.truncatedFiles).toHaveLength(1);
-    expect(stats.truncatedFiles[0].file).toBe('src/huge.ts');
-    expect(stats.truncatedFiles[0].linesDropped).toBeGreaterThan(0);
+    expect(stats.truncatedFiles[0]!.file).toBe('src/huge.ts');
+    expect(stats.truncatedFiles[0]!.linesDropped).toBeGreaterThan(0);
     expect(stats.droppedFiles).toEqual([]);
   });
 

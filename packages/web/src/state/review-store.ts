@@ -60,6 +60,7 @@ type ReviewState = {
   clusterBots: boolean;
   regenerating: boolean;
   narrativeProgressChars: number;
+  narrationOverrides: Record<string, string>;
 
   setData: (
     pr: PRData,
@@ -99,6 +100,8 @@ type ReviewState = {
   setRegenerating: (v: boolean) => void;
   setNarrativeProgressChars: (chars: number) => void;
   setPr: (pr: PRData) => void;
+  setNarrationOverride: (chapterKey: string, text: string) => void;
+  clearNarrationOverride: (chapterKey: string) => void;
 };
 
 function draftStorageKey(prNumber: number): string {

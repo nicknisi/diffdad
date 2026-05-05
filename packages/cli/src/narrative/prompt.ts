@@ -308,11 +308,11 @@ function formatFile(
   let omittedLines = 0;
 
   for (let i = 0; i < file.hunks.length; i++) {
-    const h = file.hunks[i];
+    const h = file.hunks[i]!;
     if (linesUsed + h.lines.length > cap) {
       truncated = true;
       omittedHunks = file.hunks.length - i;
-      for (let j = i; j < file.hunks.length; j++) omittedLines += file.hunks[j].lines.length;
+      for (let j = i; j < file.hunks.length; j++) omittedLines += file.hunks[j]!.lines.length;
       break;
     }
     includedHunks.push(formatHunk(h, i));

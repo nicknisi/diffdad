@@ -118,7 +118,7 @@ export default function App() {
   }
 
   if (generating || !narrative) {
-    return <GeneratingScreen message={copy.loadingMessages[loadingMsgIndex]} />;
+    return <GeneratingScreen message={copy.loadingMessages[loadingMsgIndex] ?? ''} />;
   }
 
   return (
