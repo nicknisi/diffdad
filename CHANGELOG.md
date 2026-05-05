@@ -6,7 +6,7 @@
 ### Features
 
 * Add multi-line comments, concern dismissal, and AI summary drafting ([#26](https://github.com/nicknisi/diffdad/issues/26)) ([88250d7](https://github.com/nicknisi/diffdad/commit/88250d7623f3287107b39c42221612f1ec4e694a))
-* **cli:** add `dad recap` for orienting on in-flight PRs ([#27](https://github.com/nicknisi/diffdad/issues/27)) ([7f0e3c2](https://github.com/nicknisi/diffdad/commit/7f0e3c254aeaf7df7d29b8ec93058aa968ddb271))
+* **cli:** add a recap tab for orienting on in-flight PRs ([#27](https://github.com/nicknisi/diffdad/issues/27)) ([7f0e3c2](https://github.com/nicknisi/diffdad/commit/7f0e3c254aeaf7df7d29b8ec93058aa968ddb271))
 * live narrative progress, brevity, and defensive prompt caps ([#23](https://github.com/nicknisi/diffdad/issues/23)) ([f9ca00f](https://github.com/nicknisi/diffdad/commit/f9ca00ff7d033fba5f058864b40d95a14f50f1c0))
 * research-grounded narrative overhaul — concerns, reading plan, streaming, eval ([#22](https://github.com/nicknisi/diffdad/issues/22)) ([3628dcc](https://github.com/nicknisi/diffdad/commit/3628dcc098bf07260659be2340802f548e7f3b9c))
 
