@@ -336,7 +336,7 @@ export function Chapter({ index, chapter }: Props) {
   // OUTLINE STRUCTURE
   if (storyStructure === 'outline') {
     return (
-      <section data-chid={id} className={compact ? 'mb-[18px]' : 'mb-[28px]'}>
+      <section data-chid={id} className={`scroll-mt-[168px] ${compact ? 'mb-[18px]' : 'mb-[28px]'}`}>
         <button
           type="button"
           onClick={() => setOutlineOpen((v) => !v)}
@@ -375,7 +375,7 @@ export function Chapter({ index, chapter }: Props) {
   // LINEAR STRUCTURE
   if (storyStructure === 'linear') {
     return (
-      <section data-chid={id} className={compact ? 'mb-[18px]' : 'mb-[32px]'}>
+      <section data-chid={id} className={`scroll-mt-[168px] ${compact ? 'mb-[18px]' : 'mb-[32px]'}`}>
         <div className="mb-[16px] mt-[32px] grid grid-cols-[1fr_auto_1fr] items-center gap-4">
           <span className="h-px" style={{ background: 'var(--gray-a4)' }} />
           <h2 className="m-0 inline-flex items-center gap-[10px] whitespace-nowrap text-[17px] font-semibold tracking-[-0.005em] text-[var(--fg-1)]">
@@ -409,7 +409,7 @@ export function Chapter({ index, chapter }: Props) {
 
   // CHAPTERS (default) — collapsible, auto-collapses on review.
   return (
-    <section data-chid={id} className={compact ? 'mb-[18px]' : 'mb-[28px]'}>
+    <section data-chid={id} className={`scroll-mt-[168px] ${compact ? 'mb-[18px]' : 'mb-[28px]'}`}>
       <div
         className="flex cursor-pointer items-start gap-2.5 rounded-lg p-2 -ml-2 transition-colors hover:bg-[var(--gray-2)]"
         onClick={() => setCollapsed((v) => !v)}

@@ -37,7 +37,8 @@ export function CodeLine({ line, lineKey, lang, dimmed }: Props) {
 
   return (
     <div
-      className={`code-line group relative grid items-stretch font-mono text-[12.75px] leading-[19px] hover:bg-[var(--gray-2)]${
+      data-line-key={lineKey}
+      className={`code-line group relative grid items-stretch font-mono text-[12.75px] leading-[19px] scroll-mt-[180px] hover:bg-[var(--gray-2)]${
         dimmed ? ' opacity-40' : ''
       }`}
       style={{

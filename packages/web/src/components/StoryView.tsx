@@ -135,7 +135,7 @@ function Discussion() {
   }
 
   return (
-    <section data-chid="discussion" className="mb-[28px]">
+    <section data-chid="discussion" className="scroll-mt-[168px] mb-[28px]">
       <div className="mb-[14px] flex items-start gap-2.5">
         <div
           className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-[7px] text-[var(--fg-3)]"
