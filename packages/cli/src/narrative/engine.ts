@@ -10,6 +10,7 @@ import type { DiffFile, PRMetadata } from '../github/types';
 import {
   buildNarrativePrompt,
   partitionMechanicalFiles,
+  type NarrativeMode,
   type PreviousNarrativeContext,
   type PromptCapStats,
 } from './prompt';
@@ -345,6 +346,7 @@ export async function generateNarrative(
   fileTree: string[],
   config: DiffDadConfig,
   previousContext?: PreviousNarrativeContext,
+  mode: NarrativeMode = 'narrate',
   onProgress?: NarrativeProgressHandler,
 ): Promise<{ narrative: NarrativeResponse; provider: string }> {
   const { narrate, skipped } = partitionMechanicalFiles(files);
@@ -356,6 +358,7 @@ export async function generateNarrative(
     fileTree,
     skippedFiles: skipped.map((f) => f.file),
     previousContext,
+    mode,
   });
   logPromptStats(stats, skipped.length);
 

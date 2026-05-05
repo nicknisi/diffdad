@@ -1,8 +1,18 @@
 import { useEffect, useState } from 'react';
 import { useReviewStore, type BackendConfig } from '../state/review-store';
-import type { CheckRun, DiffFile, NarrativeResponse, PRComment, PRData, PRReview } from '../state/types';
+import type {
+  AppMode,
+  CheckRun,
+  DiffFile,
+  NarrativeResponse,
+  PRComment,
+  PRData,
+  PRReview,
+  WatchData,
+} from '../state/types';
 
 type NarrativeApiResponse = {
+  mode?: AppMode;
   generating?: boolean;
   pr: PRData;
   narrative?: NarrativeResponse;
@@ -12,10 +22,62 @@ type NarrativeApiResponse = {
   reviews?: PRReview[];
   repoUrl?: string;
   config?: BackendConfig;
+  watch?: WatchData;
 };
 
+export async function fetchNarrative(query: string = ''): Promise<NarrativeApiResponse> {
+  const res = await fetch(`/api/narrative${query}`);
+  if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+  return (await res.json()) as NarrativeApiResponse;
+}
+
+export function applyNarrativeResponse(data: NarrativeApiResponse) {
+  const store = useReviewStore.getState();
+  const mode: AppMode = data.mode === 'watch' ? 'watch' : 'pr';
+  store.setMode(mode);
+  if (data.watch) store.setWatch(data.watch);
+  else if (mode === 'pr') store.setWatch(null);
+
+  if (data.generating && !data.narrative) {
+    useReviewStore.setState({
+      pr: data.pr,
+      narrative: null,
+      files: data.files,
+      comments: data.comments,
+      checkRuns: data.checkRuns ?? [],
+      reviews: data.reviews ?? [],
+      repoUrl: data.repoUrl ?? null,
+    });
+    if (data.config) {
+      const next: Partial<ReturnType<typeof useReviewStore.getState>> = {};
+      if (data.config.theme && !localStorage.getItem('diffdad.theme'))
+        next.theme = data.config.theme as 'light' | 'dark' | 'auto';
+      if (data.config.accent && !localStorage.getItem('diffdad.accent')) next.accent = data.config.accent as any;
+      if (data.config.storyStructure) next.storyStructure = data.config.storyStructure as any;
+      if (data.config.layoutMode) next.layoutMode = data.config.layoutMode as any;
+      if (data.config.displayDensity) next.displayDensity = data.config.displayDensity as any;
+      useReviewStore.setState(next);
+    }
+    return { generating: true };
+  }
+
+  if (data.narrative) {
+    store.setData(
+      data.pr,
+      data.narrative,
+      data.files,
+      data.comments,
+      data.repoUrl ?? null,
+      data.checkRuns ?? [],
+      data.config ?? null,
+      data.reviews ?? [],
+    );
+    return { generating: false };
+  }
+  return { generating: false };
+}
+
 export function useNarrative() {
-  const setData = useReviewStore((s) => s.setData);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -27,46 +89,10 @@ export function useNarrative() {
       try {
         setLoading(true);
         setError(null);
-        const res = await fetch('/api/narrative');
-        if (!res.ok) {
-          throw new Error(`Request failed: ${res.status}`);
-        }
-        const data = (await res.json()) as NarrativeApiResponse;
+        const data = await fetchNarrative();
         if (cancelled) return;
-
-        if (data.generating && !data.narrative) {
-          setGenerating(true);
-          useReviewStore.setState({
-            pr: data.pr,
-            files: data.files,
-            comments: data.comments,
-            checkRuns: data.checkRuns ?? [],
-            reviews: data.reviews ?? [],
-            repoUrl: data.repoUrl ?? null,
-          });
-          if (data.config) {
-            const next: Partial<typeof useReviewStore extends { getState: () => infer S } ? S : never> = {};
-            if (data.config.theme && !localStorage.getItem('diffdad.theme'))
-              next.theme = data.config.theme as 'light' | 'dark' | 'auto';
-            if (data.config.accent && !localStorage.getItem('diffdad.accent')) next.accent = data.config.accent as any;
-            if (data.config.storyStructure) next.storyStructure = data.config.storyStructure as any;
-            if (data.config.layoutMode) next.layoutMode = data.config.layoutMode as any;
-            if (data.config.displayDensity) next.displayDensity = data.config.displayDensity as any;
-            useReviewStore.setState(next);
-          }
-        } else if (data.narrative) {
-          setGenerating(false);
-          setData(
-            data.pr,
-            data.narrative,
-            data.files,
-            data.comments,
-            data.repoUrl ?? null,
-            data.checkRuns ?? [],
-            data.config ?? null,
-            data.reviews ?? [],
-          );
-        }
+        const result = applyNarrativeResponse(data);
+        setGenerating(result.generating);
       } catch (err) {
         if (cancelled) return;
         setError(err instanceof Error ? err.message : 'Unknown error');
@@ -80,7 +106,7 @@ export function useNarrative() {
     return () => {
       cancelled = true;
     };
-  }, [setData]);
+  }, []);
 
   return { loading, generating, setGenerating, error };
 }

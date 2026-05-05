@@ -1,10 +1,12 @@
 ---
 const feats = [
   { ico: '§', title: 'Semantic chapters', body: 'AI groups hunks across files by behavior — not filename. Each chapter has a title, risk level, and prose explaining what changed and why.' },
-  { ico: '↔', title: 'Two-way GitHub sync', body: "Comments flow both directions — replies you post in dad land in GitHub as real review comments, and GitHub comments show up next to the matching line. No tab-juggling required." },
+  { ico: '👁', title: 'Watch your branch', body: "dad watch narrates your in-progress branch as a single feature, not a sequence of edits. Whole-branch story up front, per-commit detail on demand. No GitHub required." },
+  { ico: '🦴', title: 'Branch skeleton', body: "Before the model finishes thinking, watch mode shows you the cheap stuff: totals, touched directories, file categorization (test / config / schema / migration / docs / public-api), notable changes." },
+  { ico: '↔', title: 'Two-way GitHub sync', body: "In PR mode, comments flow both directions — replies you post in dad land in GitHub as real review comments, and GitHub comments show up next to the matching line. No tab-juggling required." },
   { ico: '↻', title: 'Auto re-narrates on new commits', body: 'Push a fixup? Dad notices and regenerates the story for the new SHA. Old narratives stay cached so you can flip between revisions and see how the plot thickened.' },
   { ico: '💬', title: 'Inline comments', body: "GitHub review comments render next to the relevant lines. Bot comments (Greptile, CodeRabbit) cluster into collapsible groups so they don't bury the humans." },
-  { ico: '📡', title: 'Live SSE updates', body: 'An SSE connection polls every 10 seconds. New comments, CI status, and check runs appear in real time. Like a baby monitor, but for your PR.' },
+  { ico: '📡', title: 'Live SSE updates', body: 'An SSE connection pushes new comments, CI status, and check runs in real time (PR mode). Watch mode polls git every 2s for new commits and re-narrates on the fly. Like a baby monitor, but for your code.' },
   { ico: '≋', title: 'Story controls', body: 'Toggle terse / normal / verbose narration per chapter. Re-narrate through different lenses (security, performance, API consumer). Choose your own adventure.' },
   { ico: '?', title: 'Ask AI', body: "Ask follow-up questions about a specific chapter's code. Dad keeps the chapter context so answers stay grounded — no off-topic ramblings about the lawn." },
   { ico: '✓', title: 'Submit reviews', body: 'Comment, Approve, or Request Changes — directly from the UI. Inline comments post to GitHub with your summary. Then dad pats you on the back.' },

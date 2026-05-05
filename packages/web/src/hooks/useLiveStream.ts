@@ -1,6 +1,8 @@
 import { useEffect } from 'react';
+import { applyNarrativeResponse, fetchNarrative } from './useNarrative';
 import { useReviewStore } from '../state/review-store';
 import type {
+  Addendum,
   CheckRun,
   DiffFile,
   LiveEvent,
@@ -9,6 +11,7 @@ import type {
   PRComment,
   PRData,
   PRReview,
+  WatchCommitSummary,
 } from '../state/types';
 
 function makeEventId(): string {
@@ -147,6 +150,102 @@ export function useLiveStream() {
       }
     };
 
+    const onWatchUpdate = (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data) as {
+          branch: string;
+          base: string;
+          baseSha: string;
+          headSha: string;
+          commits: WatchCommitSummary[];
+          unifiedReady: boolean;
+          unifiedHeadSha: string | null;
+          addendums: Addendum[];
+        };
+        const store = useReviewStore.getState();
+        if (store.watch) {
+          store.setWatch({ ...store.watch, ...data });
+        }
+        setLastEventAt(Date.now());
+        addLiveEvent(makeEvent('commit', `${data.commits.length} commits ahead of ${data.base}`));
+      } catch {
+        // ignore
+      }
+    };
+
+    const onCommitNarrating = (e: MessageEvent) => {
+      try {
+        const { sha } = JSON.parse(e.data) as { sha: string };
+        addLiveEvent(makeEvent('system', `Narrating ${sha.slice(0, 7)}…`));
+      } catch {
+        // ignore
+      }
+    };
+
+    const onCommitNarrative = async (e: MessageEvent) => {
+      try {
+        const { sha } = JSON.parse(e.data) as { sha: string };
+        const store = useReviewStore.getState();
+        if (store.watch) {
+          const updatedCommits = store.watch.commits.map((c) =>
+            c.sha === sha ? { ...c, hasNarrative: true } : c,
+          );
+          // If this commit is in the addendum chain, fetch its narrative and
+          // patch the matching addendum entry inline. Avoids a full /api/narrative
+          // refetch and lets the addendum card swap from "Narrating…" to content.
+          const isAddendum = store.watch.addendums.some((a) => a.sha === sha);
+          let updatedAddendums = store.watch.addendums;
+          if (isAddendum) {
+            try {
+              const data = await fetchNarrative(`?sha=${encodeURIComponent(sha)}`);
+              if (data.narrative) {
+                updatedAddendums = store.watch.addendums.map((a) =>
+                  a.sha === sha ? { ...a, narrative: data.narrative! } : a,
+                );
+              }
+            } catch {
+              // leave as null; the user can refresh
+            }
+          }
+          store.setWatch({
+            ...store.watch,
+            commits: updatedCommits,
+            addendums: updatedAddendums,
+          });
+        }
+        // If the user is currently looking at this commit, refresh the narrative.
+        if (store.watch?.selection.kind === 'commit' && store.watch.selection.sha === sha) {
+          const data = await fetchNarrative(`?sha=${encodeURIComponent(sha)}`);
+          applyNarrativeResponse(data);
+        }
+        setLastEventAt(Date.now());
+        addLiveEvent(makeEvent('system', `Narrative ready for ${sha.slice(0, 7)}`));
+      } catch {
+        // ignore
+      }
+    };
+
+    const onUnifiedNarrative = async () => {
+      try {
+        const store = useReviewStore.getState();
+        if (store.watch) store.setWatch({ ...store.watch, unifiedReady: true });
+        if (store.watch?.selection.kind === 'unified') {
+          const data = await fetchNarrative('?mode=unified');
+          applyNarrativeResponse(data);
+        }
+        addLiveEvent(makeEvent('system', 'Whole-branch narrative ready'));
+        setLastEventAt(Date.now());
+      } catch {
+        // ignore
+      }
+    };
+
+    const onUnifiedNarrating = () => {
+      const store = useReviewStore.getState();
+      if (store.watch) store.setWatch({ ...store.watch, unifiedReady: false });
+      addLiveEvent(makeEvent('system', 'Generating whole-branch narrative…'));
+    };
+
     es.addEventListener('connected', onConnected);
     es.addEventListener('comment', onComment as EventListener);
     es.addEventListener('comments', onComments as EventListener);
@@ -156,6 +255,11 @@ export function useLiveStream() {
     es.addEventListener('regenerating', onRegenerating as EventListener);
     es.addEventListener('narrative-progress', onNarrativeProgress as EventListener);
     es.addEventListener('narrative', onNarrative as EventListener);
+    es.addEventListener('watch-update', onWatchUpdate as EventListener);
+    es.addEventListener('commit-narrating', onCommitNarrating as EventListener);
+    es.addEventListener('commit-narrative', onCommitNarrative as EventListener);
+    es.addEventListener('unified-narrative', onUnifiedNarrative as EventListener);
+    es.addEventListener('unified-narrating', onUnifiedNarrating as EventListener);
 
     es.onopen = () => {
       setLiveStatus('connected');
@@ -175,6 +279,11 @@ export function useLiveStream() {
       es.removeEventListener('regenerating', onRegenerating as EventListener);
       es.removeEventListener('narrative-progress', onNarrativeProgress as EventListener);
       es.removeEventListener('narrative', onNarrative as EventListener);
+      es.removeEventListener('watch-update', onWatchUpdate as EventListener);
+      es.removeEventListener('commit-narrating', onCommitNarrating as EventListener);
+      es.removeEventListener('commit-narrative', onCommitNarrative as EventListener);
+      es.removeEventListener('unified-narrative', onUnifiedNarrative as EventListener);
+      es.removeEventListener('unified-narrating', onUnifiedNarrating as EventListener);
       es.close();
     };
   }, []);

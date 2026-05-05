@@ -30,6 +30,7 @@ export function useKeyboardShortcuts() {
   const shortcutsHelpOpen = useReviewStore((s) => s.shortcutsHelpOpen);
   const setShortcutsHelpOpen = useReviewStore((s) => s.setShortcutsHelpOpen);
   const openLine = useReviewStore((s) => s.openLine);
+  const mode = useReviewStore((s) => s.mode);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -89,6 +90,9 @@ export function useKeyboardShortcuts() {
       }
 
       if (key === 'c') {
+        // Comment affordance is PR-mode only — watch-mode commenting is part
+        // of the deferred feedback loop and has no destination yet.
+        if (mode === 'watch') return;
         e.preventDefault();
         const chapter = narrative.chapters[idx];
         if (!chapter) return;
@@ -122,5 +126,6 @@ export function useKeyboardShortcuts() {
     shortcutsHelpOpen,
     setShortcutsHelpOpen,
     openLine,
+    mode,
   ]);
 }

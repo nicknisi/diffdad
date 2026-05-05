@@ -5,8 +5,8 @@
 <h1 align="center">Diff Dad</h1>
 
 <p align="center">
-  GitHub PRs as narrated stories.<br/>
-  <code>dad 139</code> turns a file-by-file diff into a semantic walkthrough with AI-generated chapters, inline comments, and live sync.
+  GitHub PRs as narrated stories. Your local branch as a live one.<br/>
+  <code>dad 139</code> turns a PR diff into a semantic walkthrough with AI-generated chapters, inline comments, and live sync. <code>dad watch</code> does the same for the branch you're working on, before you ever open a PR.
 </p>
 
 ## Install
@@ -39,6 +39,7 @@ Requires [Bun](https://bun.sh) when building from source. The Homebrew install i
 ```sh
 dad <pr>                     # Open a PR as a narrated story
 dad review <pr>              # Same as above (explicit subcommand)
+dad watch [branch]           # Narrate your in-progress branch (no GitHub required)
 dad config                   # Configure AI provider, GitHub token, display settings
 dad cache clear              # Clear cached narratives
 dad --version                # Print version
@@ -48,6 +49,7 @@ Flags (can go in any position):
 
 ```sh
 --with=claude|pi             # Force a specific AI CLI
+--base <ref>                 # Watch mode: override base ref (default: origin/HEAD)
 --no-cache                   # Regenerate narrative even if cached
 --no-open                    # Don't auto-open the browser
 --port=3000                  # Use a specific port
@@ -61,7 +63,23 @@ owner/repo#123
 139                          # bare number — infers repo from git remote
 ```
 
-The CLI fetches the PR diff, generates a semantic narrative, and opens a local web UI in your browser.
+The CLI fetches the PR diff (or local branch diff in watch mode), generates a semantic narrative, and opens a local web UI in your browser.
+
+### Watch your branch
+
+`dad watch` is the local-branch counterpart to `dad <pr>`. It's built for the awkward modern workflow where an agent produced a lot of the code and you need to catch up on what was built before peer review.
+
+```sh
+dad watch                    # narrate the current branch vs origin/HEAD (or main)
+dad watch some-branch        # watch a different branch
+dad watch --base develop     # override the base ref
+```
+
+When you run it, you immediately see a **branch skeleton** — no LLM wait — with totals, touched directories, file categorization (tests / config / schema / migration / docs / public-api / source), and the most-changed files. In the background, Dad generates a **whole-branch narrative** that explains what the branch *does* — the feature it now describes, not just the sequence of edits.
+
+Click a commit chip in the timeline to drill into a single commit. New commit lands? The skeleton refreshes and the whole-branch story regenerates. Rebase or amend? Orphaned narratives drop out automatically.
+
+Watch mode is read-only and offline — no GitHub API calls, no comments posted, nothing written back to the repo. Cached at `~/.cache/diffdad/watch/`, keyed by `(baseSha, headSha)` for the whole-branch view.
 
 ## How It Works
 
@@ -96,7 +114,7 @@ Diff Dad needs a GitHub token to fetch PR data and post comments. It checks, in 
 
 ### Caching
 
-Narratives are cached at `~/.cache/diffdad/` keyed by `{owner}-{repo}-{number}-{sha}`. Same commit = instant reload. Use `--no-cache` to regenerate, or `dad cache clear` to wipe all cached narratives.
+PR-mode narratives are cached at `~/.cache/diffdad/` keyed by `{owner}-{repo}-{number}-{sha}`. Watch-mode narratives live under `~/.cache/diffdad/watch/`, keyed by repo fingerprint plus `(baseSha, headSha)` for the whole-branch view and per-SHA for individual commits. Same SHA = instant reload. Use `--no-cache` to regenerate (PR mode), or `dad cache clear` to wipe everything.
 
 ## Features
 
@@ -111,6 +129,12 @@ Review comments from GitHub appear inline next to the relevant code lines. Comme
 ### Live Sync
 
 An SSE connection polls GitHub every 10 seconds. New comments, CI status changes, and check runs appear in real time. Comments you post are broadcast instantly via the server — no waiting for the next poll.
+
+In watch mode, SSE pushes branch updates instead — new commits, regenerated whole-branch narratives, freshly-narrated commits — driven by a 2-second poll of `git rev-parse <branch>` instead of the GitHub API.
+
+### Branch Skeleton (Watch Mode)
+
+Before any model call returns, watch mode renders a local skeleton: totals, by-category file counts (tests / config / schema / migration / docs / public-api / source), top touched directories, and most-changed files. It's the cheap-and-immediate context layer — useful while the LLM is still thinking, and a sanity check that you're looking at the right diff.
 
 ### Story Controls
 

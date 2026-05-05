@@ -104,6 +104,73 @@ export type DraftComment = {
   chapterIndex?: number;
 };
 
+export type WatchCommitSummary = {
+  sha: string;
+  shortSha: string;
+  subject: string;
+  author: string;
+  date: string;
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+  hasNarrative: boolean;
+};
+
+export type WatchSelection =
+  | { kind: 'commit'; sha: string }
+  | { kind: 'unified' }
+  | { kind: 'pending' };
+
+export type SkeletonFileCategory =
+  | 'test'
+  | 'config'
+  | 'schema'
+  | 'migration'
+  | 'docs'
+  | 'public-api'
+  | 'source';
+
+export type SkeletonFile = {
+  path: string;
+  category: SkeletonFileCategory;
+  additions: number;
+  deletions: number;
+  isNewFile: boolean;
+  isDeleted: boolean;
+};
+
+export type BranchSkeleton = {
+  totals: { additions: number; deletions: number; changedFiles: number };
+  byCategory: Record<SkeletonFileCategory, number>;
+  touchedDirs: { dir: string; count: number }[];
+  notable: SkeletonFile[];
+  files: SkeletonFile[];
+};
+
+export type Addendum = {
+  sha: string;
+  shortSha: string;
+  subject: string;
+  additions: number;
+  deletions: number;
+  narrative: NarrativeResponse | null;
+};
+
+export type WatchData = {
+  branch: string;
+  base: string;
+  baseSha: string;
+  headSha: string;
+  commits: WatchCommitSummary[];
+  selection: WatchSelection;
+  unifiedReady: boolean;
+  unifiedHeadSha: string | null;
+  addendums: Addendum[];
+  skeleton: BranchSkeleton;
+};
+
+export type AppMode = 'pr' | 'watch';
+
 export type LiveEventKind = 'comment' | 'ci' | 'commit' | 'system';
 
 export type LiveStatus = 'connected' | 'connecting' | 'disconnected';

@@ -5,12 +5,16 @@ import { useLiveStream } from './hooks/useLiveStream';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { ActivityDrawer } from './components/ActivityDrawer';
 import { AppBar } from './components/AppBar';
+import { AddendumsView } from './components/AddendumsView';
+import { BranchSkeletonView } from './components/BranchSkeletonView';
 import { ClassicView } from './components/ClassicView';
+import { CommitTimeline } from './components/CommitTimeline';
 import { GeneratingScreen } from './components/GeneratingScreen';
 import { PRHeader } from './components/PRHeader';
 import { ShortcutsHelp } from './components/ShortcutsHelp';
 import { StoryView } from './components/StoryView';
 import { SubmitBar } from './components/SubmitBar';
+import { WatchHeader } from './components/WatchHeader';
 import { copy } from './lib/microcopy';
 import { getAccentMeta } from './lib/accents';
 import { renderDadMarkSVG } from './components/DadMark';
@@ -21,15 +25,18 @@ export default function App() {
   const view = useReviewStore((s) => s.view);
   const pr = useReviewStore((s) => s.pr);
   const narrative = useReviewStore((s) => s.narrative);
+  const mode = useReviewStore((s) => s.mode);
   const shortcutsHelpOpen = useReviewStore((s) => s.shortcutsHelpOpen);
   const setShortcutsHelpOpen = useReviewStore((s) => s.setShortcutsHelpOpen);
   const { loading, generating, setGenerating, error } = useNarrative();
 
   useEffect(() => {
-    if (pr) {
+    if (mode === 'watch' && pr) {
+      document.title = `${pr.title} — Diff Dad (watch)`;
+    } else if (pr) {
       document.title = `#${pr.number} ${pr.title} — Diff Dad`;
     }
-  }, [pr]);
+  }, [pr, mode]);
   useLiveStream();
   useKeyboardShortcuts();
   const [activityOpen, setActivityOpen] = useState(false);
@@ -39,7 +46,7 @@ export default function App() {
     if (narrative && generating) setGenerating(false);
   }, [narrative, generating, setGenerating]);
 
-  const showLoadingMessages = loading || generating;
+  const showLoadingMessages = loading || generating || (mode === 'watch' && !narrative);
   useEffect(() => {
     if (!showLoadingMessages) return;
     const t = setInterval(() => setLoadingMsgIndex((i) => (i + 1) % copy.loadingMessages.length), 2500);
@@ -114,6 +121,38 @@ export default function App() {
           <p className="mt-2 text-sm text-[var(--fg-3)]">{error}</p>
         </div>
       </main>
+    );
+  }
+
+  if (mode === 'watch') {
+    return (
+      <div className="min-h-screen bg-[var(--bg-page)] pb-20 text-[var(--fg-1)]">
+        <AppBar onOpenActivity={() => setActivityOpen(true)} />
+        <WatchHeader />
+        <div className="flex">
+          <aside
+            className="sticky w-[260px] shrink-0 self-start overflow-y-auto border-r border-[var(--gray-a4)] bg-[var(--bg-page)]"
+            style={{ top: 'calc(52px + 96px)', maxHeight: 'calc(100vh - 52px - 96px)' }}
+            aria-label="Commit timeline sidebar"
+          >
+            <CommitTimeline />
+          </aside>
+          <main className="min-w-0 flex-1">
+            {view === 'files' ? (
+              <ClassicView />
+            ) : narrative ? (
+              <>
+                <StoryView />
+                <AddendumsView />
+              </>
+            ) : (
+              <BranchSkeletonView message={copy.loadingMessages[loadingMsgIndex]!} />
+            )}
+          </main>
+        </div>
+        <ActivityDrawer open={activityOpen} onClose={() => setActivityOpen(false)} />
+        <ShortcutsHelp open={shortcutsHelpOpen} onClose={() => setShortcutsHelpOpen(false)} />
+      </div>
     );
   }
 
