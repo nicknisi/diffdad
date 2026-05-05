@@ -325,13 +325,13 @@ function logPromptStats(stats: PromptCapStats, mechanicalSkipped: number): void 
       `${YELLOW}  ⚠ Per-file cap hit on ${stats.truncatedFiles.length} file(s): ${totalDroppedLines.toLocaleString()} line(s) truncated${RESET}`,
     );
     for (const t of stats.truncatedFiles) {
-      lines.push(`${DIM}      ${t.file}: dropped ${t.hunksDropped} hunk(s), ${t.linesDropped.toLocaleString()} line(s)${RESET}`);
+      lines.push(
+        `${DIM}      ${t.file}: dropped ${t.hunksDropped} hunk(s), ${t.linesDropped.toLocaleString()} line(s)${RESET}`,
+      );
     }
   }
   if (stats.droppedFiles.length > 0) {
-    lines.push(
-      `${YELLOW}  ⚠ Global cap exhausted: ${stats.droppedFiles.length} file(s) dropped entirely${RESET}`,
-    );
+    lines.push(`${YELLOW}  ⚠ Global cap exhausted: ${stats.droppedFiles.length} file(s) dropped entirely${RESET}`);
     for (const f of stats.droppedFiles) {
       lines.push(`${DIM}      ${f}${RESET}`);
     }

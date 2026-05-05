@@ -12,6 +12,7 @@
     "format": "oxfmt .",
     "format:check": "oxfmt --check .",
     "test": "bun test packages/cli/src/__tests__/",
+    "typecheck": "tsc --noEmit -p packages/cli/tsconfig.json && tsc --noEmit -p packages/web/tsconfig.json && bun run --filter '@diffdad/site' typecheck",
     "dad": "bun packages/cli/src/cli.ts",
     "dev": "bun run --filter '@diffdad/web' dev",
     "site:dev": "bun run --filter '@diffdad/site' dev",
@@ -19,6 +20,7 @@
   },
   "devDependencies": {
     "oxfmt": "^0.47.0",
-    "oxlint": "^1.62.0"
+    "oxlint": "^1.62.0",
+    "typescript": "^6"
   }
 }
