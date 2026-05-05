@@ -288,6 +288,7 @@ function HunkLines({
   clusteredIds,
   rangeStartIdx,
   rangeEndIdx,
+  isDragging,
 }: {
   file: string;
   hunk: DiffHunk;
@@ -300,6 +301,7 @@ function HunkLines({
   clusteredIds: Set<number>;
   rangeStartIdx: number | null;
   rangeEndIdx: number | null;
+  isDragging: boolean;
 }) {
   const normFile = normalizePath(file);
 
@@ -391,7 +393,9 @@ function HunkLines({
       const lineKey = `${file}:${hunkIndex}:${i}`;
       const lineComments: PRComment[] = comments.filter((c) => commentLineMap.get(c.id) === i);
       const inSelection = rangeStartIdx !== null && rangeEndIdx !== null && i >= rangeStartIdx && i <= rangeEndIdx;
-      const isOpenLine = openLine === lineKey;
+      // Hide the in-progress composer while a click-and-drag is live; we only
+      // want the highlight to track the cursor, not a flickering textarea.
+      const isOpenLine = openLine === lineKey && !isDragging;
       // The thread anchors wherever the user just clicked (`openLine`). When a
       // multi-line range exists, the OTHER end of the range becomes the
       // `startLine` so GitHub gets a valid (start_line, line) pair.
@@ -451,6 +455,7 @@ function HunkLines({
       lang,
       rangeStartIdx,
       rangeEndIdx,
+      isDragging,
       existingMultiLineRanges,
     ],
   );
@@ -477,6 +482,7 @@ function HunkLines({
 export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight }: Props) {
   const openLine = useReviewStore((s) => s.openLine);
   const commentRangeStart = useReviewStore((s) => s.commentRangeStart);
+  const commentDrag = useReviewStore((s) => s.commentDrag);
   const comments = useReviewStore((s) => s.comments);
   const setOpenLine = useReviewStore((s) => s.setOpenLine);
   const clearCommentRange = useReviewStore((s) => s.clearCommentRange);
@@ -485,47 +491,64 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight }: Props) {
   const clusterBots = useReviewStore((s) => s.clusterBots);
   const lang = guessLang(file);
 
-  // Resolve a multi-line selection to local indices within this hunk.
-  // `openLine` and `commentRangeStart` are line keys; we match by file +
-  // hunkIndex to ignore selections in other hunks. Multi-line comments must
-  // live on a single diff side (LEFT/old or RIGHT/new) — GitHub stores
-  // start_line/line on the same side and old vs new line numbers aren't
-  // comparable. If the user shift-clicks across sides, drop the range and
-  // fall back to a single-line comment at the most recently clicked line.
-  const { rangeStartIdx, rangeEndIdx } = useMemo(() => {
+  // Resolve a multi-line selection to local indices within this hunk. While
+  // a click-and-drag is in flight (`commentDrag` set), the live drag wins so
+  // the range highlight follows the cursor without prematurely opening the
+  // composer. Otherwise we read from `openLine` / `commentRangeStart` which
+  // are committed state. Multi-line comments must live on a single diff
+  // side — old and new line numbers are not comparable — so cross-side
+  // ranges are dropped to a single-line comment at the active line.
+  const { rangeStartIdx, rangeEndIdx, isDragging } = useMemo(() => {
     const myPrefix = `${file}:${hunkIndex}:`;
-    if (!openLine || !openLine.startsWith(myPrefix)) {
-      return { rangeStartIdx: null, rangeEndIdx: null };
+    let aKey: string | null = null;
+    let bKey: string | null = null;
+    let dragging = false;
+    if (commentDrag) {
+      aKey = commentDrag.endKey;
+      bKey = commentDrag.startKey;
+      dragging = true;
+    } else {
+      aKey = openLine;
+      bKey = commentRangeStart;
     }
-    if (!commentRangeStart || !commentRangeStart.startsWith(myPrefix)) {
-      return { rangeStartIdx: null, rangeEndIdx: null };
+    if (!aKey || !aKey.startsWith(myPrefix)) {
+      return { rangeStartIdx: null, rangeEndIdx: null, isDragging: dragging };
     }
-    const a = Number(openLine.slice(myPrefix.length));
-    const b = Number(commentRangeStart.slice(myPrefix.length));
+    if (!bKey || !bKey.startsWith(myPrefix)) {
+      return { rangeStartIdx: null, rangeEndIdx: null, isDragging: dragging };
+    }
+    const a = Number(aKey.slice(myPrefix.length));
+    const b = Number(bKey.slice(myPrefix.length));
     if (Number.isNaN(a) || Number.isNaN(b)) {
-      return { rangeStartIdx: null, rangeEndIdx: null };
+      return { rangeStartIdx: null, rangeEndIdx: null, isDragging: dragging };
+    }
+    if (a === b) {
+      return { rangeStartIdx: null, rangeEndIdx: null, isDragging: dragging };
     }
     const lineA = hunk.lines[a];
     const lineB = hunk.lines[b];
     if (!lineA || !lineB) {
-      return { rangeStartIdx: null, rangeEndIdx: null };
+      return { rangeStartIdx: null, rangeEndIdx: null, isDragging: dragging };
     }
     const sideOf = (t: typeof lineA.type): 'LEFT' | 'RIGHT' => (t === 'remove' ? 'LEFT' : 'RIGHT');
     if (sideOf(lineA.type) !== sideOf(lineB.type)) {
-      return { rangeStartIdx: null, rangeEndIdx: null };
+      return { rangeStartIdx: null, rangeEndIdx: null, isDragging: dragging };
     }
-    return { rangeStartIdx: Math.min(a, b), rangeEndIdx: Math.max(a, b) };
-  }, [openLine, commentRangeStart, file, hunkIndex, hunk.lines]);
+    return { rangeStartIdx: Math.min(a, b), rangeEndIdx: Math.max(a, b), isDragging: dragging };
+  }, [openLine, commentRangeStart, commentDrag, file, hunkIndex, hunk.lines]);
 
-  // If the user shift-clicked across sides we silently dropped the range
-  // above. Clear the stale anchor so a subsequent same-side shift-click
-  // starts fresh from the visible openLine, not the now-invisible anchor.
+  // If a shift-click extended a range across diff sides we silently dropped
+  // it above. Clear the stale anchor so the next same-side shift-click
+  // starts fresh from the visible openLine. Skipped while a drag is in
+  // flight — the live drag derives its own range and we'd otherwise clobber
+  // committed state mid-drag.
   useEffect(() => {
+    if (commentDrag) return;
     if (!openLine || !commentRangeStart) return;
     const myPrefix = `${file}:${hunkIndex}:`;
     if (!openLine.startsWith(myPrefix) || !commentRangeStart.startsWith(myPrefix)) return;
     if (rangeStartIdx === null) clearCommentRange();
-  }, [openLine, commentRangeStart, rangeStartIdx, file, hunkIndex, clearCommentRange]);
+  }, [openLine, commentRangeStart, commentDrag, rangeStartIdx, file, hunkIndex, clearCommentRange]);
 
   const rangeStart = hunk.oldStart;
   const rangeEnd = hunk.oldStart + Math.max(hunk.oldCount, 0);
@@ -671,6 +694,7 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight }: Props) {
           clusteredIds={clusteredIds}
           rangeStartIdx={rangeStartIdx}
           rangeEndIdx={rangeEndIdx}
+          isDragging={isDragging}
         />
       </div>
     </div>

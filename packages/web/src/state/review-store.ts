@@ -48,6 +48,11 @@ type ReviewState = {
    * effective range is min..max of these two by line index within the same
    * hunk. Null when the active comment is single-line. */
   commentRangeStart: string | null;
+  /** Live state of a click-and-drag from a `+` gutter button. While set, the
+   * range between `startKey` and `endKey` is highlighted but the comment
+   * composer is NOT opened — that happens on mouseup, when the drag is
+   * committed to `openLine` / `commentRangeStart`. */
+  commentDrag: { startKey: string; endKey: string } | null;
   theme: Theme;
   accent: AccentId;
   density: Density;
@@ -89,6 +94,15 @@ type ReviewState = {
   /** Drop the multi-line range anchor without closing the active thread.
    * Used when a range becomes invalid (e.g. user extended across diff sides). */
   clearCommentRange: () => void;
+  /** Begin a click-and-drag selection. */
+  startCommentDrag: (key: string) => void;
+  /** Update the drag end as the mouse moves. */
+  updateCommentDrag: (key: string) => void;
+  /** Commit the current drag: a same-key drag becomes a single-line click;
+   * a cross-key drag becomes a multi-line range with the composer opened. */
+  endCommentDrag: () => void;
+  /** Discard the in-progress drag without opening a composer. */
+  cancelCommentDrag: () => void;
   addComment: (comment: PRComment) => void;
   setComments: (comments: PRComment[]) => void;
   addDraft: (draft: DraftComment) => void;
@@ -187,6 +201,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
   drafts: [],
   openLine: null,
   commentRangeStart: null,
+  commentDrag: null,
   theme: (localStorage.getItem('diffdad.theme') as Theme) || 'auto',
   accent: (localStorage.getItem('diffdad.accent') as AccentId) || 'classic',
   density: 'normal',
@@ -264,6 +279,27 @@ export const useReviewStore = create<ReviewState>((set) => ({
   setOpenLine: (key) => set({ openLine: key, commentRangeStart: null }),
 
   clearCommentRange: () => set({ commentRangeStart: null }),
+
+  startCommentDrag: (key) => set({ commentDrag: { startKey: key, endKey: key } }),
+
+  updateCommentDrag: (key) =>
+    set((state) => {
+      if (!state.commentDrag) return state;
+      if (state.commentDrag.endKey === key) return state;
+      return { commentDrag: { startKey: state.commentDrag.startKey, endKey: key } };
+    }),
+
+  endCommentDrag: () =>
+    set((state) => {
+      const drag = state.commentDrag;
+      if (!drag) return state;
+      if (drag.startKey === drag.endKey) {
+        return { commentDrag: null, openLine: drag.startKey, commentRangeStart: null };
+      }
+      return { commentDrag: null, openLine: drag.endKey, commentRangeStart: drag.startKey };
+    }),
+
+  cancelCommentDrag: () => set({ commentDrag: null }),
 
   openCommentAt: (key, extend = false) =>
     set((state) => {

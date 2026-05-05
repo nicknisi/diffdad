@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, type MouseEvent as ReactMouseEvent } from 'react';
 import { useResolvedTheme, useReviewStore } from '../state/review-store';
 import type { DiffLine } from '../state/types';
 import { highlightLine } from '../lib/shiki';
@@ -16,10 +16,66 @@ type Props = {
   inExistingRange?: boolean;
 };
 
+/** Resolves a viewport point to the lineKey of the diff row underneath it.
+ * Used to track click-and-drag selection across the diff gutter. */
+function lineKeyAtPoint(x: number, y: number): string | null {
+  const el = document.elementFromPoint(x, y);
+  if (!el || !(el instanceof Element)) return null;
+  const row = el.closest('[data-line-key]');
+  return row?.getAttribute('data-line-key') ?? null;
+}
+
 export function CodeLine({ line, lineKey, lang, dimmed, inSelection, inExistingRange }: Props) {
   const openCommentAt = useReviewStore((s) => s.openCommentAt);
+  const startCommentDrag = useReviewStore((s) => s.startCommentDrag);
+  const updateCommentDrag = useReviewStore((s) => s.updateCommentDrag);
+  const endCommentDrag = useReviewStore((s) => s.endCommentDrag);
+  const cancelCommentDrag = useReviewStore((s) => s.cancelCommentDrag);
   const theme = useResolvedTheme();
   const ready = useHighlighter();
+
+  function onPlusMouseDown(e: ReactMouseEvent<HTMLButtonElement>) {
+    if (e.button !== 0) return; // left-click only
+    e.preventDefault();
+    if (e.shiftKey) {
+      // Keep keyboard-ish parity: shift-click still extends from openLine.
+      openCommentAt(lineKey, true);
+      return;
+    }
+    startCommentDrag(lineKey);
+    const prevUserSelect = document.body.style.userSelect;
+    document.body.style.userSelect = 'none';
+
+    function onMove(ev: MouseEvent) {
+      const key = lineKeyAtPoint(ev.clientX, ev.clientY);
+      if (key) updateCommentDrag(key);
+    }
+    function cleanup() {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.removeEventListener('keydown', onKey);
+      window.removeEventListener('blur', onCancel);
+      document.body.style.userSelect = prevUserSelect;
+    }
+    function onUp() {
+      cleanup();
+      endCommentDrag();
+    }
+    function onCancel() {
+      cleanup();
+      cancelCommentDrag();
+    }
+    function onKey(ev: KeyboardEvent) {
+      if (ev.key === 'Escape') {
+        ev.preventDefault();
+        onCancel();
+      }
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    document.addEventListener('keydown', onKey);
+    window.addEventListener('blur', onCancel);
+  }
 
   const isAdd = line.type === 'add';
   const isRem = line.type === 'remove';
@@ -98,14 +154,15 @@ export function CodeLine({ line, lineKey, lang, dimmed, inSelection, inExistingR
       {(line.lineNumber.new !== undefined || line.lineNumber.old !== undefined) && (
         <button
           type="button"
-          aria-label="Comment on line (shift-click to extend selection)"
-          title="Click to comment · Shift-click to extend selection"
-          onClick={(e) => openCommentAt(lineKey, e.shiftKey)}
+          aria-label="Comment on line (drag to select multiple lines)"
+          title="Click to comment · Drag to select multiple lines"
+          onMouseDown={onPlusMouseDown}
           className="ln-comment absolute z-10 flex h-[17px] w-[17px] items-center justify-center rounded-[4px] text-white"
           style={{
             left: '76px',
             top: '1px',
             background: 'var(--purple-9)',
+            cursor: 'grab',
           }}
         >
           <IconPlus className="h-[10px] w-[10px]" />
