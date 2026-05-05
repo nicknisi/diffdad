@@ -3,7 +3,7 @@ import { resolveGitHubToken } from './auth';
 import { readConfig, resetConfig, runConfig, showConfig } from './config';
 import { GitHubClient } from './github/client';
 import { cacheNarrative, clearCache, getCachedNarrative } from './narrative/cache';
-import { generateNarrative, setCliOverride } from './narrative/engine';
+import { generateNarrative, resolveAiPath, setCliOverride } from './narrative/engine';
 import { createServer } from './server';
 
 const a = {
@@ -263,11 +263,18 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
 
   if (!cached) {
     const withCli = Bun.argv.find((f) => f.startsWith('--with='))?.split('=')[1];
-    const providerHint = withCli ?? config.aiProvider ?? config.defaultCli ?? 'claude';
+    const { path: aiPath, effectiveConfig } = resolveAiPath(config);
+    const providerHint =
+      withCli ?? (aiPath === 'api' ? (effectiveConfig.aiProvider ?? 'anthropic') : (config.defaultCli ?? 'claude'));
     const waitJoke = DAD_JOKES[Math.floor(Math.random() * DAD_JOKES.length)];
     console.log(
       `  ${a.yellow}Generating narrative${a.reset} ${a.gray}via${a.reset} ${a.cyan}${providerHint}${a.reset}`,
     );
+    if (aiPath === 'local-cli' && !withCli) {
+      console.log(
+        `  ${a.dim}Tip: set ${a.cyan}ANTHROPIC_API_KEY${a.reset}${a.dim} for ~5-10× faster generation (the local CLI path has significant harness overhead).${a.reset}`,
+      );
+    }
     console.log(`  ${a.italic}${a.gray}"${waitJoke}"${a.reset}`);
     const isTty = Boolean(process.stdout.isTTY);
     const startedAt = Date.now();
@@ -287,14 +294,18 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
     };
     render();
     const heartbeat = setInterval(render, 250);
-    const onProgress = ({ chars }: { chars: number }) => {
-      totalChars = chars;
-      broadcast('narrative-progress', { chars });
-    };
     let generated;
     let usedProvider: string;
     try {
-      const result = await generateNarrative(metadata, files, [], config, undefined, onProgress);
+      const result = await generateNarrative(metadata, files, [], config, undefined, {
+        onProgress: ({ chars }) => {
+          totalChars = chars;
+          broadcast('narrative-progress', { chars });
+        },
+        onPartial: (partial) => {
+          broadcast('narrative.partial', { narrative: partial, pr: metadata, files, comments });
+        },
+      });
       generated = result.narrative;
       usedProvider = result.provider;
     } finally {

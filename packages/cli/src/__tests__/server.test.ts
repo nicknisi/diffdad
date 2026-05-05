@@ -5,10 +5,15 @@ import type { PRMetadata } from '../github/types';
 
 const mockNarrative: NarrativeResponse = {
   title: 'Test PR',
+  tldr: 'Adds a feature.',
+  verdict: 'safe',
+  readingPlan: [{ step: 'Start at chapter 1.', chapterIndex: 0 }],
+  concerns: [],
   chapters: [
     {
       title: 'Add feature',
       summary: 'Adds a new feature',
+      whyMatters: 'Without this the user cannot do X.',
       risk: 'low',
       sections: [
         { type: 'narrative', content: 'This adds a feature.' },

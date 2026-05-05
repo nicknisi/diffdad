@@ -11,6 +11,7 @@ type NarrativeApiResponse = {
   checkRuns?: CheckRun[];
   reviews?: PRReview[];
   repoUrl?: string;
+  aiPath?: 'api' | 'local-cli';
   config?: BackendConfig;
 };
 
@@ -43,6 +44,7 @@ export function useNarrative() {
             checkRuns: data.checkRuns ?? [],
             reviews: data.reviews ?? [],
             repoUrl: data.repoUrl ?? null,
+            aiPath: data.aiPath ?? null,
           });
           if (data.config) {
             const next: Partial<typeof useReviewStore extends { getState: () => infer S } ? S : never> = {};
@@ -66,6 +68,7 @@ export function useNarrative() {
             data.config ?? null,
             data.reviews ?? [],
           );
+          useReviewStore.getState().setAiPath(data.aiPath ?? null);
         }
       } catch (err) {
         if (cancelled) return;

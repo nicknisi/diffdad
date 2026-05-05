@@ -1,4 +1,5 @@
 import type { DiffFile, DiffHunk, DiffLine } from '../github/types';
+import { computeRisk, formatRiskHints, type FileRisk } from './risk';
 
 export type PreviousNarrativeContext = {
   previousTldr?: string;
@@ -11,6 +12,7 @@ export interface NarrativePromptInput {
   labels: string[];
   files: DiffFile[];
   fileTree: string[];
+  /** Files we already filtered out before getting here — listed for the LLM to reference if needed. */
   skippedFiles?: string[];
   previousContext?: PreviousNarrativeContext;
 }
@@ -30,248 +32,154 @@ export interface NarrativePrompt {
   system: string;
   user: string;
   stats: PromptCapStats;
+  /** Files that survived diff filtering and were sent to the LLM. */
+  keptFiles: DiffFile[];
+  /** Per-file risk signals passed to the LLM as ordering hints. */
+  risks: FileRisk[];
 }
 
 const FILE_TREE_LIMIT = 200;
+const MAX_CHAPTERS = 7;
+const MAX_LINES_PER_FILE = 800;
 const MAX_TOTAL_DIFF_LINES = 12000;
 
-const MECHANICAL_BASENAMES = new Set([
-  'package-lock.json',
-  'pnpm-lock.yaml',
-  'yarn.lock',
-  'bun.lock',
-  'bun.lockb',
-  'composer.lock',
-  'Gemfile.lock',
-  'Pipfile.lock',
-  'poetry.lock',
-  'uv.lock',
-  'cargo.lock',
-  'go.sum',
-]);
-
-const MECHANICAL_PATH_REGEXES: RegExp[] = [
-  /\.min\.(js|css|mjs)$/i,
-  /\.map$/i,
-  /(^|\/)dist\//,
-  /(^|\/)build\//,
-  /(^|\/)\.next\//,
-  /(^|\/)node_modules\//,
-  /(^|\/)vendor\//,
-];
-
-export function isMechanicalFile(path: string): boolean {
-  const basename = path.split('/').pop() ?? path;
-  if (MECHANICAL_BASENAMES.has(basename)) return true;
-  if (basename.toLowerCase() === 'cargo.lock') return true;
-  return MECHANICAL_PATH_REGEXES.some((re) => re.test(path));
-}
-
-export function partitionMechanicalFiles(files: DiffFile[]): { narrate: DiffFile[]; skipped: DiffFile[] } {
-  const narrate: DiffFile[] = [];
-  const skipped: DiffFile[] = [];
-  for (const f of files) {
-    if (isMechanicalFile(f.file)) skipped.push(f);
-    else narrate.push(f);
-  }
-  return { narrate, skipped };
-}
-
-export const NARRATIVE_JSON_SCHEMA = {
-  type: 'object',
-  required: ['title', 'chapters'],
-  properties: {
-    title: { type: 'string' },
-    tldr: { type: 'string' },
-    verdict: { type: 'string', enum: ['safe', 'caution', 'risky'] },
-    chapters: {
-      type: 'array',
-      items: {
-        type: 'object',
-        required: ['title', 'summary', 'risk', 'sections'],
-        properties: {
-          title: { type: 'string' },
-          summary: { type: 'string' },
-          risk: { type: 'string', enum: ['low', 'medium', 'high'] },
-          sections: {
-            type: 'array',
-            items: {
-              oneOf: [
-                {
-                  type: 'object',
-                  required: ['type', 'content'],
-                  properties: {
-                    type: { type: 'string', enum: ['narrative'] },
-                    content: { type: 'string' },
-                  },
-                },
-                {
-                  type: 'object',
-                  required: ['type', 'file', 'startLine', 'endLine', 'hunkIndex'],
-                  properties: {
-                    type: { type: 'string', enum: ['diff'] },
-                    file: { type: 'string' },
-                    startLine: { type: 'number' },
-                    endLine: { type: 'number' },
-                    hunkIndex: { type: 'number' },
-                  },
-                },
-              ],
-            },
-          },
-          callouts: {
-            type: 'array',
-            items: {
-              type: 'object',
-              required: ['file', 'line', 'level', 'message'],
-              properties: {
-                file: { type: 'string' },
-                line: { type: 'number' },
-                level: { type: 'string', enum: ['nit', 'concern', 'warning'] },
-                message: { type: 'string' },
-              },
-            },
-          },
-          reshow: {
-            type: 'array',
-            items: {
-              type: 'object',
-              required: ['ref'],
-              properties: {
-                ref: { type: 'number' },
-                file: { type: 'string' },
-                framing: { type: 'string' },
-                highlight: {
-                  type: 'object',
-                  required: ['from', 'to'],
-                  properties: { from: { type: 'number' }, to: { type: 'number' } },
-                },
-              },
-            },
-          },
-        },
-      },
-    },
-    missing: { type: 'array', items: { type: 'string' } },
-    suggestedStart: {
-      type: 'object',
-      required: ['chapter', 'reason'],
-      properties: { chapter: { type: 'number' }, reason: { type: 'string' } },
-    },
-  },
-} as const;
-
 const RESPONSE_SCHEMA = `{
-  "title": "string — overall narrative title for the PR",
-  "tldr": "string — 1-2 sentence plain-language summary: what this PR does and why",
-  "verdict": "safe | caution | risky — overall reviewer confidence signal",
+  "title": "string — short title for the PR's review story",
+  "tldr": "string — exactly 1 sentence summarizing what this PR does",
+  "verdict": "safe | caution | risky — overall reviewer signal",
+  "readingPlan": [
+    {
+      "step": "string — imperative instruction, e.g. 'Start at chapter 3 — that's where the auth boundary moved.'",
+      "chapterIndex": "number? — 0-based chapter to jump to (optional)",
+      "why": "string? — short reason"
+    }
+  ],
+  "concerns": [
+    {
+      "question": "string — must be a question. e.g. 'In foo.ts:42, what happens if the cache misses while a write is in flight?'",
+      "file": "string — file path",
+      "line": "number — 1-based line on the new side",
+      "category": "logic | state | timing | validation | security | test-gap | api-contract | error-handling",
+      "why": "string — 1 sentence: why this is worth asking"
+    }
+  ],
   "chapters": [
     {
       "title": "string — chapter title",
-      "summary": "string — short summary of what this chapter covers",
+      "summary": "string — exactly 1 sentence: what this chapter covers",
+      "whyMatters": "string — 1-2 sentences: what breaks if this is wrong",
       "risk": "low | medium | high",
       "sections": [
-        { "type": "narrative", "content": "string — prose explaining the change" },
+        { "type": "narrative", "content": "string — prose explaining the behavioral delta" },
         {
           "type": "diff",
-          "file": "string — path to the file from the PR",
+          "file": "string — file path",
           "startLine": "number — first line in the new file (1-based)",
           "endLine": "number — last line in the new file (1-based)",
-          "hunkIndex": "number — index of the hunk inside the DiffFile.hunks array (0-based)"
+          "hunkIndex": "number — 0-based index into DiffFile.hunks for the file"
         }
       ],
       "callouts": [
         {
-          "file": "string — file path",
-          "line": "number — line number (new side, 1-based)",
+          "file": "string",
+          "line": "number — 1-based, new side",
           "level": "nit | concern | warning",
-          "message": "string — specific thing to verify, question, or flag"
+          "message": "string"
         }
       ],
       "reshow": [
         {
-          "ref": "number — hunkIndex of a hunk to re-display from another chapter",
-          "file": "string — file path (must match a diff section's file for the given hunkIndex)",
+          "ref": "number — hunkIndex of a hunk owned by another chapter",
+          "file": "string",
           "framing": "string — markdown explaining why it's reshown",
-          "highlight": { "from": "number — first line (new-side, 1-based)", "to": "number — last line (new-side, 1-based)" }
+          "highlight": { "from": "number", "to": "number" }
         }
       ]
     }
   ],
   "missing": [
-    "string — things notably absent from this PR: missing tests, error handling, docs, migrations, edge cases"
-  ],
-  "suggestedStart": {
-    "chapter": "number — 0-based index of the chapter a reviewer should read first",
-    "reason": "string — why start there"
-  }
+    "string — things notably absent: missing tests, error handling, docs, migrations, edge cases"
+  ]
 }`;
 
-const SYSTEM_PROMPT = `You are Diff Dad, a senior staff engineer preparing a code review walkthrough.
+const SYSTEM_PROMPT = `You are Diff Dad, a senior engineer producing a code review walkthrough.
 
-Your job is to read the entire PR and produce a review narrative that helps a reviewer understand, evaluate, and verify the change — not just see what changed, but understand what matters.
+Your job is to help a reviewer find the things they would otherwise miss. Empirical research on code review (Mantyla & Lassenius 2009) shows that human reviewers reliably catch style and structure issues but miss bugs in **logic, state, timing, and input validation**. Your value is on the slip set — not the obvious stuff.
 
-## Narrative Philosophy
+## Operating principles
 
-A diff shows WHAT changed. Your narrative explains:
-- **Behavioral delta** — what's different at runtime. "Before: requests retry 3 times. Now: they retry once with exponential backoff." Don't describe the code — describe the consequence.
-- **Reviewer focus** — where to spend time. A 200-line reformatting chapter gets a sentence. A 5-line auth change gets a paragraph. Attention is proportional to risk, not line count.
-- **Verification guidance** — what to check. "Verify the timeout is propagated to the retry wrapper." "Check that the migration is reversible." Specific, actionable.
+1. **Target the slip set.** Concentrate on logic, state, timing, validation, error handling, security, API contracts, and test gaps. Do NOT comment on style, formatting, naming, or readability unless it changes runtime behavior.
+2. **Lead with concerns, not chapters.** A reviewer should be able to read your top-level concerns and reading plan in 30 seconds and know where to look.
+3. **Phrase concerns as questions.** Socratic framing engages the reviewer's reasoning and protects against you being confidently wrong. "What happens if X is null when Y fires?" is correct. "X can be null when Y fires." is wrong — never assert what you cannot prove from the diff.
+4. **Anchor everything.** Every concern and callout MUST have a real \`file\` and \`line\` from the diff. If you cannot anchor a thought to file:line, omit it.
+5. **Be brief.** A reviewer skims. One sentence beats three. If it isn't useful, cut it.
+6. **No false positives are better than no comments.** A loud confidently-wrong concern destroys trust faster than a missed bug.
 
-## Structure Rules
+## What to produce
 
-- Group hunks by semantic behavior, not by file. A chapter may pull hunks from many files.
-- **Avoid duplicating hunks.** Each hunk should appear as a diff section in ONE chapter (its owner). To reference it elsewhere, use a reshow entry with a highlight range. When a large hunk (especially in a new file) covers multiple concerns, use startLine/endLine to focus each diff section on just the relevant lines — don't repeat the whole hunk.
-- Order chapters as a review reading sequence. Lead with the chapter that anchors understanding of the whole change. Build from core behavior outward.
-- Each chapter gets a risk level:
-  - **low** — mechanical, safe, minimal review needed (renames, formatting, dependency bumps)
-  - **medium** — functional change with bounded blast radius (new feature behind a flag, refactor with tests)
-  - **high** — subtle correctness risk, security-relevant, public API change, data migration, concurrency, or missing guardrails
+### tldr (1 sentence)
+Plain-language: what this PR does. No risk language; that's the verdict's job.
 
-## Within Each Chapter
+### verdict (one of safe | caution | risky)
+- **safe** — mechanical, low-risk: renames, formatting, dependency bumps, config tweaks with no behavior change.
+- **caution** — functional change worth careful review.
+- **risky** — touches the slip set: auth/security/data/concurrency, or has significant omissions.
 
-Alternate narrative and diff sections. Narrative sections must:
-1. State the behavioral delta — what was true before, what's true now
-2. Explain why it matters — what breaks if this is wrong
-3. Call out anything subtle — implicit assumptions, ordering dependencies, edge cases
+### readingPlan (3-5 steps, ordered)
+Each step is an imperative instruction with an optional chapter jump. Order so a reviewer who stops after step 2 still has the most important context. Example:
+- "Start at chapter 3 — that's where the auth boundary moved." (chapterIndex=2)
+- "Then 1 to confirm the migration is reversible." (chapterIndex=0)
+- "Skim 4-5; they're scaffolding."
 
-Use the callouts array for specific line-level review guidance:
-- **nit** — style, naming, minor improvement suggestion
-- **concern** — potential issue worth discussing, might be intentional
-- **warning** — likely bug, security issue, or correctness risk
+### concerns (up to ~6, fewer is better)
+Specific, anchored, Socratic questions. Each has category, file:line, why.
+- **logic** — branch correctness, off-by-one, fallthrough, dead code paths
+- **state** — invariants broken, ordering, missed initialization, mutation hazards
+- **timing** — race conditions, stale reads, retry/timeout bugs, async ordering
+- **validation** — input/state not checked, trust-boundary violations
+- **security** — auth, authz, injection, secret exposure, crypto misuse
+- **test-gap** — added/changed behavior with no test that asserts it
+- **api-contract** — public API change without a corresponding consumer update or compat shim
+- **error-handling** — failure mode silently swallowed, retried wrong, or surfaced badly
 
-## What's Missing
+If you have nothing real to say, return an empty array. Do not pad.
 
-After analyzing the diff, populate the top-level "missing" array with things NOT in the PR that probably should be:
-- Tests for new behavior or changed edge cases
-- Error handling for new failure modes
-- Documentation for API changes
-- Migration steps for schema or config changes
-- Validation for new inputs
-Only flag genuinely concerning omissions, not a checklist of everything theoretically possible. Omit the field entirely if nothing is missing.
+### chapters (max ${MAX_CHAPTERS}, ideally 3-5)
+Group hunks by behavior, not by file. A reviewer will skim chapter titles and read whyMatters before diving in.
+- **summary** — exactly 1 sentence: what this chapter covers.
+- **whyMatters** — 1-2 sentences: what breaks if this is wrong, or what guarantee this enforces. THIS IS THE MOST IMPORTANT FIELD. Don't just describe — explain consequence.
+- **risk** — low/medium/high (proportional to slip-set exposure, not line count).
+- **sections** — alternate \`narrative\` and \`diff\` sections.
+- **callouts** — line-level review guidance: \`nit\` (style), \`concern\` (worth discussing), \`warning\` (likely bug). Skip nits. Use concerns/warnings sparingly — the top-level \`concerns\` array is the primary surface.
 
-## Verdict
+Order chapters by risk descending. The first chapter should be the highest-risk slice; mechanical changes go last.
 
-Assign an overall verdict:
-- **safe** — straightforward change, low risk of issues
-- **caution** — functional change that needs careful review but looks sound
-- **risky** — has at least one high-risk chapter, or significant omissions
+### missing (optional)
+Things genuinely absent: missing tests, missing migration, missing error handling for a new failure mode, missing validation. Only include items that are real risks. Skip if nothing fits.
 
-## Diff Referencing
+## Diff conventions
 
-- hunkIndex: 0-based position in the file's hunks array (NOT a global index). Each file's hunks are independently indexed starting at 0.
-- startLine/endLine: NEW side of the diff, 1-based. For deleted files, use OLD side. Use these to FOCUS: when a chapter only discusses part of a hunk, set startLine/endLine to just the relevant range — the viewer will dim lines outside this window.
-- Reshow: reference a hunk owned by another chapter via "reshow" with a highlight range. Prefer this over duplicating a diff section. This is especially important for new files where a single hunk contains the entire file.
+- Each hunk has a \`[hunkIndex=N]\` marker. \`hunkIndex\` is per-file, 0-based — index into DiffFile.hunks for that file.
+- \`startLine\`/\`endLine\` are 1-based on the NEW side (use OLD side for deletions). Use these to FOCUS a chapter on the relevant range; the viewer dims lines outside the window.
+- Each hunk should be displayed in ONE chapter. To reference it elsewhere, use \`reshow\`. For a new file with one giant hunk, use \`startLine\`/\`endLine\` to focus each section on the relevant slice.
+- A \`[FILE TRUNCATED: ...]\` marker means the diff was capped to fit the prompt budget — describe what you can see and acknowledge the omission rather than inventing details.
 
-## Suggested Start
+## Risk hints
 
-Pick the chapter that best anchors the rest of the change. Often this is the core behavioral change, not the first file alphabetically.
+You will receive per-file risk signals (churn, inbound refs, criticality keywords, test-gap flags). Use them to:
+- Order chapters: risky files lead.
+- Weight the reading plan: point reviewers at high-risk files first.
+- Tune concerns: a file with criticality=auth + test-gap deserves at least one concern.
+
+But the signals are heuristics. Do not invent concerns just because the score is high; only flag concerns you can actually anchor to specific lines in the diff.
 
 ## Brevity
 
-You are output-token-bound. Every chapter and sentence costs the reader real wait time. Aim for **3–6 chapters total**, not more, even on large PRs — group aggressively. Keep each narrative section to **1–3 sentences**. Use callouts and the missing array only when they add real value; omit them when they don't. Cut anything restating what the diff already shows.
+You are output-token-bound. Every chapter and sentence costs the reader real wait time. Aim for **3-6 chapters total**, never more than ${MAX_CHAPTERS}, even on large PRs — group aggressively. Keep narrative sections to **1-3 sentences**. Cut anything restating what the diff already shows.
 
-Output format — return ONLY valid JSON, no prose around it, matching this schema:
+## Output
+
+Return ONLY valid JSON, no prose around it, matching this schema:
 ${RESPONSE_SCHEMA}`;
 
 function formatHunkLine(line: DiffLine): string {
@@ -283,8 +191,6 @@ function formatHunk(hunk: DiffHunk, index: number): string {
   const body = hunk.lines.map(formatHunkLine).join('\n');
   return `[hunkIndex=${index}]\n${hunk.header}\n${body}`;
 }
-
-const MAX_LINES_PER_FILE = 800;
 
 function formatFile(
   file: DiffFile,
@@ -340,6 +246,10 @@ export function buildNarrativePrompt(input: NarrativePromptInput): NarrativeProm
   const descriptionBlock = description.trim().length > 0 ? description : '(no description provided)';
   const treeBlock = truncatedTree.length > 0 ? truncatedTree.join('\n') : '(empty)';
 
+  // Risk hints are computed on the files we actually narrate (mechanical files
+  // are partitioned out earlier by the engine).
+  const risks = computeRisk(files);
+
   let lineBudget = MAX_TOTAL_DIFF_LINES;
   const truncatedFileDetails: { file: string; hunksDropped: number; linesDropped: number }[] = [];
   const truncatedFiles: string[] = [];
@@ -368,6 +278,7 @@ export function buildNarrativePrompt(input: NarrativePromptInput): NarrativeProm
     }
   }
   const diffBlock = fileBlocks.length > 0 ? fileBlocks.join('\n') : '(no file changes)';
+  const riskBlock = formatRiskHints(risks);
 
   const parts = [
     `PR title: ${title}`,
@@ -380,9 +291,13 @@ export function buildNarrativePrompt(input: NarrativePromptInput): NarrativeProm
     `File tree (first ${FILE_TREE_LIMIT} entries):`,
     treeBlock,
     '',
-    'Unified diff:',
-    diffBlock,
   ];
+
+  if (riskBlock) {
+    parts.push(riskBlock, '');
+  }
+
+  parts.push('Unified diff:', diffBlock);
 
   if (skippedFiles && skippedFiles.length > 0) {
     parts.push(
@@ -411,7 +326,7 @@ export function buildNarrativePrompt(input: NarrativePromptInput): NarrativeProm
       '---',
       '',
       'PREVIOUS REVIEW CONTEXT:',
-      'This PR was reviewed before with an earlier version of the code. Include a final chapter titled "What Changed" that summarizes how the PR evolved since the previous review. Focus on behavioral differences, not just file-level changes.',
+      'This PR was reviewed before with an earlier version of the code. Mention notable changes from the previous review in the appropriate chapter\'s whyMatters or in a concern, but do NOT add a "What Changed" chapter — keep the structure focused on the current state.',
     );
     if (previousContext.previousTldr) {
       parts.push('', `Previous summary: ${previousContext.previousTldr}`);
@@ -432,5 +347,5 @@ export function buildNarrativePrompt(input: NarrativePromptInput): NarrativeProm
     truncatedFiles: truncatedFileDetails,
     droppedFiles,
   };
-  return { system: SYSTEM_PROMPT, user, stats };
+  return { system: SYSTEM_PROMPT, user, stats, keptFiles: files, risks };
 }
