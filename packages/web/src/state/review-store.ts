@@ -43,6 +43,11 @@ type ReviewState = {
   activeChapterId: string | null;
   drafts: DraftComment[];
   openLine: string | null;
+  /** Anchor of an in-progress multi-line selection. `lineKey` of the first
+   * line clicked; `openLine` is the most recently shift-clicked line. The
+   * effective range is min..max of these two by line index within the same
+   * hunk. Null when the active comment is single-line. */
+  commentRangeStart: string | null;
   theme: Theme;
   accent: AccentId;
   density: Density;
@@ -52,6 +57,7 @@ type ReviewState = {
   liveEvents: LiveEvent[];
   lastEventAt: number;
   shortcutsHelpOpen: boolean;
+  submitOpen: boolean;
   storyStructure: StoryStructure;
   visualStyle: VisualStyle;
   layoutMode: LayoutMode;
@@ -76,6 +82,10 @@ type ReviewState = {
   setActiveChapter: (id: string) => void;
   toggleReviewed: (idx: number) => void;
   setOpenLine: (key: string | null) => void;
+  /** Open a comment thread on `key`. When `extend` is true and `openLine` is
+   * already set within the same hunk, anchor a range from the current
+   * `openLine` to `key`. */
+  openCommentAt: (key: string, extend?: boolean) => void;
   addComment: (comment: PRComment) => void;
   setComments: (comments: PRComment[]) => void;
   addDraft: (draft: DraftComment) => void;
@@ -92,6 +102,7 @@ type ReviewState = {
   setCheckRuns: (checkRuns: CheckRun[]) => void;
   setReviews: (reviews: PRReview[]) => void;
   setShortcutsHelpOpen: (open: boolean) => void;
+  setSubmitOpen: (open: boolean) => void;
   setStoryStructure: (s: StoryStructure) => void;
   setVisualStyle: (s: VisualStyle) => void;
   setLayoutMode: (m: LayoutMode) => void;
@@ -136,14 +147,28 @@ function loadDrafts(prNumber: number): DraftComment[] {
   return [];
 }
 
-type InlineComment = { path: string; line: number; body: string; side?: 'LEFT' | 'RIGHT' };
+type InlineComment = {
+  path: string;
+  line: number;
+  body: string;
+  side?: 'LEFT' | 'RIGHT';
+  startLine?: number;
+  startSide?: 'LEFT' | 'RIGHT';
+};
 
 function isSubmittableDraft(d: DraftComment): d is DraftComment & { path: string; line: number } {
   return !!d.path && d.line !== undefined;
 }
 
 export function pendingReviewComments(drafts: DraftComment[]): InlineComment[] {
-  return drafts.filter(isSubmittableDraft).map((d) => ({ path: d.path, line: d.line, body: d.body, side: d.side }));
+  return drafts.filter(isSubmittableDraft).map((d) => ({
+    path: d.path,
+    line: d.line,
+    body: d.body,
+    side: d.side,
+    startLine: d.startLine,
+    startSide: d.startSide,
+  }));
 }
 
 export const useReviewStore = create<ReviewState>((set) => ({
@@ -158,6 +183,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
   activeChapterId: null,
   drafts: [],
   openLine: null,
+  commentRangeStart: null,
   theme: (localStorage.getItem('diffdad.theme') as Theme) || 'auto',
   accent: (localStorage.getItem('diffdad.accent') as AccentId) || 'classic',
   density: 'normal',
@@ -167,6 +193,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
   liveEvents: [],
   lastEventAt: Date.now(),
   shortcutsHelpOpen: false,
+  submitOpen: false,
   storyStructure: 'chapters',
   visualStyle: 'stripe',
   layoutMode: 'toc',
@@ -231,7 +258,22 @@ export const useReviewStore = create<ReviewState>((set) => ({
       return { chapterStates: updated };
     }),
 
-  setOpenLine: (key) => set({ openLine: key }),
+  setOpenLine: (key) => set({ openLine: key, commentRangeStart: null }),
+
+  openCommentAt: (key, extend = false) =>
+    set((state) => {
+      // Only extend within the same hunk. lineKey format: `${file}:${hunkIndex}:${lineIdx}`.
+      function hunkPrefix(k: string): string {
+        const lastColon = k.lastIndexOf(':');
+        return lastColon === -1 ? k : k.slice(0, lastColon);
+      }
+      if (extend && state.openLine && state.openLine !== key && hunkPrefix(state.openLine) === hunkPrefix(key)) {
+        // Anchor the range at whichever side the user already had open.
+        const anchor = state.commentRangeStart ?? state.openLine;
+        return { openLine: key, commentRangeStart: anchor };
+      }
+      return { openLine: key, commentRangeStart: null };
+    }),
 
   addComment: (comment) =>
     set((state) => {
@@ -297,6 +339,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
   setReviews: (reviews) => set({ reviews }),
 
   setShortcutsHelpOpen: (shortcutsHelpOpen) => set({ shortcutsHelpOpen }),
+  setSubmitOpen: (submitOpen) => set({ submitOpen }),
 
   setStoryStructure: (storyStructure) => set({ storyStructure }),
   setVisualStyle: (visualStyle) => set({ visualStyle }),

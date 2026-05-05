@@ -10,10 +10,14 @@ type Props = {
   lineKey: string;
   lang: string;
   dimmed?: boolean;
+  /** True when this line falls within an in-progress multi-line selection. */
+  inSelection?: boolean;
+  /** True when this line is covered by an existing multi-line comment. */
+  inExistingRange?: boolean;
 };
 
-export function CodeLine({ line, lineKey, lang, dimmed }: Props) {
-  const setOpenLine = useReviewStore((s) => s.setOpenLine);
+export function CodeLine({ line, lineKey, lang, dimmed, inSelection, inExistingRange }: Props) {
+  const openCommentAt = useReviewStore((s) => s.openCommentAt);
   const theme = useResolvedTheme();
   const ready = useHighlighter();
 
@@ -25,7 +29,13 @@ export function CodeLine({ line, lineKey, lang, dimmed }: Props) {
   const highlighted = useMemo(() => highlightLine(line.content, lang, theme), [line.content, lang, theme, ready]);
 
   // Row background tints (matching design CSS: rgba(41,163,131,0.08) / rgba(229,70,102,0.08))
-  const rowBg = isAdd ? 'rgba(41, 163, 131, 0.08)' : isRem ? 'rgba(229, 70, 102, 0.08)' : 'var(--bg-panel)';
+  const rowBg = inSelection
+    ? 'var(--purple-a3)'
+    : isAdd
+      ? 'rgba(41, 163, 131, 0.08)'
+      : isRem
+        ? 'rgba(229, 70, 102, 0.08)'
+        : 'var(--bg-panel)';
 
   // Line number tints (slightly more saturated)
   const lnBg = isAdd ? 'rgba(41, 163, 131, 0.16)' : isRem ? 'rgba(229, 70, 102, 0.16)' : 'var(--gray-1)';
@@ -46,6 +56,7 @@ export function CodeLine({ line, lineKey, lang, dimmed }: Props) {
         background: rowBg,
         color: 'var(--gray-12)',
         minWidth: 'max-content',
+        boxShadow: inExistingRange ? 'inset 3px 0 0 var(--purple-9)' : undefined,
       }}
     >
       <span
@@ -87,8 +98,9 @@ export function CodeLine({ line, lineKey, lang, dimmed }: Props) {
       {(line.lineNumber.new !== undefined || line.lineNumber.old !== undefined) && (
         <button
           type="button"
-          aria-label="Comment on line"
-          onClick={() => setOpenLine(lineKey)}
+          aria-label="Comment on line (shift-click to extend selection)"
+          title="Click to comment · Shift-click to extend selection"
+          onClick={(e) => openCommentAt(lineKey, e.shiftKey)}
           className="ln-comment absolute z-10 flex h-[17px] w-[17px] items-center justify-center rounded-[4px] text-white"
           style={{
             left: '76px',

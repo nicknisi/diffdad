@@ -1,25 +1,42 @@
 import { useState } from 'react';
-import { copy } from '../lib/microcopy';
 import { pendingReviewComments, useReviewStore } from '../state/review-store';
 import { ApprovalCelebration } from './ApprovalCelebration';
 import { SubmitDialog } from './SubmitDialog';
 import { Toast } from './Toast';
+import { copy } from '../lib/microcopy';
 
 export function SubmitBar() {
   const narrative = useReviewStore((s) => s.narrative);
   const chapterStates = useReviewStore((s) => s.chapterStates);
   const drafts = useReviewStore((s) => s.drafts);
   const clearDrafts = useReviewStore((s) => s.clearDrafts);
+  const submitOpen = useReviewStore((s) => s.submitOpen);
+  const setSubmitOpen = useReviewStore((s) => s.setSubmitOpen);
 
-  const [open, setOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [celebrating, setCelebrating] = useState(false);
+
+  const open = submitOpen;
+  const setOpen = setSubmitOpen;
 
   if (!narrative) return null;
 
   const total = narrative.chapters.length;
   const reviewedCount = Object.values(chapterStates).filter((s) => s === 'reviewed').length;
   const progress = total === 0 ? 0 : (reviewedCount / total) * 100;
+  const draftCount = drafts.length;
+  const allReviewed = total > 0 && reviewedCount === total;
+  const ready = allReviewed; // primary callout: every chapter signed off
+
+  // CTA evolves with reviewer progress so the bar feels alive.
+  const ctaLabel =
+    draftCount > 0 && ready
+      ? `Ship ${draftCount} ${draftCount === 1 ? 'comment' : 'comments'} →`
+      : draftCount > 0
+        ? `Submit ${draftCount} ${draftCount === 1 ? 'comment' : 'comments'} →`
+        : ready
+          ? 'Approve & ship →'
+          : 'Submit review';
 
   async function handleSubmit(resolution: string, summary: string) {
     try {
@@ -80,10 +97,26 @@ export function SubmitBar() {
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="inline-flex h-[30px] items-center gap-1.5 rounded-[6px] bg-[var(--brand)] px-3 text-[12.5px] font-bold text-white hover:bg-[var(--brand-hover)]"
-          style={{ boxShadow: '0 1px 2px rgba(3,2,13,0.08)' }}
+          aria-keyshortcuts="s"
+          className="inline-flex h-[30px] items-center gap-1.5 rounded-[6px] px-3 text-[12.5px] font-bold text-white transition-colors"
+          style={{
+            background: ready ? 'var(--green-9)' : 'var(--brand)',
+            boxShadow: '0 1px 2px rgba(3,2,13,0.08)',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = ready ? 'var(--green-10)' : 'var(--brand-hover)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = ready ? 'var(--green-9)' : 'var(--brand)';
+          }}
         >
-          Submit review
+          {ctaLabel}
+          <kbd
+            className="ml-1 hidden rounded-[3px] px-1 text-[10px] font-mono font-medium sm:inline"
+            style={{ background: 'rgba(255,255,255,0.2)', color: 'rgba(255,255,255,0.85)' }}
+          >
+            s
+          </kbd>
         </button>
       </div>
       <SubmitDialog open={open} onClose={() => setOpen(false)} onSubmit={handleSubmit} />

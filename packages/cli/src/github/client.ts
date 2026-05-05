@@ -7,6 +7,8 @@ export type PostCommentOptions = {
   path?: string;
   line?: number;
   side?: 'LEFT' | 'RIGHT';
+  startLine?: number;
+  startSide?: 'LEFT' | 'RIGHT';
   commitId?: string;
   inReplyToId?: number;
 };
@@ -43,6 +45,9 @@ type GhReviewComment = {
   original_line: number | null;
   position: number | null;
   side: 'LEFT' | 'RIGHT' | null;
+  start_line: number | null;
+  original_start_line: number | null;
+  start_side: 'LEFT' | 'RIGHT' | null;
   in_reply_to_id?: number;
   diff_hunk: string;
 };
@@ -127,6 +132,8 @@ export class GitHubClient {
       path: c.path,
       line: c.line ?? c.original_line ?? undefined,
       side: c.side ?? undefined,
+      startLine: c.start_line ?? c.original_start_line ?? undefined,
+      startSide: c.start_side ?? undefined,
       inReplyToId: c.in_reply_to_id,
       diffHunk: c.diff_hunk,
     }));
@@ -185,13 +192,31 @@ export class GitHubClient {
     const isReply = !isInline && opts.inReplyToId !== undefined;
 
     if (isInline) {
+      // GitHub requires start_line < line for multi-line comments. Normalize
+      // so callers can pass either endpoint of the range as start vs end.
+      let endLine = opts.line!;
+      let endSide = opts.side ?? 'RIGHT';
+      let startLine = opts.startLine;
+      let startSide = opts.startSide;
+      if (startLine !== undefined && startLine !== endLine && startLine > endLine) {
+        const tmpLine = endLine;
+        const tmpSide = endSide;
+        endLine = startLine;
+        endSide = startSide ?? endSide;
+        startLine = tmpLine;
+        startSide = tmpSide;
+      }
       const payload: Record<string, unknown> = {
         body,
         commit_id: opts.commitId,
         path: opts.path,
-        line: opts.line,
-        side: opts.side ?? 'RIGHT',
+        line: endLine,
+        side: endSide,
       };
+      if (startLine !== undefined && startLine !== endLine) {
+        payload.start_line = startLine;
+        payload.start_side = startSide ?? endSide;
+      }
       if (opts.inReplyToId !== undefined) {
         payload.in_reply_to = opts.inReplyToId;
       }
@@ -211,6 +236,8 @@ export class GitHubClient {
         path: data.path,
         line: data.line ?? undefined,
         side: data.side ?? undefined,
+        startLine: data.start_line ?? undefined,
+        startSide: data.start_side ?? undefined,
         inReplyToId: data.in_reply_to_id,
         diffHunk: data.diff_hunk,
       };
@@ -233,6 +260,8 @@ export class GitHubClient {
         path: data.path,
         line: data.line ?? undefined,
         side: data.side ?? undefined,
+        startLine: data.start_line ?? undefined,
+        startSide: data.start_side ?? undefined,
         inReplyToId: data.in_reply_to_id,
         diffHunk: data.diff_hunk,
       };
@@ -284,15 +313,47 @@ export class GitHubClient {
     number: number,
     event: 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES',
     body?: string,
-    comments?: { path: string; line: number; body: string; side?: 'LEFT' | 'RIGHT' }[],
+    comments?: {
+      path: string;
+      line: number;
+      body: string;
+      side?: 'LEFT' | 'RIGHT';
+      startLine?: number;
+      startSide?: 'LEFT' | 'RIGHT';
+    }[],
   ): Promise<void> {
+    const ghComments = comments?.map((cm) => {
+      let endLine = cm.line;
+      let endSide: 'LEFT' | 'RIGHT' | undefined = cm.side;
+      let startLine = cm.startLine;
+      let startSide = cm.startSide;
+      if (startLine !== undefined && startLine !== endLine && startLine > endLine) {
+        const tmpLine = endLine;
+        const tmpSide = endSide;
+        endLine = startLine;
+        endSide = startSide ?? endSide;
+        startLine = tmpLine;
+        startSide = tmpSide;
+      }
+      const out: Record<string, unknown> = {
+        path: cm.path,
+        line: endLine,
+        body: cm.body,
+      };
+      if (endSide) out.side = endSide;
+      if (startLine !== undefined && startLine !== endLine) {
+        out.start_line = startLine;
+        out.start_side = startSide ?? endSide ?? 'RIGHT';
+      }
+      return out;
+    });
     await this.fetch(`/repos/${owner}/${repo}/pulls/${number}/reviews`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         event,
         body: body || undefined,
-        comments: comments?.length ? comments : undefined,
+        comments: ghComments?.length ? ghComments : undefined,
       }),
     });
   }

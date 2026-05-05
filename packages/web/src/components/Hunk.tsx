@@ -22,6 +22,8 @@ function CollapsibleThread({
   file,
   lineNumber,
   side,
+  startLineNumber,
+  startSide,
   isNewThread,
   onClose,
 }: {
@@ -29,6 +31,8 @@ function CollapsibleThread({
   file: string;
   lineNumber: number | undefined;
   side: 'LEFT' | 'RIGHT';
+  startLineNumber?: number;
+  startSide?: 'LEFT' | 'RIGHT';
   isNewThread: boolean;
   onClose: () => void;
 }) {
@@ -72,6 +76,8 @@ function CollapsibleThread({
         path={file}
         line={lineNumber}
         side={side}
+        startLine={startLineNumber}
+        startSide={startSide}
         onClose={onClose}
         autoFocus={isNewThread}
       />
@@ -280,6 +286,8 @@ function HunkLines({
   openLine,
   setOpenLine,
   clusteredIds,
+  rangeStartIdx,
+  rangeEndIdx,
 }: {
   file: string;
   hunk: DiffHunk;
@@ -290,6 +298,8 @@ function HunkLines({
   openLine: string | null;
   setOpenLine: (key: string | null) => void;
   clusteredIds: Set<number>;
+  rangeStartIdx: number | null;
+  rangeEndIdx: number | null;
 }) {
   const normFile = normalizePath(file);
 
@@ -324,7 +334,35 @@ function HunkLines({
     return map;
   }, [hunk.lines, comments, normFile, clusteredIds]);
 
-  const commentLineIndices = useMemo(() => new Set(commentLineMap.values()), [commentLineMap]);
+  // Indices covered by an existing multi-line comment (start..end). Used to
+  // pin those lines in the fold builder and to show a subtle left-border tint
+  // so reviewers see the original range without needing to expand context.
+  const existingMultiLineRanges = useMemo(() => {
+    const set = new Set<number>();
+    for (const c of comments) {
+      if (normalizePath(c.path) !== normFile) continue;
+      if (c.startLine === undefined || c.line === undefined) continue;
+      if (c.startLine === c.line) continue;
+      const lo = Math.min(c.startLine, c.line);
+      const hi = Math.max(c.startLine, c.line);
+      const onLeft = c.side === 'LEFT';
+      for (let i = 0; i < hunk.lines.length; i++) {
+        const ln = hunk.lines[i]!.lineNumber;
+        const num = onLeft ? ln.old : ln.new;
+        if (num !== undefined && num >= lo && num <= hi) set.add(i);
+      }
+    }
+    return set;
+  }, [comments, hunk.lines, normFile]);
+
+  const commentLineIndices = useMemo(() => {
+    const set = new Set(commentLineMap.values());
+    if (rangeStartIdx !== null && rangeEndIdx !== null) {
+      for (let i = rangeStartIdx; i <= rangeEndIdx; i++) set.add(i);
+    }
+    for (const i of existingMultiLineRanges) set.add(i);
+    return set;
+  }, [commentLineMap, rangeStartIdx, rangeEndIdx, existingMultiLineRanges]);
 
   const openLineKeys = useMemo(() => {
     const set = new Set<string>();
@@ -352,10 +390,40 @@ function HunkLines({
       const line = hunk.lines[i]!;
       const lineKey = `${file}:${hunkIndex}:${i}`;
       const lineComments: PRComment[] = comments.filter((c) => commentLineMap.get(c.id) === i);
-      const hasThread = openLine === lineKey || lineComments.length > 0;
+      const inSelection =
+        rangeStartIdx !== null && rangeEndIdx !== null && i >= rangeStartIdx && i <= rangeEndIdx;
+      const isOpenLine = openLine === lineKey;
+      // The thread anchors wherever the user just clicked (`openLine`). When a
+      // multi-line range exists, the OTHER end of the range becomes the
+      // `startLine` so GitHub gets a valid (start_line, line) pair.
+      const oppositeIdx =
+        isOpenLine && rangeStartIdx !== null && rangeEndIdx !== null
+          ? i === rangeEndIdx
+            ? rangeStartIdx
+            : rangeEndIdx
+          : null;
+      const oppositeLine = oppositeIdx !== null ? hunk.lines[oppositeIdx] : undefined;
+      const startLineNumber = oppositeLine
+        ? oppositeLine.type === 'remove'
+          ? oppositeLine.lineNumber.old
+          : oppositeLine.lineNumber.new
+        : undefined;
+      const startSideForThread = oppositeLine
+        ? oppositeLine.type === 'remove'
+          ? ('LEFT' as const)
+          : ('RIGHT' as const)
+        : undefined;
+      const hasThread = isOpenLine || lineComments.length > 0;
       return (
         <div key={lineKey}>
-          <CodeLine line={line} lineKey={lineKey} lang={lang} dimmed={dimmed} />
+          <CodeLine
+            line={line}
+            lineKey={lineKey}
+            lang={lang}
+            dimmed={dimmed}
+            inSelection={inSelection}
+            inExistingRange={existingMultiLineRanges.has(i)}
+          />
           {hasThread && (
             <div className="sticky left-0" style={{ width: '100cqw' }}>
               <CollapsibleThread
@@ -363,6 +431,8 @@ function HunkLines({
                 file={file}
                 lineNumber={line.type === 'remove' ? line.lineNumber.old : line.lineNumber.new}
                 side={line.type === 'remove' ? 'LEFT' : 'RIGHT'}
+                startLineNumber={startLineNumber}
+                startSide={startSideForThread}
                 isNewThread={openLine === lineKey && lineComments.length === 0}
                 onClose={() => (openLine === lineKey ? setOpenLine(null) : undefined)}
               />
@@ -371,7 +441,19 @@ function HunkLines({
         </div>
       );
     },
-    [hunk.lines, file, hunkIndex, comments, commentLineMap, openLine, setOpenLine, lang],
+    [
+      hunk.lines,
+      file,
+      hunkIndex,
+      comments,
+      commentLineMap,
+      openLine,
+      setOpenLine,
+      lang,
+      rangeStartIdx,
+      rangeEndIdx,
+      existingMultiLineRanges,
+    ],
   );
 
   return (
@@ -395,12 +477,32 @@ function HunkLines({
 
 export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight }: Props) {
   const openLine = useReviewStore((s) => s.openLine);
+  const commentRangeStart = useReviewStore((s) => s.commentRangeStart);
   const comments = useReviewStore((s) => s.comments);
   const setOpenLine = useReviewStore((s) => s.setOpenLine);
   const repoUrl = useReviewStore((s) => s.repoUrl);
   const headSha = useReviewStore((s) => s.pr?.headSha ?? null);
   const clusterBots = useReviewStore((s) => s.clusterBots);
   const lang = guessLang(file);
+
+  // Resolve a multi-line selection to local indices within this hunk.
+  // `openLine` and `commentRangeStart` are line keys; we match by file +
+  // hunkIndex to ignore selections in other hunks.
+  const { rangeStartIdx, rangeEndIdx } = useMemo(() => {
+    const myPrefix = `${file}:${hunkIndex}:`;
+    if (!openLine || !openLine.startsWith(myPrefix)) {
+      return { rangeStartIdx: null, rangeEndIdx: null };
+    }
+    if (!commentRangeStart || !commentRangeStart.startsWith(myPrefix)) {
+      return { rangeStartIdx: null, rangeEndIdx: null };
+    }
+    const a = Number(openLine.slice(myPrefix.length));
+    const b = Number(commentRangeStart.slice(myPrefix.length));
+    if (Number.isNaN(a) || Number.isNaN(b)) {
+      return { rangeStartIdx: null, rangeEndIdx: null };
+    }
+    return { rangeStartIdx: Math.min(a, b), rangeEndIdx: Math.max(a, b) };
+  }, [openLine, commentRangeStart, file, hunkIndex]);
 
   const rangeStart = hunk.oldStart;
   const rangeEnd = hunk.oldStart + Math.max(hunk.oldCount, 0);
@@ -544,6 +646,8 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight }: Props) {
           openLine={openLine}
           setOpenLine={setOpenLine}
           clusteredIds={clusteredIds}
+          rangeStartIdx={rangeStartIdx}
+          rangeEndIdx={rangeEndIdx}
         />
       </div>
     </div>

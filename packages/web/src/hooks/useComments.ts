@@ -6,6 +6,8 @@ type PostCommentOpts = {
   path?: string;
   line?: number;
   side?: string;
+  startLine?: number;
+  startSide?: string;
   inReplyToId?: number;
 };
 

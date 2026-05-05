@@ -10,6 +10,8 @@ const SHORTCUTS: { keys: string; desc: string }[] = [
   { keys: 'j / k', desc: 'Next / previous chapter' },
   { keys: 'r', desc: 'Toggle reviewed on current chapter' },
   { keys: 'c', desc: 'Open comment on current chapter' },
+  { keys: 's', desc: 'Open the submit-review dialog' },
+  { keys: 'Shift-click +', desc: 'Extend a comment to span multiple lines' },
   { keys: '?', desc: 'Show this help' },
   { keys: 'Esc', desc: 'Close overlays' },
 ];

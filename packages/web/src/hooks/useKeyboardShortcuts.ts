@@ -30,6 +30,8 @@ export function useKeyboardShortcuts() {
   const shortcutsHelpOpen = useReviewStore((s) => s.shortcutsHelpOpen);
   const setShortcutsHelpOpen = useReviewStore((s) => s.setShortcutsHelpOpen);
   const openLine = useReviewStore((s) => s.openLine);
+  const submitOpen = useReviewStore((s) => s.submitOpen);
+  const setSubmitOpen = useReviewStore((s) => s.setSubmitOpen);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -44,6 +46,11 @@ export function useKeyboardShortcuts() {
           setShortcutsHelpOpen(false);
           return;
         }
+        if (submitOpen) {
+          e.preventDefault();
+          setSubmitOpen(false);
+          return;
+        }
         if (openLine) {
           e.preventDefault();
           setOpenLine(null);
@@ -55,6 +62,12 @@ export function useKeyboardShortcuts() {
       if (key === '?') {
         e.preventDefault();
         setShortcutsHelpOpen(!shortcutsHelpOpen);
+        return;
+      }
+
+      if (key === 's') {
+        e.preventDefault();
+        setSubmitOpen(!submitOpen);
         return;
       }
 
@@ -122,5 +135,7 @@ export function useKeyboardShortcuts() {
     shortcutsHelpOpen,
     setShortcutsHelpOpen,
     openLine,
+    submitOpen,
+    setSubmitOpen,
   ]);
 }

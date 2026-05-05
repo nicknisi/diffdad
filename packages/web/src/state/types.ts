@@ -115,6 +115,8 @@ export type PRComment = {
   path?: string;
   line?: number;
   side?: string;
+  startLine?: number;
+  startSide?: string;
   inReplyToId?: number;
   diffHunk?: string;
 };
@@ -127,6 +129,8 @@ export type DraftComment = {
   path?: string;
   line?: number;
   side?: 'LEFT' | 'RIGHT';
+  startLine?: number;
+  startSide?: 'LEFT' | 'RIGHT';
   chapterIndex?: number;
 };
 
