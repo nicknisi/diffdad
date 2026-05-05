@@ -8,6 +8,7 @@ import { AppBar } from './components/AppBar';
 import { ClassicView } from './components/ClassicView';
 import { GeneratingScreen } from './components/GeneratingScreen';
 import { PRHeader } from './components/PRHeader';
+import { RecapView } from './components/RecapView';
 import { ShortcutsHelp } from './components/ShortcutsHelp';
 import { StoryView } from './components/StoryView';
 import { SubmitBar } from './components/SubmitBar';
@@ -125,7 +126,7 @@ export default function App() {
     <div className="min-h-screen bg-[var(--bg-page)] pb-20 text-[var(--fg-1)]">
       <AppBar onOpenActivity={() => setActivityOpen(true)} />
       <PRHeader />
-      {view === 'story' ? <StoryView /> : <ClassicView />}
+      {view === 'story' ? <StoryView /> : view === 'files' ? <ClassicView /> : <RecapView />}
       <SubmitBar />
       <ActivityDrawer open={activityOpen} onClose={() => setActivityOpen(false)} />
       <ShortcutsHelp open={shortcutsHelpOpen} onClose={() => setShortcutsHelpOpen(false)} />

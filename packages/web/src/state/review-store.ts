@@ -11,15 +11,17 @@ import type {
   PRData,
   PRReview,
 } from './types';
+import type { RecapResponse } from './recap-types';
 import type { AccentId } from '../lib/accents';
 
 type Theme = 'light' | 'dark' | 'auto';
 type Density = 'terse' | 'normal' | 'verbose';
-type View = 'story' | 'files';
+type View = 'story' | 'files' | 'recap';
 type StoryStructure = 'chapters' | 'linear' | 'outline';
 type VisualStyle = 'stripe' | 'linear' | 'github';
 type LayoutMode = 'toc' | 'linear';
 type DisplayDensity = 'comfortable' | 'compact';
+export type RecapStatus = 'idle' | 'generating' | 'ready' | 'error';
 
 export type BackendConfig = {
   theme?: Theme;
@@ -73,6 +75,10 @@ type ReviewState = {
   narrativeProgressChars: number;
   narrationOverrides: Record<string, string>;
   aiPath: 'api' | 'local-cli' | null;
+
+  recap: RecapResponse | null;
+  recapStatus: RecapStatus;
+  recapError: string | null;
 
   setData: (
     pr: PRData,
@@ -134,6 +140,9 @@ type ReviewState = {
   clearNarrationOverride: (chapterKey: string) => void;
   /** Update narrative incrementally as it streams in. Preserves chapter states and drafts. */
   applyPartialNarrative: (pr: PRData, narrative: NarrativeResponse, files?: DiffFile[], comments?: PRComment[]) => void;
+  setRecap: (recap: RecapResponse | null) => void;
+  setRecapStatus: (status: RecapStatus) => void;
+  setRecapError: (error: string | null) => void;
 };
 
 function draftStorageKey(prNumber: number): string {
@@ -248,6 +257,10 @@ export const useReviewStore = create<ReviewState>((set) => ({
   narrativeProgressChars: 0,
   aiPath: null,
   narrationOverrides: {} as Record<string, string>,
+
+  recap: null,
+  recapStatus: 'idle',
+  recapError: null,
 
   setData: (pr, narrative, files, comments, repoUrl = null, checkRuns = [], config = null, reviews = []) => {
     const safeNarrative = sanitizeNarrative(narrative);
@@ -446,6 +459,10 @@ export const useReviewStore = create<ReviewState>((set) => ({
       const { [chapterKey]: _, ...rest } = s.narrationOverrides;
       return { narrationOverrides: rest };
     }),
+
+  setRecap: (recap) => set({ recap, recapStatus: recap ? 'ready' : 'idle', recapError: null }),
+  setRecapStatus: (recapStatus) => set({ recapStatus }),
+  setRecapError: (recapError) => set({ recapError, recapStatus: recapError ? 'error' : 'idle' }),
 }));
 
 export function useResolvedTheme(): 'light' | 'dark' {

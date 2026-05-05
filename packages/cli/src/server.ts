@@ -9,6 +9,9 @@ import type { CheckRun, DiffFile, PRComment, PRMetadata, PRReview } from './gith
 import { cacheNarrative, getCachedNarrative } from './narrative/cache';
 import { callAi, generateNarrative, resolveAiPath } from './narrative/engine';
 import type { NarrativeResponse } from './narrative/types';
+import { cacheRecap } from './recap/cache';
+import { generateRecap } from './recap/engine';
+import { gatherRecapSources } from './recap/sources';
 import type { RecapResponse } from './recap/types';
 
 export type ServerContext = {
@@ -22,8 +25,12 @@ export type ServerContext = {
   owner: string;
   repo: string;
   headSha: string;
-  /** Populated when the server is run for `dad recap`. */
+  /** Populated lazily when the user opens the Recap tab (or hydrated from cache at startup). */
   recap?: RecapResponse | null;
+  /** Set while a recap is being generated; cleared on success or failure. */
+  recapGenerating?: boolean;
+  /** Set if the last recap generation attempt failed; cleared on retry. */
+  recapError?: string | null;
 };
 
 type PostCommentBody = {
@@ -138,33 +145,42 @@ export function createServer(ctx: ServerContext) {
     });
   });
 
-  app.get('/api/recap', async (c) => {
-    const config = await readConfig();
-    const { path: aiPath } = resolveAiPath(config);
-    if (!ctx.recap) {
-      return c.json({
-        generating: true,
-        pr: ctx.pr,
-        repoUrl: `https://github.com/${ctx.owner}/${ctx.repo}`,
-        aiPath,
-        config: {
-          theme: config.theme ?? 'auto',
-          accent: config.accent ?? 'classic',
-        },
-      });
+  // Kick off a recap generation in the background. Idempotent: subsequent calls
+  // while one is in flight or already completed are no-ops.
+  async function startRecapGeneration() {
+    if (ctx.recap || ctx.recapGenerating) return;
+    ctx.recapGenerating = true;
+    ctx.recapError = null;
+    broadcast('recap-generating', { generating: true });
+    try {
+      const config = await readConfig();
+      const sources = await gatherRecapSources(ctx.github, ctx.owner, ctx.repo, ctx.pr.number);
+      const { recap } = await generateRecap(sources, config);
+      ctx.recap = recap;
+      await cacheRecap(ctx.owner, ctx.repo, ctx.pr.number, ctx.headSha, recap);
+      broadcast('recap', { recap });
+    } catch (err) {
+      ctx.recapError = err instanceof Error ? err.message : String(err);
+      broadcast('recap-error', { error: ctx.recapError });
+    } finally {
+      ctx.recapGenerating = false;
     }
-    return c.json({
-      recap: ctx.recap,
-      pr: ctx.pr,
-      checkRuns: ctx.checkRuns,
-      reviews: ctx.reviews,
-      repoUrl: `https://github.com/${ctx.owner}/${ctx.repo}`,
-      aiPath,
-      config: {
-        theme: config.theme ?? 'auto',
-        accent: config.accent ?? 'classic',
-      },
-    });
+  }
+
+  app.get('/api/recap', async (c) => {
+    if (ctx.recap) return c.json({ status: 'ready', recap: ctx.recap });
+    if (ctx.recapError) return c.json({ status: 'error', error: ctx.recapError });
+    if (ctx.recapGenerating) return c.json({ status: 'generating' });
+    return c.json({ status: 'idle' });
+  });
+
+  app.post('/api/recap', async (c) => {
+    if (!ctx.recap && !ctx.recapGenerating) {
+      // fire-and-forget; the client polls GET /api/recap (or listens via SSE)
+      void startRecapGeneration();
+    }
+    if (ctx.recap) return c.json({ status: 'ready', recap: ctx.recap });
+    return c.json({ status: 'generating' });
   });
 
   app.post('/api/ai', async (c) => {

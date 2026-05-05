@@ -10,6 +10,7 @@ import type {
   PRData,
   PRReview,
 } from '../state/types';
+import type { RecapResponse } from '../state/recap-types';
 
 function makeEventId(): string {
   return `ev-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -162,6 +163,31 @@ export function useLiveStream() {
       }
     };
 
+    const onRecap = (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data) as { recap: RecapResponse };
+        useReviewStore.getState().setRecap(data.recap);
+        setLastEventAt(Date.now());
+        addLiveEvent(makeEvent('system', 'Recap ready'));
+      } catch {
+        // ignore
+      }
+    };
+
+    const onRecapGenerating = () => {
+      useReviewStore.getState().setRecapStatus('generating');
+      setLastEventAt(Date.now());
+    };
+
+    const onRecapError = (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data) as { error: string };
+        useReviewStore.getState().setRecapError(data.error);
+      } catch {
+        // ignore
+      }
+    };
+
     es.addEventListener('connected', onConnected);
     es.addEventListener('comment', onComment as EventListener);
     es.addEventListener('comments', onComments as EventListener);
@@ -172,6 +198,9 @@ export function useLiveStream() {
     es.addEventListener('narrative-progress', onNarrativeProgress as EventListener);
     es.addEventListener('narrative', onNarrative as EventListener);
     es.addEventListener('narrative.partial', onNarrativePartial as EventListener);
+    es.addEventListener('recap', onRecap as EventListener);
+    es.addEventListener('recap-generating', onRecapGenerating as EventListener);
+    es.addEventListener('recap-error', onRecapError as EventListener);
 
     es.onopen = () => {
       setLiveStatus('connected');
@@ -192,6 +221,9 @@ export function useLiveStream() {
       es.removeEventListener('narrative-progress', onNarrativeProgress as EventListener);
       es.removeEventListener('narrative', onNarrative as EventListener);
       es.removeEventListener('narrative.partial', onNarrativePartial as EventListener);
+      es.removeEventListener('recap', onRecap as EventListener);
+      es.removeEventListener('recap-generating', onRecapGenerating as EventListener);
+      es.removeEventListener('recap-error', onRecapError as EventListener);
       es.close();
     };
   }, []);

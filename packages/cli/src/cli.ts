@@ -4,9 +4,7 @@ import { readConfig, resetConfig, runConfig, showConfig } from './config';
 import { GitHubClient } from './github/client';
 import { cacheNarrative, clearCache, getCachedNarrative } from './narrative/cache';
 import { generateNarrative, resolveAiPath, setCliOverride } from './narrative/engine';
-import { cacheRecap, getCachedRecap } from './recap/cache';
-import { generateRecap } from './recap/engine';
-import { gatherRecapSources } from './recap/sources';
+import { getCachedRecap } from './recap/cache';
 import { createServer } from './server';
 
 const a = {
@@ -52,11 +50,10 @@ const USAGE = `dad - GitHub PRs as narrated stories
 
 Usage:
   dad <pr>                           Review a PR (shorthand for dad review)
-  dad review <pr>                    Review a PR
-  dad recap <pr>                     Recap an in-flight PR — orient on goal,
-                                     decisions, and blockers (no slip-set
-                                     concerns). Best for landing on a
-                                     teammate's WIP.
+  dad review <pr>                    Review a PR. The Recap tab in the UI
+                                     lazily generates an orientation view —
+                                     goal, decisions, blockers, mental model
+                                     — when you first click it.
   dad config                         Configure dad (interactive)
   dad config show                    Print the current config (secrets redacted)
   dad config reset [--yes]           Delete the saved config
@@ -131,7 +128,7 @@ export async function inferRepoFromGit(): Promise<{ owner: string; repo: string 
   }
 }
 
-async function resolvePrArg(prArg: string, command: string): Promise<ParsedPr | number> {
+async function resolvePrArg(prArg: string): Promise<ParsedPr | number> {
   let parsed = parsePrArg(prArg);
   if (parsed) return parsed;
   const trimmed = prArg.trim();
@@ -149,7 +146,6 @@ async function resolvePrArg(prArg: string, command: string): Promise<ParsedPr | 
   }
   console.error(`error: could not parse PR argument: ${prArg}`);
   console.error('expected: https://github.com/owner/repo/pull/123, owner/repo#123, or a bare PR number (e.g. 139)');
-  void command;
   return 2;
 }
 
@@ -160,7 +156,7 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
     return 2;
   }
 
-  const resolved = await resolvePrArg(prArg, 'review');
+  const resolved = await resolvePrArg(prArg);
   if (typeof resolved === 'number') return resolved;
   const parsed = resolved;
 
@@ -241,6 +237,7 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
 
   const noCache = Bun.argv.includes('--no-cache');
   const cached = noCache ? null : await getCachedNarrative(parsed.owner, parsed.repo, parsed.number, metadata.headSha);
+  const cachedRecap = noCache ? null : await getCachedRecap(parsed.owner, parsed.repo, parsed.number, metadata.headSha);
 
   const ctx = {
     narrative: cached,
@@ -253,6 +250,9 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
     owner: parsed.owner,
     repo: parsed.repo,
     headSha: metadata.headSha,
+    recap: cachedRecap,
+    recapGenerating: false,
+    recapError: null,
   };
 
   const { app, broadcast } = createServer(ctx);
@@ -342,139 +342,6 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
   return 0;
 }
 
-async function recapCommand(prArg: string | undefined): Promise<number> {
-  if (!prArg) {
-    console.error('error: missing PR argument');
-    console.error('usage: dad recap <pr-url-or-shorthand>');
-    return 2;
-  }
-
-  const resolved = await resolvePrArg(prArg, 'recap');
-  if (typeof resolved === 'number') return resolved;
-  const parsed = resolved;
-
-  const token = await resolveGitHubToken();
-  if (!token) {
-    console.error(`\n  ${a.red}${a.bold}error:${a.reset} no GitHub token found.`);
-    console.error(
-      `  ${a.dim}set DIFFDAD_GITHUB_TOKEN, run ${a.cyan}gh auth login${a.reset}${a.dim}, or run ${a.cyan}dad config${a.reset}\n`,
-    );
-    return 1;
-  }
-
-  const withFlag = Bun.argv.find((f) => f.startsWith('--with='));
-  if (withFlag) setCliOverride(withFlag.split('=')[1]!);
-
-  const config = await readConfig();
-  const github = new GitHubClient(token);
-
-  const slug = `${parsed.owner}/${parsed.repo}#${parsed.number}`;
-  console.log(
-    `\n  ${a.purple}${a.bold}Diff Dad${a.reset}  ${a.dim}—${a.reset}  ${a.white}${slug}${a.reset}  ${a.dim}(recap)${a.reset}`,
-  );
-  console.log(`  ${a.dim}Gathering recap sources...${a.reset}`);
-
-  let sources;
-  try {
-    sources = await gatherRecapSources(github, parsed.owner, parsed.repo, parsed.number);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (msg.includes('404')) {
-      console.error(
-        `\n  ${a.red}${a.bold}error:${a.reset} PR #${parsed.number} not found in ${a.cyan}${parsed.owner}/${parsed.repo}${a.reset}\n`,
-      );
-    } else {
-      console.error(`\n  ${a.red}${a.bold}error:${a.reset} ${msg}\n`);
-    }
-    return 1;
-  }
-
-  console.log(`\n  ${a.bold}${sources.pr.title}${a.reset}`);
-  console.log(
-    `  ${a.dim}${sources.commits.length} commits · ${sources.threads.length} threads · ${sources.forcePushes.length} force-pushes · ${sources.linkedIssues.length} linked issue${sources.linkedIssues.length === 1 ? '' : 's'}${a.reset}`,
-  );
-
-  const noCache = Bun.argv.includes('--no-cache');
-  const cached = noCache ? null : await getCachedRecap(parsed.owner, parsed.repo, parsed.number, sources.pr.headSha);
-
-  const ctx = {
-    narrative: null,
-    pr: sources.pr,
-    files: sources.files,
-    comments: sources.comments,
-    checkRuns: sources.checkRuns,
-    reviews: sources.reviews,
-    github,
-    owner: parsed.owner,
-    repo: parsed.repo,
-    headSha: sources.pr.headSha,
-    recap: cached,
-  };
-
-  const { app, broadcast } = createServer(ctx);
-  const portFlag = Bun.argv.find((f) => f.startsWith('--port='));
-  const port = portFlag ? parseInt(portFlag.split('=')[1] ?? '0') : 0;
-  const server = Bun.serve({ fetch: app.fetch, port, idleTimeout: 255 });
-  const url = `http://localhost:${server.port}/recap`;
-
-  if (cached) {
-    console.log(`\n  ${a.dim}Using cached recap ${a.gray}(${sources.pr.headSha.slice(0, 7)})${a.reset}`);
-  }
-
-  console.log(`\n  ${a.purple}${a.bold}${url}${a.reset}\n`);
-
-  if (!Bun.argv.includes('--no-open')) {
-    const { default: open } = await import('open');
-    await open(url);
-  }
-
-  if (!cached) {
-    const withCli = Bun.argv.find((f) => f.startsWith('--with='))?.split('=')[1];
-    const { path: aiPath, effectiveConfig } = resolveAiPath(config);
-    const providerHint =
-      withCli ?? (aiPath === 'api' ? (effectiveConfig.aiProvider ?? 'anthropic') : (config.defaultCli ?? 'claude'));
-    console.log(`  ${a.yellow}Generating recap${a.reset} ${a.gray}via${a.reset} ${a.cyan}${providerHint}${a.reset}`);
-    const isTty = Boolean(process.stdout.isTTY);
-    const startedAt = Date.now();
-    let totalChars = 0;
-    const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-    let spinnerFrame = 0;
-    const fmtElapsed = () => {
-      const s = Math.floor((Date.now() - startedAt) / 1000);
-      const m = Math.floor(s / 60);
-      return m > 0 ? `${m}m${String(s % 60).padStart(2, '0')}s` : `${s}s`;
-    };
-    const render = () => {
-      if (!isTty) return;
-      const frame = spinnerFrames[spinnerFrame++ % spinnerFrames.length];
-      const chars = totalChars > 0 ? `${a.gray} — ${totalChars.toLocaleString()} chars${a.reset}` : '';
-      process.stdout.write(`\r  ${a.dim}${frame} ${fmtElapsed()} elapsed${a.reset}${chars}`);
-    };
-    render();
-    const heartbeat = setInterval(render, 250);
-    let provider: string;
-    try {
-      const result = await generateRecap(sources, config, {
-        onProgress: ({ chars }) => {
-          totalChars = chars;
-          broadcast('recap-progress', { chars });
-        },
-      });
-      ctx.recap = result.recap;
-      provider = result.provider;
-    } finally {
-      clearInterval(heartbeat);
-      if (isTty) process.stdout.write('\r\x1b[2K');
-    }
-    await cacheRecap(parsed.owner, parsed.repo, parsed.number, sources.pr.headSha, ctx.recap!);
-    console.log(`  ${a.green}✓${a.reset} Recap generated ${a.dim}via ${provider} in ${fmtElapsed()}${a.reset}`);
-    broadcast('recap', { recap: ctx.recap, pr: ctx.pr });
-  }
-
-  await new Promise<never>(() => {});
-  return 0;
-}
-
 async function configCommand(sub?: string): Promise<number> {
   if (sub === 'show') return await showConfig();
   if (sub === 'reset') {
@@ -517,8 +384,6 @@ async function main(argv: string[]): Promise<number> {
   switch (cmd) {
     case 'review':
       return await reviewCommand(rest[0]);
-    case 'recap':
-      return await recapCommand(rest[0]);
     case 'config':
       return await configCommand(rest[0]);
     case 'cache': {
