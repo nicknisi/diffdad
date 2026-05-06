@@ -149,7 +149,9 @@ async function spawnCli(
   return { text, truncated: false };
 }
 
-export type AiResult = { text: string; truncated: boolean; provider: string };
+export type AiUsage = { inputTokens?: number; outputTokens?: number };
+
+export type AiResult = { text: string; truncated: boolean; provider: string; usage?: AiUsage };
 
 function slugify(s: string): string {
   return (
@@ -357,10 +359,12 @@ export async function callAi(
     onChunk?.(delta);
   }
   const finishReason = await stream.finishReason;
+  const usage = await stream.usage.catch(() => undefined);
   return {
     text,
     truncated: finishReason === 'length',
     provider: `${provider} (${effectiveConfig.aiModel ?? 'default'})`,
+    usage: usage ? { inputTokens: usage.promptTokens, outputTokens: usage.completionTokens } : undefined,
   };
 }
 
