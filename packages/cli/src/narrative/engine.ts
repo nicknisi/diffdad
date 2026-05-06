@@ -8,6 +8,7 @@ import type { DiffFile, PRMetadata } from '../github/types';
 import { buildNarrativePrompt, type PreviousNarrativeContext, type PromptCapStats } from './prompt';
 import { partitionMechanicalFiles } from './diff-filter';
 import { normalizeNarrative, type NarrativeResponse } from './types';
+import { formatViolation, validateNarrative } from './validator';
 
 export type AiChunkHandler = (delta: string) => void;
 
@@ -628,6 +629,19 @@ export async function generateNarrative(
         console.error(
           `Narrative perf: path=${path} provider="${result.provider}" firstChunk=${fmt(firstChunkAt)} firstPartial=${fmt(firstPartialAt)} total=${total}s chapters=${narrative.chapters.length} chars=${chars}`,
         );
+      }
+      const validation = validateNarrative(narrative, files);
+      if (!validation.ok) {
+        const counts = new Map<string, number>();
+        for (const v of validation.violations) counts.set(v.kind, (counts.get(v.kind) ?? 0) + 1);
+        const summary = [...counts.entries()].map(([k, n]) => `${n} ${k}`).join(', ');
+        console.error(`${YELLOW}  ⚠ Narrative validation: ${summary}${RESET}`);
+        for (const v of validation.violations.slice(0, 10)) {
+          console.error(`${DIM}      ${formatViolation(v)}${RESET}`);
+        }
+        if (validation.violations.length > 10) {
+          console.error(`${DIM}      … and ${validation.violations.length - 10} more${RESET}`);
+        }
       }
       return { narrative, provider: result.provider };
     } catch (err) {
