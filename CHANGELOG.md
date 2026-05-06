@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.1](https://github.com/nicknisi/diffdad/compare/v0.9.0...v0.9.1) (2026-05-06)
+
+
+### Bug Fixes
+
+* cache narratives by prompt-relevant PR metadata, not just SHA ([#32](https://github.com/nicknisi/diffdad/issues/32)) ([9576675](https://github.com/nicknisi/diffdad/commit/957667583d84358f3a600983ac8b309fbffd1c2b))
+
 ## [0.9.0](https://github.com/nicknisi/diffdad/compare/v0.8.0...v0.9.0) (2026-05-05)
 
 
