@@ -374,12 +374,14 @@ describe('GET /api/events — polling cycle', () => {
   });
 
   it('does NOT emit "pr" when only the SHA changed (regeneration handles it)', async () => {
-    const { cacheNarrative } = await import('../narrative/cache');
+    const { cacheNarrative, computePromptMetaHash } = await import('../narrative/cache');
     const newSha = `sha-shaonly-${Date.now()}`;
+    const freshPr = mkPR({ headSha: newSha });
+    const metaHash = computePromptMetaHash(freshPr);
     // Pre-seed cache so regen doesn't call out to a real LLM.
-    await cacheNarrative('o', 'r', 1, newSha, baseNarrative);
+    await cacheNarrative('o', 'r', 1, newSha, metaHash, baseNarrative);
 
-    const state = { pr: mkPR({ headSha: newSha }) };
+    const state = { pr: freshPr };
     const ctx = mkContext({
       headSha: 'sha-A',
       pr: mkPR({ headSha: 'sha-A' }),
@@ -403,20 +405,105 @@ describe('GET /api/events — polling cycle', () => {
     const { rm } = await import('fs/promises');
     const { homedir } = await import('os');
     const { join } = await import('path');
-    await rm(join(homedir(), '.cache', 'diffdad', `o-r-1-${newSha}.v2.json`), { force: true }).catch(() => {});
+    await rm(join(homedir(), '.cache', 'diffdad', `o-r-1-${newSha}-${metaHash}.v3.json`), { force: true }).catch(
+      () => {},
+    );
+  });
+
+  it('regenerates when only PR title changed (SHA unchanged)', async () => {
+    const { cacheNarrative, computePromptMetaHash } = await import('../narrative/cache');
+    const sha = `sha-titleonly-${Date.now()}`;
+    const editedPr = mkPR({ headSha: sha, title: 'Edited title' });
+    const newMetaHash = computePromptMetaHash(editedPr);
+    // Pre-seed cache for the *new* title so regen finds a hit instead of calling the LLM.
+    await cacheNarrative('o', 'r', 1, sha, newMetaHash, { ...baseNarrative, title: 'after edit' });
+
+    const state = { pr: editedPr };
+    const ctx = mkContext({
+      headSha: sha,
+      pr: mkPR({ headSha: sha, title: 'Original title' }),
+      github: defaultGh(state) as unknown as GitHubClient,
+    });
+    const { app } = createServer(ctx);
+    const ctrl = new AbortController();
+    const res = await app.request('/api/events', { signal: ctrl.signal });
+    const reader = new StreamReader(res.body!);
+    await reader.drain();
+
+    await runPoll();
+    await new Promise((r) => setTimeout(r, 30));
+    const events = (await reader.drain(80)) as SseEvent[];
+    expect(events.find((e) => e.event === 'regenerating')).toBeDefined();
+    // No standalone 'pr' event — the regen path's 'narrative' broadcast carries the fresh PR.
+    expect(events.find((e) => e.event === 'pr')).toBeUndefined();
+    const narrEvt = events.find((e) => e.event === 'narrative');
+    expect(narrEvt).toBeDefined();
+    expect((narrEvt!.data as { narrative: { title: string } }).narrative.title).toBe('after edit');
+    expect(ctx.pr.title).toBe('Edited title');
+
+    ctrl.abort();
+    await reader.cancel();
+
+    const { rm } = await import('fs/promises');
+    const { homedir } = await import('os');
+    const { join } = await import('path');
+    await rm(join(homedir(), '.cache', 'diffdad', `o-r-1-${sha}-${newMetaHash}.v3.json`), { force: true }).catch(
+      () => {},
+    );
+  });
+
+  it('regenerates when only PR body changed (SHA unchanged)', async () => {
+    const { cacheNarrative, computePromptMetaHash } = await import('../narrative/cache');
+    const sha = `sha-bodyonly-${Date.now()}`;
+    const editedPr = mkPR({ headSha: sha, body: 'New description with detail' });
+    const newMetaHash = computePromptMetaHash(editedPr);
+    await cacheNarrative('o', 'r', 1, sha, newMetaHash, { ...baseNarrative, title: 'after body edit' });
+
+    const state = { pr: editedPr };
+    const ctx = mkContext({
+      headSha: sha,
+      pr: mkPR({ headSha: sha, body: '' }),
+      github: defaultGh(state) as unknown as GitHubClient,
+    });
+    const { app } = createServer(ctx);
+    const ctrl = new AbortController();
+    const res = await app.request('/api/events', { signal: ctrl.signal });
+    const reader = new StreamReader(res.body!);
+    await reader.drain();
+
+    await runPoll();
+    await new Promise((r) => setTimeout(r, 30));
+    const events = (await reader.drain(80)) as SseEvent[];
+    expect(events.find((e) => e.event === 'regenerating')).toBeDefined();
+    const narrEvt = events.find((e) => e.event === 'narrative');
+    expect(narrEvt).toBeDefined();
+    expect((narrEvt!.data as { narrative: { title: string } }).narrative.title).toBe('after body edit');
+    expect(ctx.pr.body).toBe('New description with detail');
+
+    ctrl.abort();
+    await reader.cancel();
+
+    const { rm } = await import('fs/promises');
+    const { homedir } = await import('os');
+    const { join } = await import('path');
+    await rm(join(homedir(), '.cache', 'diffdad', `o-r-1-${sha}-${newMetaHash}.v3.json`), { force: true }).catch(
+      () => {},
+    );
   });
 
   it('on SHA change with a cached narrative, broadcasts "narrative" without re-generating', async () => {
     // Pre-seed cache so the regenerate path uses it.
-    const { cacheNarrative } = await import('../narrative/cache');
+    const { cacheNarrative, computePromptMetaHash } = await import('../narrative/cache');
     const sha = `sha-fresh-${Date.now()}`;
-    await cacheNarrative('o', 'r', 1, sha, {
+    const freshPr = mkPR({ headSha: sha });
+    const metaHash = computePromptMetaHash(freshPr);
+    await cacheNarrative('o', 'r', 1, sha, metaHash, {
       ...baseNarrative,
       title: 'cached title',
     });
 
     const state = {
-      pr: mkPR({ headSha: sha }),
+      pr: freshPr,
     };
     const ctx = mkContext({
       headSha: 'sha-A',
@@ -448,7 +535,7 @@ describe('GET /api/events — polling cycle', () => {
     const { rm } = await import('fs/promises');
     const { homedir } = await import('os');
     const { join } = await import('path');
-    await rm(join(homedir(), '.cache', 'diffdad', `o-r-1-${sha}.v2.json`), { force: true }).catch(() => {});
+    await rm(join(homedir(), '.cache', 'diffdad', `o-r-1-${sha}-${metaHash}.v3.json`), { force: true }).catch(() => {});
   });
 
   it('swallows polling errors and keeps the loop alive', async () => {

@@ -6,7 +6,7 @@ import { readConfig } from './config';
 import type { GitHubClient } from './github/client';
 import { mapCommentsToChapters } from './github/comments';
 import type { CheckRun, DiffFile, PRComment, PRMetadata, PRReview } from './github/types';
-import { cacheNarrative, getCachedNarrative } from './narrative/cache';
+import { cacheNarrative, computePromptMetaHash, getCachedNarrative } from './narrative/cache';
 import { callAi, generateNarrative, resolveAiPath } from './narrative/engine';
 import type { NarrativeResponse } from './narrative/types';
 import { cacheRecap } from './recap/cache';
@@ -374,12 +374,17 @@ export function createServer(ctx: ServerContext) {
             const freshPr = await ctx.github.getPR(ctx.owner, ctx.repo, ctx.pr.number);
             const shaChanged = freshPr.headSha !== ctx.headSha;
 
-            const prMetaChanged =
-              freshPr.draft !== ctx.pr.draft ||
-              freshPr.state !== ctx.pr.state ||
+            // These fields feed into the narrative prompt — changes here mean
+            // the cached narrative is stale and we need to regenerate.
+            const promptMetaChanged =
               freshPr.title !== ctx.pr.title ||
+              freshPr.body !== ctx.pr.body ||
               freshPr.labels.join(',') !== ctx.pr.labels.join(',');
-            if (prMetaChanged && !shaChanged) {
+            const otherMetaChanged = freshPr.draft !== ctx.pr.draft || freshPr.state !== ctx.pr.state;
+            // If the regen branch below will fire, it'll broadcast the fresh PR
+            // alongside the new narrative — skip the standalone 'pr' event then.
+            const willRegenerate = (shaChanged || promptMetaChanged) && !regenerating;
+            if ((promptMetaChanged || otherMetaChanged) && !shaChanged && !willRegenerate) {
               ctx.pr = freshPr;
               send('pr', ctx.pr);
             }
@@ -402,11 +407,15 @@ export function createServer(ctx: ServerContext) {
             ctx.reviews = freshReviews;
             send('reviews', freshReviews);
 
-            if (shaChanged && !regenerating) {
+            if ((shaChanged || promptMetaChanged) && !regenerating) {
               regenerating = true;
               const prevSha = ctx.headSha.slice(0, 7);
               const newSha = freshPr.headSha.slice(0, 7);
-              console.log(`\n  \x1b[38;5;221m↻\x1b[0m New commits detected \x1b[2m(${prevSha} → ${newSha})\x1b[0m`);
+              if (shaChanged) {
+                console.log(`\n  \x1b[38;5;221m↻\x1b[0m New commits detected \x1b[2m(${prevSha} → ${newSha})\x1b[0m`);
+              } else {
+                console.log(`\n  \x1b[38;5;221m↻\x1b[0m PR title/description/labels changed`);
+              }
               console.log(`  \x1b[2mRegenerating narrative...\x1b[0m`);
               broadcast('regenerating', { previousSha: prevSha, newSha });
 
@@ -415,11 +424,15 @@ export function createServer(ctx: ServerContext) {
                 const prevChapterTitles = ctx.narrative?.chapters.map((ch) => ch.title) ?? [];
 
                 ctx.pr = freshPr;
-                ctx.headSha = freshPr.headSha;
-                const freshFiles = await ctx.github.getDiff(ctx.owner, ctx.repo, ctx.pr.number);
-                ctx.files = freshFiles;
+                let freshFiles = ctx.files;
+                if (shaChanged) {
+                  ctx.headSha = freshPr.headSha;
+                  freshFiles = await ctx.github.getDiff(ctx.owner, ctx.repo, ctx.pr.number);
+                  ctx.files = freshFiles;
+                }
 
-                const cached = await getCachedNarrative(ctx.owner, ctx.repo, ctx.pr.number, ctx.headSha);
+                const metaHash = computePromptMetaHash(ctx.pr);
+                const cached = await getCachedNarrative(ctx.owner, ctx.repo, ctx.pr.number, ctx.headSha, metaHash);
                 if (cached) {
                   ctx.narrative = cached;
                   console.log(`  \x1b[38;5;78m✓\x1b[0m Using cached narrative \x1b[2m(${newSha})\x1b[0m`);
@@ -477,7 +490,7 @@ export function createServer(ctx: ServerContext) {
                     if (isTty) process.stdout.write('\r\x1b[2K');
                   }
                   ctx.narrative = generated;
-                  await cacheNarrative(ctx.owner, ctx.repo, ctx.pr.number, ctx.headSha, generated);
+                  await cacheNarrative(ctx.owner, ctx.repo, ctx.pr.number, ctx.headSha, metaHash, generated);
                   console.log(
                     `  \x1b[38;5;78m✓\x1b[0m ${generated.chapters.length} chapters regenerated \x1b[2mvia ${provider} in ${fmtRegenElapsed()}\x1b[0m`,
                   );

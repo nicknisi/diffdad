@@ -2,7 +2,7 @@
 import { resolveGitHubToken } from './auth';
 import { readConfig, resetConfig, runConfig, showConfig } from './config';
 import { GitHubClient } from './github/client';
-import { cacheNarrative, clearCache, getCachedNarrative } from './narrative/cache';
+import { cacheNarrative, clearCache, computePromptMetaHash, getCachedNarrative } from './narrative/cache';
 import { generateNarrative, resolveAiPath, setCliOverride } from './narrative/engine';
 import { getCachedRecap } from './recap/cache';
 import { createServer } from './server';
@@ -236,7 +236,10 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
   }
 
   const noCache = Bun.argv.includes('--no-cache');
-  const cached = noCache ? null : await getCachedNarrative(parsed.owner, parsed.repo, parsed.number, metadata.headSha);
+  const metaHash = computePromptMetaHash(metadata);
+  const cached = noCache
+    ? null
+    : await getCachedNarrative(parsed.owner, parsed.repo, parsed.number, metadata.headSha, metaHash);
   const cachedRecap = noCache ? null : await getCachedRecap(parsed.owner, parsed.repo, parsed.number, metadata.headSha);
 
   const ctx = {
@@ -326,7 +329,7 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
       if (isTty) process.stdout.write('\r\x1b[2K');
     }
     ctx.narrative = generated;
-    await cacheNarrative(parsed.owner, parsed.repo, parsed.number, metadata.headSha, generated);
+    await cacheNarrative(parsed.owner, parsed.repo, parsed.number, metadata.headSha, metaHash, generated);
     console.log(
       `  ${a.green}✓${a.reset} ${generated.chapters.length} chapters generated ${a.dim}via ${usedProvider} in ${fmtElapsed()}${a.reset}`,
     );
