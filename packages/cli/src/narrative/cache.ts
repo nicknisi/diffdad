@@ -3,12 +3,14 @@ import { join } from 'path';
 import { createHash } from 'crypto';
 import { readdir, readFile, rm, writeFile, mkdir } from 'fs/promises';
 import { normalizeNarrative, type NarrativeResponse } from './types';
+import { isPlan, type Plan } from './plan-types';
 
 const CACHE_DIR = join(homedir(), '.cache', 'diffdad');
 
-// Cache schema version. Bump when the NarrativeResponse shape OR the cache key
+// Cache schema version. Bump when the NarrativeResponse shape OR cache key
 // format changes in a way that would make older cached entries unreadable. v3
-// added the prompt-meta hash to the key so PR title/body/label edits regenerate.
+// adds: prompt-meta hash in the key so PR title/body/label edits regenerate;
+// optional themeId on chapters; a sibling .plan.v3.json for planner output.
 const SCHEMA_VERSION = 3;
 
 export type PromptRelevantMeta = {
@@ -37,6 +39,10 @@ function cachePath(
   providerKey: string,
 ): string {
   return join(CACHE_DIR, `${owner}-${repo}-${number}-${sha}-${metaHash}.v${SCHEMA_VERSION}.${providerKey}.json`);
+}
+
+function planCachePath(owner: string, repo: string, number: number, sha: string): string {
+  return join(CACHE_DIR, `${owner}-${repo}-${number}-${sha}.plan.v${SCHEMA_VERSION}.json`);
 }
 
 export async function getCachedNarrative(
@@ -81,4 +87,21 @@ export async function cacheNarrative(
   const path = cachePath(owner, repo, number, sha, metaHash, providerKey);
   await mkdir(CACHE_DIR, { recursive: true });
   await writeFile(path, JSON.stringify(narrative));
+}
+
+export async function getCachedPlan(owner: string, repo: string, number: number, sha: string): Promise<Plan | null> {
+  try {
+    const path = planCachePath(owner, repo, number, sha);
+    const raw = await readFile(path, 'utf-8');
+    const parsed = JSON.parse(raw);
+    return isPlan(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function cachePlan(owner: string, repo: string, number: number, sha: string, plan: Plan): Promise<void> {
+  const path = planCachePath(owner, repo, number, sha);
+  await mkdir(CACHE_DIR, { recursive: true });
+  await writeFile(path, JSON.stringify(plan));
 }

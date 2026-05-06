@@ -477,6 +477,7 @@ export function createServer(ctx: ServerContext) {
                         previousChapterTitles: prevChapterTitles,
                       },
                       {
+                        cacheKey: { owner: ctx.owner, repo: ctx.repo, number: ctx.pr.number, sha: ctx.headSha },
                         onProgress: ({ chars }) => {
                           totalChars = chars;
                           broadcast('narrative-progress', { chars });
@@ -488,6 +489,12 @@ export function createServer(ctx: ServerContext) {
                             files: freshFiles,
                             comments: ctx.comments,
                           });
+                        },
+                        onPlan: (plan) => {
+                          broadcast('plan-ready', { plan });
+                        },
+                        onChapter: ({ themeId, index, chapter }) => {
+                          broadcast('chapter-ready', { themeId, index, chapter });
                         },
                       },
                     );

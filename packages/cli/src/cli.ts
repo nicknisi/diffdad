@@ -315,12 +315,19 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
     let usedProvider: string;
     try {
       const result = await generateNarrative(metadata, files, [], config, undefined, {
+        cacheKey: { owner: parsed.owner, repo: parsed.repo, number: parsed.number, sha: metadata.headSha },
         onProgress: ({ chars }) => {
           totalChars = chars;
           broadcast('narrative-progress', { chars });
         },
         onPartial: (partial) => {
           broadcast('narrative.partial', { narrative: partial, pr: metadata, files, comments });
+        },
+        onPlan: (plan) => {
+          broadcast('plan-ready', { plan });
+        },
+        onChapter: ({ themeId, index, chapter }) => {
+          broadcast('chapter-ready', { themeId, index, chapter });
         },
       });
       generated = result.narrative;

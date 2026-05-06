@@ -60,6 +60,8 @@ export type NarrativeChapter = {
   sections: NarrativeSection[];
   callouts?: Callout[];
   reshow?: ReshowEntry[];
+  /** Stable theme ID from the planner. Optional for backward compat with single-pass narratives. */
+  themeId?: string;
 };
 
 export type ReshowEntry = {
@@ -148,6 +150,7 @@ export function normalizeNarrative(input: unknown): NarrativeResponse {
       sections: Array.isArray(c.sections) ? (c.sections as NarrativeSection[]) : [],
       callouts: Array.isArray(c.callouts) ? (c.callouts as Callout[]) : undefined,
       reshow: Array.isArray(c.reshow) ? (c.reshow as ReshowEntry[]) : undefined,
+      themeId: typeof c.themeId === 'string' ? c.themeId : undefined,
     })),
     missing: Array.isArray(obj.missing) ? (obj.missing as string[]) : undefined,
   };
