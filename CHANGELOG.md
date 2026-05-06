@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.10.0](https://github.com/nicknisi/diffdad/compare/v0.9.1...v0.10.0) (2026-05-06)
+
+
+### Features
+
+* Add narrative validation and error reporting ([#31](https://github.com/nicknisi/diffdad/issues/31)) ([a360c5c](https://github.com/nicknisi/diffdad/commit/a360c5c6263662db11ab19a07848a434b19c6a24))
+* provider-keyed narrative cache and streaming partials ([#30](https://github.com/nicknisi/diffdad/issues/30)) ([d85fb06](https://github.com/nicknisi/diffdad/commit/d85fb062c15554926c86cae828c5dc73c1aa48de))
+
 ## [0.9.1](https://github.com/nicknisi/diffdad/compare/v0.9.0...v0.9.1) (2026-05-06)
 
 
