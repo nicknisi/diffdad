@@ -538,6 +538,144 @@ describe('GET /api/events — polling cycle', () => {
     await rm(join(homedir(), '.cache', 'diffdad', `o-r-1-${sha}-${metaHash}.v3.json`), { force: true }).catch(() => {});
   });
 
+  it('regenerates when only PR labels changed (SHA unchanged)', async () => {
+    const { cacheNarrative, computePromptMetaHash } = await import('../narrative/cache');
+    const sha = `sha-labelonly-${Date.now()}`;
+    const editedPr = mkPR({ headSha: sha, labels: ['security', 'breaking'] });
+    const newMetaHash = computePromptMetaHash(editedPr);
+    await cacheNarrative('o', 'r', 1, sha, newMetaHash, { ...baseNarrative, title: 'after label edit' });
+
+    const state = { pr: editedPr };
+    const ctx = mkContext({
+      headSha: sha,
+      pr: mkPR({ headSha: sha, labels: [] }),
+      github: defaultGh(state) as unknown as GitHubClient,
+    });
+    const { app } = createServer(ctx);
+    const ctrl = new AbortController();
+    const res = await app.request('/api/events', { signal: ctrl.signal });
+    const reader = new StreamReader(res.body!);
+    await reader.drain();
+
+    await runPoll();
+    await new Promise((r) => setTimeout(r, 30));
+    const events = (await reader.drain(80)) as SseEvent[];
+    expect(events.find((e) => e.event === 'regenerating')).toBeDefined();
+    const narrEvt = events.find((e) => e.event === 'narrative');
+    expect(narrEvt).toBeDefined();
+    expect((narrEvt!.data as { narrative: { title: string } }).narrative.title).toBe('after label edit');
+    expect(ctx.pr.labels).toEqual(['security', 'breaking']);
+
+    ctrl.abort();
+    await reader.cancel();
+
+    const { rm } = await import('fs/promises');
+    const { homedir } = await import('os');
+    const { join } = await import('path');
+    await rm(join(homedir(), '.cache', 'diffdad', `o-r-1-${sha}-${newMetaHash}.v3.json`), { force: true }).catch(
+      () => {},
+    );
+  });
+
+  it('does NOT regenerate when only draft/state changed (no prompt impact)', async () => {
+    // draft and state aren't fed into the narrative prompt, so flipping them
+    // should emit 'pr' but never trigger regeneration. Guards against future
+    // changes accidentally treating these like prompt-relevant fields.
+    const state = { pr: mkPR({ draft: true }) };
+    const ctx = mkContext({
+      pr: mkPR({ draft: false }),
+      github: defaultGh(state) as unknown as GitHubClient,
+    });
+    const { app } = createServer(ctx);
+    const ctrl = new AbortController();
+    const res = await app.request('/api/events', { signal: ctrl.signal });
+    const reader = new StreamReader(res.body!);
+    await reader.drain();
+
+    await runPoll();
+    await new Promise((r) => setTimeout(r, 30));
+    const events = (await reader.drain(80)) as SseEvent[];
+    expect(events.find((e) => e.event === 'pr')).toBeDefined();
+    expect(events.find((e) => e.event === 'regenerating')).toBeUndefined();
+    expect(events.find((e) => e.event === 'narrative')).toBeUndefined();
+
+    ctrl.abort();
+    await reader.cancel();
+  });
+
+  it('does not start a second regeneration while one is already in flight', async () => {
+    // If a poll arrives mid-regeneration with a PR title edit, the regen
+    // branch must be guarded by `regenerating` and skip — only one
+    // 'regenerating' event should fire across the two polls.
+    const { cacheNarrative, computePromptMetaHash } = await import('../narrative/cache');
+    const newSha = `sha-reentrant-${Date.now()}`;
+    const initialPr = mkPR({ headSha: newSha });
+    const editedPr = mkPR({ headSha: newSha, title: 'Edited mid-regen' });
+    // Pre-seed the cache under the edited title's hash. The standalone 'pr'
+    // branch in poll 2 mutates ctx.pr before poll 1's getDiff resolves, so the
+    // post-await metaHash computation picks up the edited title.
+    const editedMeta = computePromptMetaHash(editedPr);
+    await cacheNarrative('o', 'r', 1, newSha, editedMeta, baseNarrative);
+
+    let releaseDiff!: () => void;
+    const diffGate = new Promise<void>((res) => {
+      releaseDiff = res;
+    });
+
+    const state = { pr: initialPr };
+    const gh: GhStub = {
+      getPR: async () => state.pr,
+      getComments: async () => [],
+      getCheckRuns: async () => [],
+      getReviews: async () => [],
+      getDiff: async () => {
+        await diffGate;
+        return [];
+      },
+    };
+    const ctx = mkContext({
+      headSha: 'sha-A',
+      pr: mkPR({ headSha: 'sha-A' }),
+      github: gh as unknown as GitHubClient,
+    });
+    const { app } = createServer(ctx);
+    const ctrl = new AbortController();
+    const res = await app.request('/api/events', { signal: ctrl.signal });
+    const reader = new StreamReader(res.body!);
+    await reader.drain();
+
+    // First poll: SHA changes, regen starts and blocks on getDiff.
+    const firstPoll = capturedIntervalCb!();
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Mid-flight: someone edits the PR title.
+    state.pr = editedPr;
+
+    // Second poll: should hit the regen guard and skip — but still emit 'pr'
+    // for the title change so the UI doesn't go stale.
+    await capturedIntervalCb!();
+    let events = (await reader.drain(50)) as SseEvent[];
+    expect(events.filter((e) => e.event === 'regenerating')).toHaveLength(1);
+    expect(events.find((e) => e.event === 'pr')).toBeDefined();
+
+    // Let the first regen finish.
+    releaseDiff();
+    await firstPoll;
+    events = (await reader.drain(50)) as SseEvent[];
+    // The completed regen broadcasts a 'narrative' event.
+    expect(events.find((e) => e.event === 'narrative')).toBeDefined();
+
+    ctrl.abort();
+    await reader.cancel();
+
+    const { rm } = await import('fs/promises');
+    const { homedir } = await import('os');
+    const { join } = await import('path');
+    await rm(join(homedir(), '.cache', 'diffdad', `o-r-1-${newSha}-${editedMeta}.v3.json`), { force: true }).catch(
+      () => {},
+    );
+  });
+
   it('swallows polling errors and keeps the loop alive', async () => {
     let pollCount = 0;
     const gh: GhStub = {

@@ -89,6 +89,20 @@ describe('narrative cache', () => {
     expect(a).toBe(b);
   });
 
+  it('reverting a metadata edit re-hits the prior cache entry', async () => {
+    // The whole point of putting the meta hash in the key (rather than
+    // invalidating on write) is that flipping back to a prior version of the
+    // PR description finds the original narrative instead of regenerating.
+    const sha = 'sha-revert';
+    const v1 = computePromptMetaHash({ title: 'V1', body: 'first', labels: [] });
+    const v2 = computePromptMetaHash({ title: 'V2', body: 'second', labels: [] });
+    await cacheNarrative(FIXTURE_OWNER, FIXTURE_REPO, 17, sha, v1, mkResponse({ title: 'narr-v1' }));
+    await cacheNarrative(FIXTURE_OWNER, FIXTURE_REPO, 17, sha, v2, mkResponse({ title: 'narr-v2' }));
+
+    expect((await getCachedNarrative(FIXTURE_OWNER, FIXTURE_REPO, 17, sha, v1))?.title).toBe('narr-v1');
+    expect((await getCachedNarrative(FIXTURE_OWNER, FIXTURE_REPO, 17, sha, v2))?.title).toBe('narr-v2');
+  });
+
   it('normalizes cached narrative on read (tolerant of older shapes)', async () => {
     // Write an "old shape" payload bypassing the type — simulate a legacy cache.
     const sha = 'sha-legacy';
