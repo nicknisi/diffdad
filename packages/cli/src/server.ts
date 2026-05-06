@@ -7,7 +7,7 @@ import type { GitHubClient } from './github/client';
 import { mapCommentsToChapters } from './github/comments';
 import type { CheckRun, DiffFile, PRComment, PRMetadata, PRReview } from './github/types';
 import { cacheNarrative, computePromptMetaHash, getCachedNarrative } from './narrative/cache';
-import { callAi, generateNarrative, resolveAiPath } from './narrative/engine';
+import { callAi, generateNarrative, resolveAiPath, resolveProviderKey } from './narrative/engine';
 import type { NarrativeResponse } from './narrative/types';
 import { cacheRecap } from './recap/cache';
 import { generateRecap } from './recap/engine';
@@ -431,13 +431,21 @@ export function createServer(ctx: ServerContext) {
                   ctx.files = freshFiles;
                 }
 
+                const config = await readConfig();
                 const metaHash = computePromptMetaHash(ctx.pr);
-                const cached = await getCachedNarrative(ctx.owner, ctx.repo, ctx.pr.number, ctx.headSha, metaHash);
+                const providerKey = await resolveProviderKey(config);
+                const cached = await getCachedNarrative(
+                  ctx.owner,
+                  ctx.repo,
+                  ctx.pr.number,
+                  ctx.headSha,
+                  metaHash,
+                  providerKey,
+                );
                 if (cached) {
                   ctx.narrative = cached;
                   console.log(`  \x1b[38;5;78m✓\x1b[0m Using cached narrative \x1b[2m(${newSha})\x1b[0m`);
                 } else {
-                  const config = await readConfig();
                   const regenStartedAt = Date.now();
                   const isTty = Boolean(process.stdout.isTTY);
                   const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
@@ -490,7 +498,15 @@ export function createServer(ctx: ServerContext) {
                     if (isTty) process.stdout.write('\r\x1b[2K');
                   }
                   ctx.narrative = generated;
-                  await cacheNarrative(ctx.owner, ctx.repo, ctx.pr.number, ctx.headSha, metaHash, generated);
+                  await cacheNarrative(
+                    ctx.owner,
+                    ctx.repo,
+                    ctx.pr.number,
+                    ctx.headSha,
+                    metaHash,
+                    providerKey,
+                    generated,
+                  );
                   console.log(
                     `  \x1b[38;5;78m✓\x1b[0m ${generated.chapters.length} chapters regenerated \x1b[2mvia ${provider} in ${fmtRegenElapsed()}\x1b[0m`,
                   );

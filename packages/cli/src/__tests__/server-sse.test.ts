@@ -375,11 +375,14 @@ describe('GET /api/events — polling cycle', () => {
 
   it('does NOT emit "pr" when only the SHA changed (regeneration handles it)', async () => {
     const { cacheNarrative, computePromptMetaHash } = await import('../narrative/cache');
+    const { resolveProviderKey } = await import('../narrative/engine');
+    const { readConfig } = await import('../config');
+    const providerKey = await resolveProviderKey(await readConfig());
     const newSha = `sha-shaonly-${Date.now()}`;
     const freshPr = mkPR({ headSha: newSha });
     const metaHash = computePromptMetaHash(freshPr);
     // Pre-seed cache so regen doesn't call out to a real LLM.
-    await cacheNarrative('o', 'r', 1, newSha, metaHash, baseNarrative);
+    await cacheNarrative('o', 'r', 1, newSha, metaHash, providerKey, baseNarrative);
 
     const state = { pr: freshPr };
     const ctx = mkContext({
@@ -405,18 +408,21 @@ describe('GET /api/events — polling cycle', () => {
     const { rm } = await import('fs/promises');
     const { homedir } = await import('os');
     const { join } = await import('path');
-    await rm(join(homedir(), '.cache', 'diffdad', `o-r-1-${newSha}-${metaHash}.v3.json`), { force: true }).catch(
-      () => {},
-    );
+    await rm(join(homedir(), '.cache', 'diffdad', `o-r-1-${newSha}-${metaHash}.v3.${providerKey}.json`), {
+      force: true,
+    }).catch(() => {});
   });
 
   it('regenerates when only PR title changed (SHA unchanged)', async () => {
     const { cacheNarrative, computePromptMetaHash } = await import('../narrative/cache');
+    const { resolveProviderKey } = await import('../narrative/engine');
+    const { readConfig } = await import('../config');
+    const providerKey = await resolveProviderKey(await readConfig());
     const sha = `sha-titleonly-${Date.now()}`;
     const editedPr = mkPR({ headSha: sha, title: 'Edited title' });
     const newMetaHash = computePromptMetaHash(editedPr);
     // Pre-seed cache for the *new* title so regen finds a hit instead of calling the LLM.
-    await cacheNarrative('o', 'r', 1, sha, newMetaHash, { ...baseNarrative, title: 'after edit' });
+    await cacheNarrative('o', 'r', 1, sha, newMetaHash, providerKey, { ...baseNarrative, title: 'after edit' });
 
     const state = { pr: editedPr };
     const ctx = mkContext({
@@ -447,17 +453,20 @@ describe('GET /api/events — polling cycle', () => {
     const { rm } = await import('fs/promises');
     const { homedir } = await import('os');
     const { join } = await import('path');
-    await rm(join(homedir(), '.cache', 'diffdad', `o-r-1-${sha}-${newMetaHash}.v3.json`), { force: true }).catch(
-      () => {},
-    );
+    await rm(join(homedir(), '.cache', 'diffdad', `o-r-1-${sha}-${newMetaHash}.v3.${providerKey}.json`), {
+      force: true,
+    }).catch(() => {});
   });
 
   it('regenerates when only PR body changed (SHA unchanged)', async () => {
     const { cacheNarrative, computePromptMetaHash } = await import('../narrative/cache');
+    const { resolveProviderKey } = await import('../narrative/engine');
+    const { readConfig } = await import('../config');
+    const providerKey = await resolveProviderKey(await readConfig());
     const sha = `sha-bodyonly-${Date.now()}`;
     const editedPr = mkPR({ headSha: sha, body: 'New description with detail' });
     const newMetaHash = computePromptMetaHash(editedPr);
-    await cacheNarrative('o', 'r', 1, sha, newMetaHash, { ...baseNarrative, title: 'after body edit' });
+    await cacheNarrative('o', 'r', 1, sha, newMetaHash, providerKey, { ...baseNarrative, title: 'after body edit' });
 
     const state = { pr: editedPr };
     const ctx = mkContext({
@@ -486,18 +495,21 @@ describe('GET /api/events — polling cycle', () => {
     const { rm } = await import('fs/promises');
     const { homedir } = await import('os');
     const { join } = await import('path');
-    await rm(join(homedir(), '.cache', 'diffdad', `o-r-1-${sha}-${newMetaHash}.v3.json`), { force: true }).catch(
-      () => {},
-    );
+    await rm(join(homedir(), '.cache', 'diffdad', `o-r-1-${sha}-${newMetaHash}.v3.${providerKey}.json`), {
+      force: true,
+    }).catch(() => {});
   });
 
   it('on SHA change with a cached narrative, broadcasts "narrative" without re-generating', async () => {
     // Pre-seed cache so the regenerate path uses it.
     const { cacheNarrative, computePromptMetaHash } = await import('../narrative/cache');
+    const { resolveProviderKey } = await import('../narrative/engine');
+    const { readConfig } = await import('../config');
+    const providerKey = await resolveProviderKey(await readConfig());
     const sha = `sha-fresh-${Date.now()}`;
     const freshPr = mkPR({ headSha: sha });
     const metaHash = computePromptMetaHash(freshPr);
-    await cacheNarrative('o', 'r', 1, sha, metaHash, {
+    await cacheNarrative('o', 'r', 1, sha, metaHash, providerKey, {
       ...baseNarrative,
       title: 'cached title',
     });
@@ -535,15 +547,20 @@ describe('GET /api/events — polling cycle', () => {
     const { rm } = await import('fs/promises');
     const { homedir } = await import('os');
     const { join } = await import('path');
-    await rm(join(homedir(), '.cache', 'diffdad', `o-r-1-${sha}-${metaHash}.v3.json`), { force: true }).catch(() => {});
+    await rm(join(homedir(), '.cache', 'diffdad', `o-r-1-${sha}-${metaHash}.v3.${providerKey}.json`), {
+      force: true,
+    }).catch(() => {});
   });
 
   it('regenerates when only PR labels changed (SHA unchanged)', async () => {
     const { cacheNarrative, computePromptMetaHash } = await import('../narrative/cache');
+    const { resolveProviderKey } = await import('../narrative/engine');
+    const { readConfig } = await import('../config');
+    const providerKey = await resolveProviderKey(await readConfig());
     const sha = `sha-labelonly-${Date.now()}`;
     const editedPr = mkPR({ headSha: sha, labels: ['security', 'breaking'] });
     const newMetaHash = computePromptMetaHash(editedPr);
-    await cacheNarrative('o', 'r', 1, sha, newMetaHash, { ...baseNarrative, title: 'after label edit' });
+    await cacheNarrative('o', 'r', 1, sha, newMetaHash, providerKey, { ...baseNarrative, title: 'after label edit' });
 
     const state = { pr: editedPr };
     const ctx = mkContext({
@@ -572,9 +589,9 @@ describe('GET /api/events — polling cycle', () => {
     const { rm } = await import('fs/promises');
     const { homedir } = await import('os');
     const { join } = await import('path');
-    await rm(join(homedir(), '.cache', 'diffdad', `o-r-1-${sha}-${newMetaHash}.v3.json`), { force: true }).catch(
-      () => {},
-    );
+    await rm(join(homedir(), '.cache', 'diffdad', `o-r-1-${sha}-${newMetaHash}.v3.${providerKey}.json`), {
+      force: true,
+    }).catch(() => {});
   });
 
   it('does NOT regenerate when only draft/state changed (no prompt impact)', async () => {
@@ -608,6 +625,9 @@ describe('GET /api/events — polling cycle', () => {
     // branch must be guarded by `regenerating` and skip — only one
     // 'regenerating' event should fire across the two polls.
     const { cacheNarrative, computePromptMetaHash } = await import('../narrative/cache');
+    const { resolveProviderKey } = await import('../narrative/engine');
+    const { readConfig } = await import('../config');
+    const providerKey = await resolveProviderKey(await readConfig());
     const newSha = `sha-reentrant-${Date.now()}`;
     const initialPr = mkPR({ headSha: newSha });
     const editedPr = mkPR({ headSha: newSha, title: 'Edited mid-regen' });
@@ -615,7 +635,7 @@ describe('GET /api/events — polling cycle', () => {
     // branch in poll 2 mutates ctx.pr before poll 1's getDiff resolves, so the
     // post-await metaHash computation picks up the edited title.
     const editedMeta = computePromptMetaHash(editedPr);
-    await cacheNarrative('o', 'r', 1, newSha, editedMeta, baseNarrative);
+    await cacheNarrative('o', 'r', 1, newSha, editedMeta, providerKey, baseNarrative);
 
     let releaseDiff!: () => void;
     const diffGate = new Promise<void>((res) => {
@@ -671,9 +691,9 @@ describe('GET /api/events — polling cycle', () => {
     const { rm } = await import('fs/promises');
     const { homedir } = await import('os');
     const { join } = await import('path');
-    await rm(join(homedir(), '.cache', 'diffdad', `o-r-1-${newSha}-${editedMeta}.v3.json`), { force: true }).catch(
-      () => {},
-    );
+    await rm(join(homedir(), '.cache', 'diffdad', `o-r-1-${newSha}-${editedMeta}.v3.${providerKey}.json`), {
+      force: true,
+    }).catch(() => {});
   });
 
   it('swallows polling errors and keeps the loop alive', async () => {

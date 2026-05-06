@@ -39,9 +39,23 @@ export function inferProviderFromEnv(): Pick<DiffDadConfig, 'aiProvider' | 'aiAp
 /** Resolved AI path the engine will take for a given config + env. */
 export type AiPath = 'api' | 'local-cli';
 
+/**
+ * Resolves whether to take the API or local-CLI path. Priority:
+ *   1. `--with=` flag (cliOverride) — explicit, wins always.
+ *   2. `DIFFDAD_CLI` env — explicit, forces local CLI.
+ *   3. Configured `aiProvider` — user picked an API path in `dad config`.
+ *   4. Configured `defaultCli` — user picked local CLI in `dad config`.
+ *   5. Env-inferred API key (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY`) — only
+ *      kicks in for users who haven't expressed a preference. Local CLI is
+ *      ~5-10× slower, so we shouldn't default to it when an API path is
+ *      freely available.
+ *   6. Local CLI as the final fallback.
+ */
 export function resolveAiPath(config: DiffDadConfig): { path: AiPath; effectiveConfig: DiffDadConfig } {
   if (cliOverride) return { path: 'local-cli', effectiveConfig: config };
+  if (process.env.DIFFDAD_CLI) return { path: 'local-cli', effectiveConfig: config };
   if (config.aiProvider !== undefined) return { path: 'api', effectiveConfig: config };
+  if (config.defaultCli) return { path: 'local-cli', effectiveConfig: config };
   const inferred = inferProviderFromEnv();
   if (inferred) {
     return { path: 'api', effectiveConfig: { ...config, ...inferred } };
@@ -135,6 +149,49 @@ async function spawnCli(
 }
 
 export type AiResult = { text: string; truncated: boolean; provider: string };
+
+function slugify(s: string): string {
+  return (
+    s
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'unknown'
+  );
+}
+
+/**
+ * Resolves a stable cache key segment identifying the provider+model that will
+ * be used for a given config+env. Cached narratives must be keyed by this so
+ * switching model (e.g. sonnet → haiku) doesn't serve stale outputs.
+ */
+export async function resolveProviderKey(config: DiffDadConfig): Promise<string> {
+  const { path, effectiveConfig } = resolveAiPath(config);
+  if (path === 'api') {
+    const provider = effectiveConfig.aiProvider ?? 'anthropic';
+    const model = effectiveConfig.aiModel ?? 'default';
+    return slugify(`${provider}-${model}`);
+  }
+
+  const forced = (cliOverride ?? process.env.DIFFDAD_CLI) as LocalCli | undefined;
+  let cli: LocalCli;
+  if (forced && LOCAL_CLIS.includes(forced)) {
+    cli = forced;
+  } else {
+    const order: LocalCli[] = config.defaultCli
+      ? [config.defaultCli, ...LOCAL_CLIS.filter((c) => c !== config.defaultCli)]
+      : [...LOCAL_CLIS];
+    let found: LocalCli | undefined;
+    for (const c of order) {
+      if (await whichExists(c)) {
+        found = c;
+        break;
+      }
+    }
+    cli = found ?? order[0]!;
+  }
+  const model = resolveCliModel(cli, config);
+  return slugify(model ? `${cli}-${model}` : cli);
+}
 
 let cliOverride: string | undefined;
 
@@ -516,11 +573,16 @@ export async function generateNarrative(
   });
   logPromptStats(stats, skipped.length);
 
+  const debugPerf = Boolean(process.env.DIFFDAD_DEBUG_PERF);
+  const startedAt = Date.now();
+
   const MAX_RETRIES = 2;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     let chars = 0;
     let buffer = '';
     let lastEmittedHash = '';
+    let firstChunkAt: number | undefined;
+    let firstPartialAt: number | undefined;
 
     const emitPartialIfChanged = (onPartial: NarrativePartialHandler) => {
       const parsed = tryParsePartialJson(buffer);
@@ -538,14 +600,16 @@ export async function generateNarrative(
       const hash = `${partial.title.length}|${partial.tldr.length}|${partial.verdict}|${partial.readingPlan.length}|${partial.concerns.length}|${partial.chapters.length}|${planChars}|${concernChars}|${chapterChars}`;
       if (hash === lastEmittedHash) return;
       lastEmittedHash = hash;
+      if (firstPartialAt === undefined) firstPartialAt = Date.now();
       onPartial(partial);
     };
 
     const onChunk: AiChunkHandler | undefined =
-      options.onProgress || options.onPartial
+      options.onProgress || options.onPartial || debugPerf
         ? (delta) => {
             chars += delta.length;
             buffer += delta;
+            if (firstChunkAt === undefined) firstChunkAt = Date.now();
             options.onProgress?.({ delta, chars });
             if (options.onPartial) emitPartialIfChanged(options.onPartial);
           }
@@ -556,7 +620,16 @@ export async function generateNarrative(
     const json = extractJson(result.text);
     try {
       const parsed = JSON.parse(json);
-      return { narrative: normalizeNarrative(parsed), provider: result.provider };
+      const narrative = normalizeNarrative(parsed);
+      if (debugPerf) {
+        const { path } = resolveAiPath(config);
+        const fmt = (t: number | undefined) => (t === undefined ? '-' : `${((t - startedAt) / 1000).toFixed(1)}s`);
+        const total = ((Date.now() - startedAt) / 1000).toFixed(1);
+        console.error(
+          `Narrative perf: path=${path} provider="${result.provider}" firstChunk=${fmt(firstChunkAt)} firstPartial=${fmt(firstPartialAt)} total=${total}s chapters=${narrative.chapters.length} chars=${chars}`,
+        );
+      }
+      return { narrative, provider: result.provider };
     } catch (err) {
       if (result.truncated && attempt < MAX_RETRIES) {
         console.log(`Narrative truncated (attempt ${attempt + 1}/${MAX_RETRIES + 1}), retrying...`);
