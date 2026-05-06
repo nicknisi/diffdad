@@ -17,13 +17,13 @@ const DEFAULT_OLLAMA_BASE_URL = 'http://localhost:11434/v1';
 
 let cliOverride: string | undefined;
 
-export function setCliOverride(cli: string) {
+export function setCliOverride(cli: string | undefined) {
   cliOverride = cli;
 }
 
 /**
- * If the user has an env-var API key set but didn't run `dad config`, route
- * through the API path anyway. The local-CLI path is significantly slower
+ * If the user has an env-var API key set but didn't configure an AI provider,
+ * route through the API path anyway. The local-CLI path is significantly slower
  * (Claude Code harness overhead + buffered piped stdout), so we should never
  * default to it when an API path is freely available.
  */
@@ -40,18 +40,16 @@ export function inferProviderFromEnv(): Pick<DiffDadConfig, 'aiProvider' | 'aiAp
 /**
  * Resolves whether to take the API or local-CLI path. Priority:
  *   1. `--with=` flag (cliOverride) — explicit, wins always.
- *   2. `DIFFDAD_CLI` env — explicit, forces local CLI.
- *   3. Configured `aiProvider` — user picked an API path in `dad config`.
- *   4. Configured `defaultCli` — user picked local CLI in `dad config`.
- *   5. Env-inferred API key (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY`) — only
- *      kicks in for users who haven't expressed a preference. Local CLI is
- *      ~5-10× slower, so we shouldn't default to it when an API path is
- *      freely available.
- *   6. Local CLI as the final fallback.
+ *   2. Configured `aiProvider` — user picked an API path in `dad config`.
+ *   3. Configured `defaultCli` — user picked local CLI in `dad config`.
+ *   4. Env-inferred API key (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY`) — only
+ *      kicks in for users who haven't expressed a preference.
+ *   5. `DIFFDAD_CLI` env — legacy local-CLI fallback preference, also only
+ *      kicks in when no config/API-key preference exists.
+ *   6. Local CLI auto-detection as the final fallback.
  */
 export function resolveAiPath(config: DiffDadConfig): { path: AiPath; effectiveConfig: DiffDadConfig } {
   if (cliOverride) return { path: 'local-cli', effectiveConfig: config };
-  if (process.env.DIFFDAD_CLI) return { path: 'local-cli', effectiveConfig: config };
   if (config.aiProvider !== undefined) return { path: 'api', effectiveConfig: config };
   if (config.defaultCli) return { path: 'local-cli', effectiveConfig: config };
   const inferred = inferProviderFromEnv();
@@ -83,7 +81,7 @@ export async function resolveProviderKey(config: DiffDadConfig): Promise<string>
     return slugify(`${provider}-${model}`);
   }
 
-  const forced = (cliOverride ?? process.env.DIFFDAD_CLI) as LocalCli | undefined;
+  const forced = (cliOverride ?? (!config.defaultCli ? process.env.DIFFDAD_CLI : undefined)) as LocalCli | undefined;
   let cli: LocalCli;
   if (forced && LOCAL_CLIS.includes(forced)) {
     cli = forced;
@@ -281,7 +279,7 @@ async function callLocalCli(
   config: DiffDadConfig,
   onChunk?: AiChunkHandler,
 ): Promise<AiResult> {
-  const forced = cliOverride ?? process.env.DIFFDAD_CLI;
+  const forced = cliOverride ?? (!config.defaultCli ? process.env.DIFFDAD_CLI : undefined);
 
   if (forced) {
     if (!LOCAL_CLIS.includes(forced as LocalCli)) {

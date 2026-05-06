@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { resolveGitHubToken } from './auth';
-import { readConfig, resetConfig, runConfig, showConfig } from './config';
+import { LOCAL_CLIS, readConfig, resetConfig, runConfig, showConfig } from './config';
 import { GitHubClient } from './github/client';
 import { cacheNarrative, clearCache, computePromptMetaHash, getCachedNarrative } from './narrative/cache';
 import { generateNarrative, resolveAiPath, resolveProviderKey, setCliOverride } from './narrative/engine';
@@ -281,13 +281,16 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
   if (!cached) {
     const withCli = Bun.argv.find((f) => f.startsWith('--with='))?.split('=')[1];
     const { path: aiPath, effectiveConfig } = resolveAiPath(config);
+    const envCli = process.env.DIFFDAD_CLI;
+    const envCliHint = envCli && LOCAL_CLIS.includes(envCli as (typeof LOCAL_CLIS)[number]) ? envCli : undefined;
     const providerHint =
-      withCli ?? (aiPath === 'api' ? (effectiveConfig.aiProvider ?? 'anthropic') : (config.defaultCli ?? 'claude'));
+      withCli ??
+      (aiPath === 'api' ? (effectiveConfig.aiProvider ?? 'anthropic') : (config.defaultCli ?? envCliHint ?? 'claude'));
     const waitJoke = DAD_JOKES[Math.floor(Math.random() * DAD_JOKES.length)];
     console.log(
       `  ${a.yellow}Generating narrative${a.reset} ${a.gray}via${a.reset} ${a.cyan}${providerHint}${a.reset}`,
     );
-    if (aiPath === 'local-cli' && !withCli) {
+    if (aiPath === 'local-cli' && !withCli && !config.defaultCli && !envCliHint) {
       console.log(
         `  ${a.dim}Tip: set ${a.cyan}ANTHROPIC_API_KEY${a.reset}${a.dim} for ~5-10× faster generation (the local CLI path has significant harness overhead).${a.reset}`,
       );

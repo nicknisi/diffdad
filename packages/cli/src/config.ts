@@ -127,8 +127,16 @@ async function pickOne<T extends string>(
   }
 }
 
+function detectEnvProvider(): 'anthropic' | 'openai' | undefined {
+  if (process.env.ANTHROPIC_API_KEY) return 'anthropic';
+  if (process.env.OPENAI_API_KEY) return 'openai';
+  return undefined;
+}
+
 export async function runConfig(): Promise<number> {
   const existing = await readConfig();
+  const detectedProvider = detectEnvProvider();
+  const defaultProvider = existing.aiProvider ?? detectedProvider;
   const { ask, close } = makeAsker();
 
   try {
@@ -136,7 +144,11 @@ export async function runConfig(): Promise<number> {
 
     // --- AI Provider ---
     heading('AI Provider');
-    const currentProviderLabel = existing.aiProvider ?? 'local CLI (no API key)';
+    const currentProviderLabel = existing.aiProvider
+      ? existing.aiProvider
+      : detectedProvider
+        ? `${detectedProvider} API (detected env)`
+        : 'local CLI (no API key)';
     current(currentProviderLabel);
     option('0', `${c.green}Local CLI${c.reset}`, '— auto-detects claude, codex, or pi (no API key, but ~5-10× slower)');
     option('1', `${c.green}Anthropic API${c.reset}`, '— recommended; uses ANTHROPIC_API_KEY, fastest');
@@ -145,13 +157,13 @@ export async function runConfig(): Promise<number> {
     process.stdout.write('\n');
 
     let provider: 'anthropic' | 'openai' | 'ollama' | undefined;
-    let useClaudeCli = !existing.aiProvider;
+    let useClaudeCli = !defaultProvider;
     while (true) {
-      const defaultChoice = !existing.aiProvider
+      const defaultChoice = !defaultProvider
         ? '0'
-        : existing.aiProvider === 'openai'
+        : defaultProvider === 'openai'
           ? '2'
-          : existing.aiProvider === 'ollama'
+          : defaultProvider === 'ollama'
             ? '3'
             : '1';
       const answer = await ask(`  ${c.white}pick [0-3]${c.reset} ${c.gray}(${defaultChoice})${c.reset}: `);
@@ -228,13 +240,25 @@ export async function runConfig(): Promise<number> {
         aiApiKey = undefined;
       } else {
         const providerName = provider === 'anthropic' ? 'Anthropic' : 'OpenAI';
+        const envKeyName = provider === 'anthropic' ? 'ANTHROPIC_API_KEY' : 'OPENAI_API_KEY';
+        const hasEnvKey = Boolean(process.env[envKeyName]);
         const hasExisting = provider === existing.aiProvider && existing.aiApiKey && existing.aiApiKey.length > 0;
-        const suffix = hasExisting ? ` ${c.gray}(enter to keep existing)${c.reset}` : '';
+        if (hasEnvKey && !hasExisting) {
+          process.stdout.write(`  ${c.green}✓${c.reset} will use ${c.cyan}${envKeyName}${c.reset}\n`);
+        }
+        const suffix = hasExisting
+          ? ` ${c.gray}(enter to keep existing)${c.reset}`
+          : hasEnvKey
+            ? ` ${c.gray}(enter to use ${envKeyName})${c.reset}`
+            : '';
         const answer = await ask(`  ${c.dim}${providerName} API key${c.reset}${suffix}: `);
         if (answer.length > 0) {
           aiApiKey = answer;
-        } else if (!hasExisting) {
-          process.stdout.write(`  ${c.yellow}no API key set${c.reset}\n`);
+        } else if (hasExisting) {
+          aiApiKey = existing.aiApiKey;
+        } else {
+          aiApiKey = undefined;
+          if (!hasEnvKey) process.stdout.write(`  ${c.yellow}no API key set${c.reset}\n`);
         }
         aiBaseUrl = undefined;
       }
