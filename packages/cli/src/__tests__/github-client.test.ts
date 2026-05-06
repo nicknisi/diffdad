@@ -321,6 +321,80 @@ describe('GitHubClient.postComment', () => {
   });
 });
 
+describe('GitHubClient.submitReview', () => {
+  function emptyResponse() {
+    return jsonResponse({});
+  }
+
+  it('forwards event + body and omits comments when none provided', async () => {
+    setResponder(emptyResponse);
+    await new GitHubClient('t').submitReview('o', 'r', 5, 'APPROVE', 'lgtm');
+    expect(calls[0]?.url).toBe('https://api.github.com/repos/o/r/pulls/5/reviews');
+    const body = JSON.parse(String(calls[0]?.init.body));
+    expect(body).toEqual({ event: 'APPROVE', body: 'lgtm' });
+  });
+
+  it('drops empty body field rather than sending body=""', async () => {
+    setResponder(emptyResponse);
+    await new GitHubClient('t').submitReview('o', 'r', 5, 'COMMENT', '');
+    const body = JSON.parse(String(calls[0]?.init.body));
+    expect(body.body).toBeUndefined();
+  });
+
+  it('forwards inline comments with their path/line/side', async () => {
+    setResponder(emptyResponse);
+    await new GitHubClient('t').submitReview('o', 'r', 5, 'REQUEST_CHANGES', 'see below', [
+      { path: 'a.ts', line: 7, body: 'fix this', side: 'RIGHT' },
+    ]);
+    const body = JSON.parse(String(calls[0]?.init.body));
+    expect(body.comments).toHaveLength(1);
+    expect(body.comments[0]).toMatchObject({
+      path: 'a.ts',
+      line: 7,
+      body: 'fix this',
+      side: 'RIGHT',
+    });
+  });
+
+  it('flips reversed start/end lines so start_line < line and side moves with the line', async () => {
+    setResponder(emptyResponse);
+    await new GitHubClient('t').submitReview('o', 'r', 5, 'COMMENT', undefined, [
+      {
+        path: 'a.ts',
+        // reversed: end < start
+        line: 5,
+        startLine: 10,
+        side: 'RIGHT',
+        startSide: 'LEFT',
+        body: 'r',
+      },
+    ]);
+    const body = JSON.parse(String(calls[0]?.init.body));
+    expect(body.comments[0].line).toBe(10);
+    expect(body.comments[0].start_line).toBe(5);
+    // The end-side (formerly the start side) and vice versa.
+    expect(body.comments[0].side).toBe('LEFT');
+    expect(body.comments[0].start_side).toBe('RIGHT');
+  });
+
+  it('does not include start_line/start_side for single-line comments (start === end)', async () => {
+    setResponder(emptyResponse);
+    await new GitHubClient('t').submitReview('o', 'r', 5, 'COMMENT', undefined, [
+      { path: 'a.ts', line: 7, startLine: 7, body: 'r', side: 'RIGHT' },
+    ]);
+    const body = JSON.parse(String(calls[0]?.init.body));
+    expect(body.comments[0].start_line).toBeUndefined();
+    expect(body.comments[0].start_side).toBeUndefined();
+  });
+
+  it('omits comments array when filtered list is empty', async () => {
+    setResponder(emptyResponse);
+    await new GitHubClient('t').submitReview('o', 'r', 5, 'COMMENT', 'hi', []);
+    const body = JSON.parse(String(calls[0]?.init.body));
+    expect(body.comments).toBeUndefined();
+  });
+});
+
 describe('GitHubClient.getCheckRuns', () => {
   it('maps API response to CheckRun shape', async () => {
     setResponder(() =>
