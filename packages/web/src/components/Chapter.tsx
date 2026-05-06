@@ -61,13 +61,49 @@ function CalloutList({ callouts }: { callouts: Callout[] }) {
   );
 }
 
+function MissingHunkBanner({
+  file,
+  hunkIndex,
+  kind = 'primary',
+}: {
+  file: string;
+  hunkIndex: number;
+  kind?: 'primary' | 'reshow';
+}) {
+  const label = kind === 'reshow' ? 'Missing reshow hunk' : 'Missing hunk';
+  return (
+    <div
+      className="ml-[34px] mb-[14px] flex items-start gap-2 rounded-[8px] px-3.5 py-2.5 text-[13px] leading-[19px]"
+      style={{
+        background: 'var(--yellow-2)',
+        boxShadow: 'inset 0 0 0 1px var(--yellow-a5)',
+        color: 'var(--yellow-11)',
+      }}
+      data-warning="missing-hunk"
+    >
+      <span aria-hidden className="mt-[1px]">
+        ⚠
+      </span>
+      <span>
+        <span className="font-bold uppercase tracking-[0.04em] text-[10.5px] mr-1.5">{label}</span>
+        <span className="font-mono text-[11.5px]">
+          {file}#{hunkIndex}
+        </span>{' '}
+        — referenced by the narrative but not present in the diff.
+      </span>
+    </div>
+  );
+}
+
 function ReshowBlock({
   ownerLabel,
   framing,
+  warning,
   children,
 }: {
   ownerLabel: string;
   framing?: string;
+  warning?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -80,17 +116,34 @@ function ReshowBlock({
       }}
     >
       <div className="px-4 pt-3.5 pb-3" style={{ borderBottom: '1px dashed var(--gray-a5)' }}>
-        <span
-          className="inline-flex items-center gap-1.5 rounded-full px-2 py-[3px] text-[11px] font-medium tracking-[0.02em]"
-          style={{
-            background: 'var(--purple-3)',
-            color: 'var(--purple-11)',
-            boxShadow: 'inset 0 0 0 1px var(--purple-a5)',
-          }}
-        >
-          <span aria-hidden>↻</span>
-          Showing again from {ownerLabel}
-        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <span
+            className="inline-flex items-center gap-1.5 rounded-full px-2 py-[3px] text-[11px] font-medium tracking-[0.02em]"
+            style={{
+              background: 'var(--purple-3)',
+              color: 'var(--purple-11)',
+              boxShadow: 'inset 0 0 0 1px var(--purple-a5)',
+            }}
+          >
+            <span aria-hidden>↻</span>
+            Showing again from {ownerLabel}
+          </span>
+          {warning ? (
+            <span
+              className="inline-flex items-center gap-1 rounded-full px-2 py-[3px] text-[10.5px] font-medium uppercase tracking-[0.04em]"
+              style={{
+                background: 'var(--yellow-3)',
+                color: 'var(--yellow-11)',
+                boxShadow: 'inset 0 0 0 1px var(--yellow-a5)',
+              }}
+              title={warning}
+              data-warning="duplicate-primary"
+            >
+              <span aria-hidden>⚠</span>
+              {warning}
+            </span>
+          ) : null}
+        </div>
         {framing ? (
           <div className="mt-2 text-[14px] leading-[22px]" style={{ color: 'var(--fg-2)', maxWidth: '70ch' }}>
             <NarrationBlock content={framing} />
@@ -121,8 +174,10 @@ export function Chapter({ index, chapter }: Props) {
   const storyStructure = useReviewStore((s) => s.storyStructure);
   const displayDensity = useReviewStore((s) => s.displayDensity);
   const narrative = useReviewStore((s) => s.narrative);
+  const pendingChapterThemeIds = useReviewStore((s) => s.pendingChapterThemeIds);
   const id = `ch-${index}`;
   const reviewed = chapterStates[id] === 'reviewed';
+  const isStreaming = chapter.themeId !== undefined && pendingChapterThemeIds.has(chapter.themeId);
 
   // Map of `${file}:${hunkIndex}` -> first chapter index that uses that hunk via a diff section.
   // Multiple files can share hunkIndex 0, so the key must include the file.
@@ -241,8 +296,36 @@ export function Chapter({ index, chapter }: Props) {
   );
 
   const whyMatters = chapter.whyMatters?.trim();
+  const streamingIndicator = isStreaming ? (
+    <div
+      className="ml-[34px] mb-[14px] flex items-center gap-2 rounded-[8px] px-3.5 py-2.5 text-[13px]"
+      style={{
+        background: 'var(--purple-2)',
+        boxShadow: 'inset 0 0 0 1px var(--purple-a4)',
+        color: 'var(--purple-11)',
+      }}
+      data-streaming="true"
+    >
+      <span className="flex gap-1">
+        <span
+          className="h-1.5 w-1.5 rounded-full"
+          style={{ background: 'var(--purple-9)', animation: 'generating-dot 1.4s ease-in-out infinite' }}
+        />
+        <span
+          className="h-1.5 w-1.5 rounded-full"
+          style={{ background: 'var(--purple-9)', animation: 'generating-dot 1.4s ease-in-out 0.2s infinite' }}
+        />
+        <span
+          className="h-1.5 w-1.5 rounded-full"
+          style={{ background: 'var(--purple-9)', animation: 'generating-dot 1.4s ease-in-out 0.4s infinite' }}
+        />
+      </span>
+      <span>Writing chapter prose…</span>
+    </div>
+  ) : null;
   const body = (
     <div className={compact ? 'space-y-3' : 'space-y-4'}>
+      {streamingIndicator}
       {whyMatters ? (
         <div
           className="ml-[34px] rounded-[8px] px-3.5 py-2.5 text-[13.5px] leading-[20px]"
@@ -271,7 +354,9 @@ export function Chapter({ index, chapter }: Props) {
           );
         }
         const flat = findHunk(files, section.file, section.hunkIndex);
-        if (!flat) return null;
+        if (!flat) {
+          return <MissingHunkBanner key={i} file={section.file} hunkIndex={section.hunkIndex} />;
+        }
         const hunkKey = `${section.file}:${section.hunkIndex}`;
         const isDuplicate = priorHunks.has(hunkKey);
         const hunkCoversAll =
@@ -283,7 +368,7 @@ export function Chapter({ index, chapter }: Props) {
           const ownerIdx = hunkOwners.get(hunkKey);
           const ownerLabel = ownerIdx !== undefined && ownerIdx !== index ? `Chapter ${ownerIdx + 1}` : 'earlier';
           return (
-            <ReshowBlock key={i} ownerLabel={ownerLabel}>
+            <ReshowBlock key={i} ownerLabel={ownerLabel} warning="Duplicate primary — should be a reshow">
               <Hunk
                 file={flat.file}
                 hunk={flat.hunk}
@@ -308,9 +393,13 @@ export function Chapter({ index, chapter }: Props) {
       })}
       {chapter.reshow?.map((entry, i) => {
         const refFile = entry.file || refToFileFallback.get(entry.ref);
-        if (!refFile) return null;
+        if (!refFile) {
+          return <MissingHunkBanner key={`reshow-${i}`} file="(unknown)" hunkIndex={entry.ref} kind="reshow" />;
+        }
         const flat = findHunk(files, refFile, entry.ref);
-        if (!flat) return null;
+        if (!flat) {
+          return <MissingHunkBanner key={`reshow-${i}`} file={refFile} hunkIndex={entry.ref} kind="reshow" />;
+        }
         const ownerIdx = hunkOwners.get(`${refFile}:${entry.ref}`);
         const ownerLabel = ownerIdx !== undefined && ownerIdx !== index ? `Chapter ${ownerIdx + 1}` : 'earlier';
         return (

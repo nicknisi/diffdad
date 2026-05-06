@@ -71,6 +71,29 @@ export type Chapter = {
     framing?: string;
     highlight?: { from: number; to: number };
   }[];
+  themeId?: string;
+};
+
+export type HunkRef = { file: string; hunkIndex: number };
+
+export type PlanTheme = {
+  id: string;
+  title: string;
+  riskLevel: 'low' | 'medium' | 'high';
+  rationale: string;
+  hunkRefs: HunkRef[];
+  suppress?: boolean;
+};
+
+export type Plan = {
+  schemaVersion: 1;
+  prTitle: string;
+  prTldr: string;
+  prVerdict: 'safe' | 'caution' | 'risky';
+  themes: PlanTheme[];
+  readingPlan: ReadingPlanStep[];
+  concerns: Concern[];
+  missing?: string[];
 };
 
 export type Section =

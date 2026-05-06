@@ -75,7 +75,7 @@ Diff Dad picks a provider in this order:
 
 1. `--with=<cli>` flag (forces a local CLI)
 2. Provider configured via `dad config`
-3. **`ANTHROPIC_API_KEY` env var** — auto-routes through the Anthropic API (recommended; ~5-10× faster than the local CLI, with live streaming)
+3. **API key env vars** — `ANTHROPIC_API_KEY`, then `OPENAI_API_KEY`, auto-route through the matching API when no provider is configured
 4. `claude -p` (Claude Code CLI), `codex`, then `pi` — uses your existing subscriptions, no API key needed, but significantly slower due to harness overhead
 
 Run `dad config` to choose between:

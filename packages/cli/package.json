@@ -8,7 +8,8 @@
   },
   "scripts": {
     "dev": "bun run src/cli.ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "bench:narrative": "bun run scripts/bench-narrative.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^1",

@@ -48,7 +48,7 @@ describe('resolveAiPath', () => {
     delete process.env.ANTHROPIC_API_KEY;
     delete process.env.OPENAI_API_KEY;
     delete process.env.DIFFDAD_CLI;
-    setCliOverride(undefined as unknown as string);
+    setCliOverride(undefined);
   });
 
   afterEach(() => {
@@ -58,7 +58,7 @@ describe('resolveAiPath', () => {
     else process.env.OPENAI_API_KEY = originalOpenAI;
     if (originalDiffdadCli === undefined) delete process.env.DIFFDAD_CLI;
     else process.env.DIFFDAD_CLI = originalDiffdadCli;
-    setCliOverride(undefined as unknown as string);
+    setCliOverride(undefined);
   });
 
   it('uses local-cli when no provider is configured and no env key is set', () => {
@@ -89,9 +89,16 @@ describe('resolveAiPath', () => {
     expect(out.path).toBe('local-cli');
   });
 
-  it('forces local-cli when DIFFDAD_CLI env is set, even if ANTHROPIC_API_KEY is present', () => {
+  it('uses env-inferred API keys before legacy DIFFDAD_CLI fallback when no provider is configured', () => {
     process.env.DIFFDAD_CLI = 'claude';
     process.env.ANTHROPIC_API_KEY = 'ant-key';
+    const out = resolveAiPath({});
+    expect(out.path).toBe('api');
+    expect(out.effectiveConfig.aiProvider).toBe('anthropic');
+  });
+
+  it('uses local-cli for DIFFDAD_CLI when no config or API key is available', () => {
+    process.env.DIFFDAD_CLI = 'claude';
     const out = resolveAiPath({});
     expect(out.path).toBe('local-cli');
   });
@@ -106,6 +113,13 @@ describe('resolveAiPath', () => {
     // aiProvider is set explicitly — that wins over defaultCli.
     const out = resolveAiPath({ aiProvider: 'anthropic', aiApiKey: 'k', defaultCli: 'claude' });
     expect(out.path).toBe('api');
+  });
+
+  it('uses configured aiProvider before legacy DIFFDAD_CLI fallback', () => {
+    process.env.DIFFDAD_CLI = 'claude';
+    const out = resolveAiPath({ aiProvider: 'openai', aiApiKey: 'k' });
+    expect(out.path).toBe('api');
+    expect(out.effectiveConfig.aiProvider).toBe('openai');
   });
 });
 

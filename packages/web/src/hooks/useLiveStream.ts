@@ -1,11 +1,13 @@
 import { useEffect } from 'react';
 import { useReviewStore } from '../state/review-store';
 import type {
+  Chapter,
   CheckRun,
   DiffFile,
   LiveEvent,
   LiveEventKind,
   NarrativeResponse,
+  Plan,
   PRComment,
   PRData,
   PRReview,
@@ -169,6 +171,27 @@ export function useLiveStream() {
       }
     };
 
+    const onPlanReady = (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data) as { plan: Plan };
+        useReviewStore.getState().applyPlan(data.plan);
+        setLastEventAt(Date.now());
+        addLiveEvent(makeEvent('system', `Plan ready (${data.plan.themes.length} themes) — chapters streaming in...`));
+      } catch {
+        // ignore
+      }
+    };
+
+    const onChapterReady = (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data) as { themeId: string; index: number; chapter: Chapter };
+        useReviewStore.getState().applyChapter(data.index, data.chapter, data.themeId);
+        setLastEventAt(Date.now());
+      } catch {
+        // ignore
+      }
+    };
+
     const onRecap = (e: MessageEvent) => {
       try {
         const data = JSON.parse(e.data) as { recap: RecapResponse };
@@ -204,6 +227,8 @@ export function useLiveStream() {
     es.addEventListener('narrative-progress', onNarrativeProgress as EventListener);
     es.addEventListener('narrative.partial', handleNarrativePartialEvent as EventListener);
     es.addEventListener('narrative', onNarrative as EventListener);
+    es.addEventListener('plan-ready', onPlanReady as EventListener);
+    es.addEventListener('chapter-ready', onChapterReady as EventListener);
     es.addEventListener('recap', onRecap as EventListener);
     es.addEventListener('recap-generating', onRecapGenerating as EventListener);
     es.addEventListener('recap-error', onRecapError as EventListener);
@@ -227,6 +252,8 @@ export function useLiveStream() {
       es.removeEventListener('narrative-progress', onNarrativeProgress as EventListener);
       es.removeEventListener('narrative.partial', handleNarrativePartialEvent as EventListener);
       es.removeEventListener('narrative', onNarrative as EventListener);
+      es.removeEventListener('plan-ready', onPlanReady as EventListener);
+      es.removeEventListener('chapter-ready', onChapterReady as EventListener);
       es.removeEventListener('recap', onRecap as EventListener);
       es.removeEventListener('recap-generating', onRecapGenerating as EventListener);
       es.removeEventListener('recap-error', onRecapError as EventListener);
