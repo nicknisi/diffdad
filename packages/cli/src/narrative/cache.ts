@@ -28,8 +28,15 @@ export function computePromptMetaHash(meta: PromptRelevantMeta): string {
   return createHash('sha256').update(canonical).digest('hex').slice(0, 12);
 }
 
-function cachePath(owner: string, repo: string, number: number, sha: string, metaHash: string): string {
-  return join(CACHE_DIR, `${owner}-${repo}-${number}-${sha}-${metaHash}.v${SCHEMA_VERSION}.json`);
+function cachePath(
+  owner: string,
+  repo: string,
+  number: number,
+  sha: string,
+  metaHash: string,
+  providerKey: string,
+): string {
+  return join(CACHE_DIR, `${owner}-${repo}-${number}-${sha}-${metaHash}.v${SCHEMA_VERSION}.${providerKey}.json`);
 }
 
 export async function getCachedNarrative(
@@ -38,9 +45,10 @@ export async function getCachedNarrative(
   number: number,
   sha: string,
   metaHash: string,
+  providerKey: string,
 ): Promise<NarrativeResponse | null> {
   try {
-    const path = cachePath(owner, repo, number, sha, metaHash);
+    const path = cachePath(owner, repo, number, sha, metaHash, providerKey);
     const raw = await readFile(path, 'utf-8');
     return normalizeNarrative(JSON.parse(raw));
   } catch {
@@ -67,9 +75,10 @@ export async function cacheNarrative(
   number: number,
   sha: string,
   metaHash: string,
+  providerKey: string,
   narrative: NarrativeResponse,
 ): Promise<void> {
-  const path = cachePath(owner, repo, number, sha, metaHash);
+  const path = cachePath(owner, repo, number, sha, metaHash, providerKey);
   await mkdir(CACHE_DIR, { recursive: true });
   await writeFile(path, JSON.stringify(narrative));
 }

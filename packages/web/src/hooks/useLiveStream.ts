@@ -26,6 +26,27 @@ function makeEvent(kind: LiveEventKind, summary: string, data?: unknown): LiveEv
   };
 }
 
+/**
+ * Exported for direct unit testing — see __tests__/useLiveStream.test.ts.
+ * Streams an in-flight partial narrative into the store while the server is
+ * still generating it. Silently ignores malformed payloads.
+ */
+export function handleNarrativePartialEvent(e: MessageEvent): void {
+  try {
+    const data = JSON.parse(e.data) as {
+      narrative: NarrativeResponse;
+      pr: PRData;
+      files?: DiffFile[];
+      comments?: PRComment[];
+    };
+    const store = useReviewStore.getState();
+    store.applyPartialNarrative(data.pr, data.narrative, data.files, data.comments);
+    store.setLastEventAt(Date.now());
+  } catch {
+    // ignore malformed partial
+  }
+}
+
 export function useLiveStream() {
   useEffect(() => {
     const setLiveStatus = (status: 'connected' | 'connecting' | 'disconnected') =>
@@ -181,6 +202,7 @@ export function useLiveStream() {
     es.addEventListener('pr', onPr as EventListener);
     es.addEventListener('regenerating', onRegenerating as EventListener);
     es.addEventListener('narrative-progress', onNarrativeProgress as EventListener);
+    es.addEventListener('narrative.partial', handleNarrativePartialEvent as EventListener);
     es.addEventListener('narrative', onNarrative as EventListener);
     es.addEventListener('recap', onRecap as EventListener);
     es.addEventListener('recap-generating', onRecapGenerating as EventListener);
@@ -203,6 +225,7 @@ export function useLiveStream() {
       es.removeEventListener('pr', onPr as EventListener);
       es.removeEventListener('regenerating', onRegenerating as EventListener);
       es.removeEventListener('narrative-progress', onNarrativeProgress as EventListener);
+      es.removeEventListener('narrative.partial', handleNarrativePartialEvent as EventListener);
       es.removeEventListener('narrative', onNarrative as EventListener);
       es.removeEventListener('recap', onRecap as EventListener);
       es.removeEventListener('recap-generating', onRecapGenerating as EventListener);

@@ -136,6 +136,49 @@ async function spawnCli(
 
 export type AiResult = { text: string; truncated: boolean; provider: string };
 
+function slugify(s: string): string {
+  return (
+    s
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'unknown'
+  );
+}
+
+/**
+ * Resolves a stable cache key segment identifying the provider+model that will
+ * be used for a given config+env. Cached narratives must be keyed by this so
+ * switching model (e.g. sonnet → haiku) doesn't serve stale outputs.
+ */
+export async function resolveProviderKey(config: DiffDadConfig): Promise<string> {
+  const { path, effectiveConfig } = resolveAiPath(config);
+  if (path === 'api') {
+    const provider = effectiveConfig.aiProvider ?? 'anthropic';
+    const model = effectiveConfig.aiModel ?? 'default';
+    return slugify(`${provider}-${model}`);
+  }
+
+  const forced = (cliOverride ?? process.env.DIFFDAD_CLI) as LocalCli | undefined;
+  let cli: LocalCli;
+  if (forced && LOCAL_CLIS.includes(forced)) {
+    cli = forced;
+  } else {
+    const order: LocalCli[] = config.defaultCli
+      ? [config.defaultCli, ...LOCAL_CLIS.filter((c) => c !== config.defaultCli)]
+      : [...LOCAL_CLIS];
+    let found: LocalCli | undefined;
+    for (const c of order) {
+      if (await whichExists(c)) {
+        found = c;
+        break;
+      }
+    }
+    cli = found ?? order[0]!;
+  }
+  const model = resolveCliModel(cli, config);
+  return slugify(model ? `${cli}-${model}` : cli);
+}
+
 let cliOverride: string | undefined;
 
 export function setCliOverride(cli: string) {
@@ -516,11 +559,16 @@ export async function generateNarrative(
   });
   logPromptStats(stats, skipped.length);
 
+  const debugPerf = Boolean(process.env.DIFFDAD_DEBUG_PERF);
+  const startedAt = Date.now();
+
   const MAX_RETRIES = 2;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     let chars = 0;
     let buffer = '';
     let lastEmittedHash = '';
+    let firstChunkAt: number | undefined;
+    let firstPartialAt: number | undefined;
 
     const emitPartialIfChanged = (onPartial: NarrativePartialHandler) => {
       const parsed = tryParsePartialJson(buffer);
@@ -538,14 +586,16 @@ export async function generateNarrative(
       const hash = `${partial.title.length}|${partial.tldr.length}|${partial.verdict}|${partial.readingPlan.length}|${partial.concerns.length}|${partial.chapters.length}|${planChars}|${concernChars}|${chapterChars}`;
       if (hash === lastEmittedHash) return;
       lastEmittedHash = hash;
+      if (firstPartialAt === undefined) firstPartialAt = Date.now();
       onPartial(partial);
     };
 
     const onChunk: AiChunkHandler | undefined =
-      options.onProgress || options.onPartial
+      options.onProgress || options.onPartial || debugPerf
         ? (delta) => {
             chars += delta.length;
             buffer += delta;
+            if (firstChunkAt === undefined) firstChunkAt = Date.now();
             options.onProgress?.({ delta, chars });
             if (options.onPartial) emitPartialIfChanged(options.onPartial);
           }
@@ -556,7 +606,16 @@ export async function generateNarrative(
     const json = extractJson(result.text);
     try {
       const parsed = JSON.parse(json);
-      return { narrative: normalizeNarrative(parsed), provider: result.provider };
+      const narrative = normalizeNarrative(parsed);
+      if (debugPerf) {
+        const { path } = resolveAiPath(config);
+        const fmt = (t: number | undefined) => (t === undefined ? '-' : `${((t - startedAt) / 1000).toFixed(1)}s`);
+        const total = ((Date.now() - startedAt) / 1000).toFixed(1);
+        console.error(
+          `Narrative perf: path=${path} provider="${result.provider}" firstChunk=${fmt(firstChunkAt)} firstPartial=${fmt(firstPartialAt)} total=${total}s chapters=${narrative.chapters.length} chars=${chars}`,
+        );
+      }
+      return { narrative, provider: result.provider };
     } catch (err) {
       if (result.truncated && attempt < MAX_RETRIES) {
         console.log(`Narrative truncated (attempt ${attempt + 1}/${MAX_RETRIES + 1}), retrying...`);

@@ -30,6 +30,7 @@ function mkResponse(overrides: Partial<NarrativeResponse> = {}): NarrativeRespon
 const FIXTURE_OWNER = '__diffdad_test__';
 const FIXTURE_REPO = 'cache';
 const META = computePromptMetaHash({ title: 't', body: 'b', labels: [] });
+const FIXTURE_PROVIDER = 'claude-haiku';
 
 async function cleanFixture() {
   try {
@@ -51,22 +52,22 @@ describe('narrative cache', () => {
   });
 
   it('returns null when nothing cached', async () => {
-    const out = await getCachedNarrative(FIXTURE_OWNER, FIXTURE_REPO, 1, 'sha-not-cached', META);
+    const out = await getCachedNarrative(FIXTURE_OWNER, FIXTURE_REPO, 1, 'sha-not-cached', META, FIXTURE_PROVIDER);
     expect(out).toBeNull();
   });
 
   it('caches and retrieves a narrative roundtrip', async () => {
     const narrative = mkResponse({ title: 'Roundtrip' });
-    await cacheNarrative(FIXTURE_OWNER, FIXTURE_REPO, 42, 'sha-roundtrip', META, narrative);
-    const got = await getCachedNarrative(FIXTURE_OWNER, FIXTURE_REPO, 42, 'sha-roundtrip', META);
+    await cacheNarrative(FIXTURE_OWNER, FIXTURE_REPO, 42, 'sha-roundtrip', META, FIXTURE_PROVIDER, narrative);
+    const got = await getCachedNarrative(FIXTURE_OWNER, FIXTURE_REPO, 42, 'sha-roundtrip', META, FIXTURE_PROVIDER);
     expect(got).not.toBeNull();
     expect(got?.title).toBe('Roundtrip');
     expect(got?.chapters).toHaveLength(1);
   });
 
   it('keys cache by owner/repo/number/sha — different sha returns null', async () => {
-    await cacheNarrative(FIXTURE_OWNER, FIXTURE_REPO, 7, 'sha-A', META, mkResponse({ title: 'A' }));
-    const got = await getCachedNarrative(FIXTURE_OWNER, FIXTURE_REPO, 7, 'sha-B', META);
+    await cacheNarrative(FIXTURE_OWNER, FIXTURE_REPO, 7, 'sha-A', META, FIXTURE_PROVIDER, mkResponse({ title: 'A' }));
+    const got = await getCachedNarrative(FIXTURE_OWNER, FIXTURE_REPO, 7, 'sha-B', META, FIXTURE_PROVIDER);
     expect(got).toBeNull();
   });
 
@@ -76,11 +77,19 @@ describe('narrative cache', () => {
     const titleEdit = computePromptMetaHash({ title: 'Edited', body: 'desc', labels: ['a'] });
     const bodyEdit = computePromptMetaHash({ title: 'Original', body: 'new desc', labels: ['a'] });
     const labelEdit = computePromptMetaHash({ title: 'Original', body: 'desc', labels: ['a', 'b'] });
-    await cacheNarrative(FIXTURE_OWNER, FIXTURE_REPO, 13, sha, original, mkResponse({ title: 'orig' }));
-    expect(await getCachedNarrative(FIXTURE_OWNER, FIXTURE_REPO, 13, sha, original)).not.toBeNull();
-    expect(await getCachedNarrative(FIXTURE_OWNER, FIXTURE_REPO, 13, sha, titleEdit)).toBeNull();
-    expect(await getCachedNarrative(FIXTURE_OWNER, FIXTURE_REPO, 13, sha, bodyEdit)).toBeNull();
-    expect(await getCachedNarrative(FIXTURE_OWNER, FIXTURE_REPO, 13, sha, labelEdit)).toBeNull();
+    await cacheNarrative(
+      FIXTURE_OWNER,
+      FIXTURE_REPO,
+      13,
+      sha,
+      original,
+      FIXTURE_PROVIDER,
+      mkResponse({ title: 'orig' }),
+    );
+    expect(await getCachedNarrative(FIXTURE_OWNER, FIXTURE_REPO, 13, sha, original, FIXTURE_PROVIDER)).not.toBeNull();
+    expect(await getCachedNarrative(FIXTURE_OWNER, FIXTURE_REPO, 13, sha, titleEdit, FIXTURE_PROVIDER)).toBeNull();
+    expect(await getCachedNarrative(FIXTURE_OWNER, FIXTURE_REPO, 13, sha, bodyEdit, FIXTURE_PROVIDER)).toBeNull();
+    expect(await getCachedNarrative(FIXTURE_OWNER, FIXTURE_REPO, 13, sha, labelEdit, FIXTURE_PROVIDER)).toBeNull();
   });
 
   it('label order does not affect the meta hash', async () => {
@@ -96,22 +105,35 @@ describe('narrative cache', () => {
     const sha = 'sha-revert';
     const v1 = computePromptMetaHash({ title: 'V1', body: 'first', labels: [] });
     const v2 = computePromptMetaHash({ title: 'V2', body: 'second', labels: [] });
-    await cacheNarrative(FIXTURE_OWNER, FIXTURE_REPO, 17, sha, v1, mkResponse({ title: 'narr-v1' }));
-    await cacheNarrative(FIXTURE_OWNER, FIXTURE_REPO, 17, sha, v2, mkResponse({ title: 'narr-v2' }));
+    await cacheNarrative(FIXTURE_OWNER, FIXTURE_REPO, 17, sha, v1, FIXTURE_PROVIDER, mkResponse({ title: 'narr-v1' }));
+    await cacheNarrative(FIXTURE_OWNER, FIXTURE_REPO, 17, sha, v2, FIXTURE_PROVIDER, mkResponse({ title: 'narr-v2' }));
 
-    expect((await getCachedNarrative(FIXTURE_OWNER, FIXTURE_REPO, 17, sha, v1))?.title).toBe('narr-v1');
-    expect((await getCachedNarrative(FIXTURE_OWNER, FIXTURE_REPO, 17, sha, v2))?.title).toBe('narr-v2');
+    expect((await getCachedNarrative(FIXTURE_OWNER, FIXTURE_REPO, 17, sha, v1, FIXTURE_PROVIDER))?.title).toBe(
+      'narr-v1',
+    );
+    expect((await getCachedNarrative(FIXTURE_OWNER, FIXTURE_REPO, 17, sha, v2, FIXTURE_PROVIDER))?.title).toBe(
+      'narr-v2',
+    );
+  });
+
+  it('keys cache by providerKey — different provider returns null', async () => {
+    const sha = 'sha-provider';
+    await cacheNarrative(FIXTURE_OWNER, FIXTURE_REPO, 13, sha, META, 'claude-sonnet', mkResponse({ title: 'sonnet' }));
+    const sameProvider = await getCachedNarrative(FIXTURE_OWNER, FIXTURE_REPO, 13, sha, META, 'claude-sonnet');
+    expect(sameProvider?.title).toBe('sonnet');
+    const otherProvider = await getCachedNarrative(FIXTURE_OWNER, FIXTURE_REPO, 13, sha, META, 'claude-haiku');
+    expect(otherProvider).toBeNull();
   });
 
   it('normalizes cached narrative on read (tolerant of older shapes)', async () => {
     // Write an "old shape" payload bypassing the type — simulate a legacy cache.
     const sha = 'sha-legacy';
-    await cacheNarrative(FIXTURE_OWNER, FIXTURE_REPO, 9, sha, META, {
+    await cacheNarrative(FIXTURE_OWNER, FIXTURE_REPO, 9, sha, META, FIXTURE_PROVIDER, {
       title: 'Legacy',
       // missing tldr, verdict, readingPlan, concerns
       chapters: [{ title: 'X', summary: 's', risk: 'low', sections: [] }],
     } as unknown as NarrativeResponse);
-    const got = await getCachedNarrative(FIXTURE_OWNER, FIXTURE_REPO, 9, sha, META);
+    const got = await getCachedNarrative(FIXTURE_OWNER, FIXTURE_REPO, 9, sha, META, FIXTURE_PROVIDER);
     expect(got).not.toBeNull();
     expect(got?.title).toBe('Legacy');
     expect(got?.tldr).toBe('');
@@ -122,18 +144,18 @@ describe('narrative cache', () => {
 
   it('overwrites a previous cache entry for the same key', async () => {
     const sha = 'sha-overwrite';
-    await cacheNarrative(FIXTURE_OWNER, FIXTURE_REPO, 11, sha, META, mkResponse({ title: 'first' }));
-    await cacheNarrative(FIXTURE_OWNER, FIXTURE_REPO, 11, sha, META, mkResponse({ title: 'second' }));
-    const got = await getCachedNarrative(FIXTURE_OWNER, FIXTURE_REPO, 11, sha, META);
+    await cacheNarrative(FIXTURE_OWNER, FIXTURE_REPO, 11, sha, META, FIXTURE_PROVIDER, mkResponse({ title: 'first' }));
+    await cacheNarrative(FIXTURE_OWNER, FIXTURE_REPO, 11, sha, META, FIXTURE_PROVIDER, mkResponse({ title: 'second' }));
+    const got = await getCachedNarrative(FIXTURE_OWNER, FIXTURE_REPO, 11, sha, META, FIXTURE_PROVIDER);
     expect(got?.title).toBe('second');
   });
 
   it('returns null when the cached file is corrupt JSON', async () => {
     const { mkdir, writeFile } = await import('fs/promises');
     await mkdir(CACHE_DIR, { recursive: true });
-    const path = join(CACHE_DIR, `${FIXTURE_OWNER}-${FIXTURE_REPO}-99-sha-corrupt-${META}.v3.json`);
+    const path = join(CACHE_DIR, `${FIXTURE_OWNER}-${FIXTURE_REPO}-99-sha-corrupt-${META}.v3.${FIXTURE_PROVIDER}.json`);
     await writeFile(path, '{ not valid json');
-    const got = await getCachedNarrative(FIXTURE_OWNER, FIXTURE_REPO, 99, 'sha-corrupt', META);
+    const got = await getCachedNarrative(FIXTURE_OWNER, FIXTURE_REPO, 99, 'sha-corrupt', META, FIXTURE_PROVIDER);
     expect(got).toBeNull();
   });
 });
