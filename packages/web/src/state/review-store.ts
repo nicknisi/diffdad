@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type {
+  Chapter,
   ChapterState,
   CheckRun,
   DiffFile,
@@ -7,6 +8,7 @@ import type {
   LiveEvent,
   LiveStatus,
   NarrativeResponse,
+  Plan,
   PRComment,
   PRData,
   PRReview,
@@ -76,6 +78,11 @@ type ReviewState = {
   narrationOverrides: Record<string, string>;
   aiPath: 'api' | 'local-cli' | null;
 
+  /** Most recent plan from the planner pass; arrives via the `plan-ready` SSE event before any chapter prose lands. */
+  plan: Plan | null;
+  /** Theme IDs whose writer call hasn't returned yet — used to render shimmer/loading state on those chapters. */
+  pendingChapterThemeIds: Set<string>;
+
   recap: RecapResponse | null;
   recapStatus: RecapStatus;
   recapError: string | null;
@@ -140,6 +147,10 @@ type ReviewState = {
   clearNarrationOverride: (chapterKey: string) => void;
   /** Update narrative incrementally as it streams in. Preserves chapter states and drafts. */
   applyPartialNarrative: (pr: PRData, narrative: NarrativeResponse, files?: DiffFile[], comments?: PRComment[]) => void;
+  /** Apply a planner-pass result: synthesize a placeholder narrative so the outline renders before any prose lands. */
+  applyPlan: (plan: Plan) => void;
+  /** Replace the chapter at `index` with prose from a writer-pass result. */
+  applyChapter: (index: number, chapter: Chapter, themeId: string) => void;
   setRecap: (recap: RecapResponse | null) => void;
   setRecapStatus: (status: RecapStatus) => void;
   setRecapError: (error: string | null) => void;
@@ -261,6 +272,9 @@ export const useReviewStore = create<ReviewState>((set) => ({
   recap: null,
   recapStatus: 'idle',
   recapError: null,
+
+  plan: null,
+  pendingChapterThemeIds: new Set<string>(),
 
   setData: (pr, narrative, files, comments, repoUrl = null, checkRuns = [], config = null, reviews = []) => {
     const safeNarrative = sanitizeNarrative(narrative);
@@ -451,6 +465,60 @@ export const useReviewStore = create<ReviewState>((set) => ({
         next.activeChapterId = 'ch-0';
       }
       return next;
+    }),
+
+  applyPlan: (plan) =>
+    set((state) => {
+      // Build a placeholder narrative from the plan so existing components
+      // (StoryView, Chapter, etc.) can render an outline immediately. Each
+      // chapter shows its title and risk; prose fills in as writer-pass
+      // chapters arrive via `applyChapter`.
+      const placeholderChapters: Chapter[] = plan.themes.map((t) => ({
+        title: t.title,
+        summary: t.rationale,
+        whyMatters: '',
+        risk: t.riskLevel,
+        sections: [],
+        themeId: t.id,
+      }));
+      const skeleton: NarrativeResponse = {
+        title: plan.prTitle,
+        tldr: plan.prTldr,
+        verdict: plan.prVerdict,
+        readingPlan: plan.readingPlan,
+        concerns: plan.concerns,
+        chapters: placeholderChapters,
+        missing: plan.missing,
+      };
+      const safeNarrative = sanitizeNarrative(skeleton);
+      const chapterStates: Record<string, ChapterState> = { ...state.chapterStates };
+      safeNarrative.chapters.forEach((_, idx) => {
+        const key = `ch-${idx}`;
+        if (!chapterStates[key]) chapterStates[key] = 'reading';
+      });
+      const pending = new Set<string>();
+      for (const t of plan.themes) {
+        if (!t.suppress) pending.add(t.id);
+      }
+      return {
+        plan,
+        narrative: safeNarrative,
+        chapterStates,
+        pendingChapterThemeIds: pending,
+        activeChapterId: state.activeChapterId ?? (placeholderChapters.length > 0 ? 'ch-0' : null),
+      };
+    }),
+
+  applyChapter: (index, chapter, themeId) =>
+    set((state) => {
+      if (!state.narrative) return state;
+      const chapters = [...state.narrative.chapters];
+      if (index < 0 || index >= chapters.length) return state;
+      chapters[index] = chapter;
+      const next: NarrativeResponse = { ...state.narrative, chapters };
+      const pending = new Set(state.pendingChapterThemeIds);
+      pending.delete(themeId);
+      return { narrative: sanitizeNarrative(next), pendingChapterThemeIds: pending };
     }),
   setNarrationOverride: (chapterKey: string, text: string) =>
     set((s) => ({ narrationOverrides: { ...s.narrationOverrides, [chapterKey]: text } })),

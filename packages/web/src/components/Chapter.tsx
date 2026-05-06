@@ -174,8 +174,10 @@ export function Chapter({ index, chapter }: Props) {
   const storyStructure = useReviewStore((s) => s.storyStructure);
   const displayDensity = useReviewStore((s) => s.displayDensity);
   const narrative = useReviewStore((s) => s.narrative);
+  const pendingChapterThemeIds = useReviewStore((s) => s.pendingChapterThemeIds);
   const id = `ch-${index}`;
   const reviewed = chapterStates[id] === 'reviewed';
+  const isStreaming = chapter.themeId !== undefined && pendingChapterThemeIds.has(chapter.themeId);
 
   // Map of `${file}:${hunkIndex}` -> first chapter index that uses that hunk via a diff section.
   // Multiple files can share hunkIndex 0, so the key must include the file.
@@ -294,8 +296,36 @@ export function Chapter({ index, chapter }: Props) {
   );
 
   const whyMatters = chapter.whyMatters?.trim();
+  const streamingIndicator = isStreaming ? (
+    <div
+      className="ml-[34px] mb-[14px] flex items-center gap-2 rounded-[8px] px-3.5 py-2.5 text-[13px]"
+      style={{
+        background: 'var(--purple-2)',
+        boxShadow: 'inset 0 0 0 1px var(--purple-a4)',
+        color: 'var(--purple-11)',
+      }}
+      data-streaming="true"
+    >
+      <span className="flex gap-1">
+        <span
+          className="h-1.5 w-1.5 rounded-full"
+          style={{ background: 'var(--purple-9)', animation: 'generating-dot 1.4s ease-in-out infinite' }}
+        />
+        <span
+          className="h-1.5 w-1.5 rounded-full"
+          style={{ background: 'var(--purple-9)', animation: 'generating-dot 1.4s ease-in-out 0.2s infinite' }}
+        />
+        <span
+          className="h-1.5 w-1.5 rounded-full"
+          style={{ background: 'var(--purple-9)', animation: 'generating-dot 1.4s ease-in-out 0.4s infinite' }}
+        />
+      </span>
+      <span>Writing chapter prose…</span>
+    </div>
+  ) : null;
   const body = (
     <div className={compact ? 'space-y-3' : 'space-y-4'}>
+      {streamingIndicator}
       {whyMatters ? (
         <div
           className="ml-[34px] rounded-[8px] px-3.5 py-2.5 text-[13.5px] leading-[20px]"
