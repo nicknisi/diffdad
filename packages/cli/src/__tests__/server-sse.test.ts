@@ -374,12 +374,14 @@ describe('GET /api/events — polling cycle', () => {
   });
 
   it('does NOT emit "pr" when only the SHA changed (regeneration handles it)', async () => {
-    const { cacheNarrative } = await import('../narrative/cache');
+    const { cacheNarrative, computePromptMetaHash } = await import('../narrative/cache');
     const newSha = `sha-shaonly-${Date.now()}`;
+    const freshPr = mkPR({ headSha: newSha });
+    const metaHash = computePromptMetaHash(freshPr);
     // Pre-seed cache so regen doesn't call out to a real LLM.
-    await cacheNarrative('o', 'r', 1, newSha, baseNarrative);
+    await cacheNarrative('o', 'r', 1, newSha, metaHash, baseNarrative);
 
-    const state = { pr: mkPR({ headSha: newSha }) };
+    const state = { pr: freshPr };
     const ctx = mkContext({
       headSha: 'sha-A',
       pr: mkPR({ headSha: 'sha-A' }),
@@ -403,20 +405,105 @@ describe('GET /api/events — polling cycle', () => {
     const { rm } = await import('fs/promises');
     const { homedir } = await import('os');
     const { join } = await import('path');
-    await rm(join(homedir(), '.cache', 'diffdad', `o-r-1-${newSha}.v2.json`), { force: true }).catch(() => {});
+    await rm(join(homedir(), '.cache', 'diffdad', `o-r-1-${newSha}-${metaHash}.v3.json`), { force: true }).catch(
+      () => {},
+    );
+  });
+
+  it('regenerates when only PR title changed (SHA unchanged)', async () => {
+    const { cacheNarrative, computePromptMetaHash } = await import('../narrative/cache');
+    const sha = `sha-titleonly-${Date.now()}`;
+    const editedPr = mkPR({ headSha: sha, title: 'Edited title' });
+    const newMetaHash = computePromptMetaHash(editedPr);
+    // Pre-seed cache for the *new* title so regen finds a hit instead of calling the LLM.
+    await cacheNarrative('o', 'r', 1, sha, newMetaHash, { ...baseNarrative, title: 'after edit' });
+
+    const state = { pr: editedPr };
+    const ctx = mkContext({
+      headSha: sha,
+      pr: mkPR({ headSha: sha, title: 'Original title' }),
+      github: defaultGh(state) as unknown as GitHubClient,
+    });
+    const { app } = createServer(ctx);
+    const ctrl = new AbortController();
+    const res = await app.request('/api/events', { signal: ctrl.signal });
+    const reader = new StreamReader(res.body!);
+    await reader.drain();
+
+    await runPoll();
+    await new Promise((r) => setTimeout(r, 30));
+    const events = (await reader.drain(80)) as SseEvent[];
+    expect(events.find((e) => e.event === 'regenerating')).toBeDefined();
+    // No standalone 'pr' event — the regen path's 'narrative' broadcast carries the fresh PR.
+    expect(events.find((e) => e.event === 'pr')).toBeUndefined();
+    const narrEvt = events.find((e) => e.event === 'narrative');
+    expect(narrEvt).toBeDefined();
+    expect((narrEvt!.data as { narrative: { title: string } }).narrative.title).toBe('after edit');
+    expect(ctx.pr.title).toBe('Edited title');
+
+    ctrl.abort();
+    await reader.cancel();
+
+    const { rm } = await import('fs/promises');
+    const { homedir } = await import('os');
+    const { join } = await import('path');
+    await rm(join(homedir(), '.cache', 'diffdad', `o-r-1-${sha}-${newMetaHash}.v3.json`), { force: true }).catch(
+      () => {},
+    );
+  });
+
+  it('regenerates when only PR body changed (SHA unchanged)', async () => {
+    const { cacheNarrative, computePromptMetaHash } = await import('../narrative/cache');
+    const sha = `sha-bodyonly-${Date.now()}`;
+    const editedPr = mkPR({ headSha: sha, body: 'New description with detail' });
+    const newMetaHash = computePromptMetaHash(editedPr);
+    await cacheNarrative('o', 'r', 1, sha, newMetaHash, { ...baseNarrative, title: 'after body edit' });
+
+    const state = { pr: editedPr };
+    const ctx = mkContext({
+      headSha: sha,
+      pr: mkPR({ headSha: sha, body: '' }),
+      github: defaultGh(state) as unknown as GitHubClient,
+    });
+    const { app } = createServer(ctx);
+    const ctrl = new AbortController();
+    const res = await app.request('/api/events', { signal: ctrl.signal });
+    const reader = new StreamReader(res.body!);
+    await reader.drain();
+
+    await runPoll();
+    await new Promise((r) => setTimeout(r, 30));
+    const events = (await reader.drain(80)) as SseEvent[];
+    expect(events.find((e) => e.event === 'regenerating')).toBeDefined();
+    const narrEvt = events.find((e) => e.event === 'narrative');
+    expect(narrEvt).toBeDefined();
+    expect((narrEvt!.data as { narrative: { title: string } }).narrative.title).toBe('after body edit');
+    expect(ctx.pr.body).toBe('New description with detail');
+
+    ctrl.abort();
+    await reader.cancel();
+
+    const { rm } = await import('fs/promises');
+    const { homedir } = await import('os');
+    const { join } = await import('path');
+    await rm(join(homedir(), '.cache', 'diffdad', `o-r-1-${sha}-${newMetaHash}.v3.json`), { force: true }).catch(
+      () => {},
+    );
   });
 
   it('on SHA change with a cached narrative, broadcasts "narrative" without re-generating', async () => {
     // Pre-seed cache so the regenerate path uses it.
-    const { cacheNarrative } = await import('../narrative/cache');
+    const { cacheNarrative, computePromptMetaHash } = await import('../narrative/cache');
     const sha = `sha-fresh-${Date.now()}`;
-    await cacheNarrative('o', 'r', 1, sha, {
+    const freshPr = mkPR({ headSha: sha });
+    const metaHash = computePromptMetaHash(freshPr);
+    await cacheNarrative('o', 'r', 1, sha, metaHash, {
       ...baseNarrative,
       title: 'cached title',
     });
 
     const state = {
-      pr: mkPR({ headSha: sha }),
+      pr: freshPr,
     };
     const ctx = mkContext({
       headSha: 'sha-A',
@@ -448,7 +535,145 @@ describe('GET /api/events — polling cycle', () => {
     const { rm } = await import('fs/promises');
     const { homedir } = await import('os');
     const { join } = await import('path');
-    await rm(join(homedir(), '.cache', 'diffdad', `o-r-1-${sha}.v2.json`), { force: true }).catch(() => {});
+    await rm(join(homedir(), '.cache', 'diffdad', `o-r-1-${sha}-${metaHash}.v3.json`), { force: true }).catch(() => {});
+  });
+
+  it('regenerates when only PR labels changed (SHA unchanged)', async () => {
+    const { cacheNarrative, computePromptMetaHash } = await import('../narrative/cache');
+    const sha = `sha-labelonly-${Date.now()}`;
+    const editedPr = mkPR({ headSha: sha, labels: ['security', 'breaking'] });
+    const newMetaHash = computePromptMetaHash(editedPr);
+    await cacheNarrative('o', 'r', 1, sha, newMetaHash, { ...baseNarrative, title: 'after label edit' });
+
+    const state = { pr: editedPr };
+    const ctx = mkContext({
+      headSha: sha,
+      pr: mkPR({ headSha: sha, labels: [] }),
+      github: defaultGh(state) as unknown as GitHubClient,
+    });
+    const { app } = createServer(ctx);
+    const ctrl = new AbortController();
+    const res = await app.request('/api/events', { signal: ctrl.signal });
+    const reader = new StreamReader(res.body!);
+    await reader.drain();
+
+    await runPoll();
+    await new Promise((r) => setTimeout(r, 30));
+    const events = (await reader.drain(80)) as SseEvent[];
+    expect(events.find((e) => e.event === 'regenerating')).toBeDefined();
+    const narrEvt = events.find((e) => e.event === 'narrative');
+    expect(narrEvt).toBeDefined();
+    expect((narrEvt!.data as { narrative: { title: string } }).narrative.title).toBe('after label edit');
+    expect(ctx.pr.labels).toEqual(['security', 'breaking']);
+
+    ctrl.abort();
+    await reader.cancel();
+
+    const { rm } = await import('fs/promises');
+    const { homedir } = await import('os');
+    const { join } = await import('path');
+    await rm(join(homedir(), '.cache', 'diffdad', `o-r-1-${sha}-${newMetaHash}.v3.json`), { force: true }).catch(
+      () => {},
+    );
+  });
+
+  it('does NOT regenerate when only draft/state changed (no prompt impact)', async () => {
+    // draft and state aren't fed into the narrative prompt, so flipping them
+    // should emit 'pr' but never trigger regeneration. Guards against future
+    // changes accidentally treating these like prompt-relevant fields.
+    const state = { pr: mkPR({ draft: true }) };
+    const ctx = mkContext({
+      pr: mkPR({ draft: false }),
+      github: defaultGh(state) as unknown as GitHubClient,
+    });
+    const { app } = createServer(ctx);
+    const ctrl = new AbortController();
+    const res = await app.request('/api/events', { signal: ctrl.signal });
+    const reader = new StreamReader(res.body!);
+    await reader.drain();
+
+    await runPoll();
+    await new Promise((r) => setTimeout(r, 30));
+    const events = (await reader.drain(80)) as SseEvent[];
+    expect(events.find((e) => e.event === 'pr')).toBeDefined();
+    expect(events.find((e) => e.event === 'regenerating')).toBeUndefined();
+    expect(events.find((e) => e.event === 'narrative')).toBeUndefined();
+
+    ctrl.abort();
+    await reader.cancel();
+  });
+
+  it('does not start a second regeneration while one is already in flight', async () => {
+    // If a poll arrives mid-regeneration with a PR title edit, the regen
+    // branch must be guarded by `regenerating` and skip — only one
+    // 'regenerating' event should fire across the two polls.
+    const { cacheNarrative, computePromptMetaHash } = await import('../narrative/cache');
+    const newSha = `sha-reentrant-${Date.now()}`;
+    const initialPr = mkPR({ headSha: newSha });
+    const editedPr = mkPR({ headSha: newSha, title: 'Edited mid-regen' });
+    // Pre-seed the cache under the edited title's hash. The standalone 'pr'
+    // branch in poll 2 mutates ctx.pr before poll 1's getDiff resolves, so the
+    // post-await metaHash computation picks up the edited title.
+    const editedMeta = computePromptMetaHash(editedPr);
+    await cacheNarrative('o', 'r', 1, newSha, editedMeta, baseNarrative);
+
+    let releaseDiff!: () => void;
+    const diffGate = new Promise<void>((res) => {
+      releaseDiff = res;
+    });
+
+    const state = { pr: initialPr };
+    const gh: GhStub = {
+      getPR: async () => state.pr,
+      getComments: async () => [],
+      getCheckRuns: async () => [],
+      getReviews: async () => [],
+      getDiff: async () => {
+        await diffGate;
+        return [];
+      },
+    };
+    const ctx = mkContext({
+      headSha: 'sha-A',
+      pr: mkPR({ headSha: 'sha-A' }),
+      github: gh as unknown as GitHubClient,
+    });
+    const { app } = createServer(ctx);
+    const ctrl = new AbortController();
+    const res = await app.request('/api/events', { signal: ctrl.signal });
+    const reader = new StreamReader(res.body!);
+    await reader.drain();
+
+    // First poll: SHA changes, regen starts and blocks on getDiff.
+    const firstPoll = capturedIntervalCb!();
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Mid-flight: someone edits the PR title.
+    state.pr = editedPr;
+
+    // Second poll: should hit the regen guard and skip — but still emit 'pr'
+    // for the title change so the UI doesn't go stale.
+    await capturedIntervalCb!();
+    let events = (await reader.drain(50)) as SseEvent[];
+    expect(events.filter((e) => e.event === 'regenerating')).toHaveLength(1);
+    expect(events.find((e) => e.event === 'pr')).toBeDefined();
+
+    // Let the first regen finish.
+    releaseDiff();
+    await firstPoll;
+    events = (await reader.drain(50)) as SseEvent[];
+    // The completed regen broadcasts a 'narrative' event.
+    expect(events.find((e) => e.event === 'narrative')).toBeDefined();
+
+    ctrl.abort();
+    await reader.cancel();
+
+    const { rm } = await import('fs/promises');
+    const { homedir } = await import('os');
+    const { join } = await import('path');
+    await rm(join(homedir(), '.cache', 'diffdad', `o-r-1-${newSha}-${editedMeta}.v3.json`), { force: true }).catch(
+      () => {},
+    );
   });
 
   it('swallows polling errors and keeps the loop alive', async () => {
