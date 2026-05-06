@@ -39,9 +39,23 @@ export function inferProviderFromEnv(): Pick<DiffDadConfig, 'aiProvider' | 'aiAp
 /** Resolved AI path the engine will take for a given config + env. */
 export type AiPath = 'api' | 'local-cli';
 
+/**
+ * Resolves whether to take the API or local-CLI path. Priority:
+ *   1. `--with=` flag (cliOverride) — explicit, wins always.
+ *   2. `DIFFDAD_CLI` env — explicit, forces local CLI.
+ *   3. Configured `aiProvider` — user picked an API path in `dad config`.
+ *   4. Configured `defaultCli` — user picked local CLI in `dad config`.
+ *   5. Env-inferred API key (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY`) — only
+ *      kicks in for users who haven't expressed a preference. Local CLI is
+ *      ~5-10× slower, so we shouldn't default to it when an API path is
+ *      freely available.
+ *   6. Local CLI as the final fallback.
+ */
 export function resolveAiPath(config: DiffDadConfig): { path: AiPath; effectiveConfig: DiffDadConfig } {
   if (cliOverride) return { path: 'local-cli', effectiveConfig: config };
+  if (process.env.DIFFDAD_CLI) return { path: 'local-cli', effectiveConfig: config };
   if (config.aiProvider !== undefined) return { path: 'api', effectiveConfig: config };
+  if (config.defaultCli) return { path: 'local-cli', effectiveConfig: config };
   const inferred = inferProviderFromEnv();
   if (inferred) {
     return { path: 'api', effectiveConfig: { ...config, ...inferred } };
