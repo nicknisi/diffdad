@@ -1,6 +1,7 @@
 import type { DiffDadConfig } from '../config';
 import type { DiffFile, PRMetadata } from '../github/types';
 import { callAi, type AiUsage } from './ai-runtime';
+import type { HunkHint } from './hints';
 import { extractJson } from './json-parse';
 import { buildPlannerPrompt, type PreviousNarrativeContext } from './prompt';
 import type { Plan, PlanTheme } from './plan-types';
@@ -12,6 +13,7 @@ export type PlannerInput = {
   config: DiffDadConfig;
   skippedFiles?: string[];
   previousContext?: PreviousNarrativeContext;
+  hints?: HunkHint[];
   /** Optional violation feedback from a previous failed run; injected into the user prompt. */
   retryFeedback?: string;
 };
@@ -32,7 +34,7 @@ function normalizePath(p: string): string {
 }
 
 export async function runPlanner(input: PlannerInput): Promise<PlannerResult> {
-  const { pr, files, fileTree, config, skippedFiles, previousContext, retryFeedback } = input;
+  const { pr, files, fileTree, config, skippedFiles, previousContext, hints, retryFeedback } = input;
   const prompt = buildPlannerPrompt({
     title: pr.title,
     description: pr.body,
@@ -41,6 +43,7 @@ export async function runPlanner(input: PlannerInput): Promise<PlannerResult> {
     fileTree,
     skippedFiles,
     previousContext,
+    hints,
   });
   const user = retryFeedback
     ? `${prompt.user}\n\n---\n\nPREVIOUS PLAN HAD VIOLATIONS:\n${retryFeedback}\n\nFix them in this run.`

@@ -1,11 +1,12 @@
 import type { DiffDadConfig } from '../config';
-import type { DiffFile, PRMetadata } from '../github/types';
+import type { DiffFile, PRComment, PRMetadata } from '../github/types';
 import { buildNarrativePrompt, type PreviousNarrativeContext, type PromptCapStats } from './prompt';
 import { partitionMechanicalFiles } from './diff-filter';
 import { normalizeNarrative, type NarrativeChapter, type NarrativeResponse } from './types';
 import { formatViolation, validateNarrative } from './validator';
 import { callAi as _callAi, resolveAiPath, type AiChunkHandler } from './ai-runtime';
 import { extractJson, tryParsePartialJson } from './json-parse';
+import { computeHints } from './hints';
 import { runPlanner, validatePlan, formatPlanViolation } from './planner';
 import { writeChapter, buildSuppressedChapter } from './writer';
 import type { Plan, PlanTheme } from './plan-types';
@@ -109,6 +110,8 @@ export type NarrativeGenerationOptions = {
   onChapter?: ChapterReadyHandler;
   /** Optional cache key for storing the plan separately from the assembled narrative. */
   cacheKey?: { owner: string; repo: string; number: number; sha: string };
+  /** Existing inline review comments — fed to the planner as hints (hot-zone signal). */
+  comments?: PRComment[];
 };
 
 export type NarrativeGenerationResult = {
@@ -223,6 +226,7 @@ async function generateNarrativeTwoPass(
   }
 
   if (!plan) {
+    const hints = computeHints(narrate, options.comments);
     let retryFeedback: string | undefined;
     for (let attempt = 0; attempt < 2; attempt++) {
       const plannerResult = await runPlanner({
@@ -232,6 +236,7 @@ async function generateNarrativeTwoPass(
         config,
         skippedFiles,
         previousContext,
+        hints,
         retryFeedback,
       });
       const validation = validatePlan(plannerResult.plan, narrate);

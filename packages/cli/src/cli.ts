@@ -316,6 +316,7 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
     try {
       const result = await generateNarrative(metadata, files, [], config, undefined, {
         cacheKey: { owner: parsed.owner, repo: parsed.repo, number: parsed.number, sha: metadata.headSha },
+        comments,
         onProgress: ({ chars }) => {
           totalChars = chars;
           broadcast('narrative-progress', { chars });

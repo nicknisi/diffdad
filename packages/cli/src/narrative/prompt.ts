@@ -1,4 +1,5 @@
 import type { DiffFile, DiffHunk, DiffLine } from '../github/types';
+import { formatHintsBlock, type HunkHint } from './hints';
 import type { Plan, PlanTheme } from './plan-types';
 import { computeRisk, formatRiskHints, type FileRisk } from './risk';
 
@@ -16,6 +17,8 @@ export interface NarrativePromptInput {
   /** Files we already filtered out before getting here — listed for the LLM to reference if needed. */
   skippedFiles?: string[];
   previousContext?: PreviousNarrativeContext;
+  /** Optional non-LLM signals fed into the planner prompt. Ignored by the single-pass narrator. */
+  hints?: HunkHint[];
 }
 
 export interface PromptCapStats {
@@ -284,6 +287,86 @@ Concerns are anchored Socratic questions (file:line:category:why). Categories: l
 - \`hunkRefs\` entries reference \`{ file, hunkIndex }\` — the file path matches the diff exactly; the hunkIndex matches the marker.
 - A \`[FILE TRUNCATED: ...]\` marker means the diff was capped — acknowledge the omission rather than inventing details, and still cover the visible hunks.
 
+## Few-shot examples
+
+These are abbreviated. Real plans have full readingPlan/concerns/missing.
+
+### Example 1 — cross-file behavioral grouping (a refactor that touches three files):
+
+\`\`\`json
+{
+  "schemaVersion": 1,
+  "prTitle": "Move auth check from controller to middleware",
+  "prTldr": "Centralizes auth in a single middleware so route handlers no longer call requireAuth() themselves.",
+  "prVerdict": "caution",
+  "themes": [
+    {
+      "id": "theme-0",
+      "title": "Auth boundary moves into middleware",
+      "riskLevel": "high",
+      "rationale": "These three hunks together implement the new boundary: middleware adds the check, controller and route remove it.",
+      "hunkRefs": [
+        { "file": "src/middleware/auth.ts", "hunkIndex": 0 },
+        { "file": "src/controllers/posts.ts", "hunkIndex": 2 },
+        { "file": "src/routes/api.ts", "hunkIndex": 1 }
+      ]
+    },
+    {
+      "id": "theme-1",
+      "title": "Test coverage for the new boundary",
+      "riskLevel": "medium",
+      "rationale": "Tests verifying the middleware fires before the handler and the handlers no longer need the old check.",
+      "hunkRefs": [
+        { "file": "src/__tests__/auth.test.ts", "hunkIndex": 0 },
+        { "file": "src/__tests__/posts.test.ts", "hunkIndex": 1 }
+      ]
+    }
+  ],
+  "readingPlan": [],
+  "concerns": []
+}
+\`\`\`
+
+Note: theme-0 spans 3 files because they implement ONE behavioral change. Theme-1 groups the test hunks for it. File order in the diff was middleware/auth, then auth.test, then posts, then posts.test, then routes — but themes regroup them by behavior.
+
+### Example 2 — suppressed mechanical bucket alongside real themes:
+
+\`\`\`json
+{
+  "schemaVersion": 1,
+  "prTitle": "Add feature flag for new pricing flow",
+  "prTldr": "Wires up a new feature flag that gates the pricing v2 codepath.",
+  "prVerdict": "caution",
+  "themes": [
+    {
+      "id": "theme-0",
+      "title": "New pricing path gated by flag",
+      "riskLevel": "high",
+      "rationale": "The actual conditional that picks v1 vs v2 lives here.",
+      "hunkRefs": [
+        { "file": "src/pricing/index.ts", "hunkIndex": 0 },
+        { "file": "src/pricing/v2.ts", "hunkIndex": 0 }
+      ]
+    },
+    {
+      "id": "theme-1",
+      "title": "Mechanical changes",
+      "riskLevel": "low",
+      "rationale": "Import reshuffles and a rename of an unused symbol; no behavior change.",
+      "suppress": true,
+      "hunkRefs": [
+        { "file": "src/index.ts", "hunkIndex": 0 },
+        { "file": "src/util/format.ts", "hunkIndex": 1 }
+      ]
+    }
+  ],
+  "readingPlan": [],
+  "concerns": []
+}
+\`\`\`
+
+Note: at most one suppressed theme; everything mechanical lands in it; reviewer sees a collapsed entry without prose.
+
 ## Output
 
 Return ONLY valid JSON, no prose around it, matching this schema:
@@ -504,11 +587,13 @@ export function buildNarrativePrompt(input: NarrativePromptInput): NarrativeProm
 
 /** Build the planner prompt — used for the first pass of the two-pass pipeline. */
 export function buildPlannerPrompt(input: NarrativePromptInput): NarrativePrompt {
-  const { files, skippedFiles, previousContext } = input;
+  const { files, skippedFiles, previousContext, hints } = input;
   const risks = computeRisk(files);
   const { diffBlock, stats } = formatDiffBlock(files, MAX_LINES_PER_FILE, MAX_TOTAL_DIFF_LINES);
 
   const parts = buildSharedHeader(input, risks);
+  const hintBlock = hints ? formatHintsBlock(hints) : '';
+  if (hintBlock) parts.push(hintBlock, '');
   parts.push('Unified diff:', diffBlock);
   appendCapInfo(parts, stats, skippedFiles);
   appendPreviousContext(parts, previousContext);

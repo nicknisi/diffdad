@@ -478,6 +478,7 @@ export function createServer(ctx: ServerContext) {
                       },
                       {
                         cacheKey: { owner: ctx.owner, repo: ctx.repo, number: ctx.pr.number, sha: ctx.headSha },
+                        comments: ctx.comments,
                         onProgress: ({ chars }) => {
                           totalChars = chars;
                           broadcast('narrative-progress', { chars });
