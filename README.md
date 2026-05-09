@@ -14,13 +14,13 @@
 ### Homebrew
 
 ```sh
-brew install nicknisi/diffdad/dad
+brew install nicknisi/formulae/dad
 ```
 
 Or, equivalently:
 
 ```sh
-brew tap nicknisi/diffdad
+brew tap nicknisi/formulae
 brew install dad
 ```
 
