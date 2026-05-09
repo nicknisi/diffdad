@@ -82,13 +82,20 @@ jobs:
   update-formula:
     needs: [release-please, build]
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - repo: nicknisi/homebrew-diffdad
+            path: tap-legacy
+          - repo: nicknisi/homebrew-formulae
+            path: tap-formulae
     steps:
       - name: Checkout tap repo
         uses: actions/checkout@v4
         with:
-          repository: nicknisi/homebrew-diffdad
+          repository: ${{ matrix.repo }}
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          path: tap
+          path: ${{ matrix.path }}
 
       - uses: actions/download-artifact@v4
         with:
@@ -97,15 +104,16 @@ jobs:
       - name: Update formula
         env:
           VERSION: ${{ needs.release-please.outputs.tag_name }}
+          TAP_PATH: ${{ matrix.path }}
         run: |
           VER="${VERSION#v}"
           SHA_ARM64=$(shasum -a 256 dad-darwin-arm64.tar.gz | cut -d' ' -f1)
           SHA_X86_64=$(shasum -a 256 dad-darwin-x86_64.tar.gz | cut -d' ' -f1)
           SHA_LINUX=$(shasum -a 256 dad-linux-x86_64.tar.gz | cut -d' ' -f1)
-          cd tap
+          cd "$TAP_PATH"
           sed -i "s/version \".*\"/version \"${VER}\"/" Formula/dad.rb
           python3 -c "
-          import re, sys
+          import re
           f = 'Formula/dad.rb'
           txt = open(f).read()
           shas = {'arm64': '${SHA_ARM64}', 'x86_64': '${SHA_X86_64}', 'linux': '${SHA_LINUX}'}
@@ -115,10 +123,13 @@ jobs:
           "
 
       - name: Commit formula
+        env:
+          TAP_PATH: ${{ matrix.path }}
+          TAG: ${{ needs.release-please.outputs.tag_name }}
         run: |
-          cd tap
+          cd "$TAP_PATH"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Formula/dad.rb
-          git diff --cached --quiet || git commit -m "formula: update to ${{ needs.release-please.outputs.tag_name }}"
+          git diff --cached --quiet || git commit -m "dad: update to $TAG"
           git push
