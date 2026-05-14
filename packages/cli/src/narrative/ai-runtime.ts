@@ -5,6 +5,36 @@ import { createOpenAI } from '@ai-sdk/openai';
 import type { LanguageModelV1 } from 'ai';
 import { DEFAULT_CLI_MODELS, LOCAL_CLIS, type DiffDadConfig, type LocalCli } from '../config';
 
+export type HeartbeatHandle = { tick(): void; stop(): void };
+
+export function startHeartbeat(label: string): HeartbeatHandle {
+  if (process.env.DIFFDAD_HEARTBEAT_DISABLED) {
+    return { tick() {}, stop() {} };
+  }
+  let lastTick = Date.now();
+  let lastLoggedBucket = -1;
+  const timer = setInterval(() => {
+    const elapsed = Date.now() - lastTick;
+    if (elapsed < 30_000) return;
+    const bucket = Math.floor(elapsed / 30_000);
+    if (bucket === lastLoggedBucket) return;
+    lastLoggedBucket = bucket;
+    const seconds = bucket * 30;
+    try {
+      process.stderr.write(`[diffdad] ${label}... (${seconds}s since last output)\n`);
+    } catch {}
+  }, 5_000);
+  return {
+    tick() {
+      lastTick = Date.now();
+      lastLoggedBucket = -1;
+    },
+    stop() {
+      clearInterval(timer);
+    },
+  };
+}
+
 export type AiChunkHandler = (delta: string) => void;
 export type AiUsage = { inputTokens?: number; outputTokens?: number };
 export type AiResult = { text: string; truncated: boolean; provider: string; usage?: AiUsage };
@@ -158,22 +188,26 @@ async function spawnCli(
   const decoder = new TextDecoder();
   let text = '';
   const reader = proc.stdout.getReader();
+  const hb = startHeartbeat('Model is thinking');
   try {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       const chunk = decoder.decode(value, { stream: true });
       if (chunk.length > 0) {
+        hb.tick();
         text += chunk;
         onChunk?.(chunk);
       }
     }
     const tail = decoder.decode();
     if (tail.length > 0) {
+      hb.tick();
       text += tail;
       onChunk?.(tail);
     }
   } finally {
+    hb.stop();
     reader.releaseLock();
   }
 
@@ -338,10 +372,16 @@ export async function callAi(
   });
 
   let text = '';
-  for await (const delta of stream.textStream) {
-    if (delta.length === 0) continue;
-    text += delta;
-    onChunk?.(delta);
+  const hb = startHeartbeat('Model is thinking');
+  try {
+    for await (const delta of stream.textStream) {
+      if (delta.length === 0) continue;
+      hb.tick();
+      text += delta;
+      onChunk?.(delta);
+    }
+  } finally {
+    hb.stop();
   }
   const finishReason = await stream.finishReason;
   const usage = await stream.usage.catch(() => undefined);
