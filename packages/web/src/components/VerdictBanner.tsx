@@ -61,6 +61,19 @@ export function VerdictBanner() {
           <NarrationBlock content={narrative.tldr} />
         </div>
       )}
+      {verdict === 'risky' && narrative.readingPlan && narrative.readingPlan.length > 0 && (
+        <button
+          type="button"
+          onClick={() => {
+            const el = document.querySelector('[data-reading-plan]');
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }}
+          className="mt-2 inline-flex items-center gap-1.5 rounded-[6px] px-2.5 py-1.5 text-[12px] font-semibold transition-colors hover:opacity-80"
+          style={{ background: config.accent, color: '#fff' }}
+        >
+          Follow the reading plan
+        </button>
+      )}
     </div>
   );
 }

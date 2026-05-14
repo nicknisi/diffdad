@@ -6,9 +6,10 @@ import type { DiffFile } from '../state/types';
 import { Chapter } from './Chapter';
 import { ChapterTOC } from './ChapterTOC';
 import { Comment } from './Comment';
-import { ConcernsList } from './ConcernsList';
+import { ConcernsSummaryPanel } from './ConcernsSummaryPanel';
 import { Hunk } from './Hunk';
 import { MissingItems } from './MissingItems';
+import { RiskFilterBar } from './RiskFilterBar';
 import { ReadingPlan } from './ReadingPlan';
 import { VerdictBanner } from './VerdictBanner';
 import { IconChat } from './Icons';
@@ -227,7 +228,8 @@ export function StoryView() {
           <RegeneratingBanner />
           <VerdictBanner />
           <ReadingPlan />
-          <ConcernsList />
+          <ConcernsSummaryPanel />
+          <RiskFilterBar />
           {narrative.chapters.map((ch, idx) => (
             <Chapter key={`ch-${idx}`} index={idx} chapter={ch} />
           ))}
@@ -246,7 +248,8 @@ export function StoryView() {
         <RegeneratingBanner />
         <VerdictBanner />
         <ReadingPlan />
-        <ConcernsList />
+        <ConcernsSummaryPanel />
+        <RiskFilterBar />
         {narrative.chapters.map((ch, idx) => (
           <Chapter key={`ch-${idx}`} index={idx} chapter={ch} />
         ))}

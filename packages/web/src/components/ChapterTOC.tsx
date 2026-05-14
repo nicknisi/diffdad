@@ -9,6 +9,7 @@ export function ChapterTOC() {
   const activeChapterId = useReviewStore((s) => s.activeChapterId);
   const chapterStates = useReviewStore((s) => s.chapterStates);
   const setActiveChapter = useReviewStore((s) => s.setActiveChapter);
+  const selectedRiskLevels = useReviewStore((s) => s.selectedRiskLevels);
 
   const chapterCommentCounts = useMemo(() => {
     if (!narrative) return {};
@@ -58,6 +59,9 @@ export function ChapterTOC() {
       <div className="px-2.5 pb-2 text-[11px] font-bold uppercase tracking-[0.06em] text-[var(--fg-3)]">Story</div>
       <ul className="m-0 list-none p-0">
         {narrative.chapters.map((ch, idx) => {
+          const riskFiltered =
+            selectedRiskLevels.size > 0 && selectedRiskLevels.size < 3 && !selectedRiskLevels.has(ch.risk);
+          if (riskFiltered) return null;
           const id = `ch-${idx}`;
           const reviewed = chapterStates[id] === 'reviewed';
           const active = activeChapterId === id;

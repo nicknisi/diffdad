@@ -175,6 +175,9 @@ export function Chapter({ index, chapter }: Props) {
   const displayDensity = useReviewStore((s) => s.displayDensity);
   const narrative = useReviewStore((s) => s.narrative);
   const pendingChapterThemeIds = useReviewStore((s) => s.pendingChapterThemeIds);
+  const selectedRiskLevels = useReviewStore((s) => s.selectedRiskLevels);
+  const concernsPanelOpen = useReviewStore((s) => s.concernsPanelOpen);
+
   const id = `ch-${index}`;
   const reviewed = chapterStates[id] === 'reviewed';
   const isStreaming = chapter.themeId !== undefined && pendingChapterThemeIds.has(chapter.themeId);
@@ -221,7 +224,9 @@ export function Chapter({ index, chapter }: Props) {
     return set;
   }, [narrative, index]);
 
-  const [collapsed, setCollapsed] = useState(reviewed);
+  const [collapsed, setCollapsed] = useState(
+    reviewed || (narrative?.verdict === 'risky' && chapter.risk === 'low'),
+  );
   const prevReviewed = useRef(reviewed);
   useEffect(() => {
     if (reviewed && !prevReviewed.current) setCollapsed(true);
@@ -253,6 +258,9 @@ export function Chapter({ index, chapter }: Props) {
     }
     return count;
   }, [hunkSections, files, comments]);
+
+  const riskFiltered = selectedRiskLevels.size > 0 && selectedRiskLevels.size < 3 && !selectedRiskLevels.has(chapter.risk);
+  if (riskFiltered) return null;
 
   const riskPill = (
     <span
@@ -414,7 +422,9 @@ export function Chapter({ index, chapter }: Props) {
           </ReshowBlock>
         );
       })}
-      {chapter.callouts && chapter.callouts.length > 0 && <CalloutList callouts={chapter.callouts} />}
+      {chapter.callouts && chapter.callouts.length > 0 && !concernsPanelOpen && (
+        <CalloutList callouts={chapter.callouts} />
+      )}
     </div>
   );
 
