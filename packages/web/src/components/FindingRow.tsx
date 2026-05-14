@@ -4,6 +4,8 @@ import { normalizePath } from '../lib/paths';
 import type { Finding } from '../lib/findings';
 import { useReviewStore } from '../state/review-store';
 import type { Callout, ConcernCategory, DiffFile } from '../state/types';
+import type { ConcernStatus } from '../state/types';
+import { DeltaBadge } from './DeltaBadge';
 import { IconChat, IconCheck, IconX } from './Icons';
 
 const CATEGORY_LABELS: Record<ConcernCategory, string> = {
@@ -56,9 +58,10 @@ type Props = {
   finding: Finding;
   onDismiss: () => void;
   dimmed?: boolean;
+  deltaStatus?: ConcernStatus;
 };
 
-export function FindingRow({ finding, onDismiss, dimmed }: Props) {
+export function FindingRow({ finding, onDismiss, dimmed, deltaStatus }: Props) {
   const files = useReviewStore((s) => s.files);
   const addDraft = useReviewStore((s) => s.addDraft);
   const drafts = useReviewStore((s) => s.drafts);
@@ -182,11 +185,12 @@ export function FindingRow({ finding, onDismiss, dimmed }: Props) {
       style={{
         background: 'var(--bg-panel)',
         boxShadow: 'inset 0 0 0 1px var(--gray-a5)',
-        opacity: dimmed ? 0.45 : 1,
+        opacity: dimmed ? 0.45 : deltaStatus === 'fixed' ? 0.45 : 1,
       }}
     >
       <div className="flex flex-wrap items-center gap-2">
         {badge}
+        <DeltaBadge status={deltaStatus} />
         <button
           type="button"
           onClick={jumpToLine}
@@ -237,7 +241,12 @@ export function FindingRow({ finding, onDismiss, dimmed }: Props) {
           </button>
         </span>
       </div>
-      <div className="text-[14px] font-medium leading-[20px] text-[var(--fg-1)]">{text}</div>
+      <div
+        className="text-[14px] font-medium leading-[20px] text-[var(--fg-1)]"
+        style={deltaStatus === 'fixed' ? { textDecoration: 'line-through' } : undefined}
+      >
+        {text}
+      </div>
       {why ? <div className="text-[12.5px] leading-[18px] text-[var(--fg-3)]">{why}</div> : null}
       {open && (
         <div className="mt-2 rounded-md border border-[var(--border)] bg-[var(--bg-panel)] p-2">

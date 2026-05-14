@@ -1,7 +1,7 @@
 import { homedir } from 'os';
 import { join } from 'path';
 import { createHash } from 'crypto';
-import { readdir, readFile, rm, writeFile, mkdir } from 'fs/promises';
+import { readdir, readFile, rm, writeFile, mkdir, stat } from 'fs/promises';
 import { normalizeNarrative, type NarrativeResponse } from './types';
 import { isPlan, type Plan } from './plan-types';
 
@@ -104,4 +104,51 @@ export async function cachePlan(owner: string, repo: string, number: number, sha
   const path = planCachePath(owner, repo, number, sha);
   await mkdir(CACHE_DIR, { recursive: true });
   await writeFile(path, JSON.stringify(plan));
+}
+
+export async function findPreviousNarrative(
+  owner: string,
+  repo: string,
+  number: number,
+  currentSha: string,
+): Promise<NarrativeResponse | null> {
+  try {
+    const entries = await readdir(CACHE_DIR);
+    const prefix = `${owner}-${repo}-${number}-`;
+    const escapedPrefix = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const pattern = new RegExp(
+      `^${escapedPrefix}(.+)-[a-f0-9]{12}\\.v${SCHEMA_VERSION}\\..+\\.json$`,
+    );
+
+    const candidates: { file: string; sha: string; mtimeMs: number }[] = [];
+    for (const entry of entries) {
+      const match = entry.match(pattern);
+      if (!match) continue;
+      const sha = match[1]!;
+      if (sha === currentSha) continue;
+      try {
+        const info = await stat(join(CACHE_DIR, entry));
+        candidates.push({ file: entry, sha, mtimeMs: info.mtimeMs });
+      } catch {
+        continue;
+      }
+    }
+
+    if (candidates.length === 0) return null;
+
+    candidates.sort((a, b) => b.mtimeMs - a.mtimeMs);
+
+    for (const candidate of candidates) {
+      try {
+        const raw = await readFile(join(CACHE_DIR, candidate.file), 'utf-8');
+        return normalizeNarrative(JSON.parse(raw));
+      } catch {
+        continue;
+      }
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
 }

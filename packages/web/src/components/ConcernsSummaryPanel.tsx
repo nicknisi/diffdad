@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useAggregatedFindings, type Finding } from '../hooks/useAggregatedFindings';
+import { normalizePath } from '../lib/paths';
 import { useReviewStore } from '../state/review-store';
-import type { ConcernCategory } from '../state/types';
+import type { ConcernCategory, ConcernStatus } from '../state/types';
 import { FindingRow, CATEGORY_LABELS, CATEGORY_STYLES, LEVEL_STYLES } from './FindingRow';
 import { IconChat, IconChevron } from './Icons';
 
@@ -41,9 +42,14 @@ function saveDismissed(prNumber: number | undefined, prefix: string, set: Set<st
   } catch {}
 }
 
+function buildDeltaKey(file: string, line: number, discriminator: string): string {
+  return `${normalizePath(file)}::${line}::${discriminator}`;
+}
+
 export function ConcernsSummaryPanel() {
   const findings = useAggregatedFindings();
   const prNumber = useReviewStore((s) => s.pr?.number);
+  const previousReview = useReviewStore((s) => s.previousReview);
   const panelOpen = useReviewStore((s) => s.concernsPanelOpen);
   const setPanelOpen = useReviewStore((s) => s.setConcernsPanelOpen);
   const selectedCategories = useReviewStore((s) => s.selectedConcernCategories);
@@ -51,6 +57,48 @@ export function ConcernsSummaryPanel() {
   const toggleCategory = useReviewStore((s) => s.toggleConcernCategory);
   const toggleLevel = useReviewStore((s) => s.toggleCalloutLevel);
   const resetFilters = useReviewStore((s) => s.resetFindingFilters);
+
+  const deltaStatusMap = useMemo(() => {
+    const map = new Map<string, ConcernStatus>();
+    if (!previousReview) return map;
+    for (const sc of previousReview.concerns) {
+      map.set(buildDeltaKey(sc.file, sc.line, `${sc.category}:${sc.question.slice(0, 80)}`), sc.status);
+    }
+    for (const sc of previousReview.callouts) {
+      map.set(buildDeltaKey(sc.file, sc.line, `${sc.chapterIndex}:${sc.level}:${sc.message.slice(0, 80)}`), sc.status);
+    }
+    return map;
+  }, [previousReview]);
+
+  function getDeltaStatus(f: Finding): ConcernStatus | undefined {
+    if (!previousReview) return undefined;
+    if (f.kind === 'concern') {
+      return deltaStatusMap.get(buildDeltaKey(f.file, f.line, `${f.concern.category}:${f.concern.question.slice(0, 80)}`));
+    }
+    return deltaStatusMap.get(buildDeltaKey(f.file, f.line, `${f.chapterIndex}:${f.callout.level}:${f.callout.message.slice(0, 80)}`));
+  }
+
+  const allFindings = useMemo(() => {
+    if (!previousReview) return findings;
+    const fixedConcerns: Finding[] = previousReview.concerns
+      .filter((sc) => sc.status === 'fixed')
+      .map((sc) => ({
+        kind: 'concern' as const,
+        concern: { question: sc.question, file: sc.file, line: sc.line, category: sc.category, why: sc.why },
+        file: sc.file,
+        line: sc.line,
+      }));
+    const fixedCallouts: Finding[] = previousReview.callouts
+      .filter((sc) => sc.status === 'fixed')
+      .map((sc) => ({
+        kind: 'callout' as const,
+        callout: { file: sc.file, line: sc.line, level: sc.level, message: sc.message },
+        file: sc.file,
+        line: sc.line,
+        chapterIndex: sc.chapterIndex,
+      }));
+    return [...findings, ...fixedConcerns, ...fixedCallouts];
+  }, [findings, previousReview]);
 
   const [dismissed, setDismissed] = useState<Set<string>>(() => {
     const concerns = loadDismissed(prNumber, 'concernsDismissed');
@@ -65,7 +113,7 @@ export function ConcernsSummaryPanel() {
     setDismissed(new Set([...concerns, ...callouts]));
   }, [prNumber]);
 
-  if (findings.length === 0) return null;
+  if (allFindings.length === 0) return null;
 
   function dismiss(f: Finding) {
     setDismissed((prev) => {
@@ -89,7 +137,7 @@ export function ConcernsSummaryPanel() {
   const allCategoriesSelected = selectedCategories.size === ALL_CATEGORIES.length;
   const allLevelsSelected = selectedLevels.size === ALL_LEVELS.length;
 
-  const filtered = findings.filter((f) => {
+  const filtered = allFindings.filter((f) => {
     if (f.kind === 'concern') {
       return allCategoriesSelected || selectedCategories.has(f.concern.category);
     }
@@ -102,7 +150,7 @@ export function ConcernsSummaryPanel() {
 
   const categoryCounts = new Map<ConcernCategory, number>();
   const levelCounts = new Map<string, number>();
-  for (const f of findings) {
+  for (const f of allFindings) {
     if (f.kind === 'concern') {
       categoryCounts.set(f.concern.category, (categoryCounts.get(f.concern.category) ?? 0) + 1);
     } else {
@@ -142,11 +190,21 @@ export function ConcernsSummaryPanel() {
                 className="inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold"
                 style={{ background: 'var(--amber-3)', color: 'var(--amber-11)' }}
               >
-                {findings.length}
+                {allFindings.length}
               </span>
             </h2>
             <p className="mt-[2px] text-[12.5px] text-[var(--fg-3)]">
-              {undismissedFiltered.length} of {findings.length} visible
+              {undismissedFiltered.length} of {allFindings.length} visible
+              {previousReview && (previousReview.summary.fixed > 0 || previousReview.summary.new > 0) && (
+                <>
+                  {' · '}
+                  <span style={{ color: 'var(--green-11)' }}>{previousReview.summary.fixed} fixed</span>
+                  {', '}
+                  {previousReview.summary.unfixed} remain
+                  {', '}
+                  <span style={{ color: 'var(--blue-11)' }}>{previousReview.summary.new} new</span>
+                </>
+              )}
               {(!allCategoriesSelected || !allLevelsSelected) && (
                 <> · {selectedCategories.size} categories, {selectedLevels.size} levels</>
               )}
@@ -260,7 +318,7 @@ export function ConcernsSummaryPanel() {
               const key = findingKey(f);
               const isDismissed = dismissed.has(key);
               return (
-                <FindingRow key={key} finding={f} onDismiss={() => dismiss(f)} dimmed={isDismissed} />
+                <FindingRow key={key} finding={f} onDismiss={() => dismiss(f)} dimmed={isDismissed} deltaStatus={getDeltaStatus(f)} />
               );
             })}
           </ul>

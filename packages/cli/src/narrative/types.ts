@@ -81,6 +81,18 @@ export type NarrativeSection =
       hunkIndex: number;
     };
 
+export type ConcernStatus = 'fixed' | 'unfixed' | 'new';
+
+export type ScoredConcern = Concern & { status: ConcernStatus };
+
+export type ScoredCallout = Callout & { status: ConcernStatus; chapterIndex: number };
+
+export type ReviewDelta = {
+  concerns: ScoredConcern[];
+  callouts: ScoredCallout[];
+  summary: { fixed: number; unfixed: number; new: number };
+};
+
 const CONCERN_CATEGORIES: ConcernCategory[] = [
   'logic',
   'state',

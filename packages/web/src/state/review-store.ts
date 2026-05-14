@@ -14,6 +14,7 @@ import type {
   PRComment,
   PRData,
   PRReview,
+  ReviewDelta,
 } from './types';
 import type { RecapResponse } from './recap-types';
 import type { AccentId } from '../lib/accents';
@@ -91,6 +92,8 @@ type ReviewState = {
   concernsPanelOpen: boolean;
   verdictDefaultsApplied: boolean;
 
+  previousReview: ReviewDelta | null;
+
   recap: RecapResponse | null;
   recapStatus: RecapStatus;
   recapError: string | null;
@@ -165,6 +168,7 @@ type ReviewState = {
   setConcernsPanelOpen: (open: boolean) => void;
   resetFindingFilters: () => void;
   applyVerdictDefaults: () => void;
+  setPreviousReview: (delta: ReviewDelta | null) => void;
   setRecap: (recap: RecapResponse | null) => void;
   setRecapStatus: (status: RecapStatus) => void;
   setRecapError: (error: string | null) => void;
@@ -297,6 +301,8 @@ export const useReviewStore = create<ReviewState>((set) => ({
   selectedRiskLevels: new Set<Chapter['risk']>(['low', 'medium', 'high']),
   concernsPanelOpen: false,
   verdictDefaultsApplied: false,
+
+  previousReview: null,
 
   recap: null,
   recapStatus: 'idle',
@@ -614,6 +620,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
       };
     }),
 
+  setPreviousReview: (previousReview) => set({ previousReview }),
   setRecap: (recap) => set({ recap, recapStatus: recap ? 'ready' : 'idle', recapError: null }),
   setRecapStatus: (recapStatus) => set({ recapStatus }),
   setRecapError: (recapError) => set({ recapError, recapStatus: recapError ? 'error' : 'idle' }),

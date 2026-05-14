@@ -144,6 +144,18 @@ export type PRComment = {
   diffHunk?: string;
 };
 
+export type ConcernStatus = 'fixed' | 'unfixed' | 'new';
+
+export type ScoredConcern = Concern & { status: ConcernStatus };
+
+export type ScoredCallout = Callout & { status: ConcernStatus; chapterIndex: number };
+
+export type ReviewDelta = {
+  concerns: ScoredConcern[];
+  callouts: ScoredCallout[];
+  summary: { fixed: number; unfixed: number; new: number };
+};
+
 export type ChapterState = 'reading' | 'reviewing' | 'replied' | 'reviewed';
 
 export type DraftComment = {

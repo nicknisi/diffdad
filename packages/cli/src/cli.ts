@@ -2,7 +2,8 @@
 import { resolveGitHubToken } from './auth';
 import { LOCAL_CLIS, readConfig, resetConfig, runConfig, showConfig } from './config';
 import { GitHubClient } from './github/client';
-import { cacheNarrative, clearCache, computePromptMetaHash, getCachedNarrative } from './narrative/cache';
+import { cacheNarrative, clearCache, computePromptMetaHash, findPreviousNarrative, getCachedNarrative } from './narrative/cache';
+import { diffConcerns } from './narrative/concern-diff';
 import { generateNarrative, resolveAiPath, resolveProviderKey, setCliOverride } from './narrative/engine';
 import { getCachedRecap } from './recap/cache';
 import { createServer } from './server';
@@ -243,6 +244,16 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
     : await getCachedNarrative(parsed.owner, parsed.repo, parsed.number, metadata.headSha, metaHash, providerKey);
   const cachedRecap = noCache ? null : await getCachedRecap(parsed.owner, parsed.repo, parsed.number, metadata.headSha);
 
+  let previousReview = null;
+  if (cached) {
+    try {
+      const prev = await findPreviousNarrative(parsed.owner, parsed.repo, parsed.number, metadata.headSha);
+      if (prev) previousReview = diffConcerns(prev, cached);
+    } catch {
+      // silent degradation
+    }
+  }
+
   const ctx = {
     narrative: cached,
     pr: metadata,
@@ -257,6 +268,7 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
     recap: cachedRecap,
     recapGenerating: false,
     recapError: null,
+    previousReview,
   };
 
   const { app, broadcast } = createServer(ctx);
@@ -342,6 +354,14 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
     }
     ctx.narrative = generated;
     await cacheNarrative(parsed.owner, parsed.repo, parsed.number, metadata.headSha, metaHash, providerKey, generated);
+
+    try {
+      const prev = await findPreviousNarrative(parsed.owner, parsed.repo, parsed.number, metadata.headSha);
+      if (prev) ctx.previousReview = diffConcerns(prev, generated);
+    } catch {
+      // silent degradation
+    }
+
     console.log(
       `  ${a.green}✓${a.reset} ${generated.chapters.length} chapters generated ${a.dim}via ${usedProvider} in ${fmtElapsed()}${a.reset}`,
     );
@@ -350,6 +370,7 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
       pr: metadata,
       files,
       comments,
+      previousReview: ctx.previousReview,
     });
   }
 

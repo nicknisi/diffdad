@@ -11,6 +11,7 @@ import type {
   PRComment,
   PRData,
   PRReview,
+  ReviewDelta,
 } from '../state/types';
 import type { RecapResponse } from '../state/recap-types';
 
@@ -150,6 +151,7 @@ export function useLiveStream() {
           pr: PRData;
           files: DiffFile[];
           comments: PRComment[];
+          previousReview?: ReviewDelta | null;
         };
         const state = useReviewStore.getState();
         state.setData(
@@ -162,6 +164,7 @@ export function useLiveStream() {
           null,
           state.reviews,
         );
+        useReviewStore.getState().setPreviousReview(data.previousReview ?? null);
         useReviewStore.getState().setRegenerating(false);
         useReviewStore.getState().setNarrativeProgressChars(0);
         setLastEventAt(Date.now());
