@@ -109,9 +109,14 @@ export function diffConcerns(previous: NarrativeResponse, current: NarrativeResp
   }
 
   const summary = {
-    fixed: scoredConcerns.filter((c) => c.status === 'fixed').length + scoredCallouts.filter((c) => c.status === 'fixed').length,
-    unfixed: scoredConcerns.filter((c) => c.status === 'unfixed').length + scoredCallouts.filter((c) => c.status === 'unfixed').length,
-    new: scoredConcerns.filter((c) => c.status === 'new').length + scoredCallouts.filter((c) => c.status === 'new').length,
+    fixed:
+      scoredConcerns.filter((c) => c.status === 'fixed').length +
+      scoredCallouts.filter((c) => c.status === 'fixed').length,
+    unfixed:
+      scoredConcerns.filter((c) => c.status === 'unfixed').length +
+      scoredCallouts.filter((c) => c.status === 'unfixed').length,
+    new:
+      scoredConcerns.filter((c) => c.status === 'new').length + scoredCallouts.filter((c) => c.status === 'new').length,
   };
 
   return { concerns: scoredConcerns, callouts: scoredCallouts, summary };

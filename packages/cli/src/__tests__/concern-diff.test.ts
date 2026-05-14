@@ -155,14 +155,10 @@ describe('diffConcerns', () => {
   describe('callouts', () => {
     it('matches callouts per chapter', () => {
       const prev = mkNarrative({
-        chapters: [
-          { title: 'Ch1', summary: '', whyMatters: '', risk: 'low', sections: [], callouts: [mkCallout()] },
-        ],
+        chapters: [{ title: 'Ch1', summary: '', whyMatters: '', risk: 'low', sections: [], callouts: [mkCallout()] }],
       });
       const curr = mkNarrative({
-        chapters: [
-          { title: 'Ch1', summary: '', whyMatters: '', risk: 'low', sections: [], callouts: [mkCallout()] },
-        ],
+        chapters: [{ title: 'Ch1', summary: '', whyMatters: '', risk: 'low', sections: [], callouts: [mkCallout()] }],
       });
       const delta = diffConcerns(prev, curr);
       expect(delta.callouts).toHaveLength(1);

@@ -116,9 +116,7 @@ export async function findPreviousNarrative(
     const entries = await readdir(CACHE_DIR);
     const prefix = `${owner}-${repo}-${number}-`;
     const escapedPrefix = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const pattern = new RegExp(
-      `^${escapedPrefix}(.+)-[a-f0-9]{12}\\.v${SCHEMA_VERSION}\\..+\\.json$`,
-    );
+    const pattern = new RegExp(`^${escapedPrefix}(.+)-[a-f0-9]{12}\\.v${SCHEMA_VERSION}\\..+\\.json$`);
 
     const candidates: { file: string; sha: string; mtimeMs: number }[] = [];
     for (const entry of entries) {

@@ -71,8 +71,7 @@ export function FindingRow({ finding, onDismiss, dimmed, deltaStatus }: Props) {
   const { postComment } = useComments();
 
   const [open, setOpen] = useState(false);
-  const defaultBody =
-    finding.kind === 'concern' ? finding.concern.question : finding.callout.message;
+  const defaultBody = finding.kind === 'concern' ? finding.concern.question : finding.callout.message;
   const [body, setBody] = useState(defaultBody);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -91,10 +90,7 @@ export function FindingRow({ finding, onDismiss, dimmed, deltaStatus }: Props) {
 
   function jumpToLine() {
     if (!hunkRef) return;
-    if (
-      finding.chapterIndex !== undefined &&
-      finding.kind === 'callout'
-    ) {
+    if (finding.chapterIndex !== undefined && finding.kind === 'callout') {
       const narrative = useReviewStore.getState().narrative;
       if (narrative) {
         const chapter = narrative.chapters[finding.chapterIndex];

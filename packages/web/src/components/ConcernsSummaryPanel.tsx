@@ -73,9 +73,13 @@ export function ConcernsSummaryPanel() {
   function getDeltaStatus(f: Finding): ConcernStatus | undefined {
     if (!previousReview) return undefined;
     if (f.kind === 'concern') {
-      return deltaStatusMap.get(buildDeltaKey(f.file, f.line, `${f.concern.category}:${f.concern.question.slice(0, 80)}`));
+      return deltaStatusMap.get(
+        buildDeltaKey(f.file, f.line, `${f.concern.category}:${f.concern.question.slice(0, 80)}`),
+      );
     }
-    return deltaStatusMap.get(buildDeltaKey(f.file, f.line, `${f.chapterIndex}:${f.callout.level}:${f.callout.message.slice(0, 80)}`));
+    return deltaStatusMap.get(
+      buildDeltaKey(f.file, f.line, `${f.chapterIndex}:${f.callout.level}:${f.callout.message.slice(0, 80)}`),
+    );
   }
 
   const allFindings = useMemo(() => {
@@ -206,7 +210,10 @@ export function ConcernsSummaryPanel() {
                 </>
               )}
               {(!allCategoriesSelected || !allLevelsSelected) && (
-                <> · {selectedCategories.size} categories, {selectedLevels.size} levels</>
+                <>
+                  {' '}
+                  · {selectedCategories.size} categories, {selectedLevels.size} levels
+                </>
               )}
               {dismissedCount > 0 && (
                 <>
@@ -318,14 +325,18 @@ export function ConcernsSummaryPanel() {
               const key = findingKey(f);
               const isDismissed = dismissed.has(key);
               return (
-                <FindingRow key={key} finding={f} onDismiss={() => dismiss(f)} dimmed={isDismissed} deltaStatus={getDeltaStatus(f)} />
+                <FindingRow
+                  key={key}
+                  finding={f}
+                  onDismiss={() => dismiss(f)}
+                  dimmed={isDismissed}
+                  deltaStatus={getDeltaStatus(f)}
+                />
               );
             })}
           </ul>
           {renderList.length === 0 && (
-            <p className="py-4 text-center text-[13px] text-[var(--fg-3)]">
-              No findings match the current filters.
-            </p>
+            <p className="py-4 text-center text-[13px] text-[var(--fg-3)]">No findings match the current filters.</p>
           )}
         </div>
       )}

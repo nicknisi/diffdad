@@ -31,7 +31,13 @@ const CALLOUT_STYLES: Record<Callout['level'], { bg: string; border: string; col
   warning: { bg: 'var(--red-2)', border: 'var(--red-a4)', color: 'var(--red-11)', label: 'Warning' },
 };
 
-function CalloutList({ callouts, calloutStatuses }: { callouts: Callout[]; calloutStatuses?: Map<number, ConcernStatus> }) {
+function CalloutList({
+  callouts,
+  calloutStatuses,
+}: {
+  callouts: Callout[];
+  calloutStatuses?: Map<number, ConcernStatus>;
+}) {
   return (
     <div className="ml-[34px] space-y-1.5">
       <div className="text-[11px] font-bold uppercase tracking-[0.06em] text-[var(--fg-3)]">Review callouts</div>
@@ -235,9 +241,7 @@ export function Chapter({ index, chapter }: Props) {
     return set;
   }, [narrative, index]);
 
-  const [collapsed, setCollapsed] = useState(
-    reviewed || (narrative?.verdict === 'risky' && chapter.risk === 'low'),
-  );
+  const [collapsed, setCollapsed] = useState(reviewed || (narrative?.verdict === 'risky' && chapter.risk === 'low'));
   const prevReviewed = useRef(reviewed);
   useEffect(() => {
     if (reviewed && !prevReviewed.current) setCollapsed(true);
@@ -270,7 +274,8 @@ export function Chapter({ index, chapter }: Props) {
     return count;
   }, [hunkSections, files, comments]);
 
-  const riskFiltered = selectedRiskLevels.size > 0 && selectedRiskLevels.size < 3 && !selectedRiskLevels.has(chapter.risk);
+  const riskFiltered =
+    selectedRiskLevels.size > 0 && selectedRiskLevels.size < 3 && !selectedRiskLevels.has(chapter.risk);
   if (riskFiltered) return null;
 
   const riskPill = (
@@ -433,35 +438,36 @@ export function Chapter({ index, chapter }: Props) {
           </ReshowBlock>
         );
       })}
-      {!concernsPanelOpen && (() => {
-        const currentCallouts = chapter.callouts ?? [];
-        const chapterDelta = previousReview?.callouts.filter((sc) => sc.chapterIndex === index) ?? [];
-        const statusMap = new Map<number, ConcernStatus>();
-        const matchedPrevIndices = new Set<number>();
-        for (let di = 0; di < chapterDelta.length; di++) {
-          const sc = chapterDelta[di]!;
-          const ci = currentCallouts.findIndex(
-            (c) =>
-              normalizePath(c.file) === normalizePath(sc.file) &&
-              Math.abs(c.line - sc.line) <= 3 &&
-              c.level === sc.level,
-          );
-          if (ci >= 0) {
-            statusMap.set(ci, sc.status);
-            matchedPrevIndices.add(di);
+      {!concernsPanelOpen &&
+        (() => {
+          const currentCallouts = chapter.callouts ?? [];
+          const chapterDelta = previousReview?.callouts.filter((sc) => sc.chapterIndex === index) ?? [];
+          const statusMap = new Map<number, ConcernStatus>();
+          const matchedPrevIndices = new Set<number>();
+          for (let di = 0; di < chapterDelta.length; di++) {
+            const sc = chapterDelta[di]!;
+            const ci = currentCallouts.findIndex(
+              (c) =>
+                normalizePath(c.file) === normalizePath(sc.file) &&
+                Math.abs(c.line - sc.line) <= 3 &&
+                c.level === sc.level,
+            );
+            if (ci >= 0) {
+              statusMap.set(ci, sc.status);
+              matchedPrevIndices.add(di);
+            }
           }
-        }
-        const fixedCallouts = chapterDelta
-          .filter((sc, di) => sc.status === 'fixed' && !matchedPrevIndices.has(di))
-          .map((sc) => ({ file: sc.file, line: sc.line, level: sc.level, message: sc.message } as Callout));
-        const combined = [...currentCallouts, ...fixedCallouts];
-        const combinedStatuses = new Map(statusMap);
-        for (let i = currentCallouts.length; i < combined.length; i++) {
-          combinedStatuses.set(i, 'fixed');
-        }
-        if (combined.length === 0) return null;
-        return <CalloutList callouts={combined} calloutStatuses={combinedStatuses} />;
-      })()}
+          const fixedCallouts = chapterDelta
+            .filter((sc, di) => sc.status === 'fixed' && !matchedPrevIndices.has(di))
+            .map((sc) => ({ file: sc.file, line: sc.line, level: sc.level, message: sc.message }) as Callout);
+          const combined = [...currentCallouts, ...fixedCallouts];
+          const combinedStatuses = new Map(statusMap);
+          for (let i = currentCallouts.length; i < combined.length; i++) {
+            combinedStatuses.set(i, 'fixed');
+          }
+          if (combined.length === 0) return null;
+          return <CalloutList callouts={combined} calloutStatuses={combinedStatuses} />;
+        })()}
     </div>
   );
 

@@ -64,15 +64,7 @@ describe('findPreviousNarrative', () => {
   });
 
   it('excludes the current SHA', async () => {
-    await cacheNarrative(
-      FIXTURE_OWNER,
-      FIXTURE_REPO,
-      6,
-      'sha-only',
-      META,
-      PROVIDER,
-      mkResponse({ title: 'Only One' }),
-    );
+    await cacheNarrative(FIXTURE_OWNER, FIXTURE_REPO, 6, 'sha-only', META, PROVIDER, mkResponse({ title: 'Only One' }));
     const result = await findPreviousNarrative(FIXTURE_OWNER, FIXTURE_REPO, 6, 'sha-only');
     expect(result).toBeNull();
   });
@@ -96,10 +88,7 @@ describe('findPreviousNarrative', () => {
 
   it('skips files with a different schema version', async () => {
     await mkdir(CACHE_DIR, { recursive: true });
-    const oldVersionPath = join(
-      CACHE_DIR,
-      `${FIXTURE_OWNER}-${FIXTURE_REPO}-8-sha-old-${META}.v2.${PROVIDER}.json`,
-    );
+    const oldVersionPath = join(CACHE_DIR, `${FIXTURE_OWNER}-${FIXTURE_REPO}-8-sha-old-${META}.v2.${PROVIDER}.json`);
     await writeFile(oldVersionPath, JSON.stringify(mkResponse({ title: 'Old Schema' })));
 
     const result = await findPreviousNarrative(FIXTURE_OWNER, FIXTURE_REPO, 8, 'sha-current');
