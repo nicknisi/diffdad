@@ -40,11 +40,20 @@ export function ChapterTOC() {
     return comments.filter((c) => !c.path).length;
   }, [comments]);
 
-  const totalCount = narrative?.chapters.length ?? 0;
+  const isRiskFiltering = selectedRiskLevels.size > 0 && selectedRiskLevels.size < 3;
+  const visibleChapters = useMemo(() => {
+    if (!narrative) return [];
+    if (!isRiskFiltering) return narrative.chapters;
+    return narrative.chapters.filter((ch) => selectedRiskLevels.has(ch.risk));
+  }, [narrative, isRiskFiltering, selectedRiskLevels]);
+
+  const totalCount = visibleChapters.length;
   const reviewedCount = useMemo(() => {
     if (!narrative) return 0;
-    return narrative.chapters.filter((_, idx) => chapterStates[`ch-${idx}`] === 'reviewed').length;
-  }, [narrative, chapterStates]);
+    return narrative.chapters.filter(
+      (ch, idx) => chapterStates[`ch-${idx}`] === 'reviewed' && (!isRiskFiltering || selectedRiskLevels.has(ch.risk)),
+    ).length;
+  }, [narrative, chapterStates, isRiskFiltering, selectedRiskLevels]);
 
   if (!narrative) return null;
 

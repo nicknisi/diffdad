@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { pendingReviewComments, useReviewStore } from '../state/review-store';
 import { ApprovalCelebration } from './ApprovalCelebration';
 import { SubmitDialog } from './SubmitDialog';
@@ -12,6 +12,7 @@ export function SubmitBar() {
   const clearDrafts = useReviewStore((s) => s.clearDrafts);
   const submitOpen = useReviewStore((s) => s.submitOpen);
   const setSubmitOpen = useReviewStore((s) => s.setSubmitOpen);
+  const selectedRiskLevels = useReviewStore((s) => s.selectedRiskLevels);
 
   const [toast, setToast] = useState<string | null>(null);
   const [celebrating, setCelebrating] = useState(false);
@@ -21,8 +22,13 @@ export function SubmitBar() {
 
   if (!narrative) return null;
 
-  const total = narrative.chapters.length;
-  const reviewedCount = Object.values(chapterStates).filter((s) => s === 'reviewed').length;
+  const isRiskFiltering = selectedRiskLevels.size > 0 && selectedRiskLevels.size < 3;
+  const total = isRiskFiltering
+    ? narrative.chapters.filter((ch) => selectedRiskLevels.has(ch.risk)).length
+    : narrative.chapters.length;
+  const reviewedCount = narrative.chapters.filter(
+    (ch, idx) => chapterStates[`ch-${idx}`] === 'reviewed' && (!isRiskFiltering || selectedRiskLevels.has(ch.risk)),
+  ).length;
   const progress = total === 0 ? 0 : (reviewedCount / total) * 100;
   const draftCount = drafts.length;
   const allReviewed = total > 0 && reviewedCount === total;
