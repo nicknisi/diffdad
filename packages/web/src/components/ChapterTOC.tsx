@@ -9,6 +9,7 @@ export function ChapterTOC() {
   const activeChapterId = useReviewStore((s) => s.activeChapterId);
   const chapterStates = useReviewStore((s) => s.chapterStates);
   const setActiveChapter = useReviewStore((s) => s.setActiveChapter);
+  const selectedRiskLevels = useReviewStore((s) => s.selectedRiskLevels);
 
   const chapterCommentCounts = useMemo(() => {
     if (!narrative) return {};
@@ -39,11 +40,20 @@ export function ChapterTOC() {
     return comments.filter((c) => !c.path).length;
   }, [comments]);
 
-  const totalCount = narrative?.chapters.length ?? 0;
+  const isRiskFiltering = selectedRiskLevels.size > 0 && selectedRiskLevels.size < 3;
+  const visibleChapters = useMemo(() => {
+    if (!narrative) return [];
+    if (!isRiskFiltering) return narrative.chapters;
+    return narrative.chapters.filter((ch) => selectedRiskLevels.has(ch.risk));
+  }, [narrative, isRiskFiltering, selectedRiskLevels]);
+
+  const totalCount = visibleChapters.length;
   const reviewedCount = useMemo(() => {
     if (!narrative) return 0;
-    return narrative.chapters.filter((_, idx) => chapterStates[`ch-${idx}`] === 'reviewed').length;
-  }, [narrative, chapterStates]);
+    return narrative.chapters.filter(
+      (ch, idx) => chapterStates[`ch-${idx}`] === 'reviewed' && (!isRiskFiltering || selectedRiskLevels.has(ch.risk)),
+    ).length;
+  }, [narrative, chapterStates, isRiskFiltering, selectedRiskLevels]);
 
   if (!narrative) return null;
 
@@ -58,6 +68,9 @@ export function ChapterTOC() {
       <div className="px-2.5 pb-2 text-[11px] font-bold uppercase tracking-[0.06em] text-[var(--fg-3)]">Story</div>
       <ul className="m-0 list-none p-0">
         {narrative.chapters.map((ch, idx) => {
+          const riskFiltered =
+            selectedRiskLevels.size > 0 && selectedRiskLevels.size < 3 && !selectedRiskLevels.has(ch.risk);
+          if (riskFiltered) return null;
           const id = `ch-${idx}`;
           const reviewed = chapterStates[id] === 'reviewed';
           const active = activeChapterId === id;

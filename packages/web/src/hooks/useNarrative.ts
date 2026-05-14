@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useReviewStore, type BackendConfig } from '../state/review-store';
-import type { CheckRun, DiffFile, NarrativeResponse, PRComment, PRData, PRReview } from '../state/types';
+import type { CheckRun, DiffFile, NarrativeResponse, PRComment, PRData, PRReview, ReviewDelta } from '../state/types';
 
 type NarrativeApiResponse = {
   generating?: boolean;
@@ -10,6 +10,7 @@ type NarrativeApiResponse = {
   comments: PRComment[];
   checkRuns?: CheckRun[];
   reviews?: PRReview[];
+  previousReview?: ReviewDelta | null;
   repoUrl?: string;
   aiPath?: 'api' | 'local-cli';
   config?: BackendConfig;
@@ -69,6 +70,7 @@ export function useNarrative() {
             data.reviews ?? [],
           );
           useReviewStore.getState().setAiPath(data.aiPath ?? null);
+          useReviewStore.getState().setPreviousReview(data.previousReview ?? null);
         }
       } catch (err) {
         if (cancelled) return;

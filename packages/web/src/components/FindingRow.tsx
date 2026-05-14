@@ -1,8 +1,11 @@
-import { useEffect, useMemo, useState, type KeyboardEvent } from 'react';
+import { useMemo, useState, type KeyboardEvent } from 'react';
 import { useComments } from '../hooks/useComments';
 import { normalizePath } from '../lib/paths';
+import type { Finding } from '../lib/findings';
 import { useReviewStore } from '../state/review-store';
-import type { Concern, ConcernCategory, DiffFile } from '../state/types';
+import type { Callout, ConcernCategory, DiffFile } from '../state/types';
+import type { ConcernStatus } from '../state/types';
+import { DeltaBadge } from './DeltaBadge';
 import { IconChat, IconCheck, IconX } from './Icons';
 
 const CATEGORY_LABELS: Record<ConcernCategory, string> = {
@@ -27,50 +30,15 @@ const CATEGORY_STYLES: Record<ConcernCategory, { bg: string; color: string }> = 
   'error-handling': { bg: 'var(--orange-3)', color: 'var(--orange-11)' },
 };
 
-function CategoryBadge({ category }: { category: ConcernCategory }) {
-  const label = CATEGORY_LABELS[category] ?? category;
-  const style = CATEGORY_STYLES[category] ?? { bg: 'var(--gray-3)', color: 'var(--fg-2)' };
-  return (
-    <span
-      className="inline-flex flex-shrink-0 items-center rounded-full px-[7px] py-[2px] text-[10.5px] font-bold uppercase tracking-[0.06em]"
-      style={{ background: style.bg, color: style.color }}
-    >
-      {label}
-    </span>
-  );
-}
+const LEVEL_STYLES: Record<Callout['level'], { bg: string; color: string; label: string }> = {
+  nit: { bg: 'var(--gray-3)', color: 'var(--fg-2)', label: 'Nit' },
+  concern: { bg: 'var(--yellow-3)', color: 'var(--yellow-11)', label: 'Concern' },
+  warning: { bg: 'var(--red-3)', color: 'var(--red-11)', label: 'Warning' },
+};
 
-function dismissedKey(prNumber: number | undefined): string | null {
-  if (prNumber == null) return null;
-  return `diffdad.concernsDismissed.${prNumber}`;
-}
+export { CATEGORY_LABELS, CATEGORY_STYLES, LEVEL_STYLES };
 
-function loadDismissed(prNumber: number | undefined): Set<string> {
-  const key = dismissedKey(prNumber);
-  if (!key) return new Set();
-  try {
-    const raw = localStorage.getItem(key);
-    if (raw) {
-      const arr = JSON.parse(raw);
-      if (Array.isArray(arr)) return new Set(arr.filter((x): x is string => typeof x === 'string'));
-    }
-  } catch {}
-  return new Set();
-}
-
-function saveDismissed(prNumber: number | undefined, set: Set<string>) {
-  const key = dismissedKey(prNumber);
-  if (!key) return;
-  try {
-    localStorage.setItem(key, JSON.stringify([...set]));
-  } catch {}
-}
-
-function concernKey(c: Concern): string {
-  return `${c.file}:${c.line}:${c.question.slice(0, 80)}`;
-}
-
-function findHunkForConcern(files: DiffFile[], file: string, line: number) {
+function findHunkForLine(files: DiffFile[], file: string, line: number) {
   const norm = normalizePath(file);
   const diffFile = files.find((f) => normalizePath(f.file) === norm);
   if (!diffFile) return null;
@@ -86,36 +54,53 @@ function findHunkForConcern(files: DiffFile[], file: string, line: number) {
   return null;
 }
 
-function ConcernRow({ concern, onDismiss, dimmed }: { concern: Concern; onDismiss: () => void; dimmed?: boolean }) {
+type Props = {
+  finding: Finding;
+  onDismiss: () => void;
+  dimmed?: boolean;
+  deltaStatus?: ConcernStatus;
+};
+
+export function FindingRow({ finding, onDismiss, dimmed, deltaStatus }: Props) {
   const files = useReviewStore((s) => s.files);
   const addDraft = useReviewStore((s) => s.addDraft);
   const drafts = useReviewStore((s) => s.drafts);
   const setOpenLine = useReviewStore((s) => s.setOpenLine);
+  const toggleRiskLevel = useReviewStore((s) => s.toggleRiskLevel);
+  const selectedRiskLevels = useReviewStore((s) => s.selectedRiskLevels);
   const { postComment } = useComments();
 
   const [open, setOpen] = useState(false);
-  const [body, setBody] = useState(`${concern.question}`);
+  const defaultBody = finding.kind === 'concern' ? finding.concern.question : finding.callout.message;
+  const [body, setBody] = useState(defaultBody);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [posted, setPosted] = useState(false);
   const [drafted, setDrafted] = useState(false);
 
   const hunkRef = useMemo(
-    () => findHunkForConcern(files, concern.file, concern.line),
-    [files, concern.file, concern.line],
+    () => findHunkForLine(files, finding.file, finding.line),
+    [files, finding.file, finding.line],
   );
 
-  const draftKey = `${concern.file}:${concern.line}`;
   const hasDraftForLine = useMemo(
-    () => drafts.some((d) => d.path === concern.file && d.line === concern.line),
-    [drafts, concern.file, concern.line],
+    () => drafts.some((d) => d.path === finding.file && d.line === finding.line),
+    [drafts, finding.file, finding.line],
   );
 
   function jumpToLine() {
     if (!hunkRef) return;
+    if (finding.chapterIndex !== undefined && finding.kind === 'callout') {
+      const narrative = useReviewStore.getState().narrative;
+      if (narrative) {
+        const chapter = narrative.chapters[finding.chapterIndex];
+        if (chapter && !selectedRiskLevels.has(chapter.risk)) {
+          toggleRiskLevel(chapter.risk);
+        }
+      }
+    }
     const lineKey = `${hunkRef.file}:${hunkRef.hunkIndex}:${hunkRef.lineIdx}`;
     setOpenLine(lineKey);
-    // Defer scrolling so the thread mounts before we measure.
     requestAnimationFrame(() => {
       const lineEl = document.querySelector(`[data-line-key="${CSS.escape(lineKey)}"]`);
       if (lineEl) lineEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -129,7 +114,7 @@ function ConcernRow({ concern, onDismiss, dimmed }: { concern: Concern; onDismis
     setSubmitting(true);
     setError(null);
     try {
-      await postComment(trimmed, { path: concern.file, line: concern.line, side: 'RIGHT' });
+      await postComment(trimmed, { path: finding.file, line: finding.line, side: 'RIGHT' });
       setPosted(true);
       setOpen(false);
     } catch (err) {
@@ -143,10 +128,10 @@ function ConcernRow({ concern, onDismiss, dimmed }: { concern: Concern; onDismis
     const trimmed = body.trim();
     if (!trimmed) return;
     addDraft({
-      id: `draft-concern-${draftKey}-${Date.now()}`,
+      id: `draft-finding-${finding.file}:${finding.line}-${Date.now()}`,
       body: trimmed,
-      path: concern.file,
-      line: concern.line,
+      path: finding.file,
+      line: finding.line,
       side: 'RIGHT',
     });
     setDrafted(true);
@@ -164,17 +149,44 @@ function ConcernRow({ concern, onDismiss, dimmed }: { concern: Concern; onDismis
     }
   }
 
+  const badge =
+    finding.kind === 'concern' ? (
+      <span
+        className="inline-flex flex-shrink-0 items-center rounded-full px-[7px] py-[2px] text-[10.5px] font-bold uppercase tracking-[0.06em]"
+        style={{
+          background: (CATEGORY_STYLES[finding.concern.category] ?? { bg: 'var(--gray-3)' }).bg,
+          color: (CATEGORY_STYLES[finding.concern.category] ?? { color: 'var(--fg-2)' }).color,
+        }}
+      >
+        {CATEGORY_LABELS[finding.concern.category] ?? finding.concern.category}
+      </span>
+    ) : (
+      <span
+        className="inline-flex flex-shrink-0 items-center rounded-full px-[7px] py-[2px] text-[10.5px] font-bold uppercase tracking-[0.06em]"
+        style={{
+          background: (LEVEL_STYLES[finding.callout.level] ?? { bg: 'var(--gray-3)' }).bg,
+          color: (LEVEL_STYLES[finding.callout.level] ?? { color: 'var(--fg-2)' }).color,
+        }}
+      >
+        {(LEVEL_STYLES[finding.callout.level] ?? { label: finding.callout.level }).label}
+      </span>
+    );
+
+  const text = finding.kind === 'concern' ? finding.concern.question : finding.callout.message;
+  const why = finding.kind === 'concern' ? finding.concern.why : undefined;
+
   return (
     <li
       className="flex flex-col gap-1.5 rounded-[8px] px-3.5 py-3 transition-opacity"
       style={{
         background: 'var(--bg-panel)',
         boxShadow: 'inset 0 0 0 1px var(--gray-a5)',
-        opacity: dimmed ? 0.45 : 1,
+        opacity: dimmed ? 0.45 : deltaStatus === 'fixed' ? 0.45 : 1,
       }}
     >
       <div className="flex flex-wrap items-center gap-2">
-        <CategoryBadge category={concern.category} />
+        {badge}
+        <DeltaBadge status={deltaStatus} />
         <button
           type="button"
           onClick={jumpToLine}
@@ -182,8 +194,11 @@ function ConcernRow({ concern, onDismiss, dimmed }: { concern: Concern; onDismis
           className="font-mono text-[11.5px] text-[var(--fg-3)] transition-colors enabled:hover:text-[var(--brand)] disabled:cursor-default"
           title={hunkRef ? 'Jump to line' : 'Line not found in diff'}
         >
-          {concern.file}:{concern.line}
+          {finding.file}:{finding.line}
         </button>
+        {finding.chapterIndex !== undefined && (
+          <span className="text-[10.5px] text-[var(--fg-3)]">Ch {finding.chapterIndex + 1}</span>
+        )}
         <span className="ml-auto inline-flex items-center gap-1">
           {(posted || drafted) && (
             <span
@@ -214,7 +229,7 @@ function ConcernRow({ concern, onDismiss, dimmed }: { concern: Concern; onDismis
           <button
             type="button"
             onClick={onDismiss}
-            title="Dismiss this concern"
+            title="Dismiss"
             aria-label="Dismiss"
             className="inline-flex items-center justify-center rounded-[4px] p-1 text-[var(--fg-3)] hover:bg-[var(--gray-a3)] hover:text-[var(--fg-1)]"
           >
@@ -222,8 +237,13 @@ function ConcernRow({ concern, onDismiss, dimmed }: { concern: Concern; onDismis
           </button>
         </span>
       </div>
-      <div className="text-[14px] font-medium leading-[20px] text-[var(--fg-1)]">{concern.question}</div>
-      {concern.why ? <div className="text-[12.5px] leading-[18px] text-[var(--fg-3)]">{concern.why}</div> : null}
+      <div
+        className="text-[14px] font-medium leading-[20px] text-[var(--fg-1)]"
+        style={deltaStatus === 'fixed' ? { textDecoration: 'line-through' } : undefined}
+      >
+        {text}
+      </div>
+      {why ? <div className="text-[12.5px] leading-[18px] text-[var(--fg-3)]">{why}</div> : null}
       {open && (
         <div className="mt-2 rounded-md border border-[var(--border)] bg-[var(--bg-panel)] p-2">
           <textarea
@@ -240,7 +260,7 @@ function ConcernRow({ concern, onDismiss, dimmed }: { concern: Concern; onDismis
             <span className="text-[11px] text-[var(--fg-3)]">
               Will post inline at{' '}
               <span className="font-mono">
-                {concern.file}:{concern.line}
+                {finding.file}:{finding.line}
               </span>
             </span>
             <div className="flex items-center gap-2">
@@ -265,91 +285,5 @@ function ConcernRow({ concern, onDismiss, dimmed }: { concern: Concern; onDismis
         </div>
       )}
     </li>
-  );
-}
-
-export function ConcernsList() {
-  const narrative = useReviewStore((s) => s.narrative);
-  const prNumber = useReviewStore((s) => s.pr?.number);
-  const concerns = narrative?.concerns ?? [];
-
-  const [dismissed, setDismissed] = useState<Set<string>>(() => loadDismissed(prNumber));
-  const [showDismissed, setShowDismissed] = useState(false);
-
-  useEffect(() => {
-    setDismissed(loadDismissed(prNumber));
-  }, [prNumber]);
-
-  function dismiss(c: Concern) {
-    setDismissed((prev) => {
-      const next = new Set(prev);
-      next.add(concernKey(c));
-      saveDismissed(prNumber, next);
-      return next;
-    });
-  }
-
-  function undismissAll() {
-    setDismissed(() => {
-      const next = new Set<string>();
-      saveDismissed(prNumber, next);
-      return next;
-    });
-  }
-
-  if (concerns.length === 0) return null;
-
-  const visible = concerns.filter((c) => !dismissed.has(concernKey(c)));
-  const dismissedCount = concerns.length - visible.length;
-  const renderList = showDismissed ? concerns : visible;
-
-  return (
-    <section className="mb-[28px]">
-      <div className="mb-[14px] flex items-start gap-2.5">
-        <div
-          className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-[7px]"
-          style={{ background: 'var(--amber-3)', color: 'var(--amber-11)' }}
-        >
-          <IconChat className="h-[12px] w-[12px]" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <h2 className="m-0 text-[18px] font-bold leading-6 tracking-[-0.01em] text-[var(--fg-1)]">Things to check</h2>
-          <p className="mt-[2px] text-[12.5px] text-[var(--fg-3)]">
-            {visible.length} {visible.length === 1 ? 'question' : 'questions'} a careful reviewer would ask
-            {dismissedCount > 0 && (
-              <>
-                {' · '}
-                <button
-                  type="button"
-                  onClick={() => setShowDismissed((v) => !v)}
-                  className="underline-offset-2 hover:text-[var(--fg-1)] hover:underline"
-                >
-                  {showDismissed ? 'Hide' : 'Show'} {dismissedCount} dismissed
-                </button>
-                {showDismissed && (
-                  <>
-                    {' · '}
-                    <button
-                      type="button"
-                      onClick={undismissAll}
-                      className="underline-offset-2 hover:text-[var(--fg-1)] hover:underline"
-                    >
-                      Restore all
-                    </button>
-                  </>
-                )}
-              </>
-            )}
-          </p>
-        </div>
-      </div>
-      <ul className="ml-[34px] list-none space-y-2 p-0">
-        {renderList.map((concern) => {
-          const key = concernKey(concern);
-          const isDismissed = dismissed.has(key);
-          return <ConcernRow key={key} concern={concern} onDismiss={() => dismiss(concern)} dimmed={isDismissed} />;
-        })}
-      </ul>
-    </section>
   );
 }

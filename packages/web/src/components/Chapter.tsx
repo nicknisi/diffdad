@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { normalizePath } from '../lib/paths';
 import { useReviewStore } from '../state/review-store';
-import type { Callout, Chapter as ChapterType, DiffFile, DiffHunk } from '../state/types';
+import type { Callout, Chapter as ChapterType, ConcernStatus, DiffFile, DiffHunk } from '../state/types';
+import { DeltaBadge } from './DeltaBadge';
 import { Hunk } from './Hunk';
 import { IconCheck, IconChevron } from './Icons';
 import { NarrationAnchor } from './NarrationAnchor';
@@ -30,17 +31,28 @@ const CALLOUT_STYLES: Record<Callout['level'], { bg: string; border: string; col
   warning: { bg: 'var(--red-2)', border: 'var(--red-a4)', color: 'var(--red-11)', label: 'Warning' },
 };
 
-function CalloutList({ callouts }: { callouts: Callout[] }) {
+function CalloutList({
+  callouts,
+  calloutStatuses,
+}: {
+  callouts: Callout[];
+  calloutStatuses?: Map<number, ConcernStatus>;
+}) {
   return (
     <div className="ml-[34px] space-y-1.5">
       <div className="text-[11px] font-bold uppercase tracking-[0.06em] text-[var(--fg-3)]">Review callouts</div>
       {callouts.map((c, i) => {
         const style = CALLOUT_STYLES[c.level];
+        const status = calloutStatuses?.get(i);
         return (
           <div
             key={i}
             className="flex items-start gap-2 rounded-[6px] px-3 py-2 text-[13px] leading-[19px]"
-            style={{ background: style.bg, boxShadow: `inset 0 0 0 1px ${style.border}` }}
+            style={{
+              background: style.bg,
+              boxShadow: `inset 0 0 0 1px ${style.border}`,
+              opacity: status === 'fixed' ? 0.45 : 1,
+            }}
           >
             <span
               className="mt-[1px] inline-flex flex-shrink-0 items-center rounded-full px-[6px] py-[1px] text-[10px] font-bold uppercase tracking-[0.04em]"
@@ -48,7 +60,11 @@ function CalloutList({ callouts }: { callouts: Callout[] }) {
             >
               {style.label}
             </span>
-            <span className="flex-1 text-[var(--fg-2)]">
+            <DeltaBadge status={status} />
+            <span
+              className="flex-1 text-[var(--fg-2)]"
+              style={status === 'fixed' ? { textDecoration: 'line-through' } : undefined}
+            >
               <span className="font-mono text-[11.5px] text-[var(--fg-3)]">
                 {c.file}:{c.line}
               </span>{' '}
@@ -175,6 +191,10 @@ export function Chapter({ index, chapter }: Props) {
   const displayDensity = useReviewStore((s) => s.displayDensity);
   const narrative = useReviewStore((s) => s.narrative);
   const pendingChapterThemeIds = useReviewStore((s) => s.pendingChapterThemeIds);
+  const selectedRiskLevels = useReviewStore((s) => s.selectedRiskLevels);
+  const concernsPanelOpen = useReviewStore((s) => s.concernsPanelOpen);
+  const previousReview = useReviewStore((s) => s.previousReview);
+
   const id = `ch-${index}`;
   const reviewed = chapterStates[id] === 'reviewed';
   const isStreaming = chapter.themeId !== undefined && pendingChapterThemeIds.has(chapter.themeId);
@@ -221,7 +241,7 @@ export function Chapter({ index, chapter }: Props) {
     return set;
   }, [narrative, index]);
 
-  const [collapsed, setCollapsed] = useState(reviewed);
+  const [collapsed, setCollapsed] = useState(reviewed || (narrative?.verdict === 'risky' && chapter.risk === 'low'));
   const prevReviewed = useRef(reviewed);
   useEffect(() => {
     if (reviewed && !prevReviewed.current) setCollapsed(true);
@@ -253,6 +273,10 @@ export function Chapter({ index, chapter }: Props) {
     }
     return count;
   }, [hunkSections, files, comments]);
+
+  const riskFiltered =
+    selectedRiskLevels.size > 0 && selectedRiskLevels.size < 3 && !selectedRiskLevels.has(chapter.risk);
+  if (riskFiltered) return null;
 
   const riskPill = (
     <span
@@ -414,7 +438,36 @@ export function Chapter({ index, chapter }: Props) {
           </ReshowBlock>
         );
       })}
-      {chapter.callouts && chapter.callouts.length > 0 && <CalloutList callouts={chapter.callouts} />}
+      {!concernsPanelOpen &&
+        (() => {
+          const currentCallouts = chapter.callouts ?? [];
+          const chapterDelta = previousReview?.callouts.filter((sc) => sc.chapterIndex === index) ?? [];
+          const statusMap = new Map<number, ConcernStatus>();
+          const matchedPrevIndices = new Set<number>();
+          for (let di = 0; di < chapterDelta.length; di++) {
+            const sc = chapterDelta[di]!;
+            const ci = currentCallouts.findIndex(
+              (c) =>
+                normalizePath(c.file) === normalizePath(sc.file) &&
+                Math.abs(c.line - sc.line) <= 3 &&
+                c.level === sc.level,
+            );
+            if (ci >= 0) {
+              statusMap.set(ci, sc.status);
+              matchedPrevIndices.add(di);
+            }
+          }
+          const fixedCallouts = chapterDelta
+            .filter((sc, di) => sc.status === 'fixed' && !matchedPrevIndices.has(di))
+            .map((sc) => ({ file: sc.file, line: sc.line, level: sc.level, message: sc.message }) as Callout);
+          const combined = [...currentCallouts, ...fixedCallouts];
+          const combinedStatuses = new Map(statusMap);
+          for (let i = currentCallouts.length; i < combined.length; i++) {
+            combinedStatuses.set(i, 'fixed');
+          }
+          if (combined.length === 0) return null;
+          return <CalloutList callouts={combined} calloutStatuses={combinedStatuses} />;
+        })()}
     </div>
   );
 

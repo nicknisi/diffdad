@@ -17,6 +17,7 @@ export function ReadingPlan() {
 
   return (
     <div
+      data-reading-plan
       className="mb-6 flex items-start gap-2.5 rounded-[10px] px-4 py-3.5"
       style={{
         background: 'linear-gradient(180deg, var(--purple-2), var(--purple-3))',

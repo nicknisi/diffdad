@@ -1,8 +1,10 @@
 import { create } from 'zustand';
 import type {
+  Callout,
   Chapter,
   ChapterState,
   CheckRun,
+  ConcernCategory,
   DiffFile,
   DraftComment,
   LiveEvent,
@@ -12,6 +14,7 @@ import type {
   PRComment,
   PRData,
   PRReview,
+  ReviewDelta,
 } from './types';
 import type { RecapResponse } from './recap-types';
 import type { AccentId } from '../lib/accents';
@@ -83,6 +86,14 @@ type ReviewState = {
   /** Theme IDs whose writer call hasn't returned yet — used to render shimmer/loading state on those chapters. */
   pendingChapterThemeIds: Set<string>;
 
+  selectedConcernCategories: Set<ConcernCategory>;
+  selectedCalloutLevels: Set<Callout['level']>;
+  selectedRiskLevels: Set<Chapter['risk']>;
+  concernsPanelOpen: boolean;
+  verdictDefaultsApplied: boolean;
+
+  previousReview: ReviewDelta | null;
+
   recap: RecapResponse | null;
   recapStatus: RecapStatus;
   recapError: string | null;
@@ -151,6 +162,13 @@ type ReviewState = {
   applyPlan: (plan: Plan) => void;
   /** Replace the chapter at `index` with prose from a writer-pass result. */
   applyChapter: (index: number, chapter: Chapter, themeId: string) => void;
+  toggleConcernCategory: (category: ConcernCategory) => void;
+  toggleCalloutLevel: (level: Callout['level']) => void;
+  toggleRiskLevel: (risk: Chapter['risk']) => void;
+  setConcernsPanelOpen: (open: boolean) => void;
+  resetFindingFilters: () => void;
+  applyVerdictDefaults: () => void;
+  setPreviousReview: (delta: ReviewDelta | null) => void;
   setRecap: (recap: RecapResponse | null) => void;
   setRecapStatus: (status: RecapStatus) => void;
   setRecapError: (error: string | null) => void;
@@ -269,6 +287,23 @@ export const useReviewStore = create<ReviewState>((set) => ({
   aiPath: null,
   narrationOverrides: {} as Record<string, string>,
 
+  selectedConcernCategories: new Set<ConcernCategory>([
+    'logic',
+    'state',
+    'timing',
+    'validation',
+    'security',
+    'test-gap',
+    'api-contract',
+    'error-handling',
+  ]),
+  selectedCalloutLevels: new Set<Callout['level']>(['nit', 'concern', 'warning']),
+  selectedRiskLevels: new Set<Chapter['risk']>(['low', 'medium', 'high']),
+  concernsPanelOpen: false,
+  verdictDefaultsApplied: false,
+
+  previousReview: null,
+
   recap: null,
   recapStatus: 'idle',
   recapError: null,
@@ -311,7 +346,12 @@ export const useReviewStore = create<ReviewState>((set) => ({
       if (config.defaultNarrationDensity) next.density = config.defaultNarrationDensity;
       if (typeof config.clusterBots === 'boolean') next.clusterBots = config.clusterBots;
     }
-    set(next);
+    set((state) => {
+      const prChanged = state.pr?.number !== pr.number;
+      const merged = { ...next, ...(prChanged ? { verdictDefaultsApplied: false } : {}) };
+      return merged;
+    });
+    useReviewStore.getState().applyVerdictDefaults();
   },
 
   setActiveChapter: (id) => set({ activeChapterId: id }),
@@ -447,14 +487,13 @@ export const useReviewStore = create<ReviewState>((set) => ({
     set((state) => (state.narrativeProgressChars === narrativeProgressChars ? state : { narrativeProgressChars })),
   setAiPath: (aiPath) => set({ aiPath }),
   setPr: (pr) => set({ pr }),
-  applyPartialNarrative: (pr, narrative, files, comments) =>
+  applyPartialNarrative: (pr, narrative, files, comments) => {
     set((state) => {
       const safeNarrative = sanitizeNarrative(narrative);
       const next: Partial<ReviewState> = { pr, narrative: safeNarrative };
       if (files) next.files = files;
       if (comments) next.comments = comments;
-      // Initialize chapter states for any newly streamed chapters without
-      // clobbering ones the user has already marked reviewed.
+      if (state.pr?.number !== pr.number) next.verdictDefaultsApplied = false;
       const chapterStates: Record<string, ChapterState> = { ...state.chapterStates };
       safeNarrative.chapters.forEach((_, idx) => {
         const key = `ch-${idx}`;
@@ -465,14 +504,12 @@ export const useReviewStore = create<ReviewState>((set) => ({
         next.activeChapterId = 'ch-0';
       }
       return next;
-    }),
+    });
+    useReviewStore.getState().applyVerdictDefaults();
+  },
 
-  applyPlan: (plan) =>
+  applyPlan: (plan) => {
     set((state) => {
-      // Build a placeholder narrative from the plan so existing components
-      // (StoryView, Chapter, etc.) can render an outline immediately. Each
-      // chapter shows its title and risk; prose fills in as writer-pass
-      // chapters arrive via `applyChapter`.
       const placeholderChapters: Chapter[] = plan.themes.map((t) => ({
         title: t.title,
         summary: t.rationale,
@@ -507,7 +544,9 @@ export const useReviewStore = create<ReviewState>((set) => ({
         pendingChapterThemeIds: pending,
         activeChapterId: state.activeChapterId ?? (placeholderChapters.length > 0 ? 'ch-0' : null),
       };
-    }),
+    });
+    useReviewStore.getState().applyVerdictDefaults();
+  },
 
   applyChapter: (index, chapter, themeId) =>
     set((state) => {
@@ -528,6 +567,60 @@ export const useReviewStore = create<ReviewState>((set) => ({
       return { narrationOverrides: rest };
     }),
 
+  toggleConcernCategory: (category) =>
+    set((state) => {
+      const next = new Set(state.selectedConcernCategories);
+      if (next.has(category)) next.delete(category);
+      else next.add(category);
+      return { selectedConcernCategories: next };
+    }),
+
+  toggleCalloutLevel: (level) =>
+    set((state) => {
+      const next = new Set(state.selectedCalloutLevels);
+      if (next.has(level)) next.delete(level);
+      else next.add(level);
+      return { selectedCalloutLevels: next };
+    }),
+
+  toggleRiskLevel: (risk) =>
+    set((state) => {
+      const next = new Set(state.selectedRiskLevels);
+      if (next.has(risk)) next.delete(risk);
+      else next.add(risk);
+      return { selectedRiskLevels: next };
+    }),
+
+  setConcernsPanelOpen: (concernsPanelOpen) => set({ concernsPanelOpen }),
+
+  resetFindingFilters: () =>
+    set({
+      selectedConcernCategories: new Set<ConcernCategory>([
+        'logic',
+        'state',
+        'timing',
+        'validation',
+        'security',
+        'test-gap',
+        'api-contract',
+        'error-handling',
+      ]),
+      selectedCalloutLevels: new Set<Callout['level']>(['nit', 'concern', 'warning']),
+      selectedRiskLevels: new Set<Chapter['risk']>(['low', 'medium', 'high']),
+    }),
+
+  applyVerdictDefaults: () =>
+    set((state) => {
+      if (state.verdictDefaultsApplied) return state;
+      if (state.narrative?.verdict !== 'risky') return state;
+      return {
+        concernsPanelOpen: true,
+        selectedRiskLevels: new Set<Chapter['risk']>(['medium', 'high']),
+        verdictDefaultsApplied: true,
+      };
+    }),
+
+  setPreviousReview: (previousReview) => set({ previousReview }),
   setRecap: (recap) => set({ recap, recapStatus: recap ? 'ready' : 'idle', recapError: null }),
   setRecapStatus: (recapStatus) => set({ recapStatus }),
   setRecapError: (recapError) => set({ recapError, recapStatus: recapError ? 'error' : 'idle' }),

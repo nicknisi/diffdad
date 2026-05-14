@@ -2,6 +2,7 @@ import type { DiffFile, DiffHunk, DiffLine } from '../github/types';
 import { formatHintsBlock, type HunkHint } from './hints';
 import type { Plan, PlanTheme } from './plan-types';
 import { computeRisk, formatRiskHints, type FileRisk } from './risk';
+import { sanitizeUserContent } from './sanitize';
 
 export type PreviousNarrativeContext = {
   previousTldr?: string;
@@ -172,7 +173,16 @@ const SHARED_PRINCIPLES = `Your job is to help a reviewer find the things they w
 3. **Phrase concerns as questions.** Socratic framing engages the reviewer's reasoning and protects against you being confidently wrong. "What happens if X is null when Y fires?" is correct. "X can be null when Y fires." is wrong — never assert what you cannot prove from the diff.
 4. **Anchor everything.** Every concern and callout MUST have a real \`file\` and \`line\` from the diff. If you cannot anchor a thought to file:line, omit it.
 5. **Be brief.** A reviewer skims. One sentence beats three. If it isn't useful, cut it.
-6. **No false positives are better than no comments.** A loud confidently-wrong concern destroys trust faster than a missed bug.`;
+6. **No false positives are better than no comments.** A loud confidently-wrong concern destroys trust faster than a missed bug.
+
+## What NOT to flag
+
+- Do not speculate about error handling the diff "might need" — only flag missing handling for failure modes the diff itself introduces.
+- Do not comment on unchanged code surrounding a hunk. Context lines exist for orientation, not critique.
+- Do not reference functions, files, or symbols that are not present in the diff or file tree. If you cannot cite it, do not mention it.
+- Do not repeat the same concern across chapters. One concern, one anchor.
+- Do not make broad architectural recommendations ("consider extracting a service layer") unless the diff itself is doing that refactor.
+- Do not flag patterns the framework handles automatically (React keys on static lists, framework-managed CSRF tokens, ORM-escaped queries). If the framework documents it as safe, trust it.`;
 
 const SYSTEM_PROMPT = `You are Diff Dad, a senior engineer producing a code review walkthrough.
 
@@ -513,12 +523,14 @@ function formatDiffBlock(files: DiffFile[], perFileCap: number, globalCap: numbe
 function buildSharedHeader(input: NarrativePromptInput, risks: FileRisk[]): string[] {
   const { title, description, labels, fileTree } = input;
   const truncatedTree = fileTree.slice(0, FILE_TREE_LIMIT);
-  const labelLine = labels.length > 0 ? labels.join(', ') : '(none)';
-  const descriptionBlock = description.trim().length > 0 ? description : '(no description provided)';
+  const sanitizedLabels = labels.map((l) => sanitizeUserContent(l)).filter((l) => l.length > 0);
+  const labelLine = sanitizedLabels.length > 0 ? sanitizedLabels.join(', ') : '(none)';
+  const descriptionBlock =
+    description.trim().length > 0 ? sanitizeUserContent(description) : '(no description provided)';
   const treeBlock = truncatedTree.length > 0 ? truncatedTree.join('\n') : '(empty)';
   const riskBlock = formatRiskHints(risks);
   const parts = [
-    `PR title: ${title}`,
+    `PR title: ${sanitizeUserContent(title)}`,
     '',
     'PR description:',
     descriptionBlock,

@@ -6,9 +6,10 @@ import { readConfig } from './config';
 import type { GitHubClient } from './github/client';
 import { mapCommentsToChapters } from './github/comments';
 import type { CheckRun, DiffFile, PRComment, PRMetadata, PRReview } from './github/types';
-import { cacheNarrative, computePromptMetaHash, getCachedNarrative } from './narrative/cache';
+import { cacheNarrative, computePromptMetaHash, findPreviousNarrative, getCachedNarrative } from './narrative/cache';
 import { callAi, generateNarrative, resolveAiPath, resolveProviderKey } from './narrative/engine';
-import type { NarrativeResponse } from './narrative/types';
+import type { NarrativeResponse, ReviewDelta } from './narrative/types';
+import { diffConcerns } from './narrative/concern-diff';
 import { cacheRecap } from './recap/cache';
 import { generateRecap } from './recap/engine';
 import { gatherRecapSources } from './recap/sources';
@@ -31,6 +32,7 @@ export type ServerContext = {
   recapGenerating?: boolean;
   /** Set if the last recap generation attempt failed; cleared on retry. */
   recapError?: string | null;
+  previousReview?: ReviewDelta | null;
 };
 
 type PostCommentBody = {
@@ -104,6 +106,7 @@ export function createServer(ctx: ServerContext) {
       comments: mapCommentsToChapters(ctx.comments, ctx.narrative),
       checkRuns: ctx.checkRuns,
       reviews: ctx.reviews,
+      previousReview: ctx.previousReview ?? null,
       repoUrl: `https://github.com/${ctx.owner}/${ctx.repo}`,
       aiPath,
       config: {
@@ -422,6 +425,7 @@ export function createServer(ctx: ServerContext) {
               try {
                 const prevTldr = ctx.narrative?.tldr;
                 const prevChapterTitles = ctx.narrative?.chapters.map((ch) => ch.title) ?? [];
+                const preRegenNarrative = ctx.narrative;
 
                 ctx.pr = freshPr;
                 let freshFiles = ctx.files;
@@ -520,11 +524,27 @@ export function createServer(ctx: ServerContext) {
                   );
                 }
 
+                if (preRegenNarrative && ctx.narrative) {
+                  try {
+                    ctx.previousReview = diffConcerns(preRegenNarrative, ctx.narrative);
+                  } catch {
+                    ctx.previousReview = null;
+                  }
+                } else {
+                  try {
+                    const prev = await findPreviousNarrative(ctx.owner, ctx.repo, ctx.pr.number, ctx.headSha);
+                    ctx.previousReview = prev && ctx.narrative ? diffConcerns(prev, ctx.narrative) : null;
+                  } catch {
+                    ctx.previousReview = null;
+                  }
+                }
+
                 broadcast('narrative', {
                   narrative: ctx.narrative,
                   pr: ctx.pr,
                   files: ctx.files,
                   comments: mapCommentsToChapters(ctx.comments, ctx.narrative),
+                  previousReview: ctx.previousReview ?? null,
                 });
               } catch (err) {
                 const msg = err instanceof Error ? err.message : String(err);
