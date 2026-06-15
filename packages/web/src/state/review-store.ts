@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type {
+  AgentComment,
   Chapter,
   ChapterState,
   CheckRun,
@@ -40,6 +41,7 @@ type ReviewState = {
   narrative: NarrativeResponse | null;
   files: DiffFile[];
   comments: PRComment[];
+  agentComments: AgentComment[];
   checkRuns: CheckRun[];
   reviews: PRReview[];
   repoUrl: string | null;
@@ -118,6 +120,7 @@ type ReviewState = {
   cancelCommentDrag: () => void;
   addComment: (comment: PRComment) => void;
   setComments: (comments: PRComment[]) => void;
+  setAgentComments: (comments: AgentComment[]) => void;
   addDraft: (draft: DraftComment) => void;
   removeDraft: (id: string) => void;
   clearDrafts: () => void;
@@ -239,6 +242,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
   narrative: null,
   files: [],
   comments: [],
+  agentComments: [],
   checkRuns: [],
   reviews: [],
   repoUrl: null,
@@ -377,6 +381,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
     }),
 
   setComments: (comments) => set({ comments }),
+  setAgentComments: (agentComments) => set({ agentComments }),
 
   addDraft: (draft) =>
     set((state) => {

@@ -4,6 +4,7 @@ import { useNarrative } from './hooks/useNarrative';
 import { useLiveStream } from './hooks/useLiveStream';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { ActivityDrawer } from './components/ActivityDrawer';
+import { AgentComments } from './components/AgentComments';
 import { AppBar } from './components/AppBar';
 import { ClassicView } from './components/ClassicView';
 import { GeneratingScreen } from './components/GeneratingScreen';
@@ -34,6 +35,8 @@ export default function App() {
   useLiveStream();
   useKeyboardShortcuts();
   const [activityOpen, setActivityOpen] = useState(false);
+  const [agentOpen, setAgentOpen] = useState(false);
+  const agentCount = useReviewStore((s) => s.agentComments.length);
   const [loadingMsgIndex, setLoadingMsgIndex] = useState(0);
 
   useEffect(() => {
@@ -129,6 +132,21 @@ export default function App() {
       {view === 'story' ? <StoryView /> : view === 'files' ? <ClassicView /> : <RecapView />}
       <SubmitBar />
       <ActivityDrawer open={activityOpen} onClose={() => setActivityOpen(false)} />
+      <AgentComments open={agentOpen} onClose={() => setAgentOpen(false)} />
+      {!agentOpen ? (
+        <button
+          onClick={() => setAgentOpen(true)}
+          className="fixed bottom-24 right-5 z-30 flex items-center gap-2 rounded-full px-4 py-2 text-[13px] font-medium shadow-lg hover:opacity-90"
+          style={{ background: 'var(--purple-9)', color: 'white' }}
+        >
+          🤖 Agent
+          {agentCount > 0 ? (
+            <span className="rounded-full px-1.5 text-[11px]" style={{ background: 'var(--purple-11)' }}>
+              {agentCount}
+            </span>
+          ) : null}
+        </button>
+      ) : null}
       <ShortcutsHelp open={shortcutsHelpOpen} onClose={() => setShortcutsHelpOpen(false)} />
     </div>
   );

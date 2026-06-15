@@ -144,6 +144,32 @@ export type PRComment = {
   diffHunk?: string;
 };
 
+// Agent-loop comments (watch mode). Kept distinct from PRComment — string ids and a
+// status lifecycle — so they never flow through the numeric-id GitHub comment pipeline.
+export type AgentReply = {
+  id: string;
+  author: 'user' | 'agent';
+  body: string;
+  createdAt: string;
+};
+
+export type AgentComment = {
+  id: string;
+  path: string;
+  line: number;
+  side: 'LEFT' | 'RIGHT';
+  body: string;
+  status: 'open' | 'delivered' | 'addressed';
+  author: 'user' | 'agent';
+  replies: AgentReply[];
+  hunkContext: string;
+  chapterTitle?: string;
+  createdAt: string;
+  deliveredAt?: string;
+  addressedAt?: string;
+  addressedNote?: string;
+};
+
 export type ChapterState = 'reading' | 'reviewing' | 'replied' | 'reviewed';
 
 export type DraftComment = {

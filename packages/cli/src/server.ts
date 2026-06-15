@@ -13,6 +13,10 @@ import { cacheRecap } from './recap/cache';
 import { generateRecap } from './recap/engine';
 import { gatherRecapSources } from './recap/sources';
 import type { RecapResponse } from './recap/types';
+import type { AgentCommentStore } from './agent-comments/store';
+import { buildLocalReview } from './local/diff-source';
+import { mountMcp } from './mcp/server';
+import { registerAgentCommentTools } from './mcp/tools';
 
 export type ServerContext = {
   narrative: NarrativeResponse | null;
@@ -21,10 +25,18 @@ export type ServerContext = {
   comments: PRComment[];
   checkRuns: CheckRun[];
   reviews: PRReview[];
-  github: GitHubClient;
+  /** Null in watch mode (local working tree — no PR, no GitHub token). */
+  github: GitHubClient | null;
   owner: string;
   repo: string;
   headSha: string;
+  /** Agent-comment store: the single source of truth shared by the HTTP routes and MCP tools. */
+  store: AgentCommentStore;
+  /** 'pr' = GitHub PR review (default); 'watch' = local `dad watch` working-tree mode. */
+  mode: 'pr' | 'watch';
+  /** Watch mode only: resolved base ref (store key) and current diff content hash (cache key). */
+  baseRef?: string;
+  contentKey?: string;
   /** Populated lazily when the user opens the Recap tab (or hydrated from cache at startup). */
   recap?: RecapResponse | null;
   /** Set while a recap is being generated; cleared on success or failure. */
@@ -61,6 +73,60 @@ export function createServer(ctx: ServerContext) {
     }
     for (const send of sseClients) {
       send(event, data);
+    }
+  }
+
+  /** Watch mode: the agent may still be working after the browser closes — stay alive. */
+  function hasUnresolvedAgentComments(): boolean {
+    return ctx.mode === 'watch' && ctx.store.list().some((c) => c.status !== 'addressed');
+  }
+
+  // Watch mode re-narrates when the working tree changes (diff content hash differs).
+  // Separate from the PR poller so it never touches ctx.github (which is null here).
+  let watchRegenerating = false;
+  async function watchTick(): Promise<void> {
+    if (watchRegenerating || ctx.mode !== 'watch' || !ctx.baseRef) return;
+    let review;
+    try {
+      review = await buildLocalReview(ctx.baseRef);
+    } catch {
+      // clean tree or transient git error — nothing to re-narrate this tick
+      return;
+    }
+    if (review.contentKey === ctx.contentKey) return; // no working-tree change
+
+    watchRegenerating = true;
+    try {
+      ctx.files = review.files;
+      ctx.pr = review.metadata;
+      ctx.headSha = review.metadata.headSha;
+      ctx.contentKey = review.contentKey;
+      broadcast('regenerating', { previousSha: '', newSha: '' });
+
+      const config = await readConfig();
+      const providerKey = await resolveProviderKey(config);
+      const metaHash = computePromptMetaHash(ctx.pr);
+      // contentKey occupies the cache's opaque `sha` slot (HEAD sha doesn't move on uncommitted edits).
+      let narrative = await getCachedNarrative(ctx.owner, ctx.repo, ctx.pr.number, review.contentKey, metaHash, providerKey);
+      if (!narrative) {
+        const result = await generateNarrative(ctx.pr, review.files, [], config, undefined, {
+          cacheKey: { owner: ctx.owner, repo: ctx.repo, number: ctx.pr.number, sha: review.contentKey },
+          comments: [],
+          onProgress: ({ chars }) => broadcast('narrative-progress', { chars }),
+          onPartial: (partial) =>
+            broadcast('narrative.partial', { narrative: partial, pr: ctx.pr, files: review.files, comments: [] }),
+          onPlan: (plan) => broadcast('plan-ready', { plan }),
+          onChapter: ({ themeId, index, chapter }) => broadcast('chapter-ready', { themeId, index, chapter }),
+        });
+        narrative = result.narrative;
+        await cacheNarrative(ctx.owner, ctx.repo, ctx.pr.number, review.contentKey, metaHash, providerKey, narrative);
+      }
+      ctx.narrative = narrative;
+      broadcast('narrative', { narrative, pr: ctx.pr, files: review.files, comments: [] });
+    } catch (err) {
+      console.error(`  watch regeneration failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      watchRegenerating = false;
     }
   }
 
@@ -148,6 +214,7 @@ export function createServer(ctx: ServerContext) {
   // Kick off a recap generation in the background. Idempotent: subsequent calls
   // while one is in flight or already completed are no-ops.
   async function startRecapGeneration() {
+    if (!ctx.github) return; // recap requires GitHub data; unavailable in watch mode
     if (ctx.recap || ctx.recapGenerating) return;
     ctx.recapGenerating = true;
     ctx.recapError = null;
@@ -336,15 +403,43 @@ export function createServer(ctx: ServerContext) {
   });
 
   app.get('/api/checks', async (c) => {
+    if (!ctx.github) return c.json([]);
     const fresh = await ctx.github.getCheckRuns(ctx.owner, ctx.repo, ctx.headSha);
     ctx.checkRuns = fresh;
     return c.json(fresh);
   });
 
   app.get('/api/comments', async (c) => {
+    if (!ctx.github) return c.json([]);
     const fresh = await ctx.github.getComments(ctx.owner, ctx.repo, ctx.pr.number);
     ctx.comments = fresh;
     return c.json(ctx.narrative ? mapCommentsToChapters(fresh, ctx.narrative) : fresh);
+  });
+
+  // --- Agent comments (the local review loop; works in both modes) -----------
+  app.get('/api/agent-comments', (c) => c.json(ctx.store.list()));
+
+  app.post('/api/agent-comments', async (c) => {
+    let body: { path?: string; line?: number; side?: 'LEFT' | 'RIGHT'; body?: string; hunkContext?: string; chapterTitle?: string };
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: 'invalid JSON body' }, 400);
+    }
+    if (!body.body || typeof body.body !== 'string') return c.json({ error: "missing 'body'" }, 400);
+    if (!body.path || typeof body.path !== 'string' || typeof body.line !== 'number') {
+      return c.json({ error: "missing 'path'/'line'" }, 400);
+    }
+    const comment = await ctx.store.add({
+      path: body.path,
+      line: body.line,
+      side: body.side,
+      body: body.body,
+      hunkContext: body.hunkContext,
+      chapterTitle: body.chapterTitle,
+    });
+    broadcast('agent-comment', { comments: ctx.store.list() });
+    return c.json(comment, 201);
   });
 
   app.get('/api/events', (c) => {
@@ -369,9 +464,17 @@ export function createServer(ctx: ServerContext) {
         }
 
         let regenerating = false;
-        const interval = setInterval(async () => {
+        const interval = setInterval(
+          async () => {
           try {
-            const freshPr = await ctx.github.getPR(ctx.owner, ctx.repo, ctx.pr.number);
+            // Watch mode has no GitHub PR to poll — re-narrate on working-tree change instead.
+            if (ctx.mode === 'watch') {
+              await watchTick();
+              return;
+            }
+            const gh = ctx.github;
+            if (!gh) return;
+            const freshPr = await gh.getPR(ctx.owner, ctx.repo, ctx.pr.number);
             const shaChanged = freshPr.headSha !== ctx.headSha;
 
             // These fields feed into the narrative prompt — changes here mean
@@ -389,7 +492,7 @@ export function createServer(ctx: ServerContext) {
               send('pr', ctx.pr);
             }
 
-            const fresh = await ctx.github.getComments(ctx.owner, ctx.repo, ctx.pr.number);
+            const fresh = await gh.getComments(ctx.owner, ctx.repo, ctx.pr.number);
             const prevIds = new Set(ctx.comments.map((cm) => cm.id));
             const freshIds = new Set(fresh.map((cm) => cm.id));
             const hasNew = fresh.some((cm) => !prevIds.has(cm.id));
@@ -399,11 +502,11 @@ export function createServer(ctx: ServerContext) {
             }
             ctx.comments = fresh;
 
-            const freshChecks = await ctx.github.getCheckRuns(ctx.owner, ctx.repo, ctx.headSha);
+            const freshChecks = await gh.getCheckRuns(ctx.owner, ctx.repo, ctx.headSha);
             ctx.checkRuns = freshChecks;
             send('checks', freshChecks);
 
-            const freshReviews = await ctx.github.getReviews(ctx.owner, ctx.repo, ctx.pr.number);
+            const freshReviews = await gh.getReviews(ctx.owner, ctx.repo, ctx.pr.number);
             ctx.reviews = freshReviews;
             send('reviews', freshReviews);
 
@@ -427,7 +530,7 @@ export function createServer(ctx: ServerContext) {
                 let freshFiles = ctx.files;
                 if (shaChanged) {
                   ctx.headSha = freshPr.headSha;
-                  freshFiles = await ctx.github.getDiff(ctx.owner, ctx.repo, ctx.pr.number);
+                  freshFiles = await gh.getDiff(ctx.owner, ctx.repo, ctx.pr.number);
                   ctx.files = freshFiles;
                 }
 
@@ -536,7 +639,9 @@ export function createServer(ctx: ServerContext) {
           } catch {
             // swallow polling errors
           }
-        }, 10000);
+          },
+          ctx.mode === 'watch' ? 2000 : 10000,
+        );
 
         c.req.raw.signal.addEventListener('abort', () => {
           clearInterval(interval);
@@ -546,9 +651,9 @@ export function createServer(ctx: ServerContext) {
           } catch {
             // already closed
           }
-          if (hadClients && sseClients.size === 0 && ctx.narrative) {
+          if (hadClients && sseClients.size === 0 && ctx.narrative && !hasUnresolvedAgentComments()) {
             exitTimer = setTimeout(() => {
-              if (sseClients.size > 0 || !ctx.narrative) return;
+              if (sseClients.size > 0 || !ctx.narrative || hasUnresolvedAgentComments()) return;
               const jokes = [
                 "I'm not angry, just diff-appointed.",
                 "That's a wrap — like my git commits.",
@@ -578,6 +683,7 @@ export function createServer(ctx: ServerContext) {
   });
 
   app.post('/api/comments', async (c) => {
+    if (!ctx.github) return c.json({ error: 'GitHub is unavailable in watch mode' }, 409);
     let payload: PostCommentBody;
     try {
       payload = (await c.req.json()) as PostCommentBody;
@@ -611,6 +717,7 @@ export function createServer(ctx: ServerContext) {
   });
 
   app.post('/api/review', async (c) => {
+    if (!ctx.github) return c.json({ error: 'GitHub is unavailable in watch mode' }, 409);
     let payload: {
       event?: string;
       body?: string;
@@ -652,6 +759,10 @@ export function createServer(ctx: ServerContext) {
     broadcast('review', { event: ghEvent, body: payload.body });
     return c.json({ ok: true });
   });
+
+  // MCP server for the agent loop — MUST be registered before the static catch-all below,
+  // or `/mcp` is swallowed by serveStatic.
+  mountMcp(app, (server) => registerAgentCommentTools(server, { store: ctx.store, broadcast }));
 
   const candidates = [
     resolve(import.meta.dir, '../../web/dist'),

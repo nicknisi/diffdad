@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useReviewStore } from '../state/review-store';
 import type {
+  AgentComment,
   Chapter,
   CheckRun,
   DiffFile,
@@ -89,6 +90,17 @@ export function useLiveStream() {
       }
     };
 
+    const onAgentComment = (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data) as { comments: AgentComment[] };
+        useReviewStore.getState().setAgentComments(data.comments);
+        setLastEventAt(Date.now());
+        addLiveEvent(makeEvent('comment', 'Agent comments updated', data.comments));
+      } catch {
+        // ignore malformed event
+      }
+    };
+
     const onChecks = (e: MessageEvent) => {
       try {
         const checks = JSON.parse(e.data) as CheckRun[];
@@ -123,9 +135,11 @@ export function useLiveStream() {
     const onRegenerating = (e: MessageEvent) => {
       try {
         const data = JSON.parse(e.data) as { previousSha: string; newSha: string };
-        addLiveEvent(
-          makeEvent('system', `New commits detected (${data.previousSha} → ${data.newSha}). Regenerating narrative...`),
-        );
+        // Watch mode broadcasts empty SHAs (no commits — the working tree changed).
+        const summary = data.newSha
+          ? `New commits detected (${data.previousSha} → ${data.newSha}). Regenerating narrative...`
+          : 'Working tree changed. Regenerating narrative...';
+        addLiveEvent(makeEvent('system', summary));
         useReviewStore.getState().setRegenerating(true);
         useReviewStore.getState().setNarrativeProgressChars(0);
       } catch {
@@ -220,6 +234,7 @@ export function useLiveStream() {
     es.addEventListener('connected', onConnected);
     es.addEventListener('comment', onComment as EventListener);
     es.addEventListener('comments', onComments as EventListener);
+    es.addEventListener('agent-comment', onAgentComment as EventListener);
     es.addEventListener('checks', onChecks as EventListener);
     es.addEventListener('reviews', onReviews as EventListener);
     es.addEventListener('pr', onPr as EventListener);
@@ -245,6 +260,7 @@ export function useLiveStream() {
       es.removeEventListener('connected', onConnected);
       es.removeEventListener('comment', onComment as EventListener);
       es.removeEventListener('comments', onComments as EventListener);
+      es.removeEventListener('agent-comment', onAgentComment as EventListener);
       es.removeEventListener('checks', onChecks as EventListener);
       es.removeEventListener('reviews', onReviews as EventListener);
       es.removeEventListener('pr', onPr as EventListener);

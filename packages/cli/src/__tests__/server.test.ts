@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { AgentCommentStore } from '../agent-comments/store';
 import { createServer, type ServerContext } from '../server';
 import type { NarrativeResponse } from '../narrative/types';
 import type { CheckRun, DiffFile, PRComment, PRMetadata } from '../github/types';
@@ -109,6 +110,8 @@ function buildContext(overrides: Partial<ServerContext> = {}): ServerContext {
     owner: 'test',
     repo: 'test',
     headSha: 'abc123',
+    store: new AgentCommentStore('__diffdad_test__server'),
+    mode: 'pr',
     ...overrides,
   };
 }
