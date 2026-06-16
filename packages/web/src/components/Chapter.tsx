@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { normalizePath } from '../lib/paths';
 import { useReviewStore } from '../state/review-store';
+import { useInlineComments } from '../hooks/useInlineComments';
 import type { Callout, Chapter as ChapterType, DiffFile, DiffHunk } from '../state/types';
 import { Hunk } from './Hunk';
 import { IconCheck, IconChevron } from './Icons';
@@ -168,7 +169,7 @@ function findHunk(files: DiffFile[], file: string, hunkIndex: number): FlatHunk 
 
 export function Chapter({ index, chapter }: Props) {
   const files = useReviewStore((s) => s.files);
-  const comments = useReviewStore((s) => s.comments);
+  const comments = useInlineComments();
   const chapterStates = useReviewStore((s) => s.chapterStates);
   const toggleReviewed = useReviewStore((s) => s.toggleReviewed);
   const storyStructure = useReviewStore((s) => s.storyStructure);

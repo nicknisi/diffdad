@@ -11,6 +11,7 @@ type NarrativeApiResponse = {
   checkRuns?: CheckRun[];
   reviews?: PRReview[];
   repoUrl?: string;
+  mode?: 'pr' | 'watch';
   aiPath?: 'api' | 'local-cli';
   config?: BackendConfig;
 };
@@ -69,6 +70,21 @@ export function useNarrative() {
             data.reviews ?? [],
           );
           useReviewStore.getState().setAiPath(data.aiPath ?? null);
+        }
+
+        // Watch mode: load existing agent comments (live updates arrive via the
+        // `agent-comment` SSE event in useLiveStream).
+        useReviewStore.getState().setMode(data.mode ?? 'pr');
+        if (data.mode === 'watch') {
+          try {
+            const acRes = await fetch('/api/agent-comments');
+            if (acRes.ok && !cancelled) {
+              const ac = await acRes.json();
+              if (Array.isArray(ac)) useReviewStore.getState().setAgentComments(ac);
+            }
+          } catch {
+            // ignore — SSE will backfill
+          }
         }
       } catch (err) {
         if (cancelled) return;

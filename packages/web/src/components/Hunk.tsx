@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useReviewStore } from '../state/review-store';
-import type { DiffHunk, PRComment } from '../state/types';
+import { useInlineComments } from '../hooks/useInlineComments';
+import type { CommentId, DiffHunk, PRComment } from '../state/types';
 import { CodeLine } from './CodeLine';
 import { CommentThread } from './CommentThread';
 import { Comment } from './Comment';
@@ -298,7 +299,7 @@ function HunkLines({
   comments: PRComment[];
   openLine: string | null;
   setOpenLine: (key: string | null) => void;
-  clusteredIds: Set<number>;
+  clusteredIds: Set<CommentId>;
   rangeStartIdx: number | null;
   rangeEndIdx: number | null;
   isDragging: boolean;
@@ -311,7 +312,7 @@ function HunkLines({
   // context line at the same blob position. Push the anchor down to the change
   // so the thread renders below the changed line, matching GitHub's view.
   const commentLineMap = useMemo(() => {
-    const map = new Map<number, number>();
+    const map = new Map<CommentId, number>();
     for (const c of comments) {
       if (normalizePath(c.path) !== normFile) continue;
       if (c.line === undefined) continue;
@@ -483,7 +484,7 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight }: Props) {
   const openLine = useReviewStore((s) => s.openLine);
   const commentRangeStart = useReviewStore((s) => s.commentRangeStart);
   const commentDrag = useReviewStore((s) => s.commentDrag);
-  const comments = useReviewStore((s) => s.comments);
+  const comments = useInlineComments();
   const setOpenLine = useReviewStore((s) => s.setOpenLine);
   const clearCommentRange = useReviewStore((s) => s.clearCommentRange);
   const repoUrl = useReviewStore((s) => s.repoUrl);
@@ -571,12 +572,12 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight }: Props) {
     });
 
     if (!clusterBots) {
-      return { botThreads: [] as BotThread[], clusteredIds: new Set<number>() };
+      return { botThreads: [] as BotThread[], clusteredIds: new Set<CommentId>() };
     }
 
     const inHunkById = new Map(inHunk.map((c) => [c.id, c]));
     const botRoots = inHunk.filter((c) => c.inReplyToId == null && c.author.endsWith('[bot]'));
-    const repliesByParent = new Map<number, PRComment[]>();
+    const repliesByParent = new Map<CommentId, PRComment[]>();
     for (const c of inHunk) {
       if (c.inReplyToId != null && inHunkById.has(c.inReplyToId)) {
         const list = repliesByParent.get(c.inReplyToId) ?? [];
@@ -585,7 +586,7 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight }: Props) {
       }
     }
 
-    const cluster = new Set<number>();
+    const cluster = new Set<CommentId>();
     const threads: BotThread[] = botRoots.map((root) => {
       const replies: PRComment[] = [];
       const stack = [root.id];

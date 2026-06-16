@@ -27,20 +27,50 @@ type Props = {
   showFilePath?: boolean;
 };
 
-type Provenance = 'draft' | 'synced' | 'github' | 'syncing';
+type Provenance = 'draft' | 'synced' | 'github' | 'syncing' | 'agent';
 
 function provenance(comment: PRComment): Provenance {
-  if (comment.id < 0) return 'draft';
+  if (comment.source === 'agent') return 'agent';
+  // The id-sign heuristic only applies to GitHub comments (numeric ids).
+  if (typeof comment.id === 'number' && comment.id < 0) return 'draft';
   const created = new Date(comment.createdAt).getTime();
-  if (!Number.isNaN(created) && Date.now() - created < RECENT_SYNC_WINDOW_MS && comment.id > 0) {
+  if (
+    !Number.isNaN(created) &&
+    Date.now() - created < RECENT_SYNC_WINDOW_MS &&
+    typeof comment.id === 'number' &&
+    comment.id > 0
+  ) {
     return 'synced';
   }
   return 'github';
 }
 
-function SourceBadge({ kind }: { kind: Provenance }) {
+function SourceBadge({ kind, status }: { kind: Provenance; status?: PRComment['status'] }) {
   const baseStyle =
     'inline-flex items-center gap-1 rounded-[3px] px-[5px] py-px text-[10.5px] font-medium tracking-[0.02em]';
+  if (kind === 'agent') {
+    const s = status ?? 'open';
+    if (s === 'addressed') {
+      return (
+        <span className={baseStyle} style={{ background: 'var(--green-3)', color: 'var(--green-11)' }}>
+          <IconCheck className="h-[9px] w-[9px]" />
+          addressed
+        </span>
+      );
+    }
+    if (s === 'delivered') {
+      return (
+        <span className={baseStyle} style={{ background: 'var(--amber-3)', color: 'var(--amber-11)' }}>
+          delivered to agent
+        </span>
+      );
+    }
+    return (
+      <span className={baseStyle} style={{ background: 'var(--blue-3)', color: 'var(--blue-11)' }}>
+        for agent
+      </span>
+    );
+  }
   if (kind === 'syncing') {
     return (
       <span className={baseStyle} style={{ background: 'var(--yellow-3)', color: 'var(--yellow-11)' }}>
@@ -71,7 +101,7 @@ function SourceBadge({ kind }: { kind: Provenance }) {
   );
 }
 
-function ReplyBox({ inReplyToId, onClose }: { inReplyToId: number; onClose: () => void }) {
+function ReplyBox({ inReplyToId, onClose }: { inReplyToId: number | string; onClose: () => void }) {
   const { postComment } = useComments();
   const [body, setBody] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -182,7 +212,7 @@ export function Comment({ comment, replies = [], isReply = false, showFilePath =
           )}
           <span className="font-normal text-[var(--fg-3)]">{relativeTime(comment.createdAt)}</span>
           <span className="ml-auto flex items-center gap-2">
-            {comment.id > 0 && !replying && (
+            {typeof comment.id === 'number' && comment.id > 0 && !replying && (
               <button
                 type="button"
                 onClick={() => setReplying(true)}
@@ -192,7 +222,7 @@ export function Comment({ comment, replies = [], isReply = false, showFilePath =
                 Reply
               </button>
             )}
-            <SourceBadge kind={kind} />
+            <SourceBadge kind={kind} status={comment.status} />
           </span>
         </div>
         {showFilePath && comment.path && (

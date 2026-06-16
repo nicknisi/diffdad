@@ -128,8 +128,13 @@ export type DiffLine = {
   lineNumber: { old?: number; new?: number };
 };
 
+/** Numeric for GitHub comments, string (UUID) for agent comments. */
+export type CommentId = number | string;
+
 export type PRComment = {
-  id: number;
+  // string ids carry agent comments (UUIDs) through the same inline pipeline as GitHub
+  // comments (numeric ids); placement is by path+line, threading by id/inReplyToId.
+  id: CommentId;
   author: string;
   avatarUrl?: string;
   body: string;
@@ -140,8 +145,12 @@ export type PRComment = {
   side?: string;
   startLine?: number;
   startSide?: string;
-  inReplyToId?: number;
+  inReplyToId?: number | string;
   diffHunk?: string;
+  /** Agent-loop fields (watch mode). Absent for GitHub comments. */
+  source?: 'agent' | 'github';
+  status?: 'open' | 'delivered' | 'addressed';
+  addressedNote?: string;
 };
 
 // Agent-loop comments (watch mode). Kept distinct from PRComment — string ids and a

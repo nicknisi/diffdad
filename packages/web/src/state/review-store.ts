@@ -42,6 +42,8 @@ type ReviewState = {
   files: DiffFile[];
   comments: PRComment[];
   agentComments: AgentComment[];
+  /** 'watch' = local working-tree mode (comments go to the agent, not GitHub). */
+  mode: 'pr' | 'watch';
   checkRuns: CheckRun[];
   reviews: PRReview[];
   repoUrl: string | null;
@@ -121,6 +123,7 @@ type ReviewState = {
   addComment: (comment: PRComment) => void;
   setComments: (comments: PRComment[]) => void;
   setAgentComments: (comments: AgentComment[]) => void;
+  setMode: (mode: 'pr' | 'watch') => void;
   addDraft: (draft: DraftComment) => void;
   removeDraft: (id: string) => void;
   clearDrafts: () => void;
@@ -243,6 +246,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
   files: [],
   comments: [],
   agentComments: [],
+  mode: 'pr',
   checkRuns: [],
   reviews: [],
   repoUrl: null,
@@ -382,6 +386,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
 
   setComments: (comments) => set({ comments }),
   setAgentComments: (agentComments) => set({ agentComments }),
+  setMode: (mode) => set({ mode }),
 
   addDraft: (draft) =>
     set((state) => {

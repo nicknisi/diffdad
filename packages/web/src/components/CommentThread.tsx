@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { useComments } from '../hooks/useComments';
 import { copy } from '../lib/microcopy';
 import { useReviewStore } from '../state/review-store';
-import type { PRComment } from '../state/types';
+import type { CommentId, PRComment } from '../state/types';
 import { Comment } from './Comment';
 
 type Props = {
@@ -13,7 +13,7 @@ type Props = {
   startLine?: number;
   startSide?: 'LEFT' | 'RIGHT';
   chapterIndex?: number;
-  inReplyToId?: number;
+  inReplyToId?: CommentId;
   onClose?: () => void;
   autoFocus?: boolean;
 };
@@ -25,7 +25,7 @@ type Thread = {
 
 function groupThreads(comments: PRComment[]): Thread[] {
   const roots: PRComment[] = [];
-  const repliesByParent = new Map<number, PRComment[]>();
+  const repliesByParent = new Map<CommentId, PRComment[]>();
 
   for (const c of comments) {
     if (c.inReplyToId == null) {
@@ -96,7 +96,7 @@ export function CommentThread({
   // Track baseline comment count when typing started, for conflict detection.
   const baselineRef = useRef<number>(comments.length);
   const [_baseline, setBaseline] = useState<number>(comments.length);
-  const [baselineIds, setBaselineIds] = useState<Set<number>>(() => new Set(comments.map((c) => c.id)));
+  const [baselineIds, setBaselineIds] = useState<Set<CommentId>>(() => new Set(comments.map((c) => c.id)));
   const typingStartedRef = useRef<boolean>(false);
 
   // When body becomes non-empty for the first time, snapshot the baseline.

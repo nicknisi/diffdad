@@ -142,6 +142,7 @@ export function createServer(ctx: ServerContext) {
         checkRuns: ctx.checkRuns,
         reviews: ctx.reviews,
         repoUrl: `https://github.com/${ctx.owner}/${ctx.repo}`,
+        mode: ctx.mode,
         aiPath,
         config: {
           theme: config.theme ?? 'auto',
@@ -171,6 +172,7 @@ export function createServer(ctx: ServerContext) {
       checkRuns: ctx.checkRuns,
       reviews: ctx.reviews,
       repoUrl: `https://github.com/${ctx.owner}/${ctx.repo}`,
+      mode: ctx.mode,
       aiPath,
       config: {
         theme: config.theme ?? 'auto',

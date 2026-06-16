@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useScrollTracker } from '../hooks/useScrollTracker';
 import { normalizePath } from '../lib/paths';
 import { useReviewStore } from '../state/review-store';
-import type { DiffFile } from '../state/types';
+import { useInlineComments } from '../hooks/useInlineComments';
+import type { CommentId, DiffFile } from '../state/types';
 import { Chapter } from './Chapter';
 import { ChapterTOC } from './ChapterTOC';
 import { Comment } from './Comment';
@@ -14,7 +15,7 @@ import { VerdictBanner } from './VerdictBanner';
 import { IconChat } from './Icons';
 
 function OrphanedInlineComments() {
-  const comments = useReviewStore((s) => s.comments);
+  const comments = useInlineComments();
   const narrative = useReviewStore((s) => s.narrative);
   const files = useReviewStore((s) => s.files);
 
@@ -100,7 +101,7 @@ function OrphanedInlineComments() {
 }
 
 function Discussion() {
-  const comments = useReviewStore((s) => s.comments);
+  const comments = useInlineComments();
   const narrative = useReviewStore((s) => s.narrative);
 
   const unmatched = useMemo(() => {
@@ -122,7 +123,7 @@ function Discussion() {
   if (unmatched.length === 0) return null;
 
   const byId = new Map(unmatched.map((c) => [c.id, c]));
-  const repliesByParent = new Map<number, typeof unmatched>();
+  const repliesByParent = new Map<CommentId, typeof unmatched>();
   const roots: typeof unmatched = [];
   for (const c of unmatched) {
     if (c.inReplyToId !== undefined && byId.has(c.inReplyToId)) {

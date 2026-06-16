@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
+import { agentToPRComments } from '../lib/agent-comments';
 import { useReviewStore } from '../state/review-store';
-import type { PRComment } from '../state/types';
+import type { AgentComment, CommentId, PRComment } from '../state/types';
 
 type PostCommentOpts = {
   path?: string;
@@ -8,7 +9,7 @@ type PostCommentOpts = {
   side?: string;
   startLine?: number;
   startSide?: string;
-  inReplyToId?: number;
+  inReplyToId?: CommentId;
 };
 
 export function useComments() {
@@ -28,6 +29,23 @@ export function useComments() {
 
   const postComment = useCallback(
     async (body: string, opts: PostCommentOpts = {}): Promise<PRComment> => {
+      // Watch mode: comments go to the agent, not GitHub. The inline composer always
+      // carries a path+line, which is exactly what an agent comment needs.
+      if (useReviewStore.getState().mode === 'watch') {
+        const res = await fetch('/api/agent-comments', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: opts.path, line: opts.line, side: opts.side ?? 'RIGHT', body }),
+        });
+        if (!res.ok) throw new Error(`Failed to post comment: ${res.status}`);
+        const created = (await res.json()) as AgentComment;
+        const current = useReviewStore.getState().agentComments;
+        if (!current.find((c) => c.id === created.id)) {
+          useReviewStore.getState().setAgentComments([...current, created]);
+        }
+        return agentToPRComments([created])[0]!;
+      }
+
       const res = await fetch('/api/comments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
