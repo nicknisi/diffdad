@@ -77,6 +77,7 @@ export function CommentThread({
   const drafts = useReviewStore((s) => s.drafts);
   const addDraft = useReviewStore((s) => s.addDraft);
   const removeDraft = useReviewStore((s) => s.removeDraft);
+  const isWatch = useReviewStore((s) => s.mode === 'watch');
 
   const draftKey = useMemo(() => draftKeyFor(path, line, chapterIndex), [path, line, chapterIndex]);
 
@@ -236,7 +237,7 @@ export function CommentThread({
           value={body}
           onChange={(e) => setBody(e.target.value)}
           onKeyDown={onKeyDown}
-          placeholder={copy.commentPlaceholder}
+          placeholder={isWatch ? 'Leave a note for the agent…' : copy.commentPlaceholder}
           className="block w-full resize-y rounded-md border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--fg-1)] outline-none focus:border-[var(--brand)]"
           rows={3}
         />
@@ -255,21 +256,23 @@ export function CommentThread({
               Cancel
             </button>
           )}
-          <button
-            type="button"
-            disabled={!body.trim() || !draftKey}
-            onClick={saveDraft}
-            className="rounded-md border border-[var(--border-strong)] bg-[var(--bg-panel)] px-3 py-1 text-sm font-medium text-[var(--fg-1)] shadow-sm hover:bg-[var(--bg-subtle)] disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Add to review
-          </button>
+          {!isWatch && (
+            <button
+              type="button"
+              disabled={!body.trim() || !draftKey}
+              onClick={saveDraft}
+              className="rounded-md border border-[var(--border-strong)] bg-[var(--bg-panel)] px-3 py-1 text-sm font-medium text-[var(--fg-1)] shadow-sm hover:bg-[var(--bg-subtle)] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Add to review
+            </button>
+          )}
           <button
             type="button"
             disabled={!body.trim() || submitting}
             onClick={() => void submit()}
             className="rounded-md bg-[var(--brand)] px-3 py-1 text-sm font-semibold text-white shadow-sm hover:bg-[var(--brand-hover)] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {submitting ? 'Posting...' : 'Comment'}
+            {submitting ? (isWatch ? 'Sending…' : 'Posting...') : isWatch ? 'Send to agent' : 'Comment'}
           </button>
         </div>
       </div>

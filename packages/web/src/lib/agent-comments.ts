@@ -18,6 +18,8 @@ export function agentToPRComments(agentComments: AgentComment[]): PRComment[] {
       path: ac.path,
       line: ac.line,
       side: ac.side,
+      startLine: ac.startLine,
+      startSide: ac.startSide,
       source: 'agent',
       status: ac.status,
       addressedNote: ac.addressedNote,

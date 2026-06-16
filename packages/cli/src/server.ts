@@ -15,6 +15,7 @@ import { gatherRecapSources } from './recap/sources';
 import type { RecapResponse } from './recap/types';
 import type { AgentCommentStore } from './agent-comments/store';
 import { buildLocalReview } from './local/diff-source';
+import { runTriage, type TriageFlag } from './triage/triage';
 import { mountMcp } from './mcp/server';
 import { registerAgentCommentTools } from './mcp/tools';
 
@@ -37,6 +38,8 @@ export type ServerContext = {
   /** Watch mode only: resolved base ref (store key) and current diff content hash (cache key). */
   baseRef?: string;
   contentKey?: string;
+  /** Watch mode: latest non-blocking triage flags + the contentKey they were computed for. */
+  triage?: { flags: TriageFlag[]; contentKey?: string };
   /** Populated lazily when the user opens the Recap tab (or hydrated from cache at startup). */
   recap?: RecapResponse | null;
   /** Set while a recap is being generated; cleared on success or failure. */
@@ -81,58 +84,96 @@ export function createServer(ctx: ServerContext) {
     return ctx.mode === 'watch' && ctx.store.list().some((c) => c.status !== 'addressed');
   }
 
-  // Watch mode re-narrates when the working tree changes (diff content hash differs).
-  // Separate from the PR poller so it never touches ctx.github (which is null here).
-  let watchRegenerating = false;
+  // Watch mode: the diff IS the view — no narrative. When the working tree changes,
+  // rebuild DiffFile[] and push it to the browser. No LLM on this path by design:
+  // narrating a moving working tree is slow, goes stale immediately, and is redundant
+  // (you wrote the change — you don't need it reconstructed). Separate from the PR
+  // poller so it never touches ctx.github (which is null here).
+  let watchUpdating = false;
   async function watchTick(): Promise<void> {
-    if (watchRegenerating || ctx.mode !== 'watch' || !ctx.baseRef) return;
+    if (watchUpdating || ctx.mode !== 'watch' || !ctx.baseRef) return;
     let review;
     try {
       review = await buildLocalReview(ctx.baseRef);
     } catch {
-      // clean tree or transient git error — nothing to re-narrate this tick
+      // clean tree or transient git error — nothing to push this tick
       return;
     }
     if (review.contentKey === ctx.contentKey) return; // no working-tree change
 
-    watchRegenerating = true;
+    watchUpdating = true;
     try {
       ctx.files = review.files;
       ctx.pr = review.metadata;
       ctx.headSha = review.metadata.headSha;
       ctx.contentKey = review.contentKey;
-      broadcast('regenerating', { previousSha: '', newSha: '' });
-
-      const config = await readConfig();
-      const providerKey = await resolveProviderKey(config);
-      const metaHash = computePromptMetaHash(ctx.pr);
-      // contentKey occupies the cache's opaque `sha` slot (HEAD sha doesn't move on uncommitted edits).
-      let narrative = await getCachedNarrative(ctx.owner, ctx.repo, ctx.pr.number, review.contentKey, metaHash, providerKey);
-      if (!narrative) {
-        const result = await generateNarrative(ctx.pr, review.files, [], config, undefined, {
-          cacheKey: { owner: ctx.owner, repo: ctx.repo, number: ctx.pr.number, sha: review.contentKey },
-          comments: [],
-          onProgress: ({ chars }) => broadcast('narrative-progress', { chars }),
-          onPartial: (partial) =>
-            broadcast('narrative.partial', { narrative: partial, pr: ctx.pr, files: review.files, comments: [] }),
-          onPlan: (plan) => broadcast('plan-ready', { plan }),
-          onChapter: ({ themeId, index, chapter }) => broadcast('chapter-ready', { themeId, index, chapter }),
-        });
-        narrative = result.narrative;
-        await cacheNarrative(ctx.owner, ctx.repo, ctx.pr.number, review.contentKey, metaHash, providerKey, narrative);
-      }
-      ctx.narrative = narrative;
-      broadcast('narrative', { narrative, pr: ctx.pr, files: review.files, comments: [] });
+      broadcast('watch-update', { pr: ctx.pr, files: ctx.files });
+      scheduleTriage();
     } catch (err) {
-      console.error(`  watch regeneration failed: ${err instanceof Error ? err.message : String(err)}`);
+      console.error(`  watch update failed: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
-      watchRegenerating = false;
+      watchUpdating = false;
     }
   }
+
+  // Minimal triage: a cheap, NON-blocking pass that points attention at agent-era failure modes
+  // (rewritten tests, duplication, untrusted input, weakened CI, sprawl). Debounced so rapid agent
+  // edits don't spam it; watch mode only; the diff never waits on it.
+  let triageTimer: ReturnType<typeof setTimeout> | null = null;
+  let triageRunning = false;
+  async function runTriageNow(): Promise<void> {
+    if (ctx.mode !== 'watch' || triageRunning || ctx.files.length === 0) return;
+    triageRunning = true;
+    const forKey = ctx.contentKey;
+    try {
+      const config = await readConfig();
+      const flags = await runTriage(ctx.files, config);
+      ctx.triage = { flags, contentKey: forKey };
+      broadcast('triage', { flags, status: 'ready' });
+    } catch (err) {
+      console.error(`  triage failed: ${err instanceof Error ? err.message : String(err)}`);
+      broadcast('triage', { flags: ctx.triage?.flags ?? [], status: 'error' });
+    } finally {
+      triageRunning = false;
+      if (ctx.contentKey !== forKey) scheduleTriage(); // tree moved while we ran — refresh
+    }
+  }
+  function scheduleTriage(delay = 1500): void {
+    if (ctx.mode !== 'watch') return;
+    if (triageTimer) clearTimeout(triageTimer);
+    triageTimer = setTimeout(() => {
+      triageTimer = null;
+      void runTriageNow();
+    }, delay);
+    broadcast('triage', { flags: ctx.triage?.flags ?? [], status: 'running' });
+  }
+  if (ctx.mode === 'watch') scheduleTriage(800);
 
   app.get('/api/narrative', async (c) => {
     const config = await readConfig();
     const { path: aiPath } = resolveAiPath(config);
+    if (ctx.mode === 'watch') {
+      // Watch mode is diff-first: no narrative, ever. Serve the working-tree files directly
+      // so the browser renders the diff instantly with no generating screen.
+      return c.json({
+        pr: ctx.pr,
+        files: ctx.files,
+        comments: [],
+        mode: 'watch',
+        repoUrl: `https://github.com/${ctx.owner}/${ctx.repo}`,
+        aiPath,
+        triage: ctx.triage?.flags ?? [],
+        config: {
+          theme: config.theme ?? 'auto',
+          storyStructure: config.storyStructure ?? 'chapters',
+          layoutMode: config.layoutMode ?? 'toc',
+          displayDensity: config.displayDensity ?? 'comfortable',
+          defaultNarrationDensity: config.defaultNarrationDensity ?? 'normal',
+          clusterBots: config.clusterBots ?? true,
+          accent: config.accent ?? 'classic',
+        },
+      });
+    }
     if (!ctx.narrative) {
       return c.json({
         generating: true,
@@ -422,7 +463,16 @@ export function createServer(ctx: ServerContext) {
   app.get('/api/agent-comments', (c) => c.json(ctx.store.list()));
 
   app.post('/api/agent-comments', async (c) => {
-    let body: { path?: string; line?: number; side?: 'LEFT' | 'RIGHT'; body?: string; hunkContext?: string; chapterTitle?: string };
+    let body: {
+      path?: string;
+      line?: number;
+      side?: 'LEFT' | 'RIGHT';
+      startLine?: number;
+      startSide?: 'LEFT' | 'RIGHT';
+      body?: string;
+      hunkContext?: string;
+      chapterTitle?: string;
+    };
     try {
       body = await c.req.json();
     } catch {
@@ -436,6 +486,8 @@ export function createServer(ctx: ServerContext) {
       path: body.path,
       line: body.line,
       side: body.side,
+      startLine: body.startLine,
+      startSide: body.startSide,
       body: body.body,
       hunkContext: body.hunkContext,
       chapterTitle: body.chapterTitle,

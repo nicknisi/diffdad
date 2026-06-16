@@ -13,6 +13,8 @@ import type {
   PRComment,
   PRData,
   PRReview,
+  TriageFlag,
+  TriageStatus,
 } from './types';
 import type { RecapResponse } from './recap-types';
 import type { AccentId } from '../lib/accents';
@@ -42,6 +44,9 @@ type ReviewState = {
   files: DiffFile[];
   comments: PRComment[];
   agentComments: AgentComment[];
+  /** Watch mode: non-blocking triage flags ("look here first") and the pass's lifecycle status. */
+  triageFlags: TriageFlag[];
+  triageStatus: TriageStatus;
   /** 'watch' = local working-tree mode (comments go to the agent, not GitHub). */
   mode: 'pr' | 'watch';
   checkRuns: CheckRun[];
@@ -123,6 +128,7 @@ type ReviewState = {
   addComment: (comment: PRComment) => void;
   setComments: (comments: PRComment[]) => void;
   setAgentComments: (comments: AgentComment[]) => void;
+  setTriage: (flags: TriageFlag[], status: TriageStatus) => void;
   setMode: (mode: 'pr' | 'watch') => void;
   addDraft: (draft: DraftComment) => void;
   removeDraft: (id: string) => void;
@@ -246,6 +252,8 @@ export const useReviewStore = create<ReviewState>((set) => ({
   files: [],
   comments: [],
   agentComments: [],
+  triageFlags: [],
+  triageStatus: 'idle',
   mode: 'pr',
   checkRuns: [],
   reviews: [],
@@ -386,6 +394,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
 
   setComments: (comments) => set({ comments }),
   setAgentComments: (agentComments) => set({ agentComments }),
+  setTriage: (triageFlags, triageStatus) => set({ triageFlags, triageStatus }),
   setMode: (mode) => set({ mode }),
 
   addDraft: (draft) =>

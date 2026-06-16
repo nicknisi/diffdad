@@ -60,6 +60,8 @@ export class AgentCommentStore {
       path: input.path,
       line: input.line,
       side: input.side ?? 'RIGHT',
+      startLine: input.startLine,
+      startSide: input.startSide,
       body: input.body,
       status: 'open',
       author: 'user',

@@ -390,17 +390,13 @@ async function watchCommand(base?: string): Promise<number> {
   const withFlag = Bun.argv.find((f) => f.startsWith('--with='));
   if (withFlag) setCliOverride(withFlag.split('=')[1]!);
 
-  const config = await readConfig();
   const { owner, repo } = await resolveLocalIdentity();
   const store = await AgentCommentStore.load(`${owner}-${repo}-local-${review.baseRef}`);
 
-  const noCache = Bun.argv.includes('--no-cache');
-  const metaHash = computePromptMetaHash(review.metadata);
-  const providerKey = await resolveProviderKey(config);
-  const cached = noCache ? null : await getCachedNarrative(owner, repo, 0, review.contentKey, metaHash, providerKey);
-
+  // Watch mode is diff-first: no narrative, ever. The server serves the working-tree diff
+  // directly and runs a cheap non-blocking triage pass — no LLM on the startup path.
   const ctx = {
-    narrative: cached,
+    narrative: null,
     pr: review.metadata,
     files: review.files,
     comments: [],
@@ -426,7 +422,7 @@ async function watchCommand(base?: string): Promise<number> {
     `  ${a.green}+${review.metadata.additions}${a.reset} ${a.red}-${review.metadata.deletions}${a.reset}  ${a.dim}${review.files.length} files vs ${review.baseRef.slice(0, 12)}${a.reset}`,
   );
 
-  const { app, broadcast } = createServer(ctx);
+  const { app } = createServer(ctx);
   const portFlag = Bun.argv.find((f) => f.startsWith('--port='));
   const port = portFlag ? parseInt(portFlag.split('=')[1] ?? '0') : 0;
   const server = Bun.serve({ fetch: app.fetch, port, idleTimeout: 255 });
@@ -442,29 +438,6 @@ async function watchCommand(base?: string): Promise<number> {
   if (!Bun.argv.includes('--no-open')) {
     const { default: open } = await import('open');
     await open(url);
-  }
-
-  if (!cached) {
-    console.log(`  ${a.yellow}Generating narrative...${a.reset}`);
-    try {
-      const result = await generateNarrative(review.metadata, review.files, [], config, undefined, {
-        cacheKey: { owner, repo, number: 0, sha: review.contentKey },
-        comments: [],
-        onProgress: ({ chars }) => broadcast('narrative-progress', { chars }),
-        onPartial: (partial) =>
-          broadcast('narrative.partial', { narrative: partial, pr: review.metadata, files: review.files, comments: [] }),
-        onPlan: (plan) => broadcast('plan-ready', { plan }),
-        onChapter: ({ themeId, index, chapter }) => broadcast('chapter-ready', { themeId, index, chapter }),
-      });
-      ctx.narrative = result.narrative;
-      await cacheNarrative(owner, repo, 0, review.contentKey, metaHash, providerKey, result.narrative);
-      console.log(
-        `  ${a.green}✓${a.reset} ${result.narrative.chapters.length} chapters generated ${a.dim}via ${result.provider}${a.reset}`,
-      );
-      broadcast('narrative', { narrative: result.narrative, pr: review.metadata, files: review.files, comments: [] });
-    } catch (err) {
-      console.error(`  ${a.red}✗${a.reset} narrative generation failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
   }
 
   await new Promise<never>(() => {});

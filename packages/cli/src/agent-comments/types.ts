@@ -13,6 +13,9 @@ export type AgentComment = {
   path: string;
   line: number;
   side: 'LEFT' | 'RIGHT';
+  /** Start of a multi-line range (end is `line`/`side`); absent for single-line comments. */
+  startLine?: number;
+  startSide?: 'LEFT' | 'RIGHT';
   body: string;
   status: AgentCommentStatus;
   author: AgentAuthor;
@@ -30,6 +33,8 @@ export type NewAgentComment = {
   path: string;
   line: number;
   side?: 'LEFT' | 'RIGHT';
+  startLine?: number;
+  startSide?: 'LEFT' | 'RIGHT';
   body: string;
   hunkContext?: string;
   chapterTitle?: string;

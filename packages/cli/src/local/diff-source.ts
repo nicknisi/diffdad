@@ -1,4 +1,6 @@
 import { createHash } from 'crypto';
+import { statSync } from 'fs';
+import { join } from 'path';
 import { parseDiff } from '../github/diff-parser';
 import type { DiffFile, PRMetadata } from '../github/types';
 import { assertGitRepo, resolveDefaultBranch, spawnText } from './git';
@@ -83,26 +85,51 @@ export async function resolveBaseRef(base?: string): Promise<string> {
   return mb.code === 0 && mb.stdout.trim() ? mb.stdout.trim() : def;
 }
 
+/**
+ * Freshest-first: order files by working-tree mtime so the agent's most recent edits float to
+ * the top — watch mode's "what changed since I last looked" story. Deleted/unreadable files (no
+ * mtime) sink to the bottom. Attaches `mtime` to each file for the UI's recency cue. Runs after
+ * `contentKey` is computed, so display order never perturbs the narrative/diff cache key.
+ */
+function sortByRecency(files: DiffFile[], repoRoot: string): DiffFile[] {
+  return files
+    .map((f) => {
+      let mtime: number | undefined;
+      try {
+        mtime = statSync(join(repoRoot, f.file)).mtimeMs;
+      } catch {
+        mtime = undefined; // deleted or unreadable
+      }
+      return { ...f, mtime };
+    })
+    .sort((a, b) => (b.mtime ?? -Infinity) - (a.mtime ?? -Infinity));
+}
+
 /** Shell out to git, building a LocalReview of the working tree against `base` (or the default branch). */
 export async function buildLocalReview(base?: string): Promise<LocalReview> {
   await assertGitRepo();
   const baseRef = await resolveBaseRef(base);
 
-  const [diff, branch, headSha] = await Promise.all([
+  const [diff, branch, headSha, root] = await Promise.all([
     // Force standard a/ b/ prefixes — the diff parser requires them, but a user's git config
     // (diff.mnemonicPrefix → c/ w/, or diff.noprefix → none) would otherwise break parsing.
     spawnText(['git', '-c', 'diff.mnemonicPrefix=false', '-c', 'diff.noprefix=false', 'diff', baseRef]),
     spawnText(['git', 'rev-parse', '--abbrev-ref', 'HEAD']),
     spawnText(['git', 'rev-parse', 'HEAD']),
+    spawnText(['git', 'rev-parse', '--show-toplevel']),
   ]);
   if (diff.code !== 0) {
     throw new Error(`git diff failed: ${diff.stderr.trim() || `exit ${diff.code}`}`);
   }
 
-  return buildReviewFromDiff(diff.stdout, {
+  const review = buildReviewFromDiff(diff.stdout, {
     branch: branch.stdout.trim() || 'working-tree',
     headSha: headSha.stdout.trim(),
     baseRef,
     createdAt: new Date().toISOString(),
   });
+
+  const repoRoot = root.code === 0 ? root.stdout.trim() : '';
+  if (repoRoot) review.files = sortByRecency(review.files, repoRoot);
+  return review;
 }

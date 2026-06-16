@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useReviewStore, type BackendConfig } from '../state/review-store';
-import type { CheckRun, DiffFile, NarrativeResponse, PRComment, PRData, PRReview } from '../state/types';
+import type { CheckRun, DiffFile, NarrativeResponse, PRComment, PRData, PRReview, TriageFlag } from '../state/types';
 
 type NarrativeApiResponse = {
   generating?: boolean;
@@ -13,6 +13,7 @@ type NarrativeApiResponse = {
   repoUrl?: string;
   mode?: 'pr' | 'watch';
   aiPath?: 'api' | 'local-cli';
+  triage?: TriageFlag[];
   config?: BackendConfig;
 };
 
@@ -36,7 +37,29 @@ export function useNarrative() {
         const data = (await res.json()) as NarrativeApiResponse;
         if (cancelled) return;
 
-        if (data.generating && !data.narrative) {
+        if (data.mode === 'watch') {
+          // Watch mode has no narrative — the diff is the view. Populate the working-tree
+          // data directly so WatchView renders immediately, with no generating screen.
+          setGenerating(false);
+          useReviewStore.setState({
+            pr: data.pr,
+            files: data.files,
+            comments: data.comments,
+            repoUrl: data.repoUrl ?? null,
+            aiPath: data.aiPath ?? null,
+            narrative: null,
+          });
+          if (data.config) {
+            if (data.config.theme && !localStorage.getItem('diffdad.theme'))
+              useReviewStore.setState({ theme: data.config.theme });
+            if (data.config.accent && !localStorage.getItem('diffdad.accent'))
+              useReviewStore.setState({ accent: data.config.accent });
+            if (data.config.displayDensity) useReviewStore.setState({ displayDensity: data.config.displayDensity });
+          }
+          useReviewStore
+            .getState()
+            .setTriage(data.triage ?? [], data.triage && data.triage.length ? 'ready' : 'running');
+        } else if (data.generating && !data.narrative) {
           setGenerating(true);
           useReviewStore.setState({
             pr: data.pr,

@@ -111,6 +111,8 @@ export type DiffFile = {
   isNewFile: boolean;
   isDeleted: boolean;
   hunks: DiffHunk[];
+  /** Working-tree mtime (ms) in watch mode — drives freshest-first ordering. Absent in PR mode. */
+  mtime?: number;
 };
 
 export type DiffHunk = {
@@ -126,6 +128,19 @@ export type DiffLine = {
   type: 'add' | 'remove' | 'context';
   content: string;
   lineNumber: { old?: number; new?: number };
+};
+
+export type TriageSeverity = 'risk' | 'warn' | 'info';
+
+export type TriageStatus = 'idle' | 'running' | 'ready' | 'error';
+
+/** A single watch-mode triage flag: "look here first" for an agent-era failure mode. */
+export type TriageFlag = {
+  file: string;
+  line?: number;
+  severity: TriageSeverity;
+  kind: string;
+  message: string;
 };
 
 /** Numeric for GitHub comments, string (UUID) for agent comments. */
@@ -167,6 +182,8 @@ export type AgentComment = {
   path: string;
   line: number;
   side: 'LEFT' | 'RIGHT';
+  startLine?: number;
+  startSide?: 'LEFT' | 'RIGHT';
   body: string;
   status: 'open' | 'delivered' | 'addressed';
   author: 'user' | 'agent';

@@ -35,7 +35,14 @@ export function useComments() {
         const res = await fetch('/api/agent-comments', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ path: opts.path, line: opts.line, side: opts.side ?? 'RIGHT', body }),
+          body: JSON.stringify({
+            path: opts.path,
+            line: opts.line,
+            side: opts.side ?? 'RIGHT',
+            startLine: opts.startLine,
+            startSide: opts.startSide,
+            body,
+          }),
         });
         if (!res.ok) throw new Error(`Failed to post comment: ${res.status}`);
         const created = (await res.json()) as AgentComment;

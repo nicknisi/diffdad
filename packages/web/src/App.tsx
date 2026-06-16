@@ -12,6 +12,7 @@ import { RecapView } from './components/RecapView';
 import { ShortcutsHelp } from './components/ShortcutsHelp';
 import { StoryView } from './components/StoryView';
 import { SubmitBar } from './components/SubmitBar';
+import { WatchView } from './components/WatchView';
 import { copy } from './lib/microcopy';
 import { getAccentMeta } from './lib/accents';
 import { renderDadMarkSVG } from './components/DadMark';
@@ -23,6 +24,7 @@ export default function App() {
   const pr = useReviewStore((s) => s.pr);
   const narrative = useReviewStore((s) => s.narrative);
   const files = useReviewStore((s) => s.files);
+  const mode = useReviewStore((s) => s.mode);
   const shortcutsHelpOpen = useReviewStore((s) => s.shortcutsHelpOpen);
   const setShortcutsHelpOpen = useReviewStore((s) => s.setShortcutsHelpOpen);
   const { loading, generating, setGenerating, error } = useNarrative();
@@ -119,9 +121,15 @@ export default function App() {
     );
   }
 
+  // Watch mode is its own self-contained experience — diff-first, agent-comment loop,
+  // none of the PR-review chrome. Branch here so review components can't leak into it.
+  if (mode === 'watch') {
+    return <WatchView />;
+  }
+
   // Only block on the narrative while there's nothing else to show. Once the diff is
-  // parsed (watch mode, or a slow/failed narrative), fall through and render the Files
-  // view so the diffs are always visible.
+  // parsed (a slow/failed narrative), fall through and render the Files view so the
+  // diffs are always visible.
   if ((generating || !narrative) && files.length === 0) {
     return <GeneratingScreen message={copy.loadingMessages[loadingMsgIndex] ?? ''} />;
   }
