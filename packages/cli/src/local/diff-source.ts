@@ -89,7 +89,9 @@ export async function buildLocalReview(base?: string): Promise<LocalReview> {
   const baseRef = await resolveBaseRef(base);
 
   const [diff, branch, headSha] = await Promise.all([
-    spawnText(['git', 'diff', baseRef]),
+    // Force standard a/ b/ prefixes — the diff parser requires them, but a user's git config
+    // (diff.mnemonicPrefix → c/ w/, or diff.noprefix → none) would otherwise break parsing.
+    spawnText(['git', '-c', 'diff.mnemonicPrefix=false', '-c', 'diff.noprefix=false', 'diff', baseRef]),
     spawnText(['git', 'rev-parse', '--abbrev-ref', 'HEAD']),
     spawnText(['git', 'rev-parse', 'HEAD']),
   ]);

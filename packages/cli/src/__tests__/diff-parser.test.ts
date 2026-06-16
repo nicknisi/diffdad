@@ -2,6 +2,23 @@ import { describe, expect, it } from 'vitest';
 import { parseDiff } from '../github/diff-parser';
 
 describe('parseDiff', () => {
+  it('parses mnemonic-prefix headers (diff.mnemonicPrefix → c/ w/), not just a/ b/', () => {
+    const raw = [
+      'diff --git c/src/app.ts w/src/app.ts',
+      'index abc1234..def5678 100644',
+      '--- c/src/app.ts',
+      '+++ w/src/app.ts',
+      '@@ -1,2 +1,2 @@',
+      ' const x = 1;',
+      '-const y = 2;',
+      '+const y = 3;',
+    ].join('\n');
+    const files = parseDiff(raw);
+    expect(files).toHaveLength(1);
+    expect(files[0]!.file).toBe('src/app.ts');
+    expect(files[0]!.hunks).toHaveLength(1);
+  });
+
   it('parses a unified diff into structured hunks', () => {
     const raw = [
       'diff --git a/src/math.ts b/src/math.ts',

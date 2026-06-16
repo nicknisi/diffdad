@@ -22,6 +22,7 @@ export default function App() {
   const view = useReviewStore((s) => s.view);
   const pr = useReviewStore((s) => s.pr);
   const narrative = useReviewStore((s) => s.narrative);
+  const files = useReviewStore((s) => s.files);
   const shortcutsHelpOpen = useReviewStore((s) => s.shortcutsHelpOpen);
   const setShortcutsHelpOpen = useReviewStore((s) => s.setShortcutsHelpOpen);
   const { loading, generating, setGenerating, error } = useNarrative();
@@ -118,7 +119,10 @@ export default function App() {
     );
   }
 
-  if (generating || !narrative) {
+  // Only block on the narrative while there's nothing else to show. Once the diff is
+  // parsed (watch mode, or a slow/failed narrative), fall through and render the Files
+  // view so the diffs are always visible.
+  if ((generating || !narrative) && files.length === 0) {
     return <GeneratingScreen message={copy.loadingMessages[loadingMsgIndex] ?? ''} />;
   }
 
@@ -126,7 +130,16 @@ export default function App() {
     <div className="min-h-screen bg-[var(--bg-page)] pb-20 text-[var(--fg-1)]">
       <AppBar onOpenActivity={() => setActivityOpen(true)} />
       <PRHeader />
-      {view === 'story' ? <StoryView /> : view === 'files' ? <ClassicView /> : <RecapView />}
+      {/* Story/Recap need a narrative; without one, always show the Files diff. */}
+      {!narrative ? (
+        <ClassicView />
+      ) : view === 'story' ? (
+        <StoryView />
+      ) : view === 'files' ? (
+        <ClassicView />
+      ) : (
+        <RecapView />
+      )}
       <SubmitBar />
       <ActivityDrawer open={activityOpen} onClose={() => setActivityOpen(false)} />
       <ShortcutsHelp open={shortcutsHelpOpen} onClose={() => setShortcutsHelpOpen(false)} />
