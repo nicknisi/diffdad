@@ -88,6 +88,19 @@ async function toQueued(store: UnitStore, id: string) {
   await store.setQueued(id, NARRATIVE, 2);
 }
 
+describe('GET /api/narrative (command-center bootstrap)', () => {
+  it('declares command-center mode and seeds the current queue', async () => {
+    const { store, app } = setup();
+    await addUnit(store, 'owner/a');
+    await addUnit(store, 'owner/b');
+    const res = await app.request('/api/narrative');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { mode: string; units: { repo: string }[] };
+    expect(body.mode).toBe('command-center');
+    expect(body.units.map((u) => u.repo).sort()).toEqual(['owner/a', 'owner/b']);
+  });
+});
+
 describe('GET /api/units', () => {
   it('lists all units', async () => {
     const { store, app } = setup();

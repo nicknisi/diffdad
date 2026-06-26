@@ -14,6 +14,7 @@ import type {
   PRReview,
   TriageFlag,
   TriageStatus,
+  Unit,
 } from '../state/types';
 import type { RecapResponse } from '../state/recap-types';
 
@@ -145,6 +146,17 @@ export function useLiveStream() {
       }
     };
 
+    // Command center: the daemon broadcasts the full cross-repo queue on every unit change.
+    const onUnits = (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data) as { units: Unit[] };
+        useReviewStore.getState().setUnits(data.units ?? []);
+        setLastEventAt(Date.now());
+      } catch {
+        // ignore malformed event
+      }
+    };
+
     const onTriage = (e: MessageEvent) => {
       try {
         const data = JSON.parse(e.data) as { flags: TriageFlag[]; status?: TriageStatus };
@@ -262,6 +274,7 @@ export function useLiveStream() {
     es.addEventListener('reviews', onReviews as EventListener);
     es.addEventListener('pr', onPr as EventListener);
     es.addEventListener('watch-update', onWatchUpdate as EventListener);
+    es.addEventListener('units', onUnits as EventListener);
     es.addEventListener('triage', onTriage as EventListener);
     es.addEventListener('regenerating', onRegenerating as EventListener);
     es.addEventListener('narrative-progress', onNarrativeProgress as EventListener);
@@ -290,6 +303,7 @@ export function useLiveStream() {
       es.removeEventListener('reviews', onReviews as EventListener);
       es.removeEventListener('pr', onPr as EventListener);
       es.removeEventListener('watch-update', onWatchUpdate as EventListener);
+      es.removeEventListener('units', onUnits as EventListener);
       es.removeEventListener('triage', onTriage as EventListener);
       es.removeEventListener('regenerating', onRegenerating as EventListener);
       es.removeEventListener('narrative-progress', onNarrativeProgress as EventListener);

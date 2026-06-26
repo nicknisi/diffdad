@@ -6,14 +6,17 @@ import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { ActivityDrawer } from './components/ActivityDrawer';
 import { AppBar } from './components/AppBar';
 import { ClassicView } from './components/ClassicView';
+import { CommandCenter } from './components/CommandCenter';
 import { GeneratingScreen } from './components/GeneratingScreen';
 import { PRHeader } from './components/PRHeader';
 import { RecapView } from './components/RecapView';
 import { ShortcutsHelp } from './components/ShortcutsHelp';
 import { StoryView } from './components/StoryView';
 import { SubmitBar } from './components/SubmitBar';
+import { UnitReview } from './components/UnitReview';
 import { WatchView } from './components/WatchView';
 import { selectReviewReady } from './state/selectors';
+import { parseRoute } from './lib/units-view';
 import { copy } from './lib/microcopy';
 import { getAccentMeta } from './lib/accents';
 import { renderDadMarkSVG } from './components/DadMark';
@@ -26,9 +29,18 @@ export default function App() {
   const narrative = useReviewStore((s) => s.narrative);
   const files = useReviewStore((s) => s.files);
   const mode = useReviewStore((s) => s.mode);
+  const route = useReviewStore((s) => s.route);
+  const setRoute = useReviewStore((s) => s.setRoute);
   const shortcutsHelpOpen = useReviewStore((s) => s.shortcutsHelpOpen);
   const setShortcutsHelpOpen = useReviewStore((s) => s.setShortcutsHelpOpen);
   const { loading, generating, setGenerating, error } = useNarrative();
+
+  // Command-center routing: keep the store's route in sync with browser back/forward.
+  useEffect(() => {
+    const onPop = () => setRoute(parseRoute(window.location.pathname));
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, [setRoute]);
 
   useEffect(() => {
     if (pr) {
@@ -120,6 +132,12 @@ export default function App() {
         </div>
       </main>
     );
+  }
+
+  // Command-center mode (the daemon): a cross-repo dashboard, or a per-unit review drill-in.
+  // Its own self-contained shells — no single-PR chrome — routed by the client-side path.
+  if (mode === 'command-center') {
+    return route.name === 'unit' ? <UnitReview /> : <CommandCenter />;
   }
 
   // Watch mode is its own self-contained experience — diff-first, agent-comment loop,

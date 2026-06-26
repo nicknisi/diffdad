@@ -15,9 +15,11 @@ import type {
   PRReview,
   TriageFlag,
   TriageStatus,
+  Unit,
 } from './types';
 import type { RecapResponse } from './recap-types';
 import type { AccentId } from '../lib/accents';
+import { parseRoute, routePath, type Route } from '../lib/units-view';
 
 type Theme = 'light' | 'dark' | 'auto';
 type Density = 'terse' | 'normal' | 'verbose';
@@ -47,8 +49,15 @@ type ReviewState = {
   /** Watch mode: non-blocking triage flags ("look here first") and the pass's lifecycle status. */
   triageFlags: TriageFlag[];
   triageStatus: TriageStatus;
-  /** 'watch' = local working-tree mode (comments go to the agent, not GitHub). */
-  mode: 'pr' | 'watch';
+  /**
+   * 'watch' = local working-tree mode (comments go to the agent, not GitHub).
+   * 'command-center' = the daemon's cross-repo dashboard (many units behind one app).
+   */
+  mode: 'pr' | 'watch' | 'command-center';
+  /** Command-center: the daemon's review-unit queue, kept live via the `units` SSE event. */
+  units: Unit[];
+  /** Command-center client-side route (center vs. a drill-in `/units/:id`). */
+  route: Route;
   checkRuns: CheckRun[];
   reviews: PRReview[];
   repoUrl: string | null;
@@ -131,7 +140,12 @@ type ReviewState = {
   setComments: (comments: PRComment[]) => void;
   setAgentComments: (comments: AgentComment[]) => void;
   setTriage: (flags: TriageFlag[], status: TriageStatus) => void;
-  setMode: (mode: 'pr' | 'watch') => void;
+  setMode: (mode: 'pr' | 'watch' | 'command-center') => void;
+  setUnits: (units: Unit[]) => void;
+  /** Navigate the command center, pushing browser history (deep-linkable `/units/:id`). */
+  navigate: (route: Route) => void;
+  /** Sync the route from the address bar without pushing history (popstate / initial load). */
+  setRoute: (route: Route) => void;
   addDraft: (draft: DraftComment) => void;
   removeDraft: (id: string) => void;
   clearDrafts: () => void;
@@ -284,6 +298,8 @@ export const useReviewStore = create<ReviewState>((set) => ({
   triageFlags: [],
   triageStatus: 'idle',
   mode: 'pr',
+  units: [],
+  route: typeof window !== 'undefined' ? parseRoute(window.location.pathname) : { name: 'center' },
   checkRuns: [],
   reviews: [],
   repoUrl: null,
@@ -426,6 +442,13 @@ export const useReviewStore = create<ReviewState>((set) => ({
   setAgentComments: (agentComments) => set({ agentComments }),
   setTriage: (triageFlags, triageStatus) => set({ triageFlags, triageStatus }),
   setMode: (mode) => set({ mode }),
+  setUnits: (units) => set({ units }),
+
+  navigate: (route) => {
+    if (typeof window !== 'undefined') window.history.pushState(null, '', routePath(route));
+    set({ route });
+  },
+  setRoute: (route) => set({ route }),
 
   addDraft: (draft) =>
     set((state) => {

@@ -1,6 +1,15 @@
 import { useEffect, useState } from 'react';
 import { useReviewStore, type BackendConfig } from '../state/review-store';
-import type { CheckRun, DiffFile, NarrativeResponse, PRComment, PRData, PRReview, TriageFlag } from '../state/types';
+import type {
+  CheckRun,
+  DiffFile,
+  NarrativeResponse,
+  PRComment,
+  PRData,
+  PRReview,
+  TriageFlag,
+  Unit,
+} from '../state/types';
 
 type NarrativeApiResponse = {
   generating?: boolean;
@@ -11,10 +20,12 @@ type NarrativeApiResponse = {
   checkRuns?: CheckRun[];
   reviews?: PRReview[];
   repoUrl?: string;
-  mode?: 'pr' | 'watch';
+  mode?: 'pr' | 'watch' | 'command-center';
   aiPath?: 'api' | 'local-cli';
   triage?: TriageFlag[];
   config?: BackendConfig;
+  /** Command-center bootstrap: the daemon seeds the initial queue so the dashboard paints at once. */
+  units?: Unit[];
 };
 
 export function useNarrative() {
@@ -36,6 +47,15 @@ export function useNarrative() {
         }
         const data = (await res.json()) as NarrativeApiResponse;
         if (cancelled) return;
+
+        if (data.mode === 'command-center') {
+          // The daemon declares itself here (no single PR/narrative). Seed the queue; the `units`
+          // SSE event keeps it live. Return before the PR/watch branches touch `data.pr` (absent).
+          setGenerating(false);
+          useReviewStore.getState().setMode('command-center');
+          useReviewStore.getState().setUnits(data.units ?? []);
+          return;
+        }
 
         if (data.mode === 'watch') {
           // Watch mode has no narrative — the diff is the view. Populate the working-tree

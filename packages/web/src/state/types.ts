@@ -239,3 +239,38 @@ export type CheckRun = {
   detailsUrl: string | null;
   output: { title?: string; summary?: string };
 };
+
+/**
+ * A review unit in the daemon's cross-repo queue. Web-side mirror of the CLI's `ReviewUnit`
+ * (packages/cli/src/units/types.ts) — only the fields the command center reads. `metadata` is
+ * the CLI's `PRMetadata`, which is structurally a `PRData`, so the drill-in feeds it straight
+ * into `setData` as the unit's PR. `narrative`/`files` are absent until the review worker queues
+ * the unit; the diff (`files`) is present from submit time so the drill-in renders diff-first.
+ */
+export type UnitStatus =
+  | 'submitted'
+  | 'reviewing'
+  | 'queued'
+  | 'approved'
+  | 'changes_requested'
+  | 'addressing'
+  | 'done';
+
+export type UnitDecisionKind = 'approved' | 'changes_requested';
+
+export type Unit = {
+  unitId: string;
+  repo: string; // owner/name
+  taskLabel: string;
+  intent: string;
+  status: UnitStatus;
+  toResolve: number;
+  verdict?: NarrativeResponse['verdict'];
+  /** Set when the review worker threw — the unit still queues so it reaches the reviewer. */
+  error?: string;
+  files?: DiffFile[];
+  metadata?: PRData;
+  narrative?: NarrativeResponse;
+  createdAt: string;
+  updatedAt: string;
+};

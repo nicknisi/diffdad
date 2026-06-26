@@ -1,0 +1,191 @@
+import { useEffect, useState } from 'react';
+import { useReviewStore } from '../state/review-store';
+import { postDecision, useUnits } from '../hooks/useUnits';
+import { UnitRow } from './UnitRow';
+import type { Unit } from '../state/types';
+
+const LIVE: Record<string, { label: string; dot: string; fg: string }> = {
+  connected: { label: 'Live', dot: 'var(--green-10)', fg: 'var(--green-11)' },
+  connecting: { label: 'Reconnecting…', dot: 'var(--amber-10)', fg: 'var(--amber-11)' },
+  disconnected: { label: 'Offline', dot: 'var(--gray-9)', fg: 'var(--fg-3)' },
+};
+
+function GroupLabel({ title, count }: { title: string; count: number }) {
+  return (
+    <div className="mb-2 mt-6 flex items-baseline gap-2 px-1">
+      <h2 className="text-[12px] font-semibold uppercase tracking-[0.06em] text-[var(--fg-2)]">{title}</h2>
+      <span className="text-[12px] tabular-nums text-[var(--fg-3)]">{count}</span>
+    </div>
+  );
+}
+
+/** A bordered panel with hairline separators between rows. */
+function Panel({ children }: { children: React.ReactNode[] }) {
+  return (
+    <div
+      className="overflow-hidden rounded-xl bg-[var(--bg-panel)]"
+      style={{ boxShadow: 'inset 0 0 0 1px var(--gray-a4)' }}
+    >
+      {children.map((row, i) => (
+        <div key={i} style={i > 0 ? { boxShadow: 'inset 0 1px 0 var(--gray-a3)' } : undefined}>
+          {row}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The daemon's cross-repo home (self-contained shell, like WatchView — no PR-review chrome).
+ * Status-grouped: Needs you (your queue) · In flight (agent/worker owns it) · Cleared (digest).
+ * Live via the shared SSE stream; a row click drills into that unit's review.
+ */
+export function CommandCenter() {
+  const { groups, repos, repoFilter, setRepoFilter, total } = useUnits();
+  const navigate = useReviewStore((s) => s.navigate);
+  const liveStatus = useReviewStore((s) => s.liveStatus);
+  const [now, setNow] = useState(() => Date.now());
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [showCleared, setShowCleared] = useState(false);
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const open = (unit: Unit) => navigate({ name: 'unit', unitId: unit.unitId });
+
+  async function decide(unit: Unit, kind: 'approved' | 'changes_requested') {
+    setBusyId(unit.unitId);
+    setError(null);
+    try {
+      // The SSE `units` event moves the unit out of needs-you once recorded — no manual refetch.
+      await postDecision(unit.unitId, {
+        kind,
+        concerns: kind === 'changes_requested' ? unit.narrative?.concerns : undefined,
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Decision failed');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  const live = LIVE[liveStatus] ?? LIVE.disconnected!;
+  const rowProps = (unit: Unit) => ({ unit, now, busy: busyId === unit.unitId });
+
+  return (
+    <div className="min-h-screen bg-[var(--bg-page)] pb-20 text-[var(--fg-1)]">
+      <header
+        className="sticky top-0 z-30 flex items-center gap-3 bg-[var(--bg-panel)] px-6 py-3"
+        style={{ boxShadow: 'inset 0 -1px 0 var(--gray-a4)' }}
+      >
+        <span className="text-[15px] font-bold tracking-tight">
+          Diff Dad <span className="font-medium text-[var(--fg-3)]">· command center</span>
+        </span>
+        <span className="ml-auto inline-flex items-center gap-1.5 text-[12px] font-medium" style={{ color: live.fg }}>
+          <span
+            className={`inline-block h-2 w-2 rounded-full ${liveStatus === 'connected' ? 'live-ping-dot' : ''}`}
+            style={{ background: live.dot }}
+          />
+          {live.label}
+        </span>
+        {repos.length > 1 && (
+          <select
+            value={repoFilter ?? ''}
+            onChange={(e) => setRepoFilter(e.target.value || null)}
+            className="rounded-md bg-[var(--bg-page)] px-2 py-1 text-[12.5px] text-[var(--fg-1)]"
+            style={{ boxShadow: 'inset 0 0 0 1px var(--gray-a5)' }}
+            aria-label="Filter by repo"
+          >
+            <option value="">all repos</option>
+            {repos.map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+          </select>
+        )}
+      </header>
+
+      <main className="mx-auto max-w-[1100px] px-6">
+        {error && (
+          <div
+            className="mt-4 flex items-center justify-between rounded-lg px-3.5 py-2.5 text-[13px]"
+            style={{ background: 'var(--red-3)', color: 'var(--red-11)', boxShadow: 'inset 0 0 0 1px var(--red-a6)' }}
+          >
+            <span>{error}</span>
+            <button type="button" onClick={() => setError(null)} className="font-semibold" aria-label="Dismiss">
+              ✕
+            </button>
+          </div>
+        )}
+
+        {total === 0 ? (
+          <div className="pt-24 text-center">
+            <p className="text-[15px] font-medium text-[var(--fg-2)]">Nothing in the queue yet.</p>
+            <p className="mt-1.5 text-[13px] text-[var(--fg-3)]">
+              Point an agent at this daemon and have it call{' '}
+              <code className="font-mono text-[12px] text-[var(--fg-2)]">submit_for_review</code> — finished work shows
+              up here, grouped by what needs you.
+            </p>
+          </div>
+        ) : (
+          <>
+            <GroupLabel title="Needs you" count={groups.needsYou.length} />
+            {groups.needsYou.length === 0 ? (
+              <p className="px-1 text-[13px] text-[var(--fg-3)]">Nothing waiting on you. 🎉</p>
+            ) : (
+              <Panel>
+                {groups.needsYou.map((u) => (
+                  <UnitRow
+                    key={u.unitId}
+                    {...rowProps(u)}
+                    onOpen={open}
+                    onApprove={(unit) => decide(unit, 'approved')}
+                    onRequestChanges={(unit) => decide(unit, 'changes_requested')}
+                  />
+                ))}
+              </Panel>
+            )}
+
+            {groups.inFlight.length > 0 && (
+              <>
+                <GroupLabel title="In flight" count={groups.inFlight.length} />
+                <Panel>
+                  {groups.inFlight.map((u) => (
+                    <UnitRow key={u.unitId} {...rowProps(u)} onOpen={open} />
+                  ))}
+                </Panel>
+              </>
+            )}
+
+            {groups.cleared.length > 0 && (
+              <>
+                <div className="mb-2 mt-6 flex items-baseline gap-2 px-1">
+                  <h2 className="text-[12px] font-semibold uppercase tracking-[0.06em] text-[var(--fg-2)]">Cleared</h2>
+                  <span className="text-[12px] tabular-nums text-[var(--fg-3)]">{groups.cleared.length}</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowCleared((v) => !v)}
+                    className="ml-1 text-[12px] font-medium text-[var(--blue-11)]"
+                  >
+                    {showCleared ? 'hide' : 'show'}
+                  </button>
+                </div>
+                {showCleared && (
+                  <Panel>
+                    {groups.cleared.map((u) => (
+                      <UnitRow key={u.unitId} {...rowProps(u)} onOpen={open} />
+                    ))}
+                  </Panel>
+                )}
+              </>
+            )}
+          </>
+        )}
+      </main>
+    </div>
+  );
+}
