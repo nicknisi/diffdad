@@ -388,8 +388,9 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
     } catch (err) {
       return c.json({ error: err instanceof Error ? err.message : String(err) }, 502);
     }
-    // (Per-unit SSE scoping lands with Slice 3 — for now the posting tab adds it optimistically.)
-    broadcast('comment', created);
+    // Scoped to the unit: the daemon is multi-unit, so a machine-wide 'comment' would leak into any
+    // tab open on a *different* unit. `useLiveStream` applies it only when this unit is the open one.
+    broadcast('unit-comment', { unitId: id, comment: created });
     return c.json(created, 201);
   });
 

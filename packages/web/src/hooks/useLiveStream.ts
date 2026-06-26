@@ -53,6 +53,26 @@ export function handleNarrativePartialEvent(e: MessageEvent): void {
   }
 }
 
+/**
+ * Apply a daemon `unit-comment` event (a comment posted on one unit's PR) to the store — but ONLY
+ * when that unit is the one currently open in the drill-in. The daemon is multi-unit, so the event
+ * is unit-scoped; without this guard a comment on unit B would leak into unit A's open thread.
+ * Exported for direct unit testing. Silently ignores malformed payloads.
+ */
+export function handleUnitCommentEvent(e: MessageEvent): void {
+  try {
+    const { unitId, comment } = JSON.parse(e.data) as { unitId: string; comment: PRComment };
+    const state = useReviewStore.getState();
+    const open = state.mode === 'command-center' && state.route.name === 'unit' && state.route.unitId === unitId;
+    if (!open) return;
+    if (state.comments.find((c) => c.id === comment.id)) return; // the poster already added it optimistically
+    useReviewStore.setState({ comments: [...state.comments, comment] });
+    state.setLastEventAt(Date.now());
+  } catch {
+    // ignore malformed event
+  }
+}
+
 export function useLiveStream() {
   useEffect(() => {
     const setLiveStatus = (status: 'connected' | 'connecting' | 'disconnected') =>
@@ -268,6 +288,7 @@ export function useLiveStream() {
 
     es.addEventListener('connected', onConnected);
     es.addEventListener('comment', onComment as EventListener);
+    es.addEventListener('unit-comment', handleUnitCommentEvent as EventListener);
     es.addEventListener('comments', onComments as EventListener);
     es.addEventListener('agent-comment', onAgentComment as EventListener);
     es.addEventListener('checks', onChecks as EventListener);
@@ -297,6 +318,7 @@ export function useLiveStream() {
     return () => {
       es.removeEventListener('connected', onConnected);
       es.removeEventListener('comment', onComment as EventListener);
+      es.removeEventListener('unit-comment', handleUnitCommentEvent as EventListener);
       es.removeEventListener('comments', onComments as EventListener);
       es.removeEventListener('agent-comment', onAgentComment as EventListener);
       es.removeEventListener('checks', onChecks as EventListener);

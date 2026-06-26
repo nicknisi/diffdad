@@ -86,7 +86,11 @@ function setup(opts: SetupOpts = {}) {
   const decision = new DecisionChannel();
   const hub = new SseHub();
   const events: string[] = [];
-  hub.add((event) => events.push(event));
+  const messages: Array<{ event: string; data: unknown }> = [];
+  hub.add((event, data) => {
+    events.push(event);
+    messages.push({ event, data });
+  });
   const submitted: ReviewUnit[] = [];
   const { app } = createDaemonApp({
     store,
@@ -101,7 +105,7 @@ function setup(opts: SetupOpts = {}) {
     reviewSubmitter,
     ai,
   });
-  return { store, decision, hub, events, submitted, app };
+  return { store, decision, hub, events, messages, submitted, app };
 }
 
 function seedGithubUnit(store: UnitStore, over: { number?: number; headSha?: string } = {}) {
@@ -719,9 +723,9 @@ describe('POST /api/units/:id/comments', () => {
       body: JSON.stringify(body),
     });
 
-  it('posts an inline comment to GitHub (commitId defaulting to the head SHA) and broadcasts', async () => {
+  it('posts an inline comment to GitHub (commitId defaulting to the head SHA) and broadcasts unit-scoped', async () => {
     const calls: Array<[ReviewUnit, string, PostCommentOptions]> = [];
-    const { store, events, app } = setup({
+    const { store, messages, app } = setup({
       commentPoster: async (unit, body, opts) => {
         calls.push([unit, body, opts]);
         return mkComment({ id: 42, body, path: opts.path, line: opts.line });
@@ -738,7 +742,9 @@ describe('POST /api/units/:id/comments', () => {
     expect(calls[0]![0].unitId).toBe(gh.unitId);
     expect(calls[0]![1]).toBe('nit: rename this');
     expect(calls[0]![2]).toMatchObject({ path: 'src/a.ts', line: 3, side: 'RIGHT', commitId: 'sha-1' });
-    expect(events).toContain('comment');
+    // Scoped to the unit so it can't leak into another open unit's thread (see useLiveStream).
+    const broadcast = messages.find((m) => m.event === 'unit-comment');
+    expect(broadcast?.data).toMatchObject({ unitId: gh.unitId, comment: { id: 42 } });
   });
 
   it('honors an explicit commitId over the unit head SHA', async () => {
