@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react';
+import { getAccentMeta } from '../lib/accents';
 import { useReviewStore } from '../state/review-store';
 import { postDecision, useUnits } from '../hooks/useUnits';
+import { AccentPicker } from './AccentPicker';
+import { DadMark } from './DadMark';
+import { ThemeToggle } from './ThemeToggle';
 import { UnitRow } from './UnitRow';
 import type { Unit } from '../state/types';
 
@@ -44,6 +48,8 @@ export function CommandCenter() {
   const { groups, repos, repoFilter, setRepoFilter, total } = useUnits();
   const navigate = useReviewStore((s) => s.navigate);
   const liveStatus = useReviewStore((s) => s.liveStatus);
+  const accent = useReviewStore((s) => s.accent);
+  const { markBg } = getAccentMeta(accent);
   const [now, setNow] = useState(() => Date.now());
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -81,6 +87,9 @@ export function CommandCenter() {
         className="sticky top-0 z-30 flex items-center gap-3 bg-[var(--bg-panel)] px-6 py-3"
         style={{ boxShadow: 'inset 0 -1px 0 var(--gray-a4)' }}
       >
+        {/* Brand mark — the daemon surface gets the same dad as the PR review UI. */}
+        <DadMark size={24} bg={markBg} shape="circle" showBadge={false} />
+        <span aria-hidden className="mx-1 inline-block h-5 w-px" style={{ background: 'var(--gray-a4)' }} />
         <span className="text-[15px] font-bold tracking-tight">
           Diff Dad <span className="font-medium text-[var(--fg-3)]">· command center</span>
         </span>
@@ -107,6 +116,8 @@ export function CommandCenter() {
             ))}
           </select>
         )}
+        <AccentPicker />
+        <ThemeToggle />
       </header>
 
       <main className="mx-auto max-w-[1100px] px-6">
@@ -124,7 +135,8 @@ export function CommandCenter() {
 
         {total === 0 ? (
           <div className="pt-24 text-center">
-            <p className="text-[15px] font-medium text-[var(--fg-2)]">Nothing in the queue yet.</p>
+            <DadMark size={64} bg={markBg} shape="circle" showBadge className="mx-auto mb-4 opacity-90" />
+            <p className="text-[15px] font-medium text-[var(--fg-2)]">All clear, champ. Nothing in the queue.</p>
             <p className="mt-1.5 text-[13px] text-[var(--fg-3)]">
               Point an agent at this daemon and have it call{' '}
               <code className="font-mono text-[12px] text-[var(--fg-2)]">submit_for_review</code> — finished work shows

@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
+import { getAccentMeta } from '../lib/accents';
 import { useReviewStore } from '../state/review-store';
 import { postDecision } from '../hooks/useUnits';
+import { AccentPicker } from './AccentPicker';
 import { ClassicView } from './ClassicView';
+import { DadMark } from './DadMark';
 import { StoryView } from './StoryView';
+import { ThemeToggle } from './ThemeToggle';
 import type { ChapterState, Unit } from '../state/types';
 
 /**
@@ -49,6 +53,8 @@ function BackLink() {
 export function UnitReview() {
   const route = useReviewStore((s) => s.route);
   const navigate = useReviewStore((s) => s.navigate);
+  const accent = useReviewStore((s) => s.accent);
+  const { markBg } = getAccentMeta(accent);
   const unitId = route.name === 'unit' ? route.unitId : null;
   const liveUnit = useReviewStore((s) => (unitId ? s.units.find((u) => u.unitId === unitId) : undefined));
   const narrative = useReviewStore((s) => s.narrative);
@@ -165,6 +171,7 @@ export function UnitReview() {
         className="sticky top-0 z-30 flex flex-wrap items-center gap-x-3 gap-y-1 bg-[var(--bg-panel)] px-6 py-3"
         style={{ boxShadow: 'inset 0 -1px 0 var(--gray-a4)' }}
       >
+        <DadMark size={22} bg={markBg} shape="circle" showBadge={false} />
         <BackLink />
         <span className="text-[var(--fg-3)]">·</span>
         <span className="text-[13.5px] text-[var(--fg-3)]">{unit?.repo}</span>
@@ -172,16 +179,20 @@ export function UnitReview() {
           <span className="font-mono text-[12.5px] text-[var(--fg-3)]">{unit.metadata.branch}</span>
         )}
         <span className="truncate text-[13.5px] font-semibold text-[var(--fg-1)]">{unit?.taskLabel}</span>
-        {unit?.source === 'github' && unit.prUrl && (
-          <a
-            href={unit.prUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="ml-auto inline-flex items-center gap-1 text-[12.5px] font-medium text-[var(--fg-2)] transition-colors hover:text-[var(--fg-1)]"
-          >
-            View on GitHub <span aria-hidden>↗</span>
-          </a>
-        )}
+        <div className="ml-auto flex items-center gap-2">
+          {unit?.source === 'github' && unit.prUrl && (
+            <a
+              href={unit.prUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-[12.5px] font-medium text-[var(--fg-2)] transition-colors hover:text-[var(--fg-1)]"
+            >
+              View on GitHub <span aria-hidden>↗</span>
+            </a>
+          )}
+          <AccentPicker />
+          <ThemeToggle />
+        </div>
       </header>
 
       {error && (

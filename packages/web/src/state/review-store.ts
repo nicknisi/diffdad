@@ -20,8 +20,8 @@ import type {
 import type { RecapResponse } from './recap-types';
 import type { AccentId } from '../lib/accents';
 import { parseRoute, routePath, type Route } from '../lib/units-view';
+import type { Theme } from '../lib/theme';
 
-type Theme = 'light' | 'dark' | 'auto';
 type Density = 'terse' | 'normal' | 'verbose';
 type View = 'story' | 'files' | 'recap';
 type StoryStructure = 'chapters' | 'linear' | 'outline';
