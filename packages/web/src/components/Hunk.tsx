@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useReviewStore } from '../state/review-store';
 import { useInlineComments } from '../hooks/useInlineComments';
-import type { CommentId, DiffHunk, PRComment } from '../state/types';
+import type { Callout, CommentId, DiffHunk, PRComment } from '../state/types';
 import { CodeLine } from './CodeLine';
 import { CommentThread } from './CommentThread';
 import { Comment } from './Comment';
 import { guessLang } from '../lib/shiki';
 import { getAuthorInfo } from '../lib/authors';
 import { normalizePath } from '../lib/paths';
+import { anchorByNewLine } from '../lib/anchor';
+import type { ResolveItem } from '../lib/walkthrough';
+import { ResolveStrip } from './ResolveStrip';
+import { InlineCallout } from './InlineCallout';
 import { IconArrowRight, IconChat, IconFile, IconGitHub } from './Icons';
 
 type Props = {
@@ -16,6 +20,10 @@ type Props = {
   isNewFile?: boolean;
   hunkIndex: number;
   highlight?: { from: number; to: number };
+  /** Open questions anchored in this hunk — render inline under the line they're about. */
+  resolve?: ResolveItem[];
+  /** Passive narrative callouts anchored in this hunk — render inline under their line. */
+  callouts?: Callout[];
 };
 
 function CollapsibleThread({
@@ -290,6 +298,8 @@ function HunkLines({
   rangeStartIdx,
   rangeEndIdx,
   isDragging,
+  resolve,
+  callouts,
 }: {
   file: string;
   hunk: DiffHunk;
@@ -303,8 +313,15 @@ function HunkLines({
   rangeStartIdx: number | null;
   rangeEndIdx: number | null;
   isDragging: boolean;
+  resolve: ResolveItem[];
+  callouts: Callout[];
 }) {
   const normFile = normalizePath(file);
+
+  // Anchor each inline annotation to the diff row whose new-side number matches its
+  // line, so it renders between code lines (like a comment) rather than after the hunk.
+  const resolveAnchor = useMemo(() => anchorByNewLine(hunk.lines, resolve), [hunk.lines, resolve]);
+  const calloutAnchor = useMemo(() => anchorByNewLine(hunk.lines, callouts), [hunk.lines, callouts]);
 
   // Map<commentId, lineIndex> — resolves each comment to one row in the hunk.
   // A comment posted on a change in GitHub can land on the unchanged line just
@@ -373,9 +390,18 @@ function HunkLines({
     return set;
   }, [openLine]);
 
+  // Annotated lines must survive folding — a resolve strip or callout on a line the
+  // fold builder would otherwise hide has nowhere to render.
+  const pinnedLineIndices = useMemo(() => {
+    const set = new Set(commentLineIndices);
+    for (const i of resolveAnchor.byLine.keys()) set.add(i);
+    for (const i of calloutAnchor.byLine.keys()) set.add(i);
+    return set;
+  }, [commentLineIndices, resolveAnchor, calloutAnchor]);
+
   const initialGroups = useMemo(
-    () => buildLineGroups(hunk.lines, highlight, commentLineIndices, openLineKeys, file, hunkIndex),
-    [hunk.lines, highlight, commentLineIndices, openLineKeys, file, hunkIndex],
+    () => buildLineGroups(hunk.lines, highlight, pinnedLineIndices, openLineKeys, file, hunkIndex),
+    [hunk.lines, highlight, pinnedLineIndices, openLineKeys, file, hunkIndex],
   );
 
   const [expandedFolds, setExpandedFolds] = useState<Set<number>>(() => new Set());
@@ -387,6 +413,30 @@ function HunkLines({
       return next;
     });
   }, []);
+
+  // A full-bleed annotation row, slotted between diff lines exactly where comment
+  // threads go (sticky left, padded past the gutter). Resolve strips render inset
+  // (no outer margin) so they fill the row; passive callouts sit beneath them.
+  const renderAnnotations = useCallback(
+    (resolveIdx: number[], calloutIdx: number[], keyPrefix: string) => {
+      if (resolveIdx.length === 0 && calloutIdx.length === 0) return null;
+      return (
+        <div className="sticky left-0" style={{ width: '100cqw' }}>
+          <div className="space-y-1.5 py-1.5 pr-3 pl-[78px]">
+            {resolveIdx.map((ri) => {
+              const it = resolve[ri];
+              return it ? <ResolveStrip key={it.id} item={it} inset /> : null;
+            })}
+            {calloutIdx.map((ci) => {
+              const c = callouts[ci];
+              return c ? <InlineCallout key={`${keyPrefix}-c${ci}`} callout={c} /> : null;
+            })}
+          </div>
+        </div>
+      );
+    },
+    [resolve, callouts],
+  );
 
   const renderLine = useCallback(
     (i: number, dimmed: boolean) => {
@@ -442,6 +492,7 @@ function HunkLines({
               />
             </div>
           )}
+          {renderAnnotations(resolveAnchor.byLine.get(i) ?? [], calloutAnchor.byLine.get(i) ?? [], lineKey)}
         </div>
       );
     },
@@ -458,6 +509,9 @@ function HunkLines({
       rangeEndIdx,
       isDragging,
       existingMultiLineRanges,
+      renderAnnotations,
+      resolveAnchor,
+      calloutAnchor,
     ],
   );
 
@@ -476,11 +530,12 @@ function HunkLines({
           </div>
         );
       })}
+      {renderAnnotations(resolveAnchor.trailing, calloutAnchor.trailing, 'trailing')}
     </div>
   );
 }
 
-export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight }: Props) {
+export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight, resolve, callouts }: Props) {
   const openLine = useReviewStore((s) => s.openLine);
   const commentRangeStart = useReviewStore((s) => s.commentRangeStart);
   const commentDrag = useReviewStore((s) => s.commentDrag);
@@ -696,6 +751,8 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight }: Props) {
           rangeStartIdx={rangeStartIdx}
           rangeEndIdx={rangeEndIdx}
           isDragging={isDragging}
+          resolve={resolve ?? []}
+          callouts={callouts ?? []}
         />
       </div>
     </div>

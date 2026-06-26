@@ -13,6 +13,7 @@ import { ShortcutsHelp } from './components/ShortcutsHelp';
 import { StoryView } from './components/StoryView';
 import { SubmitBar } from './components/SubmitBar';
 import { WatchView } from './components/WatchView';
+import { selectReviewReady } from './state/selectors';
 import { copy } from './lib/microcopy';
 import { getAccentMeta } from './lib/accents';
 import { renderDadMarkSVG } from './components/DadMark';
@@ -127,10 +128,10 @@ export default function App() {
     return <WatchView />;
   }
 
-  // Only block on the narrative while there's nothing else to show. Once the diff is
-  // parsed (a slow/failed narrative), fall through and render the Files view so the
-  // diffs are always visible.
-  if ((generating || !narrative) && files.length === 0) {
+  // Diff-first gate: block on the brief pre-files instant only. The moment there's a diff
+  // to show or a guide to render, fall through — the walkthrough streams in over the diff,
+  // never behind a full-screen "generating" block.
+  if (!selectReviewReady({ files, narrative })) {
     return <GeneratingScreen message={copy.loadingMessages[loadingMsgIndex] ?? ''} />;
   }
 

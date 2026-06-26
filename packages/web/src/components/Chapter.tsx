@@ -7,10 +7,14 @@ import { Hunk } from './Hunk';
 import { IconCheck, IconChevron } from './Icons';
 import { NarrationAnchor } from './NarrationAnchor';
 import { NarrationBlock } from './NarrationBlock';
+import { ResolveStrip } from './ResolveStrip';
+import type { ResolveItem } from '../lib/walkthrough';
 
 type Props = {
   index: number;
   chapter: ChapterType;
+  /** Open questions for this beat — rendered as inline resolve strips. */
+  resolve?: ResolveItem[];
 };
 
 const RISK_STYLES: Record<ChapterType['risk'], React.CSSProperties> = {
@@ -167,7 +171,7 @@ function findHunk(files: DiffFile[], file: string, hunkIndex: number): FlatHunk 
   return { hunk, file: diffFile.file, isNewFile: diffFile.isNewFile };
 }
 
-export function Chapter({ index, chapter }: Props) {
+export function Chapter({ index, chapter, resolve }: Props) {
   const files = useReviewStore((s) => s.files);
   const comments = useInlineComments();
   const chapterStates = useReviewStore((s) => s.chapterStates);
@@ -221,6 +225,47 @@ export function Chapter({ index, chapter }: Props) {
     }
     return set;
   }, [narrative, index]);
+
+  // Assign each annotation (resolve item / callout) to the ONE hunk section whose new-side
+  // line range contains it; the Hunk then renders it inline at that line. Anything matching
+  // no shown hunk falls through to a trailing group so none are lost.
+  const annotationPlacement = useMemo(() => {
+    const bySection: Record<number, { resolve: ResolveItem[]; callouts: Callout[] }> = {};
+    const placedResolve = new Set<string>();
+    const placedCallout = new Set<number>();
+    const items = resolve ?? [];
+    const callouts = chapter.callouts ?? [];
+    const bucket = (i: number) => (bySection[i] ??= { resolve: [], callouts: [] });
+    chapter.sections.forEach((section, i) => {
+      if (section.type !== 'diff') return;
+      const flat = findHunk(files, section.file, section.hunkIndex);
+      if (!flat) return;
+      const nf = normalizePath(section.file);
+      const start = flat.hunk.newStart;
+      const end = start + Math.max(flat.hunk.newCount - 1, 0);
+      for (const item of items) {
+        if (placedResolve.has(item.id) || !item.file || item.line == null) continue;
+        if (normalizePath(item.file) !== nf) continue;
+        if (item.line >= start && item.line <= end) {
+          bucket(i).resolve.push(item);
+          placedResolve.add(item.id);
+        }
+      }
+      callouts.forEach((c, ci) => {
+        if (placedCallout.has(ci)) return;
+        if (normalizePath(c.file) !== nf) return;
+        if (c.line >= start && c.line <= end) {
+          bucket(i).callouts.push(c);
+          placedCallout.add(ci);
+        }
+      });
+    });
+    return {
+      bySection,
+      leftoverResolve: items.filter((it) => !placedResolve.has(it.id)),
+      leftoverCallouts: callouts.filter((_, ci) => !placedCallout.has(ci)),
+    };
+  }, [chapter.sections, chapter.callouts, resolve, files]);
 
   const [collapsed, setCollapsed] = useState(reviewed);
   const prevReviewed = useRef(reviewed);
@@ -389,6 +434,8 @@ export function Chapter({ index, chapter }: Props) {
             isNewFile={flat.isNewFile}
             hunkIndex={section.hunkIndex}
             highlight={highlight}
+            resolve={annotationPlacement.bySection[i]?.resolve}
+            callouts={annotationPlacement.bySection[i]?.callouts}
           />
         );
       })}
@@ -415,7 +462,16 @@ export function Chapter({ index, chapter }: Props) {
           </ReshowBlock>
         );
       })}
-      {chapter.callouts && chapter.callouts.length > 0 && <CalloutList callouts={chapter.callouts} />}
+      {annotationPlacement.leftoverCallouts.length > 0 && (
+        <CalloutList callouts={annotationPlacement.leftoverCallouts} />
+      )}
+      {annotationPlacement.leftoverResolve.length > 0 && (
+        <div className="space-y-2">
+          {annotationPlacement.leftoverResolve.map((item) => (
+            <ResolveStrip key={item.id} item={item} />
+          ))}
+        </div>
+      )}
     </div>
   );
 

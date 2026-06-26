@@ -4,13 +4,15 @@ import { normalizePath } from '../lib/paths';
 import { useReviewStore } from '../state/review-store';
 import { useInlineComments } from '../hooks/useInlineComments';
 import type { CommentId, DiffFile } from '../state/types';
+import { BeatRail } from './BeatRail';
+import { buildWalkthrough } from '../lib/walkthrough';
+import type { ResolveItem } from '../lib/walkthrough';
 import { Chapter } from './Chapter';
-import { ChapterTOC } from './ChapterTOC';
 import { Comment } from './Comment';
-import { ConcernsList } from './ConcernsList';
 import { Hunk } from './Hunk';
 import { MissingItems } from './MissingItems';
 import { ReadingPlan } from './ReadingPlan';
+import { ResolveStrip } from './ResolveStrip';
 import { VerdictBanner } from './VerdictBanner';
 import { IconChat } from './Icons';
 
@@ -211,11 +213,48 @@ function RegeneratingBanner() {
   );
 }
 
+function OtherConcerns({ items }: { items: ResolveItem[] }) {
+  if (items.length === 0) return null;
+  return (
+    <section data-chid="other" className="scroll-mt-[168px] mb-[28px]">
+      <div className="mb-[14px] flex items-start gap-2.5">
+        <div
+          className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-[7px] text-[var(--fg-3)]"
+          style={{ background: 'var(--gray-3)' }}
+        >
+          <IconChat className="h-[12px] w-[12px]" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <h2 className="m-0 text-[18px] font-bold leading-6 tracking-[-0.01em] text-[var(--fg-1)]">Other</h2>
+          <p className="mt-[2px] text-[12.5px] text-[var(--fg-3)]">Concerns not tied to a chapter in the walkthrough</p>
+        </div>
+      </div>
+      <div className="space-y-2">
+        {items.map((item) => (
+          <ResolveStrip key={item.id} item={item} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export function StoryView() {
   useScrollTracker();
   const narrative = useReviewStore((s) => s.narrative);
+  const files = useReviewStore((s) => s.files);
   const layoutMode = useReviewStore((s) => s.layoutMode);
   const displayDensity = useReviewStore((s) => s.displayDensity);
+
+  const walkthrough = useMemo(() => (narrative ? buildWalkthrough(narrative, files) : null), [narrative, files]);
+  const resolveByChapter = useMemo(() => {
+    const map: Record<number, ResolveItem[]> = {};
+    walkthrough?.beats.forEach((b) => {
+      if (b.chapterIndex >= 0 && b.resolve.length > 0) map[b.chapterIndex] = b.resolve;
+    });
+    return map;
+  }, [walkthrough]);
+  const orphanItems = useMemo(() => walkthrough?.beats.find((b) => b.id === 'other')?.resolve ?? [], [walkthrough]);
+
   if (!narrative) return null;
 
   const compact = displayDensity === 'compact';
@@ -228,10 +267,10 @@ export function StoryView() {
           <RegeneratingBanner />
           <VerdictBanner />
           <ReadingPlan />
-          <ConcernsList />
           {narrative.chapters.map((ch, idx) => (
-            <Chapter key={`ch-${idx}`} index={idx} chapter={ch} />
+            <Chapter key={`ch-${idx}`} index={idx} chapter={ch} resolve={resolveByChapter[idx]} />
           ))}
+          <OtherConcerns items={orphanItems} />
           <MissingItems />
           <OrphanedInlineComments />
           <Discussion />
@@ -242,15 +281,15 @@ export function StoryView() {
 
   return (
     <div className={`mx-auto grid max-w-[1100px] grid-cols-[220px_minmax(0,1fr)] gap-7 px-6 ${padY}`}>
-      <ChapterTOC />
+      <BeatRail />
       <main className="min-w-0">
         <RegeneratingBanner />
         <VerdictBanner />
         <ReadingPlan />
-        <ConcernsList />
         {narrative.chapters.map((ch, idx) => (
-          <Chapter key={`ch-${idx}`} index={idx} chapter={ch} />
+          <Chapter key={`ch-${idx}`} index={idx} chapter={ch} resolve={resolveByChapter[idx]} />
         ))}
+        <OtherConcerns items={orphanItems} />
         <MissingItems />
         <Discussion />
       </main>
