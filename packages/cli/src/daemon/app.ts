@@ -2,6 +2,7 @@ import { existsSync } from 'fs';
 import { Hono } from 'hono';
 import { serveStatic } from 'hono/bun';
 import { dirname, resolve } from 'path';
+import { CleanTreeError } from '../local/diff-source';
 import type { Concern } from '../narrative/types';
 import { mountMcp } from '../mcp/server';
 import { type ComputeSlice, registerSubmitTools } from '../mcp/submit';
@@ -117,6 +118,48 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
     decision.deliver(id, decisionValue);
     broadcast('units', { units: store.list() });
     return c.json({ ok: true, unit });
+  });
+
+  // `dad add` ingest — the CLI door (source:'cli'). Mirrors the MCP `submit_for_review` path over
+  // HTTP: compute the worktree slice, mint a unit, kick the worker pool. The daemon owns the store;
+  // `dad add` never writes it directly. A clean tree is a no-op (HTTP 200 { ok:false }), like submit.
+  app.post('/api/units', async (c) => {
+    let body: { taskLabel?: string; intent?: string; repo?: string; worktreePath?: string; baseRef?: string };
+    try {
+      body = (await c.req.json()) as typeof body;
+    } catch {
+      return c.json({ error: 'invalid JSON body' }, 400);
+    }
+    const { taskLabel, intent, repo, worktreePath, baseRef } = body;
+    if (!repo || !worktreePath || !taskLabel) {
+      return c.json({ error: 'repo, worktreePath, and taskLabel are required' }, 400);
+    }
+
+    let review;
+    try {
+      review = await computeSlice(worktreePath, baseRef);
+    } catch (err) {
+      if (err instanceof CleanTreeError) {
+        return c.json({ ok: false, reason: 'clean-tree', message: err.message }, 200);
+      }
+      throw err;
+    }
+
+    const unit = await store.add({
+      repo,
+      worktreePath,
+      taskLabel,
+      intent: intent ?? '',
+      uncertainties: [],
+      baseRef: review.baseRef,
+      diffContentKey: review.contentKey,
+      files: review.files,
+      metadata: review.metadata,
+      source: 'cli',
+    });
+    onSubmitted?.(unit);
+    broadcast('units', { units: store.list() });
+    return c.json({ unitId: unit.unitId });
   });
 
   // --- Live updates ---------------------------------------------------------

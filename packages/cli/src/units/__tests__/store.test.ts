@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdtemp, rm } from 'fs/promises';
+import { mkdtemp, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { UnitStore } from '../store';
@@ -161,5 +161,44 @@ describe('UnitStore', () => {
     const reloaded = await UnitStore.load(opts);
     expect(reloaded.get(unitId)).toEqual(store.get(unitId));
     expect(reloaded.list().length).toBe(1);
+  });
+
+  it('add() with source:cli persists and round-trips through a reload', async () => {
+    const opts = det();
+    const store = new UnitStore([], opts);
+    const { unitId } = await store.add(mkInput({ source: 'cli' }));
+    expect(store.get(unitId)!.source).toBe('cli');
+    const reloaded = await UnitStore.load(opts);
+    expect(reloaded.get(unitId)!.source).toBe('cli');
+  });
+
+  it('add() without source defaults to agent', async () => {
+    const store = new UnitStore([], det());
+    const u = await store.add(mkInput());
+    expect(u.source).toBe('agent');
+  });
+
+  it('loads a persisted unit file missing source as agent (back-compat)', async () => {
+    const opts = det();
+    const persisted = {
+      unitId: 'unit-legacy',
+      repo: 'owner/repo',
+      worktreePath: '/tmp/wt',
+      taskLabel: 'task',
+      intent: 'do a thing',
+      uncertainties: [],
+      baseRef: 'main',
+      diffContentKey: 'key123',
+      status: 'submitted',
+      toResolve: 0,
+      files: [],
+      metadata: mkMetadata(),
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      // note: no `source` field — written before the discriminator existed
+    };
+    await writeFile(join(dir, 'owner-repo-unit-legacy.json'), JSON.stringify(persisted, null, 2));
+    const store = await UnitStore.load(opts);
+    expect(store.get('unit-legacy')!.source).toBe('agent');
   });
 });

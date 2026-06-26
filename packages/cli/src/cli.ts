@@ -11,7 +11,8 @@ import { cacheNarrative, clearCache, computePromptMetaHash, getCachedNarrative }
 import { generateNarrative, resolveAiPath, resolveProviderKey, setCliOverride } from './narrative/engine';
 import { getCachedRecap } from './recap/cache';
 import { createServer } from './server';
-import { daemonStatus, startDaemon } from './daemon/daemon';
+import { DEFAULT_DAEMON_PORT, daemonStatus, startDaemon } from './daemon/daemon';
+import { basename } from 'path';
 
 const a = {
   reset: '\x1b[0m',
@@ -66,12 +67,20 @@ Usage:
                                      over MCP. No PR or GitHub token needed.
   dad comments [base]                Print open watch-mode comments as markdown
                                      (manual fallback for non-MCP agents).
+  dad add [--task=…] [--base=…]      Add the current working tree to the running
+                                     daemon's review queue (the CLI door). Resolves
+                                     repo from the git remote and cwd. Requires
+                                     dad daemon to be running.
   dad daemon                         Start the per-machine review daemon: a
                                      long-lived process that owns a cross-repo
                                      review queue and serves the command center
                                      + MCP endpoint. Agents submit_for_review
                                      and park on await_decision.
   dad daemon status                  Report whether the daemon is running.
+  dad daemon install                 Install a launchd agent so the daemon
+                                     survives terminal close and starts at login
+                                     (macOS). Idempotent.
+  dad daemon uninstall               Remove the launchd agent.
   dad config                         Configure dad (interactive)
   dad config show                    Print the current config (secrets redacted)
   dad config reset [--yes]           Delete the saved config
@@ -477,17 +486,102 @@ async function daemonCommand(sub?: string): Promise<number> {
       return await startDaemon({ port, concurrency, open: !Bun.argv.includes('--no-open') });
     case 'status':
       return await daemonStatus(port);
-    case 'install':
-    case 'uninstall':
-      console.error(
-        `error: \`dad daemon ${sub}\` (launchd terminal-survival) ships in the hardening slice — run \`dad daemon\` from a terminal for now.`,
-      );
+    case 'install': {
+      const { install } = await import('./daemon/launchd');
+      const result = await install();
+      if (result.ok) {
+        console.log(`\n  ${a.green}✓${a.reset} ${result.message}`);
+        console.log(`  ${a.dim}plist: ${a.reset}${a.cyan}${result.path}${a.reset}`);
+        console.log(`\n  ${a.dim}The daemon now survives terminal close and restarts at login.${a.reset}`);
+        console.log(`  ${a.dim}Check it with ${a.cyan}dad daemon status${a.reset}${a.dim}.${a.reset}\n`);
+        return 0;
+      }
+      console.error(`\n  ${a.red}${a.bold}error:${a.reset} ${result.message}\n`);
       return 1;
+    }
+    case 'uninstall': {
+      const { uninstall } = await import('./daemon/launchd');
+      const result = await uninstall();
+      if (result.ok) {
+        console.log(`\n  ${a.green}✓${a.reset} ${result.message}\n`);
+        return 0;
+      }
+      console.error(`\n  ${a.red}${a.bold}error:${a.reset} ${result.message}\n`);
+      return 1;
+    }
     default:
       console.error(`error: unknown daemon subcommand: ${sub}`);
-      console.error('usage: dad daemon [start|status]');
+      console.error('usage: dad daemon [start|status|install|uninstall]');
       return 2;
   }
+}
+
+/** Run a git command in the cwd, returning trimmed stdout or '' on any failure. */
+async function gitText(args: string[]): Promise<string> {
+  try {
+    const proc = Bun.spawn(['git', ...args], { stdout: 'pipe', stderr: 'pipe' });
+    if ((await proc.exited) !== 0) return '';
+    return (await new Response(proc.stdout).text()).trim();
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * `dad add` — the CLI door into the review queue. Resolves repo (git remote → owner/name, else cwd
+ * basename) + worktreePath (cwd) + taskLabel (--task= else the current branch), and POSTs them to the
+ * running daemon's ingest endpoint, which runs the same path `submit_for_review` does. The daemon owns
+ * the store; this command never writes it. No daemon running → a friendly "start `dad daemon`" hint.
+ */
+async function addCommand(): Promise<number> {
+  const inferred = await inferRepoFromGit();
+  const worktreePath = process.cwd();
+  const repo = inferred ? `${inferred.owner}/${inferred.repo}` : basename(worktreePath);
+
+  const branch = await gitText(['rev-parse', '--abbrev-ref', 'HEAD']);
+  const taskFlag = Bun.argv.find((f) => f.startsWith('--task='))?.split('=')[1];
+  const taskLabel = taskFlag || branch || 'working tree';
+  const baseRef = Bun.argv.find((f) => f.startsWith('--base='))?.split('=')[1];
+  const portFlag = Bun.argv.find((f) => f.startsWith('--port='));
+  const port = portFlag ? parseInt(portFlag.split('=')[1] ?? '0', 10) || DEFAULT_DAEMON_PORT : DEFAULT_DAEMON_PORT;
+
+  const url = `http://localhost:${port}`;
+  let res: Response;
+  try {
+    res = await fetch(`${url}/api/units`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ taskLabel, intent: '', repo, worktreePath, baseRef }),
+    });
+  } catch {
+    console.error(`\n  ${a.red}${a.bold}error:${a.reset} no dad daemon running on localhost:${port}.`);
+    console.error(`  ${a.dim}Start it with ${a.cyan}dad daemon${a.reset}${a.dim}.${a.reset}\n`);
+    return 1;
+  }
+
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    console.error(
+      `\n  ${a.red}${a.bold}error:${a.reset} daemon rejected the unit (${res.status})${detail ? `: ${detail}` : ''}\n`,
+    );
+    return 1;
+  }
+
+  const body = (await res.json().catch(() => ({}))) as {
+    unitId?: string;
+    ok?: boolean;
+    reason?: string;
+    message?: string;
+  };
+  if (body.ok === false) {
+    console.log(`\n  ${a.dim}${body.message ?? 'nothing to review — working tree is clean'}${a.reset}\n`);
+    return 0;
+  }
+
+  console.log(`\n  ${a.green}✓${a.reset} ${a.white}${repo}${a.reset} ${a.dim}—${a.reset} ${taskLabel}`);
+  console.log(`  ${a.dim}unit ${a.reset}${a.cyan}${body.unitId}${a.reset} ${a.dim}queued for review${a.reset}`);
+  console.log(`\n  ${a.purple}${a.bold}${url}${a.reset}\n`);
+  return 0;
 }
 
 async function configCommand(sub?: string): Promise<number> {
@@ -504,7 +598,7 @@ async function configCommand(sub?: string): Promise<number> {
   return await runConfig();
 }
 
-export type Command = 'review' | 'watch' | 'comments' | 'daemon' | 'config' | 'cache' | 'pr-shorthand';
+export type Command = 'review' | 'watch' | 'comments' | 'add' | 'daemon' | 'config' | 'cache' | 'pr-shorthand';
 
 /** Map the first positional token to a command. Unknown tokens are PR shorthands. */
 export function classifyCommand(cmd: string | undefined): Command {
@@ -515,6 +609,8 @@ export function classifyCommand(cmd: string | undefined): Command {
       return 'watch';
     case 'comments':
       return 'comments';
+    case 'add':
+      return 'add';
     case 'daemon':
       return 'daemon';
     case 'config':
@@ -558,6 +654,8 @@ async function main(argv: string[]): Promise<number> {
       return await watchCommand(rest[0]);
     case 'comments':
       return await commentsCommand(rest[0]);
+    case 'add':
+      return await addCommand();
     case 'daemon':
       return await daemonCommand(rest[0]);
     case 'config':

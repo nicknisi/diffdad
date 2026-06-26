@@ -73,6 +73,7 @@ export function registerSubmitTools(server: McpServer, deps: SubmitToolDeps): vo
         diffContentKey: review.contentKey,
         files: review.files,
         metadata: review.metadata,
+        source: 'agent',
       });
       notify();
       onSubmitted?.(unit);

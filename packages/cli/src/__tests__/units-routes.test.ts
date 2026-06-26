@@ -6,8 +6,9 @@ import { UnitStore } from '../units/store';
 import { DecisionChannel } from '../units/decision-channel';
 import { createDaemonApp, SseHub } from '../daemon/app';
 import type { ComputeSlice } from '../mcp/submit';
-import { type LocalReview } from '../local/diff-source';
+import { CleanTreeError, type LocalReview } from '../local/diff-source';
 import type { PRMetadata } from '../github/types';
+import type { ReviewUnit } from '../units/types';
 import type { NarrativeResponse } from '../narrative/types';
 
 const NARRATIVE: NarrativeResponse = {
@@ -60,14 +61,21 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
-function setup() {
+function setup(computeSlice: ComputeSlice = fakeSlice) {
   const store = new UnitStore([], { dir, ...deterministic() });
   const decision = new DecisionChannel();
   const hub = new SseHub();
   const events: string[] = [];
   hub.add((event) => events.push(event));
-  const { app } = createDaemonApp({ store, decision, hub, computeSlice: fakeSlice });
-  return { store, decision, hub, events, app };
+  const submitted: ReviewUnit[] = [];
+  const { app } = createDaemonApp({
+    store,
+    decision,
+    hub,
+    computeSlice,
+    onSubmitted: (unit) => submitted.push(unit),
+  });
+  return { store, decision, hub, events, submitted, app };
 }
 
 async function addUnit(store: UnitStore, repo = 'owner/a') {
@@ -98,6 +106,64 @@ describe('GET /api/narrative (command-center bootstrap)', () => {
     const body = (await res.json()) as { mode: string; units: { repo: string }[] };
     expect(body.mode).toBe('command-center');
     expect(body.units.map((u) => u.repo).sort()).toEqual(['owner/a', 'owner/b']);
+  });
+});
+
+describe('POST /api/units (dad add ingest)', () => {
+  const post = (app: ReturnType<typeof setup>['app'], body: unknown) =>
+    app.request('/api/units', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+  it('creates a source:cli unit from the computed slice and broadcasts + onSubmitted', async () => {
+    const { store, events, submitted, app } = setup();
+    const res = await post(app, {
+      taskLabel: 'fix the thing',
+      intent: 'because',
+      repo: 'owner/a',
+      worktreePath: '/wt',
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { unitId: string };
+    expect(body.unitId).toBe('unit-1');
+
+    const unit = store.get(body.unitId)!;
+    expect(unit.source).toBe('cli');
+    expect(unit.status).toBe('submitted');
+    expect(unit.taskLabel).toBe('fix the thing');
+    expect(unit.intent).toBe('because');
+    expect(events).toContain('units');
+    expect(submitted.map((u) => u.unitId)).toEqual(['unit-1']);
+  });
+
+  it('defaults intent to empty string when omitted', async () => {
+    const { store, app } = setup();
+    const res = await post(app, { taskLabel: 't', repo: 'owner/a', worktreePath: '/wt' });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { unitId: string };
+    expect(store.get(body.unitId)!.intent).toBe('');
+  });
+
+  it('400s when a required field is missing', async () => {
+    const { app } = setup();
+    expect((await post(app, { intent: 'x', repo: 'owner/a', worktreePath: '/wt' })).status).toBe(400); // no taskLabel
+    expect((await post(app, { taskLabel: 't', worktreePath: '/wt' })).status).toBe(400); // no repo
+    expect((await post(app, { taskLabel: 't', repo: 'owner/a' })).status).toBe(400); // no worktreePath
+  });
+
+  it('returns { ok: false, reason: clean-tree } (200) when the tree is clean', async () => {
+    const cleanSlice: ComputeSlice = async () => {
+      throw new CleanTreeError('main');
+    };
+    const { store, app } = setup(cleanSlice);
+    const res = await post(app, { taskLabel: 't', repo: 'owner/a', worktreePath: '/wt' });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; reason?: string };
+    expect(body.ok).toBe(false);
+    expect(body.reason).toBe('clean-tree');
+    expect(store.list()).toHaveLength(0);
   });
 });
 

@@ -264,6 +264,8 @@ export type Unit = {
   taskLabel: string;
   intent: string;
   status: UnitStatus;
+  /** Ingestion door (CLI mirror of `UnitSource`). Defaults to `'agent'` server-side for back-compat. */
+  source?: 'agent' | 'cli' | 'github';
   toResolve: number;
   verdict?: NarrativeResponse['verdict'];
   /** Set when the review worker threw — the unit still queues so it reaches the reviewer. */

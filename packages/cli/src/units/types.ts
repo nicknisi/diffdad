@@ -16,6 +16,9 @@ export type UnitStatus =
   | 'addressing'
   | 'done';
 
+/** Which door a unit entered the queue through (multi-source ingestion). Defaults to `'agent'`. */
+export type UnitSource = 'agent' | 'cli' | 'github';
+
 /** The reviewer's verdict on a unit, delivered back to the agent over `await_decision`. */
 export type Decision = {
   kind: 'approved' | 'changes_requested';
@@ -33,6 +36,8 @@ export type Decision = {
 export type ReviewUnit = {
   unitId: string;
   repo: string; // owner/name
+  /** Which door this unit entered through; defaults to `'agent'` on load for back-compat. */
+  source: UnitSource;
   worktreePath: string;
   taskLabel: string;
   intent: string;
@@ -57,6 +62,8 @@ export type ReviewUnit = {
 /** Input to `UnitStore.add` — identity, status, and timestamps are assigned by the store. */
 export type NewReviewUnit = {
   repo: string;
+  /** Defaults to `'agent'` when omitted (set by the store). */
+  source?: UnitSource;
   worktreePath: string;
   taskLabel: string;
   intent: string;

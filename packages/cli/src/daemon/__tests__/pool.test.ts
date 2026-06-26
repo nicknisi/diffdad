@@ -103,7 +103,12 @@ describe('ReviewWorkerPool', () => {
     // Only 2 of 4 are under review; the rest wait their turn.
     expect(pool.active).toBe(2);
     const byStatus = () => Object.fromEntries(store.list().map((u) => [u.unitId, u.status]));
-    expect(byStatus()).toMatchObject({ 'unit-1': 'reviewing', 'unit-2': 'reviewing', 'unit-3': 'submitted', 'unit-4': 'submitted' });
+    expect(byStatus()).toMatchObject({
+      'unit-1': 'reviewing',
+      'unit-2': 'reviewing',
+      'unit-3': 'submitted',
+      'unit-4': 'submitted',
+    });
 
     // Finish one → a waiting unit takes the freed slot.
     gate.get('unit-1')!.resolve({ narrative: NARRATIVE, toResolve: 3 });
@@ -141,6 +146,7 @@ describe('ReviewWorkerPool', () => {
     const crashed: ReviewUnit = {
       unitId: 'unit-1',
       repo: 'owner/a',
+      source: 'agent',
       worktreePath: '/wt',
       taskLabel: 't',
       intent: 'x',

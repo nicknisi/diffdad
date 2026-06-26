@@ -103,17 +103,26 @@ export function UnitRow({ unit, now, onOpen, onApprove, onRequestChanges, busy }
             )}
             <span className="text-[var(--fg-3)]">·</span>
             <span className="font-medium text-[var(--fg-1)]">{unit.taskLabel}</span>
+            {unit.source === 'cli' && (
+              <span
+                className="rounded px-1 py-px text-[10.5px] font-medium leading-none"
+                style={{ background: 'var(--gray-3)', color: 'var(--fg-3)' }}
+                title="Added locally via dad add"
+              >
+                local
+              </span>
+            )}
           </span>
-          {meta.length > 0 && (
-            <span className="mt-0.5 block text-[12px] text-[var(--fg-3)]">{meta.join(' · ')}</span>
-          )}
+          {meta.length > 0 && <span className="mt-0.5 block text-[12px] text-[var(--fg-3)]">{meta.join(' · ')}</span>}
         </span>
       </button>
 
       {isNeedsYou && (
         <div className="flex shrink-0 items-center gap-1.5">
           {action?.primary === 'approve' ? (
-            <span className="mr-0.5 hidden text-[12px] font-medium text-[var(--green-11)] sm:inline">{action.label}</span>
+            <span className="mr-0.5 hidden text-[12px] font-medium text-[var(--green-11)] sm:inline">
+              {action.label}
+            </span>
           ) : (
             <span className="mr-0.5 hidden text-[12px] font-medium sm:inline" style={{ color: tone.fg }}>
               {action?.label}

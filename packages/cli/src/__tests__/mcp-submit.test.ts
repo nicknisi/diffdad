@@ -131,6 +131,7 @@ describe('MCP submit/decision tools', () => {
     expect(store.list().map((u) => u.unitId)).toEqual(['unit-1']);
     expect(store.get(unitId)!.status).toBe('submitted');
     expect(store.get(unitId)!.diffContentKey).toBe('abc123');
+    expect(store.get(unitId)!.source).toBe('agent');
     expect(events.some((e) => e.event === 'units')).toBe(true);
     expect(submitted.map((u) => u.unitId)).toEqual(['unit-1']);
   });

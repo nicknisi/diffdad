@@ -78,7 +78,10 @@ export class UnitStore {
           }),
       );
       for (const u of parsed) {
-        if (u && typeof u.unitId === 'string') initial.push(u);
+        if (u && typeof u.unitId === 'string') {
+          u.source ??= 'agent'; // back-compat: files written before the discriminator existed
+          initial.push(u);
+        }
       }
     } catch {
       // dir missing — start clean
@@ -102,6 +105,7 @@ export class UnitStore {
     const unit: ReviewUnit = {
       unitId: this.genId(),
       repo: input.repo,
+      source: input.source ?? 'agent',
       worktreePath: input.worktreePath,
       taskLabel: input.taskLabel,
       intent: input.intent,
