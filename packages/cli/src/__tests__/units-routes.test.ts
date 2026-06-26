@@ -62,16 +62,26 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
+type ReviewEvent = 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES';
+type SubmitInlineComment = { path: string; line: number; body: string; side?: 'LEFT' | 'RIGHT' };
+
 type SetupOpts = {
   computeSlice?: ComputeSlice;
   reviewPoster?: (unit: ReviewUnit, decision: Decision) => Promise<void>;
   hydrate?: (unit: ReviewUnit) => Promise<ReviewUnit>;
   commentFetcher?: (unit: ReviewUnit) => Promise<PRComment[]>;
   commentPoster?: (unit: ReviewUnit, body: string, opts: PostCommentOptions) => Promise<PRComment>;
+  reviewSubmitter?: (
+    unit: ReviewUnit,
+    event: ReviewEvent,
+    body: string | undefined,
+    comments: SubmitInlineComment[],
+  ) => Promise<void>;
+  ai?: (system: string, user: string) => Promise<{ text: string }>;
 };
 
 function setup(opts: SetupOpts = {}) {
-  const { computeSlice = fakeSlice, reviewPoster, hydrate, commentFetcher, commentPoster } = opts;
+  const { computeSlice = fakeSlice, reviewPoster, hydrate, commentFetcher, commentPoster, reviewSubmitter, ai } = opts;
   const store = new UnitStore([], { dir, ...deterministic() });
   const decision = new DecisionChannel();
   const hub = new SseHub();
@@ -88,6 +98,8 @@ function setup(opts: SetupOpts = {}) {
     hydrate,
     commentFetcher,
     commentPoster,
+    reviewSubmitter,
+    ai,
   });
   return { store, decision, hub, events, submitted, app };
 }
@@ -788,5 +800,188 @@ describe('POST /api/units/:id/comments', () => {
   it('404s for an unknown unit', async () => {
     const { app } = setup({ commentPoster: async () => mkComment() });
     expect((await post(app, 'nope', { body: 'hi' })).status).toBe(404);
+  });
+});
+
+describe('POST /api/units/:id/review (submit a GitHub review)', () => {
+  type Call = [ReviewUnit, ReviewEvent, string | undefined, SubmitInlineComment[]];
+  const post = (app: ReturnType<typeof setup>['app'], id: string, body: unknown) =>
+    app.request(`/api/units/${id}/review`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  const recorder = () => {
+    const calls: Call[] = [];
+    return { calls, fn: async (...c: Call) => void calls.push(c) };
+  };
+
+  it('approves: posts APPROVE + batched comments to GitHub, records the verdict + SHA, broadcasts', async () => {
+    const rec = recorder();
+    const { store, events, app } = setup({ reviewSubmitter: rec.fn });
+    const gh = seedGithubUnit(store, { headSha: 'sha-1' });
+
+    const res = await post(app, gh.unitId, {
+      event: 'approve',
+      body: 'lgtm',
+      comments: [{ path: 'src/a.ts', line: 3, body: 'nit' }],
+    });
+    expect(res.status).toBe(200);
+
+    expect(rec.calls).toHaveLength(1);
+    expect(rec.calls[0]![1]).toBe('APPROVE');
+    expect(rec.calls[0]![2]).toBe('lgtm');
+    expect(rec.calls[0]![3]).toEqual([{ path: 'src/a.ts', line: 3, body: 'nit' }]);
+
+    const after = store.get(gh.unitId)!;
+    expect(after.status).toBe('approved');
+    expect(after.decision).toMatchObject({ kind: 'approved' });
+    expect(after.lastReviewedSha).toBe('sha-1');
+    expect(events).toContain('units');
+    expect(events).toContain('review');
+  });
+
+  it('requests changes: records changes_requested and the reviewed SHA', async () => {
+    const rec = recorder();
+    const { store, app } = setup({ reviewSubmitter: rec.fn });
+    const gh = seedGithubUnit(store, { headSha: 'sha-1' });
+    const res = await post(app, gh.unitId, { event: 'request_changes', body: 'please fix' });
+    expect(res.status).toBe(200);
+    expect(rec.calls[0]![1]).toBe('REQUEST_CHANGES');
+    expect(store.get(gh.unitId)!.status).toBe('changes_requested');
+    expect(store.get(gh.unitId)!.lastReviewedSha).toBe('sha-1');
+  });
+
+  it('comments: posts a COMMENT review WITHOUT changing the verdict (stays queued)', async () => {
+    const rec = recorder();
+    const { store, events, app } = setup({ reviewSubmitter: rec.fn });
+    const gh = seedGithubUnit(store, { headSha: 'sha-1' });
+    const res = await post(app, gh.unitId, { event: 'comment', body: 'some thoughts' });
+    expect(res.status).toBe(200);
+    expect(rec.calls[0]![1]).toBe('COMMENT');
+    const after = store.get(gh.unitId)!;
+    expect(after.status).toBe('queued'); // no verdict
+    expect(after.decision).toBeUndefined();
+    expect(events).toContain('review');
+    expect(events).not.toContain('units'); // nothing changed locally
+  });
+
+  it('drops malformed inline comments before submitting', async () => {
+    const rec = recorder();
+    const { store, app } = setup({ reviewSubmitter: rec.fn });
+    const gh = seedGithubUnit(store);
+    await post(app, gh.unitId, {
+      event: 'comment',
+      comments: [
+        { path: 'a.ts', line: 1, body: 'ok' },
+        { path: 'b.ts', body: 'no line' }, // dropped
+        { line: 2, body: 'no path' }, // dropped
+      ],
+    });
+    expect(rec.calls[0]![3]).toEqual([{ path: 'a.ts', line: 1, body: 'ok' }]);
+  });
+
+  it('400s an invalid event', async () => {
+    const rec = recorder();
+    const { store, app } = setup({ reviewSubmitter: rec.fn });
+    const gh = seedGithubUnit(store);
+    expect((await post(app, gh.unitId, { event: 'merge' })).status).toBe(400);
+    expect(rec.calls).toHaveLength(0);
+  });
+
+  it('400s a non-github unit', async () => {
+    const rec = recorder();
+    const { store, app } = setup({ reviewSubmitter: rec.fn });
+    const u = await addUnit(store);
+    expect((await post(app, u.unitId, { event: 'approve' })).status).toBe(400);
+    expect(rec.calls).toHaveLength(0);
+  });
+
+  it('503s when no review submitter is wired', async () => {
+    const { store, app } = setup();
+    const gh = seedGithubUnit(store);
+    expect((await post(app, gh.unitId, { event: 'approve' })).status).toBe(503);
+  });
+
+  it('502s and records nothing when the submitter throws', async () => {
+    const { store, app } = setup({
+      reviewSubmitter: async () => {
+        throw new Error('github 422');
+      },
+    });
+    const gh = seedGithubUnit(store, { headSha: 'sha-1' });
+    expect((await post(app, gh.unitId, { event: 'approve', body: 'x' })).status).toBe(502);
+    const after = store.get(gh.unitId)!;
+    expect(after.status).toBe('queued'); // divergence guard: nothing recorded
+    expect(after.decision).toBeUndefined();
+    expect(after.lastReviewedSha).toBeUndefined();
+  });
+
+  it('409s an approve/request_changes when the unit is not awaiting a verdict (without posting)', async () => {
+    const rec = recorder();
+    const { store, app } = setup({ reviewSubmitter: rec.fn });
+    const gh = seedGithubUnit(store, { headSha: 'sha-1' });
+    (store.get(gh.unitId) as { status: string }).status = 'approved'; // already decided
+    expect((await post(app, gh.unitId, { event: 'approve' })).status).toBe(409);
+    expect(rec.calls).toHaveLength(0); // never posted a second review
+  });
+
+  it('404s for an unknown unit', async () => {
+    const { app } = setup({ reviewSubmitter: async () => {} });
+    expect((await post(app, 'nope', { event: 'approve' })).status).toBe(404);
+  });
+});
+
+describe('POST /api/units/:id/ai (review-summary draft)', () => {
+  const post = (app: ReturnType<typeof setup>['app'], id: string, body: unknown) =>
+    app.request(`/api/units/${id}/ai`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+  it('summarizes: calls the AI with prompts built from the unit narrative, returns the text', async () => {
+    const calls: Array<[string, string]> = [];
+    const { store, app } = setup({
+      ai: async (system, user) => {
+        calls.push([system, user]);
+        return { text: '  I reviewed this and it looks solid.  ' };
+      },
+    });
+    const gh = seedGithubUnit(store);
+    store.attachReview(gh.unitId, [], { ...NARRATIVE, tldr: 'adds widgets' }, 0);
+
+    const res = await post(app, gh.unitId, { action: 'summarize', resolution: 'approve' });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { text: string };
+    expect(body.text).toBe('I reviewed this and it looks solid.'); // trimmed
+    expect(calls).toHaveLength(1);
+    expect(calls[0]![0]).toContain('approving'); // approve stance is in the system prompt
+    expect(calls[0]![1]).toContain('adds widgets'); // the narrative tldr feeds the user prompt
+  });
+
+  it('503s when the unit has no narrative yet', async () => {
+    const { store, app } = setup({ ai: async () => ({ text: 'x' }) });
+    const gh = seedGithubUnit(store); // not hydrated
+    expect((await post(app, gh.unitId, { action: 'summarize' })).status).toBe(503);
+  });
+
+  it('503s when no AI is configured', async () => {
+    const { store, app } = setup(); // no ai dep
+    const gh = seedGithubUnit(store);
+    store.attachReview(gh.unitId, [], NARRATIVE, 0);
+    expect((await post(app, gh.unitId, { action: 'summarize' })).status).toBe(503);
+  });
+
+  it('400s an unknown action', async () => {
+    const { store, app } = setup({ ai: async () => ({ text: 'x' }) });
+    const gh = seedGithubUnit(store);
+    store.attachReview(gh.unitId, [], NARRATIVE, 0);
+    expect((await post(app, gh.unitId, { action: 'frobnicate' })).status).toBe(400);
+  });
+
+  it('404s for an unknown unit', async () => {
+    const { app } = setup({ ai: async () => ({ text: 'x' }) });
+    expect((await post(app, 'nope', { action: 'summarize' })).status).toBe(404);
   });
 });

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { getAccentMeta } from '../lib/accents';
-import { useReviewStore } from '../state/review-store';
+import { loadDrafts, pendingReviewComments, useReviewStore } from '../state/review-store';
+import { reviewEndpoint } from '../lib/units-view';
 import { useComments } from '../hooks/useComments';
 import { postDecision, removeUnit, retryUnit } from '../hooks/useUnits';
 import { AccentPicker } from './AccentPicker';
@@ -8,6 +9,7 @@ import { ClassicView } from './ClassicView';
 import { DadMark } from './DadMark';
 import { ReviewProgress } from './ReviewProgress';
 import { StoryView } from './StoryView';
+import { SubmitDialog } from './SubmitDialog';
 import { ThemeToggle } from './ThemeToggle';
 import type { ChapterState, Unit } from '../state/types';
 
@@ -31,7 +33,9 @@ function applyUnitToStore(unit: Unit): void {
     narrative,
     chapterStates,
     activeChapterId: narrative && narrative.chapters.length > 0 ? 'ch-0' : null,
-    drafts: [],
+    // Load this unit's batched draft comments (persisted per PR number). Idempotent on live re-apply,
+    // so an SSE tick can't wipe drafts mid-review — and switching units loads the right PR's drafts.
+    drafts: loadDrafts(unit.metadata?.number ?? 0),
   });
 }
 
@@ -63,10 +67,14 @@ export function UnitReview() {
   const unitId = route.name === 'unit' ? route.unitId : null;
   const liveUnit = useReviewStore((s) => (unitId ? s.units.find((u) => u.unitId === unitId) : undefined));
   const narrative = useReviewStore((s) => s.narrative);
+  const mode = useReviewStore((s) => s.mode);
   const setComments = useReviewStore((s) => s.setComments);
+  const draftCount = useReviewStore((s) => pendingReviewComments(s.drafts).length);
+  const clearDrafts = useReviewStore((s) => s.clearDrafts);
   const { refreshComments } = useComments();
 
   const [unit, setUnit] = useState<Unit | null>(null);
+  const [reviewOpen, setReviewOpen] = useState(false);
   // Dedupe the lazy-hydrate POST: a github unit with no narrative triggers generation once per open.
   const hydratedRef = useRef<string | null>(null);
   const [notFound, setNotFound] = useState(false);
@@ -165,6 +173,7 @@ export function UnitReview() {
 
   const status = unit?.status;
   const decidable = status === 'queued';
+  const isGithub = unit?.source === 'github';
 
   async function decide(kind: 'approved' | 'changes_requested') {
     if (!unitId) return;
@@ -209,6 +218,39 @@ export function UnitReview() {
       navigate({ name: 'center' });
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Remove failed');
+      setBusy(false);
+    }
+  }
+
+  // Submit a GitHub review for a github unit (COMMENT / APPROVE / REQUEST_CHANGES) with any batched
+  // draft comments — the full PR-mode submit, scoped to this unit's PR via `reviewEndpoint`. A verdict
+  // records locally and the unit leaves the queue, so we head back to the center; a plain COMMENT
+  // stays put and re-loads comments so the just-posted drafts show as real threads.
+  async function submitReview(resolution: 'comment' | 'approve' | 'request_changes', summary: string) {
+    if (!unitId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const comments = pendingReviewComments(useReviewStore.getState().drafts);
+      const res = await fetch(reviewEndpoint(mode, route), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event: resolution, body: summary, comments }),
+      });
+      if (!res.ok) {
+        const detail = await res.text().catch(() => '');
+        throw new Error(`Submit failed (${res.status})${detail ? `: ${detail}` : ''}`);
+      }
+      clearDrafts();
+      setReviewOpen(false);
+      if (resolution === 'comment') {
+        await refreshComments(); // the drafts are real GitHub comments now — surface them
+        setBusy(false);
+      } else {
+        navigate({ name: 'center' }); // verdict recorded; the unit is out of the needs-you queue
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Submit failed');
       setBusy(false);
     }
   }
@@ -290,8 +332,40 @@ export function UnitReview() {
         </>
       )}
 
-      {/* Decision bar — only when the unit is awaiting a verdict. */}
-      {decidable && (
+      {/* GitHub units get the full review submission (Comment / Approve / Request changes + batched
+          draft comments + AI-draftable summary) — the same dialog as PR mode, scoped to this PR. */}
+      {decidable && isGithub && (
+        <div
+          className="fixed inset-x-0 bottom-0 z-40 bg-[var(--bg-panel)] px-6 py-3"
+          style={{ boxShadow: 'inset 0 1px 0 var(--gray-a4)' }}
+        >
+          <div className="mx-auto flex max-w-[1100px] flex-wrap items-center gap-3">
+            <span className="text-[12.5px] text-[var(--fg-3)]">
+              {draftCount > 0
+                ? `${draftCount} inline ${draftCount === 1 ? 'comment' : 'comments'} ready to ship`
+                : unit && unit.toResolve > 0
+                  ? `${unit.toResolve} to resolve before approving`
+                  : 'Ready for your review'}
+            </span>
+            <div className="ml-auto">
+              <button
+                type="button"
+                onClick={() => setReviewOpen(true)}
+                disabled={busy}
+                aria-keyshortcuts="s"
+                className="rounded-md px-4 py-1.5 text-[13px] font-semibold text-white disabled:opacity-50"
+                style={{ background: 'var(--green-9)' }}
+              >
+                {draftCount > 0 ? `Submit review · ${draftCount}` : 'Submit review'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Local (agent/cli) units have no GitHub PR — the verdict goes to the parked agent over the
+          decision channel, so they keep the inline Approve / Request-changes bar. */}
+      {decidable && !isGithub && (
         <div
           className="fixed inset-x-0 bottom-0 z-40 bg-[var(--bg-panel)] px-6 py-3"
           style={{ boxShadow: 'inset 0 1px 0 var(--gray-a4)' }}
@@ -356,6 +430,8 @@ export function UnitReview() {
           </div>
         </div>
       )}
+
+      <SubmitDialog open={reviewOpen} onClose={() => setReviewOpen(false)} onSubmit={submitReview} />
     </div>
   );
 }

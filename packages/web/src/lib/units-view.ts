@@ -116,14 +116,26 @@ export function routePath(route: Route): string {
 }
 
 /**
- * Which comments endpoint `useComments` should hit. In the daemon's command center, an open unit
- * drill-in reads/writes that unit's GitHub PR comments (`/api/units/:id/comments`); everywhere else
- * (PR mode, watch mode, the center root) it's the single-PR `/api/comments`. Pure so it's unit-tested
- * without rendering the hook. Watch mode's agent-comment path is handled separately in the hook.
+ * Which API endpoint a review action should hit. In the daemon's command center, an open unit
+ * drill-in talks to that unit's GitHub PR (`/api/units/:id/<resource>`); everywhere else (PR mode,
+ * watch mode, the center root) it's the single-PR `/api/<resource>`. Pure so the surface routing is
+ * unit-tested without rendering a hook.
  */
-export function commentsEndpoint(mode: 'pr' | 'watch' | 'command-center', route: Route): string {
+function resourceEndpoint(mode: 'pr' | 'watch' | 'command-center', route: Route, resource: string): string {
   if (mode === 'command-center' && route.name === 'unit') {
-    return `/api/units/${encodeURIComponent(route.unitId)}/comments`;
+    return `/api/units/${encodeURIComponent(route.unitId)}/${resource}`;
   }
-  return '/api/comments';
+  return `/api/${resource}`;
 }
+
+/** Comments endpoint for `useComments`. (Watch mode's agent-comment path is handled in the hook.) */
+export const commentsEndpoint = (mode: 'pr' | 'watch' | 'command-center', route: Route): string =>
+  resourceEndpoint(mode, route, 'comments');
+
+/** Review-submission endpoint for the submit bar/dialog. */
+export const reviewEndpoint = (mode: 'pr' | 'watch' | 'command-center', route: Route): string =>
+  resourceEndpoint(mode, route, 'review');
+
+/** AI endpoint (summary draft, ask) for the submit dialog and ask-Dad features. */
+export const aiEndpoint = (mode: 'pr' | 'watch' | 'command-center', route: Route): string =>
+  resourceEndpoint(mode, route, 'ai');

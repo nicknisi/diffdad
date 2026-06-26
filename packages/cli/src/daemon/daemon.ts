@@ -7,12 +7,12 @@ import { GitHubClient, type PostCommentOptions } from '../github/client';
 import { parseDiff } from '../github/diff-parser';
 import type { PRComment } from '../github/types';
 import { buildLocalReview } from '../local/diff-source';
-import { generateNarrative } from '../narrative/engine';
+import { callAi, generateNarrative } from '../narrative/engine';
 import type { ComputeSlice } from '../mcp/submit';
 import { DecisionChannel } from '../units/decision-channel';
 import { UnitStore } from '../units/store';
 import type { Decision, ReviewUnit } from '../units/types';
-import { createDaemonApp, SseHub } from './app';
+import { createDaemonApp, type ReviewInlineComment, SseHub } from './app';
 import { pollOnce } from './poller';
 import { ReviewWorkerPool, type ReviewResult } from './pool';
 
@@ -201,6 +201,21 @@ function makeCommentPoster(
   };
 }
 
+/**
+ * Submit a full GitHub review for a `github` unit: event + summary body + batched inline comments,
+ * in one API call. Throws on failure — the review route relies on that to 502 and record nothing
+ * locally, so a verdict never lands in dad that isn't really on GitHub.
+ */
+function makeReviewSubmitter(
+  client: GitHubClient,
+): (unit: ReviewUnit, event: 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES', body: string | undefined, comments: ReviewInlineComment[]) => Promise<void> {
+  return async (unit, event, body, comments) => {
+    const { owner, name } = splitRepo(unit.repo);
+    if (unit.prNumber === undefined) throw new Error(`unit ${unit.unitId} has no PR number`);
+    await client.submitReview(owner, name, unit.prNumber, event, body, comments);
+  };
+}
+
 /** Split `owner/name` for the narrative cache key; tolerate a bare name. */
 function splitRepo(repo: string): { owner: string; name: string } {
   const slash = repo.indexOf('/');
@@ -273,6 +288,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<number> {
     hydrate: githubClient ? makeHydrate(githubClient, store) : undefined,
     commentFetcher: githubClient ? makeCommentFetcher(githubClient) : undefined,
     commentPoster: githubClient ? makeCommentPoster(githubClient) : undefined,
+    reviewSubmitter: githubClient ? makeReviewSubmitter(githubClient) : undefined,
+    // AI works without a GitHub token (the default provider shells out to `claude -p`), so it's
+    // always wired — the route reads config per-call, mirroring the PR server's /api/ai.
+    ai: async (system, user) => callAi(await readConfig(), system, user),
   });
 
   let server: ReturnType<typeof Bun.serve>;

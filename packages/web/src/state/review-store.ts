@@ -228,7 +228,7 @@ function isValidDraft(d: unknown): d is DraftComment {
   return typeof obj.id === 'string' && typeof obj.body === 'string';
 }
 
-function loadDrafts(prNumber: number): DraftComment[] {
+export function loadDrafts(prNumber: number): DraftComment[] {
   try {
     const raw = safeStorage.getItem(draftStorageKey(prNumber));
     if (raw) {

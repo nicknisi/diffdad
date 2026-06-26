@@ -6,6 +6,7 @@ import type { PostCommentOptions } from '../github/client';
 import { mapCommentsToChapters } from '../github/comments';
 import type { PRComment } from '../github/types';
 import { CleanTreeError } from '../local/diff-source';
+import { buildReviewSummaryPrompt } from '../narrative/review-summary';
 import type { Concern } from '../narrative/types';
 import { mountMcp } from '../mcp/server';
 import { type ComputeSlice, registerSubmitTools } from '../mcp/submit';
@@ -16,6 +17,16 @@ import type { UnitStore } from '../units/store';
 import { type Decision, IllegalTransitionError, type ReviewUnit, UnknownUnitError } from '../units/types';
 
 type SseSend = (event: string, data: unknown) => void;
+
+/** One batched inline comment in a review submission (matches `GitHubClient.submitReview`). */
+export type ReviewInlineComment = {
+  path: string;
+  line: number;
+  body: string;
+  side?: 'LEFT' | 'RIGHT';
+  startLine?: number;
+  startSide?: 'LEFT' | 'RIGHT';
+};
 
 /**
  * SSE fan-out registry shared by the daemon's HTTP routes, MCP tools, and review-worker pool.
@@ -70,6 +81,22 @@ export type DaemonAppDeps = {
    * Must throw on failure — the route then 502s so a comment never appears locally but not on GitHub.
    */
   commentPoster?: (unit: ReviewUnit, body: string, opts: PostCommentOptions) => Promise<PRComment>;
+  /**
+   * Submits a full GitHub review for a `github` unit — event (COMMENT/APPROVE/REQUEST_CHANGES) + body
+   * + batched inline comments, in one call. Injected like the other GitHub deps. Must throw on failure
+   * so the review route 502s and records nothing locally (dad ⇄ GitHub never disagree).
+   */
+  reviewSubmitter?: (
+    unit: ReviewUnit,
+    event: 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES',
+    body: string | undefined,
+    comments: ReviewInlineComment[],
+  ) => Promise<void>;
+  /**
+   * The unified AI entry point (`callAi`), for the review-summary draft (and, later, ask/renarrate).
+   * Injected so tests fake it and the daemon wires the configured provider. Absent → the AI route 503s.
+   */
+  ai?: (systemPrompt: string, userPrompt: string) => Promise<{ text: string }>;
   /** Long-poll ceiling for `await_decision`; tests shrink it. */
   awaitTimeoutMs?: number;
   /** Override the command-center static root (defaults to the same fallbacks as `server.ts`). */
@@ -96,7 +123,7 @@ function resolveWebDist(override?: string): string {
  */
 export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
   const { store, decision, hub, computeSlice, onSubmitted, reviewPoster, hydrate, awaitTimeoutMs } = deps;
-  const { commentFetcher, commentPoster } = deps;
+  const { commentFetcher, commentPoster, reviewSubmitter, ai } = deps;
   const app = new Hono();
   const broadcast = hub.broadcast;
 
@@ -364,6 +391,107 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
     // (Per-unit SSE scoping lands with Slice 3 — for now the posting tab adds it optimistically.)
     broadcast('comment', created);
     return c.json(created, 201);
+  });
+
+  // --- Review submission (github units) -------------------------------------
+  // The drill-in's full submit: COMMENT/APPROVE/REQUEST_CHANGES + batched inline draft comments, in
+  // one GitHub review (mirrors the PR server's /api/review). Unlike that route, a verdict (approve /
+  // request_changes) ALSO records locally so the unit leaves the needs-you queue — so we post to
+  // GitHub FIRST and validate `queued` before the network (same divergence guard as the decision
+  // route). A COMMENT review carries no verdict: it posts to GitHub but the unit stays queued.
+  app.post('/api/units/:id/review', async (c) => {
+    const id = c.req.param('id');
+    const unit = store.get(id);
+    if (!unit) return c.json({ error: new UnknownUnitError(id).message }, 404);
+    if (unit.source !== 'github') return c.json({ error: 'only github units submit a GitHub review' }, 400);
+    if (!reviewSubmitter) return c.json({ error: 'GitHub is not configured — cannot submit a review' }, 503);
+
+    let body: { event?: string; body?: string; comments?: ReviewInlineComment[] };
+    try {
+      body = (await c.req.json()) as typeof body;
+    } catch {
+      return c.json({ error: 'invalid JSON body' }, 400);
+    }
+    const eventMap: Record<string, 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES'> = {
+      comment: 'COMMENT',
+      approve: 'APPROVE',
+      request_changes: 'REQUEST_CHANGES',
+    };
+    const ghEvent = body.event ? eventMap[body.event] : undefined;
+    if (!ghEvent) return c.json({ error: 'invalid event' }, 400);
+    if (unit.prNumber === undefined) return c.json({ error: 'unit has no PR' }, 400);
+
+    // A verdict transitions the unit; guard it BEFORE the network so a repeat decision can't post a
+    // second real review then fail locally. A bare COMMENT changes no local state, so it's unguarded.
+    const isVerdict = ghEvent === 'APPROVE' || ghEvent === 'REQUEST_CHANGES';
+    if (isVerdict && unit.status !== 'queued') {
+      return c.json({ error: `unit is ${unit.status}, not awaiting a decision` }, 409);
+    }
+
+    const comments = (body.comments ?? []).filter(
+      (cm): cm is ReviewInlineComment =>
+        typeof cm?.path === 'string' && typeof cm?.line === 'number' && typeof cm?.body === 'string',
+    );
+
+    try {
+      await reviewSubmitter(unit, ghEvent, body.body, comments);
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 502);
+    }
+
+    let updated = unit;
+    if (isVerdict) {
+      const kind = ghEvent === 'APPROVE' ? 'approved' : 'changes_requested';
+      try {
+        await store.setDecision(id, { kind, note: body.body });
+        updated = store.setReviewedSha(id, unit.metadata.headSha);
+      } catch (err) {
+        if (err instanceof IllegalTransitionError) return c.json({ error: err.message }, 409);
+        throw err;
+      }
+      broadcast('units', { units: store.list() });
+    }
+    broadcast('review', { event: ghEvent, body: body.body });
+    return c.json({ ok: true, unit: updated });
+  });
+
+  // --- AI (review-summary draft; ask/renarrate land in a later slice) -------
+  // The drill-in's "Draft with AI" button. Mirrors the PR server's /api/ai 'summarize' action, but
+  // scoped to a unit's narrative. 503 (not 500) when the unit isn't hydrated or no provider is wired.
+  app.post('/api/units/:id/ai', async (c) => {
+    const id = c.req.param('id');
+    const unit = store.get(id);
+    if (!unit) return c.json({ error: new UnknownUnitError(id).message }, 404);
+
+    let body: {
+      action?: string;
+      resolution?: 'comment' | 'approve' | 'request_changes';
+      reviewedChapters?: number[];
+      pendingComments?: { path?: string; line?: number; body?: string }[];
+      userDraft?: string;
+    };
+    try {
+      body = (await c.req.json()) as typeof body;
+    } catch {
+      return c.json({ error: 'invalid JSON body' }, 400);
+    }
+
+    if (body.action !== 'summarize') return c.json({ error: `unsupported action: ${body.action}` }, 400);
+    if (!unit.narrative) return c.json({ error: 'narrative still generating' }, 503);
+    if (!ai) return c.json({ error: 'AI is not configured' }, 503);
+
+    const { systemPrompt, userPrompt } = buildReviewSummaryPrompt(unit.narrative, {
+      resolution: body.resolution,
+      reviewedChapters: body.reviewedChapters,
+      pendingComments: body.pendingComments,
+      userDraft: body.userDraft,
+    });
+    try {
+      const result = await ai(systemPrompt, userPrompt);
+      return c.json({ text: result.text.trim() });
+    } catch (err) {
+      return c.json({ error: `AI request failed: ${err instanceof Error ? err.message : String(err)}` }, 500);
+    }
   });
 
   // --- Live updates ---------------------------------------------------------

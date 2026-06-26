@@ -8,6 +8,7 @@ import { mapCommentsToChapters } from './github/comments';
 import type { CheckRun, DiffFile, PRComment, PRMetadata, PRReview } from './github/types';
 import { cacheNarrative, computePromptMetaHash, getCachedNarrative } from './narrative/cache';
 import { callAi, generateNarrative, resolveAiPath, resolveProviderKey } from './narrative/engine';
+import { buildReviewSummaryPrompt } from './narrative/review-summary';
 import type { NarrativeResponse } from './narrative/types';
 import { cacheRecap } from './recap/cache';
 import { generateRecap } from './recap/engine';
@@ -315,56 +316,12 @@ export function createServer(ctx: ServerContext) {
 
     if (action === 'summarize') {
       if (!ctx.narrative) return c.json({ error: 'narrative still generating' }, 503);
-      const resolution = body.resolution ?? 'comment';
-      const reviewed = Array.isArray(body.reviewedChapters)
-        ? body.reviewedChapters.filter((i): i is number => typeof i === 'number')
-        : [];
-      const drafts = Array.isArray(body.pendingComments) ? body.pendingComments : [];
-
-      const reviewedSection =
-        reviewed.length > 0
-          ? reviewed
-              .map((idx) => {
-                const ch = ctx.narrative!.chapters[idx];
-                if (!ch) return '';
-                return `- Chapter ${idx + 1} — ${ch.title}: ${ch.summary}`;
-              })
-              .filter(Boolean)
-              .join('\n')
-          : '(no chapters explicitly marked reviewed)';
-
-      const draftSection =
-        drafts.length > 0
-          ? drafts
-              .filter((d) => d.body)
-              .map((d) => `- ${d.path ?? 'general'}${d.line ? `:L${d.line}` : ''} — ${(d.body ?? '').slice(0, 240)}`)
-              .join('\n')
-          : '(no inline comments drafted)';
-
-      const tldr = ctx.narrative.tldr ?? '';
-      const concerns = (ctx.narrative.concerns ?? [])
-        .map((cn) => `- ${cn.category}: ${cn.question} (${cn.file}:${cn.line})`)
-        .join('\n');
-
-      const stance =
-        resolution === 'approve'
-          ? 'You are approving this PR. Open with confident endorsement, then briefly highlight the strengths the reviewer noted. If there are any minor comments, frame them as nits, not blockers.'
-          : resolution === 'request_changes'
-            ? 'You are requesting changes. Lead with the specific blockers the reviewer raised (drawn from inline comments). Be direct but constructive.'
-            : 'You are leaving general feedback without a verdict. Summarize what was reviewed and the open questions the reviewer raised.';
-
-      const userDraft = typeof body.userDraft === 'string' ? body.userDraft.trim() : '';
-      const polishing = userDraft.length > 0;
-
-      // When the reviewer has already typed something, preserve their voice
-      // and points; we polish their draft. Otherwise, generate from scratch.
-      const systemPrompt = polishing
-        ? `You are polishing a reviewer's draft of a GitHub PR review summary. ${stance} Keep the reviewer's voice, structure, and any specific points they made. Tighten prose, fix grammar, and fold in 1–2 supporting details from the review context only if they directly reinforce what the reviewer wrote — do not introduce unrelated topics. Return only the polished text. 2–4 sentences. First-person ("I"). Plain markdown. No headings. No bullet lists. No greetings or sign-offs.`
-        : `You are drafting the summary comment for a GitHub PR review. ${stance} Write 2–4 sentences. First-person ("I"). Plain markdown. No headings. No bullet lists. No greetings or sign-offs.`;
-      const userPrompt = polishing
-        ? `Reviewer's draft (polish this — preserve their voice and points):\n"""\n${userDraft}\n"""\n\nReview context (use only for grammar/wording cues; do not introduce new topics):\n\nPR TLDR:\n${tldr}\n\nReviewed chapters:\n${reviewedSection}\n\nDrafted inline comments:\n${draftSection}\n\nConcerns the narrative raised:\n${concerns || '(none)'}`
-        : `PR TLDR:\n${tldr}\n\nReviewed chapters:\n${reviewedSection}\n\nDrafted inline comments:\n${draftSection}\n\nConcerns the narrative raised:\n${concerns || '(none)'}`;
-
+      const { systemPrompt, userPrompt } = buildReviewSummaryPrompt(ctx.narrative, {
+        resolution: body.resolution,
+        reviewedChapters: body.reviewedChapters,
+        pendingComments: body.pendingComments,
+        userDraft: body.userDraft,
+      });
       try {
         const result = await callAi(config, systemPrompt, userPrompt);
         return c.json({ text: result.text.trim() });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  aiEndpoint,
   commentsEndpoint,
   groupOf,
   groupUnits,
@@ -7,6 +8,7 @@ import {
   recommendedAction,
   relativeTime,
   repoOptions,
+  reviewEndpoint,
   routePath,
   verdictTone,
 } from '../units-view';
@@ -166,5 +168,18 @@ describe('commentsEndpoint', () => {
   it('uses the PR endpoint in pr and watch modes', () => {
     expect(commentsEndpoint('pr', { name: 'center' })).toBe('/api/comments');
     expect(commentsEndpoint('watch', { name: 'unit', unitId: 'u_1' })).toBe('/api/comments');
+  });
+});
+
+describe('reviewEndpoint / aiEndpoint', () => {
+  it('are unit-scoped in a command-center drill-in', () => {
+    const route = { name: 'unit', unitId: 'u_1' } as const;
+    expect(reviewEndpoint('command-center', route)).toBe('/api/units/u_1/review');
+    expect(aiEndpoint('command-center', route)).toBe('/api/units/u_1/ai');
+  });
+  it('fall back to the PR endpoints elsewhere', () => {
+    expect(reviewEndpoint('pr', { name: 'center' })).toBe('/api/review');
+    expect(aiEndpoint('pr', { name: 'center' })).toBe('/api/ai');
+    expect(reviewEndpoint('command-center', { name: 'center' })).toBe('/api/review');
   });
 });
