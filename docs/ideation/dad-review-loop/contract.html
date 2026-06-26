@@ -1,0 +1,1487 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Diff Dad Review Loop — Mission Brief</title>
+    <script>
+      // Apply a saved forced theme before first paint to avoid a flash
+      try {
+        const saved = localStorage.getItem('ideation-contract-theme');
+        if (saved === 'light' || saved === 'dark')
+          document.documentElement.dataset.theme = saved;
+      } catch {}
+    </script>
+    <style>
+/* Command Deck — Contract Design Tokens & Components
+   Dark-first instrument panel with a co-equal light deck.
+   Cyan-teal telemetry accent; go/caution/danger status trio.
+   Inlined into generated HTML by contract-gen.ts at runtime.
+
+   Anchors: Linear (dark density + restraint), Grafana panels
+   (status rails, dense data), flight-telemetry go/no-go boards.
+   Explicitly NOT: neon glow, scanlines, fake terminal chrome. */
+
+:root {
+  /* Auto: follow the system. The header toggle forces a deck by setting
+     data-theme, which pins color-scheme and resolves every light-dark(). */
+  color-scheme: light dark;
+
+  /* ── Tokens: light-dark(light deck, dark deck) ──
+     OKLCH-derived, hued toward the cyan accent (~h230).
+     Dark deck is canonical; the light deck is co-equal, AA-verified. */
+  --bg: light-dark(#eef1f4, #0a0f16);
+  --surface-1: light-dark(#f9fafb, #101723);
+  --surface-2: light-dark(#ffffff, #161f2e);
+  --line: light-dark(#d4dce3, #243140);
+  --line-strong: light-dark(#aab8c4, #38485a);
+  --ink: light-dark(#16202b, #e6edf3);
+  --muted: light-dark(#46545f, #a2b2c2);
+  --faint: light-dark(#5b6b7a, #8295a8);
+
+  --accent: light-dark(#0a6d89, #56c8ea);
+  --accent-down: light-dark(#0a5e76, #3ba8c9);
+  --accent-tint: light-dark(#ddeef4, #11313f);
+
+  --go: light-dark(#137455, #46d49c);
+  --caution: light-dark(#8c6000, #e9b65a);
+  --danger: light-dark(#b62b50, #f5839b);
+  --go-tint: light-dark(#dff3ea, #0d2b21);
+  --caution-tint: light-dark(#f6ecd4, #2e2410);
+  --danger-tint: light-dark(#fae3e9, #331620);
+
+  /* ── Type ──────────────────────────────────────
+     Mono carries structure (headers, labels, data);
+     sans carries prose. Fixed rem scale, product register. */
+  --font-mono:
+    'Berkeley Mono', 'SF Mono', 'Fira Code', 'Cascadia Code', Menlo, Consolas,
+    monospace;
+  --font-sans:
+    system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial,
+    sans-serif;
+  --text-label: 0.6875rem; /* 11px mono labels   */
+  --text-meta: 0.75rem; /*    12px mono metadata */
+  --text-data: 0.8125rem; /*  13px mono data     */
+  --text-body: 1rem; /*       16px sans prose    */
+  --text-title: 1.25rem; /*   20px panel moments */
+  --text-display: 2.5rem; /*  40px project name  */
+
+  /* ── Space (4pt base) ─────────────────────────── */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 24px;
+  --s6: 32px;
+  --s7: 48px;
+  --s8: 64px;
+
+  --radius: 6px;
+  --radius-lg: 10px;
+}
+
+/* ── Forced themes (header toggle) ──────────────── */
+
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+/* ── Reset ──────────────────────────────────────── */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+body {
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  line-height: 1.65;
+  /* light-on-dark compensation: +letter-spacing, raised line-height */
+  letter-spacing: 0.011em;
+  color: var(--ink);
+  background: var(--bg);
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: var(--s6) var(--s6) var(--s8);
+  -webkit-font-smoothing: antialiased;
+  font-kerning: normal;
+}
+
+/* ── Shared voices ──────────────────────────────── */
+
+.label {
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.label-accent {
+  color: var(--accent);
+}
+.label-danger {
+  color: var(--danger);
+}
+.mono-meta {
+  font-family: var(--font-mono);
+  font-size: var(--text-meta);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Status indicator: glyph + color, never color alone */
+.status-ind {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  font-family: var(--font-mono);
+  font-size: var(--text-meta);
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: 0 0 auto;
+}
+.status-go {
+  color: var(--go);
+}
+.status-caution {
+  color: var(--caution);
+}
+
+/* ── Deck header ────────────────────────────────── */
+
+.deck-header {
+  padding-bottom: var(--s5);
+  border-bottom: 2px solid var(--line-strong);
+  margin-bottom: var(--s6);
+}
+.deck-id {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s5);
+}
+.deck-slug {
+  margin-bottom: var(--s3);
+}
+.deck-title {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-display);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+  color: var(--ink);
+  text-wrap: balance;
+}
+.deck-meta {
+  text-align: right;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  align-items: flex-end;
+}
+.deck-meta .mono-meta {
+  line-height: 1.5;
+}
+.theme-toggle {
+  position: relative;
+  background: transparent;
+  color: var(--faint);
+  border: 1px solid var(--line);
+  padding: 3px 10px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  cursor: pointer;
+  margin-top: var(--s1);
+}
+/* expand hit area to ~44px without growing the visual */
+.theme-toggle::after {
+  content: '';
+  position: absolute;
+  inset: -9px;
+}
+.theme-toggle:hover {
+  color: var(--accent);
+  border-color: var(--line-strong);
+}
+.theme-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Gate strip: go/no-go board */
+.gate-strip {
+  margin-top: var(--s5);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface-1);
+}
+.gate-cell {
+  padding: var(--s3) var(--s4);
+  border-inline-start: 1px solid var(--line);
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--s1) var(--s3);
+  align-items: baseline;
+}
+.gate-cell:first-child {
+  border-inline-start: 0;
+}
+.gate-mark {
+  font-family: var(--font-mono);
+  font-size: var(--text-data);
+  font-weight: 700;
+  grid-row: span 2;
+}
+.gate-name {
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.gate-evidence {
+  grid-column: 2;
+  font-size: var(--text-meta);
+  font-family: var(--font-sans);
+  letter-spacing: 0.011em;
+  color: var(--muted);
+  line-height: 1.45;
+}
+.gate-verdict {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  margin-top: var(--s3);
+}
+
+/* ── Panels & sections ──────────────────────────── */
+
+.section {
+  margin-top: var(--s7);
+}
+.section-hdr {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s4);
+  margin-bottom: var(--s4);
+}
+.section-hdr .label {
+  flex: 0 0 auto;
+}
+.section-hdr-rule {
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+  align-self: center;
+}
+.section-count {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  letter-spacing: 0.05em;
+  color: var(--faint);
+}
+.panel {
+  background: var(--surface-1);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s6);
+}
+
+/* ── Prose (problem statement) ──────────────────── */
+
+.prose {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+  max-width: 68ch;
+}
+.prose p {
+  margin: 0;
+  font-size: var(--text-body);
+  line-height: 1.65;
+  color: var(--ink);
+}
+.line-num {
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  color: var(--faint);
+  margin-right: var(--s2);
+  letter-spacing: 0.08em;
+  vertical-align: 0.12em;
+}
+
+/* ── Goals ──────────────────────────────────────── */
+
+.goal-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+.goal-row {
+  display: grid;
+  grid-template-columns: 32px 1fr;
+  gap: var(--s3);
+  padding: var(--s3) var(--s4);
+  background: var(--surface-1);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  align-items: baseline;
+}
+.goal-num {
+  font-family: var(--font-mono);
+  font-size: var(--text-title);
+  font-weight: 700;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+.goal-text {
+  font-size: 0.9375rem;
+  line-height: 1.55;
+  color: var(--ink);
+}
+
+/* ── Success criteria ───────────────────────────── */
+
+.criteria-grid {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 var(--s6);
+}
+.criteria-item {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: var(--s3);
+  align-items: baseline;
+  padding: var(--s3) 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.875rem;
+  line-height: 1.55;
+}
+.criteria-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+.criteria-check {
+  font-family: var(--font-mono);
+  font-size: var(--text-meta);
+  line-height: 1.5;
+  color: var(--accent);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  padding: var(--s1) var(--s2);
+  border-radius: 4px;
+  overflow-wrap: anywhere;
+  align-self: flex-start;
+}
+.criteria-judgment {
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--caution);
+  font-weight: 600;
+}
+
+/* ── Scope ──────────────────────────────────────── */
+
+.scope-layout {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  gap: var(--s6);
+}
+.nested-tiers {
+  position: relative;
+  width: 300px;
+  height: 300px;
+}
+.tier-box {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: var(--radius);
+}
+.tier-box-stretch {
+  width: 300px;
+  height: 300px;
+  border: 1px dashed var(--line-strong);
+}
+.tier-box-full {
+  width: 218px;
+  height: 218px;
+  border: 1px solid var(--accent-down);
+}
+.tier-box-mvp {
+  width: 136px;
+  height: 136px;
+  background: var(--accent-tint);
+  border: 1px solid var(--accent);
+}
+.tier-box-label {
+  position: absolute;
+  top: var(--s2);
+  left: var(--s3);
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+.tier-box-stretch .tier-box-label {
+  color: var(--faint);
+}
+.tier-box-full .tier-box-label {
+  color: var(--accent);
+}
+.tier-box-mvp .tier-box-label {
+  color: var(--accent);
+}
+.tier-lists {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s5);
+}
+.tier-header {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin-bottom: var(--s2);
+}
+.tier-glyph {
+  font-family: var(--font-mono);
+  font-size: var(--text-data);
+  font-weight: 700;
+  color: var(--accent);
+}
+.tier-title {
+  font-family: var(--font-mono);
+  font-size: var(--text-meta);
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.tier-rule {
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+.tier-count {
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  color: var(--faint);
+}
+.tier-items {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+.tier-items li {
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--ink);
+}
+.tier-items strong {
+  font-weight: 500;
+}
+.tier-reason {
+  color: var(--muted);
+  margin-left: var(--s2);
+  font-size: 0.8125rem;
+}
+.scope-extras {
+  margin-top: var(--s5);
+}
+.scope-panel {
+  padding: var(--s4);
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--surface-1);
+}
+.scope-panel-out {
+  background: var(--danger-tint);
+}
+.scope-panel .label {
+  display: block;
+  margin-bottom: var(--s3);
+}
+.scope-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+.scope-list li {
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.scope-out-item {
+  color: var(--ink);
+  font-weight: 500;
+  text-decoration: line-through;
+  text-decoration-color: var(--danger);
+}
+
+/* ── Pipeline (DAG) ─────────────────────────────── */
+
+.pipeline-wrap {
+  padding: var(--s5);
+  overflow-x: auto;
+}
+.pipeline {
+  display: block;
+  min-width: 560px;
+  max-width: 100%;
+  height: auto;
+}
+.pipeline .node-box {
+  fill: var(--surface-2);
+  stroke: var(--line-strong);
+  stroke-width: 1;
+}
+.pipeline .node-gate .node-box {
+  fill: var(--accent-tint);
+  stroke: var(--accent-down);
+}
+.pipeline .node-rail {
+  stroke-width: 3;
+}
+.pipeline .node-num {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  fill: var(--faint);
+  letter-spacing: 0.08em;
+}
+.pipeline .node-title {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  fill: var(--ink);
+}
+.pipeline .node-kind {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  fill: var(--faint);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.pipeline .edge {
+  stroke: var(--line-strong);
+  stroke-width: 1.5;
+  fill: none;
+}
+.pipeline .edge-head {
+  fill: var(--line-strong);
+}
+
+/* ── Phase table ────────────────────────────────── */
+
+.phase-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-data);
+}
+.phase-table th {
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--faint);
+  text-align: left;
+  padding: var(--s2) var(--s4);
+  border-bottom: 1px solid var(--line-strong);
+}
+.phase-table td {
+  padding: var(--s3) var(--s4);
+  border-bottom: 1px solid var(--line);
+  vertical-align: baseline;
+}
+.phase-table tr:last-child td {
+  border-bottom: 0;
+}
+.phase-num {
+  font-family: var(--font-mono);
+  color: var(--faint);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+.phase-title {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--ink);
+}
+.phase-kind {
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.phase-risk {
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.phase-notes {
+  font-family: var(--font-sans);
+  font-size: 0.8125rem;
+  letter-spacing: 0.011em;
+  color: var(--muted);
+  line-height: 1.5;
+  max-width: 52ch;
+}
+
+/* ── Commands ───────────────────────────────────── */
+
+.run-bar {
+  margin-top: var(--s5);
+  padding: var(--s5);
+  border: 1px solid var(--accent-down);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+  display: grid;
+  grid-template-columns: minmax(200px, 1fr) minmax(280px, 1.4fr);
+  gap: var(--s5);
+  align-items: center;
+}
+.run-bar-headline {
+  font-family: var(--font-mono);
+  font-size: var(--text-title);
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+  margin: var(--s1) 0;
+}
+.run-bar-desc {
+  font-size: 0.8125rem;
+  letter-spacing: 0.011em;
+  color: var(--muted);
+  line-height: 1.5;
+  max-width: 52ch;
+}
+.cmd-field {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s3) var(--s4);
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: var(--text-data);
+  line-height: 1.4;
+  color: var(--ink);
+}
+.cmd-field-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: all;
+}
+.cmd-field-wide {
+  white-space: pre-wrap;
+}
+.cmd-field-wide .cmd-field-text {
+  white-space: pre-wrap;
+}
+.copy-btn {
+  position: relative;
+  flex: 0 0 auto;
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--line-strong);
+  padding: var(--s1) var(--s3);
+  border-radius: 4px;
+  font-size: var(--text-label);
+  font-weight: 600;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+/* expand hit area to ~44px without growing the visual */
+.copy-btn::after {
+  content: '';
+  position: absolute;
+  inset: -9px;
+}
+.copy-btn:hover {
+  background: var(--accent-tint);
+  border-color: var(--accent-down);
+}
+.copy-btn:active {
+  color: var(--accent-down);
+}
+.copy-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.cmd-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+}
+.cmd-row {
+  display: grid;
+  grid-template-columns: 36px 220px 1fr;
+  gap: var(--s4);
+  align-items: center;
+}
+.cmd-row-num {
+  font-family: var(--font-mono);
+  font-size: var(--text-meta);
+  color: var(--faint);
+  letter-spacing: 0.06em;
+  font-weight: 600;
+}
+.cmd-row-title {
+  font-family: var(--font-mono);
+  font-size: var(--text-data);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* ── Disclosure ─────────────────────────────────── */
+
+.disclosure {
+  margin-top: var(--s5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface-1);
+}
+.disclosure summary {
+  list-style: none;
+  cursor: pointer;
+  padding: var(--s3) var(--s4);
+  font-family: var(--font-mono);
+  font-size: var(--text-data);
+  font-weight: 600;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+.disclosure summary:hover {
+  color: var(--ink);
+}
+.disclosure summary::-webkit-details-marker {
+  display: none;
+}
+.disclosure summary::before {
+  content: '▸';
+  color: var(--faint);
+  transition: transform 0.15s ease;
+}
+.disclosure[open] summary::before {
+  transform: rotate(90deg);
+}
+.disclosure summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.disclosure-body {
+  padding: var(--s4);
+  border-top: 1px solid var(--line);
+}
+
+/* ── First move / approval / close bands ────────── */
+
+.approval-bar {
+  margin-top: var(--s5);
+  padding: var(--s5);
+  border: 1px solid var(--caution);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+}
+.approval-desc {
+  font-size: 0.8125rem;
+  letter-spacing: 0.011em;
+  color: var(--muted);
+  line-height: 1.5;
+  margin-top: var(--s2);
+  max-width: 64ch;
+}
+.plan-placeholder {
+  color: var(--muted);
+  font-style: italic;
+}
+.contract-close {
+  margin-top: var(--s7);
+  padding: var(--s5);
+  border: 1px solid var(--line-strong);
+  border-top: 2px solid var(--go);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--s5);
+  align-items: center;
+}
+.close-headline {
+  font-family: var(--font-mono);
+  font-size: var(--text-title);
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+  margin-top: var(--s2);
+}
+.close-desc {
+  font-size: 0.8125rem;
+  letter-spacing: 0.011em;
+  color: var(--muted);
+  line-height: 1.5;
+  margin-top: var(--s2);
+  max-width: 60ch;
+}
+.close-meta {
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  align-items: flex-end;
+}
+
+/* ── Responsive ─────────────────────────────────── */
+
+@media (max-width: 820px) {
+  body {
+    padding: var(--s4) var(--s4) var(--s7);
+  }
+  .deck-id {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .deck-meta {
+    text-align: left;
+    align-items: flex-start;
+  }
+  .deck-title {
+    font-size: 1.75rem;
+  }
+  .gate-cell {
+    border-inline-start: 0;
+    border-top: 1px solid var(--line);
+  }
+  .gate-cell:first-child {
+    border-top: 0;
+  }
+  .two-col,
+  .scope-layout,
+  .scope-extras,
+  .run-bar,
+  .contract-close {
+    grid-template-columns: 1fr;
+  }
+  .close-meta {
+    text-align: left;
+    align-items: flex-start;
+  }
+  .criteria-grid {
+    grid-template-columns: 1fr;
+  }
+  .nested-tiers {
+    display: none;
+  }
+  .cmd-row {
+    grid-template-columns: 36px 1fr;
+  }
+  .cmd-row .cmd-field {
+    grid-column: 1 / -1;
+  }
+  .phase-notes-col {
+    display: none;
+  }
+}
+
+/* ── Reduced motion ─────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .disclosure summary::before {
+    transition: none;
+  }
+}
+
+/* ── Print: the deck renders as a paper document ── */
+
+@media print {
+  /* Paper always wins, even when the toggle forced the dark deck */
+  :root,
+  :root[data-theme] {
+    color-scheme: light;
+  }
+  :root {
+    --bg: #ffffff;
+    --surface-1: #ffffff;
+    --surface-2: #f4f6f8;
+    --line: #c9d2da;
+    --line-strong: #8d9aa6;
+    --ink: #000000;
+    --muted: #333d46;
+    --faint: #4d5a66;
+    --accent: #0a5e76;
+    --accent-down: #0a5e76;
+    --accent-tint: #e8f2f6;
+    --go: #0d5c43;
+    --caution: #6e4b00;
+    --danger: #9c2547;
+  }
+  body {
+    font-size: 11pt;
+    max-width: none;
+    padding: 20px;
+  }
+  .copy-btn,
+  .theme-toggle {
+    display: none !important;
+  }
+  .pipeline-wrap {
+    overflow: visible;
+  }
+  .disclosure:not([open]) > *:not(summary) {
+    display: block !important;
+  }
+  .disclosure summary::before {
+    display: none;
+  }
+  .panel,
+  .goal-row,
+  .gate-strip,
+  .run-bar,
+  .contract-close {
+    page-break-inside: avoid;
+  }
+}
+
+    </style>
+  </head>
+  <body data-contract-status="Approved">
+
+    <header class="deck-header">
+      <div class="deck-id">
+        <div>
+          <div class="deck-slug label">mission brief · dad-review-loop</div>
+          <h1 class="deck-title">Diff Dad Review Loop</h1>
+        </div>
+        <div class="deck-meta">
+          <span class="status-ind status-go"><span class="status-dot" aria-hidden="true"></span>Approved</span>
+          <span class="mono-meta">created 2026-06-25</span>
+          
+          
+          <button type="button" class="theme-toggle" id="theme-toggle">theme · auto</button>
+        </div>
+      </div>
+
+      <div class="gate-verdict">
+        <span class="label">Readiness gates</span>
+        <span class="status-ind status-go">All gates ready</span>
+      </div>
+      <div class="gate-strip">
+        <div class="gate-cell">
+          <span class="gate-mark" style="color: var(--go)">✓</span>
+          <span class="gate-name">Problem Clarity</span>
+          <span class="gate-evidence">Concrete: one human reviewing ~12 parallel agents, reading cold drive-by diffs, across fragmented watch/review modes, behind a narrative pipeline too slow to use in a loop.</span>
+        </div>
+        <div class="gate-cell">
+          <span class="gate-mark" style="color: var(--go)">✓</span>
+          <span class="gate-name">Goal Definition</span>
+          <span class="gate-evidence">North star locked ('nothing forgotten, decided fast') plus diff-first/instant, streamlined-streaming guide, one-surface, push-right auto-clear, and cross-repo scale as named goals; goals 5-6 are delivered in phases 3-4 under the full (no-tier-cut) build.</span>
+        </div>
+        <div class="gate-cell">
+          <span class="gate-mark" style="color: var(--go)">✓</span>
+          <span class="gate-name">Success Criteria</span>
+          <span class="gate-evidence">Each phase has a pass/fail criterion; mechanical ones carry runnable check commands (vitest suites against existing test precedent, daemon-survives-terminal, skeptic non-author provider, auto-clear gate logic); the one genuinely subjective criterion (prose density) is tagged a judgment call.</span>
+        </div>
+        <div class="gate-cell">
+          <span class="gate-mark" style="color: var(--go)">✓</span>
+          <span class="gate-name">Scope Boundaries</span>
+          <span class="gate-evidence">Five phases in scope with no tier cut (full scope = all five); explicit exclusions: multi-machine sync, human-reviewer routing, non-Claude authors.</span>
+        </div>
+        <div class="gate-cell">
+          <span class="gate-mark" style="color: var(--go)">✓</span>
+          <span class="gate-name">Consistency</span>
+          <span class="gate-evidence">No conflicting requirements; agent-as-actor preserved (auto-merge deferred to human/policy in P4, delivered over P2's decision channel); skeptic uses --with codex (local GPT-class) or a config API provider — not --with-to-OpenAI-API, which is impossible.</span>
+        </div>
+      </div>
+    </header>
+    <main>
+
+    <section class="run-bar">
+      <div>
+        <div class="label label-accent">First move</div>
+        <div class="run-bar-headline">Run this.</div>
+        <div class="run-bar-desc">Phase 01 of 05 — <strong>Review experience (diff-first guided walkthrough)</strong></div>
+      </div>
+      <div class="cmd-field">
+            <span class="cmd-field-text" id="cmd-first">/ideation:execute-spec docs/ideation/dad-review-loop/spec-phase-1.md</span>
+            <button type="button" class="copy-btn" data-copy="cmd-first">copy</button>
+          </div>
+    </section>
+
+    <div class="section two-col">
+      <section>
+      <div class="section-hdr">
+        <span class="label">The problem</span>
+        <span class="section-hdr-rule"></span>
+      </div>
+        <div class="prose">
+          <p><span class="line-num">01</span>Nick runs ~12 coding agents in parallel across repositories and is the review bottleneck. He babysits a dozen tmux panes, forgets to return to finished work, and every change he does review he reads cold as a drive-by. Work sits unreviewed because nothing pulls him back to it, and there is no single place to see what every agent is doing or what is waiting on him.</p>
+          <p><span class="line-num">02</span>Diff Dad today has two disconnected modes — `dad watch` (local working tree, in-flight on this branch) and `dad review` (GitHub PR) — and running them in different places is itself friction. Its core 'PRs into narrated stories' pipeline is too slow for a review loop: PR mode blocks on a full multi-chapter LLM generation (often via the local `claude -p` path, which dad's own loading screen warns is ~minutes and ~5-10x slower than the API) before showing anything, and the resulting prose isn't more revealing than a plain diff. The storytelling concept is valued; its latency and ceremony are not.</p>
+          <p><span class="line-num">03</span>The fix is to make Diff Dad a single, daemon-backed command center that shows all in-flight work and everything awaiting review across repos, renders diffs instantly, and uses a streamlined, streaming guided walkthrough to build genuine understanding of each change — yours and the agents' — rather than narrate at you. This continues and broadens the prior agent-comment-loop ideation (whose watch mode is the foundation it builds on).</p>
+        </div>
+      </section>
+      <section>
+      <div class="section-hdr">
+        <span class="label">Goals</span>
+        <span class="section-hdr-rule"></span>
+        <span class="section-count">×6</span>
+      </div>
+        <div class="goal-list">
+          <div class="goal-row">
+            <span class="goal-num">01</span>
+            <span class="goal-text">One cross-repo home lists every unit — agent-running, your working trees, open PRs, and units awaiting review — so nothing depends on remembering to visit a pane.</span>
+          </div>
+          <div class="goal-row">
+            <span class="goal-num">02</span>
+            <span class="goal-text">Opening any unit renders the diff on first paint, with no blocking 'generating' screen; the guided walkthrough streams in over it.</span>
+          </div>
+          <div class="goal-row">
+            <span class="goal-num">03</span>
+            <span class="goal-text">The walkthrough is streamlined and streams per section (beat rail + interleaved prose + resolve strips), replacing cold diff-reading with guided understanding.</span>
+          </div>
+          <div class="goal-row">
+            <span class="goal-num">04</span>
+            <span class="goal-text">Watch and review stop being separate modes: local working trees, agent units, and PRs are one list distinguished by status, not by command.</span>
+          </div>
+          <div class="goal-row">
+            <span class="goal-num">05</span>
+            <span class="goal-text">(Phase 3) The review verdict is produced by a model in a different family than the author, giving an independent second opinion.</span>
+          </div>
+          <div class="goal-row">
+            <span class="goal-num">06</span>
+            <span class="goal-text">(Phase 4) Safe units auto-clear without the human (agent opens a PR); only non-clearing units enter the needs-you queue.</span>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <section class="section">
+      <div class="section-hdr">
+        <span class="label">Done when</span>
+        <span class="section-hdr-rule"></span>
+        <span class="section-count">8 signals · 7 mechanically checked</span>
+      </div>
+      <ul class="criteria-grid">
+        <li class="criteria-item">
+          <span class="line-num">01</span>
+          <div class="criteria-body">
+            <span>submit_for_review registers a unit that appears in the command center, with the agent able to receive the decision back over MCP</span>
+            <code class="criteria-check">cd packages/cli &amp;&amp; npx vitest run src/__tests__/review-units.test.ts — drives a full in-process MCP round-trip (enqueue + decision-back) against the store, following the mcp-tools.test.ts precedent; exits 0</code>
+          </div>
+        </li>
+        <li class="criteria-item">
+          <span class="line-num">02</span>
+          <div class="criteria-body">
+            <span>Opening a unit shows the diff before the guide finishes — no blocking generate screen on the unit path</span>
+            <code class="criteria-check">cd packages/web &amp;&amp; npx vitest run src/state/__tests__/unit-gate.test.ts — asserts the unit data path exposes diff/files with the narrative still pending and never trips the blocking-generate gate (pure store/logic test, no DOM); exits 0</code>
+          </div>
+        </li>
+        <li class="criteria-item">
+          <span class="line-num">03</span>
+          <div class="criteria-body">
+            <span>The guided walkthrough builds as beat rail + interleaved streamlined prose + resolve strips, streaming per section</span>
+            <code class="criteria-check">cd packages/web &amp;&amp; npx vitest run src/lib/__tests__/walkthrough-model.test.ts — asserts the walkthrough builder yields ordered beats (rail entries) + interleaved prose/diff sections + resolve items from a sample diff+guide (pure function, no DOM); exits 0</code>
+          </div>
+        </li>
+        <li class="criteria-item">
+          <span class="line-num">04</span>
+          <div class="criteria-body">
+            <span>The daemon survives the launching terminal closing and serves a cross-repo queue</span>
+            <code class="criteria-check">launchctl load the daemon; close the launching terminal; curl -s localhost:&lt;port&gt;/api/units returns units submitted from two different repos</code>
+          </div>
+        </li>
+        <li class="criteria-item">
+          <span class="line-num">05</span>
+          <div class="criteria-body">
+            <span>The skeptic's verdict is produced by a model family different from the author's</span>
+            <code class="criteria-check">cd packages/cli &amp;&amp; npx vitest run src/__tests__/skeptic.test.ts — asserts recorded skeptic provider (engine returns result.provider) != author provider; exits 0</code>
+          </div>
+        </li>
+        <li class="criteria-item">
+          <span class="line-num">06</span>
+          <div class="criteria-body">
+            <span>Auto-clear fires only when verdict is safe AND checks are green AND zero items to resolve; everything else queues</span>
+            <code class="criteria-check">cd packages/cli &amp;&amp; npx vitest run src/__tests__/auto-clear-gate.test.ts — exits 0</code>
+          </div>
+        </li>
+        <li class="criteria-item">
+          <span class="line-num">07</span>
+          <div class="criteria-body">
+            <span>The notifier surfaces the pending needs-you count (tmux status line) matching the queue length</span>
+            <code class="criteria-check">run the status script against a seeded queue of N; stdout count equals N</code>
+          </div>
+        </li>
+        <li class="criteria-item">
+          <span class="line-num">08</span>
+          <div class="criteria-body">
+            <span>The guided walkthrough's prose feels scannable, not a wall (subjective; the no-wait/instant-diff half is covered mechanically by the diff-before-guide criterion above)</span>
+            <span class="criteria-judgment">judgment call — no mechanical check</span>
+          </div>
+        </li>
+      </ul>
+    </section>
+
+    <section class="section">
+      <div class="section-hdr">
+        <span class="label">Scope</span>
+        <span class="section-hdr-rule"></span>
+        <span class="section-count">MVP nests inside Full nests inside Stretch</span>
+      </div>
+      <div class="scope-layout">
+        <div class="nested-tiers" aria-hidden="true">
+          <div class="tier-box tier-box-stretch"><span class="tier-box-label">Stretch ×2</span></div>
+          <div class="tier-box tier-box-full"><span class="tier-box-label">Full ×3</span></div>
+          <div class="tier-box tier-box-mvp"><span class="tier-box-label">MVP ×2</span></div>
+        </div>
+        <div class="tier-lists">
+
+          <div class="tier-group">
+            <div class="tier-header">
+              <span class="tier-title">MVP — must ship</span>
+              <span class="tier-rule"></span>
+              <span class="tier-count">×2</span>
+            </div>
+            <ul class="tier-items">
+              <li><strong>Diff-first guided review experience — beat rail (evolve ChapterTOC) + streamlined interleaved prose (evolve Chapter) + inline resolve strips; diff renders instantly, guide streams per section; API path becomes the default</strong><span class="tier-reason">— Delivers 'decided fast' and fixes the latency + ceremony that make today's narrative unusable; defines what a reviewable unit looks like</span></li>
+              <li><strong>Daemon command center — cross-repo home (needs-you / in-flight / cleared), submit_for_review enqueues, tracks agents + working trees + PRs as one status-grouped list; persistent list first, launchd terminal-survival as the hardening slice</strong><span class="tier-reason">— Delivers the 'nothing forgotten' north star and unifies the watch/review modes that feel strange today</span></li>
+            </ul>
+          </div>
+
+          <div class="tier-group">
+            <div class="tier-header">
+              <span class="tier-title">Full — target outcome</span>
+              <span class="tier-rule"></span>
+              <span class="tier-count">×3</span>
+            </div>
+            <ul class="tier-items">
+              <li><strong>Cross-model skeptic — independent reviewer on a non-author model family (--with codex by default, or a config API provider); emits verdict + cited, confidence-scored concerns that feed the rail flags, resolve strips, and recommended action</strong><span class="tier-reason">— Turns the guide's flags into a verdict trustworthy enough to drive the recommended action and, later, auto-clear</span></li>
+              <li><strong>Checks runner + auto-clear gate — run configured/detected build/test/lint/type commands in the worktree; auto-clear safe+green+0-to-resolve units (decision delivered over the daemon's MCP channel; the agent opens the PR; merge left to human/policy)</strong><span class="tier-reason">— Objective signal lets safe work skip the human (push-right) without trusting an LLM verdict alone</span></li>
+              <li><strong>Notifier + stdio MCP proxy — tmux status count, macOS push (deep-link), stale escalation, periodic digest; global one-time MCP registration via a net-new stdio proxy routing to the daemon</strong><span class="tier-reason">— Pulls Nick back proactively and removes per-repo MCP re-registration at the 12-agent scale</span></li>
+            </ul>
+          </div>
+
+          <div class="tier-group">
+            <div class="tier-header">
+              <span class="tier-title">Stretch — if time permits</span>
+              <span class="tier-rule"></span>
+              <span class="tier-count">×2</span>
+            </div>
+            <ul class="tier-items">
+              <li><strong>Per-repo auto-merge opt-in (widen the auto-clear terminal action from open-PR to merge as trust grows)</strong></li>
+              <li><strong>On-demand 'Ask dad' Q&amp;A inside the walkthrough (interrogate the diff conversationally)</strong></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="two-col scope-extras">
+        <div class="scope-panel scope-panel-out">
+          <span class="label label-danger">Out of scope — said no on purpose</span>
+          <ul class="scope-list">
+            <li><span class="scope-out-item">Multi-machine queue sync</span> — Per-machine daemon only; cross-machine sync is a future sibling workflow</li>
+            <li><span class="scope-out-item">Human-reviewer routing/assignment beyond opening a PR</span> — The brief makes the ask cheap; explicit reviewer selection is a separate workflow</li>
+            <li><span class="scope-out-item">Non-Claude authors</span> — Author assumed = Claude; the cross-model skeptic provides the independence</li>
+          </ul>
+        </div>
+        <div class="scope-panel">
+          <span class="label">Future — someday, maybe</span>
+          <ul class="scope-list">
+            <li>Widen auto-merge as empirical trust in the gate grows</li>
+            <li>Multi-machine queue sync</li>
+            <li>Human-reviewer routing as a sibling workflow</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-hdr">
+        <span class="label">Execution</span>
+        <span class="section-hdr-rule"></span>
+        <span class="section-count">Sequential</span>
+      </div>
+      <div class="panel pipeline-wrap">
+        <svg class="pipeline" viewBox="0 0 740 156" role="img" aria-label="Phase pipeline: 01 Review experience (diff-first guided walkthrough) (wave 1); 02 Command center (daemon) (wave 2); 03 Cross-model skeptic (wave 2); 04 Checks + auto-clear gate (wave 3); 05 Notifier + stdio proxy (wave 3) — 3 waves">
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+              <path class="edge-head" d="M0,0 L10,5 L0,10 z" />
+            </marker>
+          </defs>
+      <path class="edge" d="M 206 38 H 263" marker-end="url(#arrow)" />
+      <path class="edge" d="M 206 38 H 238 V 118 H 263" marker-end="url(#arrow)" />
+      <path class="edge" d="M 470 38 H 527" marker-end="url(#arrow)" />
+      <path class="edge" d="M 470 118 H 502 V 38 H 527" marker-end="url(#arrow)" />
+      <path class="edge" d="M 470 38 H 502 V 118 H 527" marker-end="url(#arrow)" />
+      <g class="node">
+        <rect class="node-box" x="6" y="6" width="200" height="64" rx="5" />
+        <line class="node-rail" x1="7" y1="7.5" x2="205" y2="7.5" stroke="var(--caution)" />
+        <text class="node-num" x="18" y="28">01</text>
+        <text class="node-kind" x="194" y="28" text-anchor="end" fill="var(--caution)">med</text>
+        <text class="node-title" x="18" y="47">Review experience (diff-f…</text>
+        <text class="node-kind" x="18" y="62">phase · blocking</text>
+      </g>
+      <g class="node">
+        <rect class="node-box" x="270" y="6" width="200" height="64" rx="5" />
+        <line class="node-rail" x1="271" y1="7.5" x2="469" y2="7.5" stroke="var(--danger)" />
+        <text class="node-num" x="282" y="28">02</text>
+        <text class="node-kind" x="458" y="28" text-anchor="end" fill="var(--danger)">high</text>
+        <text class="node-title" x="282" y="47">Command center (daemon)</text>
+        <text class="node-kind" x="282" y="62">phase · blocking</text>
+      </g>
+      <g class="node">
+        <rect class="node-box" x="270" y="86" width="200" height="64" rx="5" />
+        <line class="node-rail" x1="271" y1="87.5" x2="469" y2="87.5" stroke="var(--caution)" />
+        <text class="node-num" x="282" y="108">03</text>
+        <text class="node-kind" x="458" y="108" text-anchor="end" fill="var(--caution)">med</text>
+        <text class="node-title" x="282" y="127">Cross-model skeptic</text>
+        <text class="node-kind" x="282" y="142">phase</text>
+      </g>
+      <g class="node">
+        <rect class="node-box" x="534" y="6" width="200" height="64" rx="5" />
+        <line class="node-rail" x1="535" y1="7.5" x2="733" y2="7.5" stroke="var(--danger)" />
+        <text class="node-num" x="546" y="28">04</text>
+        <text class="node-kind" x="722" y="28" text-anchor="end" fill="var(--danger)">high</text>
+        <text class="node-title" x="546" y="47">Checks + auto-clear gate</text>
+        <text class="node-kind" x="546" y="62">phase</text>
+      </g>
+      <g class="node">
+        <rect class="node-box" x="534" y="86" width="200" height="64" rx="5" />
+        <line class="node-rail" x1="535" y1="87.5" x2="733" y2="87.5" stroke="var(--go)" />
+        <text class="node-num" x="546" y="108">05</text>
+        <text class="node-kind" x="722" y="108" text-anchor="end" fill="var(--go)">low</text>
+        <text class="node-title" x="546" y="127">Notifier + stdio proxy</text>
+        <text class="node-kind" x="546" y="142">phase</text>
+      </g>
+        </svg>
+      </div>
+      <div class="panel">
+        <table class="phase-table">
+          <thead>
+            <tr>
+              <th scope="col">##</th>
+              <th scope="col">Phase</th>
+              <th scope="col">Kind</th>
+              <th scope="col">Risk</th>
+              <th scope="col" class="phase-notes-col">Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="phase-num">01</td>
+              <td class="phase-title">Review experience (diff-first guided walkthrough)</td>
+              <td class="phase-kind">phase · blocking</td>
+              <td class="phase-risk" style="color: var(--caution)">med</td>
+              <td class="phase-notes phase-notes-col">B+C: beat rail (evolve ChapterTOC.tsx) + streamlined interleaved prose (evolve Chapter.tsx) + inline resolve strips; reuse useScrollTracker for rail tracking. Diff-first non-blocking render (adopt watch mode's pattern in useNarrative for the unit path); per-section streaming. Deliberately switch the default AI path from local claude -p to the API for latency (a user-facing default change). Tests target pure builders/store logic — no DOM test infra exists today, so installing jsdom + @testing-library is a P1 setup step if render-level tests are wanted. Begins unifying watch/review toward one surface.</td>
+            </tr>
+            <tr>
+              <td class="phase-num">02</td>
+              <td class="phase-title">Command center (daemon)</td>
+              <td class="phase-kind">phase · blocking</td>
+              <td class="phase-risk" style="color: var(--danger)">high</td>
+              <td class="phase-notes phase-notes-col">Cross-repo review-unit store (lift the agent-comments/store.ts pattern, key by repo+unit) + submit_for_review MCP tool + a decision-delivery channel back to the agent; needs-you / in-flight / cleared dashboard, status-grouped; tracks agent units, working trees, and PRs as one list. Build the persistent cross-repo list first (generalize server.ts), then launchd terminal-survival as the higher-risk hardening slice. Displays the review pipeline's output, so it follows P1.</td>
+            </tr>
+            <tr>
+              <td class="phase-num">03</td>
+              <td class="phase-title">Cross-model skeptic</td>
+              <td class="phase-kind">phase</td>
+              <td class="phase-risk" style="color: var(--caution)">med</td>
+              <td class="phase-notes phase-notes-col">Independent reviewer on a non-author model family. Primary path: --with codex (local Codex CLI, GPT-class, no API key, reuses existing setup); alternative: a configured OpenAI API provider/model. Note: --with resolves ONLY to local CLIs (claude/codex/pi) per ai-runtime.ts, so it CANNOT select the OpenAI API — reaching that needs a config provider override, not --with. Emits verdict + cited, confidence-scored concerns that replace the same-model triage pass as the source of rail flags + recommended action.</td>
+            </tr>
+            <tr>
+              <td class="phase-num">04</td>
+              <td class="phase-title">Checks + auto-clear gate</td>
+              <td class="phase-kind">phase</td>
+              <td class="phase-risk" style="color: var(--danger)">high</td>
+              <td class="phase-notes phase-notes-col">Run configured/detected build/test/lint/type commands in the worktree; populate the checks row; auto-clear when verdict safe + checks green + 0 to-resolve. Terminal action: the auto-clear/approve decision is delivered to the still-connected agent over P2's decision-delivery channel, and the agent's own tooling opens the PR with the brief as description — dad never touches git. Merge left to human/policy (auto-merge is a stretch opt-in). Per-repo config gates aggressiveness. Depends on P2's decision channel.</td>
+            </tr>
+            <tr>
+              <td class="phase-num">05</td>
+              <td class="phase-title">Notifier + stdio proxy</td>
+              <td class="phase-kind">phase</td>
+              <td class="phase-risk" style="color: var(--go)">low</td>
+              <td class="phase-notes phase-notes-col">tmux status-line pending count, macOS push (deep-link to a unit), stale escalation, periodic digest. Global one-time MCP registration via a net-new stdio proxy (dad mcp) routing to the daemon — today's MCP is HTTP-only (webStandardStreamableHttp at /mcp), so the stdio transport is from-scratch, not an adaptation. Replaces per-session registration.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="run-bar">
+        <div>
+          <div class="label label-accent">Run all phases</div>
+          <div class="run-bar-headline">Autopilot.</div>
+          <div class="run-bar-desc">Reads the contract, walks the dependency graph, and dispatches phases automatically.</div>
+        </div>
+        <div class="cmd-field">
+            <span class="cmd-field-text" id="cmd-autopilot">/ideation:autopilot</span>
+            <button type="button" class="copy-btn" data-copy="cmd-autopilot">copy</button>
+          </div>
+      </div>
+
+      <details class="disclosure">
+        <summary>Run phases individually (5)</summary>
+        <div class="disclosure-body">
+          <div class="cmd-list">
+            <div class="cmd-row">
+              <span class="cmd-row-num">01</span>
+              <span class="cmd-row-title">Review experience (diff-first guided walkthrough)</span>
+              <div class="cmd-field">
+            <span class="cmd-field-text" id="cmd-1">/ideation:execute-spec docs/ideation/dad-review-loop/spec-phase-1.md</span>
+            <button type="button" class="copy-btn" data-copy="cmd-1">copy</button>
+          </div>
+            </div>
+            <div class="cmd-row">
+              <span class="cmd-row-num">02</span>
+              <span class="cmd-row-title">Command center (daemon)</span>
+              <div class="cmd-field">
+            <span class="cmd-field-text" id="cmd-2">/ideation:execute-spec docs/ideation/dad-review-loop/spec-phase-2.md</span>
+            <button type="button" class="copy-btn" data-copy="cmd-2">copy</button>
+          </div>
+            </div>
+            <div class="cmd-row">
+              <span class="cmd-row-num">03</span>
+              <span class="cmd-row-title">Cross-model skeptic</span>
+              <div class="cmd-field">
+            <span class="cmd-field-text" id="cmd-3">/ideation:execute-spec docs/ideation/dad-review-loop/spec-phase-3.md</span>
+            <button type="button" class="copy-btn" data-copy="cmd-3">copy</button>
+          </div>
+            </div>
+            <div class="cmd-row">
+              <span class="cmd-row-num">04</span>
+              <span class="cmd-row-title">Checks + auto-clear gate</span>
+              <div class="cmd-field">
+            <span class="cmd-field-text" id="cmd-4">/ideation:execute-spec docs/ideation/dad-review-loop/spec-phase-4.md</span>
+            <button type="button" class="copy-btn" data-copy="cmd-4">copy</button>
+          </div>
+            </div>
+            <div class="cmd-row">
+              <span class="cmd-row-num">05</span>
+              <span class="cmd-row-title">Notifier + stdio proxy</span>
+              <div class="cmd-field">
+            <span class="cmd-field-text" id="cmd-5">/ideation:execute-spec docs/ideation/dad-review-loop/spec-phase-5.md</span>
+            <button type="button" class="copy-btn" data-copy="cmd-5">copy</button>
+          </div>
+            </div>
+          </div>
+        </div>
+      </details>
+
+    </section>
+
+    <section class="contract-close">
+      <div>
+        <div class="label label-accent">Contract approved</div>
+        <div class="close-headline">This plan is the commitment.</div>
+        <div class="close-desc">5 phases · Sequential. Scope changes mean a new revision that supersedes this brief — not silent drift.</div>
+      </div>
+      <div class="close-meta">
+        <span class="status-ind status-go"><span class="status-dot" aria-hidden="true"></span>Approved</span>
+        <span class="mono-meta">2026-06-25</span>
+      </div>
+    </section>
+    </main>
+
+    <script>
+      document.querySelectorAll('.copy-btn').forEach(btn => {
+        // aria-live so the copied/failed text swap is announced
+        btn.setAttribute('aria-live', 'polite');
+        btn.addEventListener('click', () => {
+          const target = document.getElementById(btn.dataset.copy);
+          if (!target) return;
+          const flash = label => {
+            btn.textContent = label;
+            setTimeout(() => (btn.textContent = 'copy'), 2000);
+          };
+          navigator.clipboard
+            .writeText(target.textContent.trim())
+            .then(() => flash('copied'))
+            // file:// or denied permission — the text is select-all, so
+            // point at the manual path instead of failing silently
+            .catch(() => flash('press ⌘C / Ctrl+C'));
+        });
+      });
+
+      /* === THEME TOGGLE (auto → light → dark) === */
+      const themeBtn = document.getElementById('theme-toggle');
+      if (themeBtn) {
+        const KEY = 'ideation-contract-theme';
+        const root = document.documentElement;
+        const apply = mode => {
+          if (mode === 'auto') delete root.dataset.theme;
+          else root.dataset.theme = mode;
+          themeBtn.textContent = 'theme · ' + mode;
+          try {
+            if (mode === 'auto') localStorage.removeItem(KEY);
+            else localStorage.setItem(KEY, mode);
+          } catch {}
+        };
+        apply(root.dataset.theme || 'auto');
+        themeBtn.addEventListener('click', () => {
+          const order = ['auto', 'light', 'dark'];
+          const current = root.dataset.theme || 'auto';
+          apply(order[(order.indexOf(current) + 1) % order.length]);
+        });
+      }
+    </script>
+  </body>
+</html>
