@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useReviewStore } from '../state/review-store';
 import { postDecision } from '../hooks/useUnits';
 import { ClassicView } from './ClassicView';
@@ -54,6 +54,8 @@ export function UnitReview() {
   const narrative = useReviewStore((s) => s.narrative);
 
   const [unit, setUnit] = useState<Unit | null>(null);
+  // Dedupe the lazy-hydrate POST: a github unit with no narrative triggers generation once per open.
+  const hydratedRef = useRef<string | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [requesting, setRequesting] = useState(false);
@@ -94,6 +96,33 @@ export function UnitReview() {
       applyUnitToStore(liveUnit);
     }
   }, [liveUnit?.unitId, liveUnit?.updatedAt]);
+
+  // Lazy narrative for github units: PRs aren't narrated until opened. Fire one hydrate POST when a
+  // github unit with no narrative comes into view; the SSE `units` broadcast (and the response, as a
+  // fallback) repaint the walkthrough when generation lands. Deduped per unit so SSE re-renders don't refire.
+  useEffect(() => {
+    if (!unitId || !unit) return;
+    if (unit.source !== 'github' || unit.narrative) return;
+    if (hydratedRef.current === unitId) return;
+    hydratedRef.current = unitId;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/units/${encodeURIComponent(unitId)}/hydrate`, { method: 'POST' });
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as { unit: Unit };
+        if (!cancelled && data.unit) {
+          setUnit(data.unit);
+          applyUnitToStore(data.unit);
+        }
+      } catch {
+        // ignore — the SSE `units` stream still delivers the narrative when it's ready
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [unitId, unit?.source, unit?.narrative]);
 
   if (notFound) {
     return (
@@ -143,6 +172,16 @@ export function UnitReview() {
           <span className="font-mono text-[12.5px] text-[var(--fg-3)]">{unit.metadata.branch}</span>
         )}
         <span className="truncate text-[13.5px] font-semibold text-[var(--fg-1)]">{unit?.taskLabel}</span>
+        {unit?.source === 'github' && unit.prUrl && (
+          <a
+            href={unit.prUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="ml-auto inline-flex items-center gap-1 text-[12.5px] font-medium text-[var(--fg-2)] transition-colors hover:text-[var(--fg-1)]"
+          >
+            View on GitHub <span aria-hidden>↗</span>
+          </a>
+        )}
       </header>
 
       {error && (
@@ -182,9 +221,7 @@ export function UnitReview() {
         >
           <div className="mx-auto flex max-w-[1100px] flex-wrap items-center gap-3">
             <span className="text-[12.5px] text-[var(--fg-3)]">
-              {unit && unit.toResolve > 0
-                ? `${unit.toResolve} to resolve before approving`
-                : 'Ready for your verdict'}
+              {unit && unit.toResolve > 0 ? `${unit.toResolve} to resolve before approving` : 'Ready for your verdict'}
             </span>
             {requesting && (
               <input

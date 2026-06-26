@@ -112,6 +112,11 @@ export function UnitRow({ unit, now, onOpen, onApprove, onRequestChanges, busy }
                 local
               </span>
             )}
+            {unit.source === 'github' && unit.prAuthor && (
+              <span className="text-[12px] text-[var(--fg-3)]" title={`PR by @${unit.prAuthor}`}>
+                @{unit.prAuthor}
+              </span>
+            )}
           </span>
           {meta.length > 0 && <span className="mt-0.5 block text-[12px] text-[var(--fg-3)]">{meta.join(' · ')}</span>}
         </span>

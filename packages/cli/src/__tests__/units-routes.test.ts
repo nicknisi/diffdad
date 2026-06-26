@@ -8,7 +8,7 @@ import { createDaemonApp, SseHub } from '../daemon/app';
 import type { ComputeSlice } from '../mcp/submit';
 import { CleanTreeError, type LocalReview } from '../local/diff-source';
 import type { PRMetadata } from '../github/types';
-import type { ReviewUnit } from '../units/types';
+import type { Decision, ReviewUnit } from '../units/types';
 import type { NarrativeResponse } from '../narrative/types';
 
 const NARRATIVE: NarrativeResponse = {
@@ -61,7 +61,14 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
-function setup(computeSlice: ComputeSlice = fakeSlice) {
+type SetupOpts = {
+  computeSlice?: ComputeSlice;
+  reviewPoster?: (unit: ReviewUnit, decision: Decision) => Promise<void>;
+  hydrate?: (unit: ReviewUnit) => Promise<ReviewUnit>;
+};
+
+function setup(opts: SetupOpts = {}) {
+  const { computeSlice = fakeSlice, reviewPoster, hydrate } = opts;
   const store = new UnitStore([], { dir, ...deterministic() });
   const decision = new DecisionChannel();
   const hub = new SseHub();
@@ -74,8 +81,24 @@ function setup(computeSlice: ComputeSlice = fakeSlice) {
     hub,
     computeSlice,
     onSubmitted: (unit) => submitted.push(unit),
+    reviewPoster,
+    hydrate,
   });
   return { store, decision, hub, events, submitted, app };
+}
+
+function seedGithubUnit(store: UnitStore, over: { number?: number; headSha?: string } = {}) {
+  return store.addGithubUnit({
+    owner: 'octo',
+    repo: 'demo',
+    number: over.number ?? 7,
+    title: 'Add widgets',
+    headBranch: 'feat/widgets',
+    headSha: over.headSha ?? 'sha-1',
+    author: 'octocat',
+    url: 'https://github.com/octo/demo/pull/7',
+    metadata: { ...mkMetadata(), headSha: over.headSha ?? 'sha-1' },
+  });
 }
 
 async function addUnit(store: UnitStore, repo = 'owner/a') {
@@ -157,7 +180,7 @@ describe('POST /api/units (dad add ingest)', () => {
     const cleanSlice: ComputeSlice = async () => {
       throw new CleanTreeError('main');
     };
-    const { store, app } = setup(cleanSlice);
+    const { store, app } = setup({ computeSlice: cleanSlice });
     const res = await post(app, { taskLabel: 't', repo: 'owner/a', worktreePath: '/wt' });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { ok: boolean; reason?: string };
@@ -261,5 +284,241 @@ describe('POST /api/units/:id/decision', () => {
       body: JSON.stringify({ kind: 'approved' }),
     });
     expect(res.status).toBe(409);
+  });
+
+  it('uses the channel path (decision.deliver) for a non-github unit, never the review poster', async () => {
+    const calls: Array<[ReviewUnit, Decision]> = [];
+    const { store, decision, app } = setup({
+      reviewPoster: async (unit, d) => {
+        calls.push([unit, d]);
+      },
+    });
+    const u = await addUnit(store); // source defaults to 'agent'
+    await toQueued(store, u.unitId);
+
+    const parked = decision.wait(u.unitId, 1000);
+    const res = await app.request(`/api/units/${u.unitId}/decision`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind: 'approved', note: 'ship it' }),
+    });
+    expect(res.status).toBe(200);
+    expect(await parked).toMatchObject({ kind: 'approved', note: 'ship it' });
+    expect(store.get(u.unitId)!.status).toBe('approved');
+    expect(calls).toHaveLength(0); // the review poster is never called for agent/cli units
+  });
+});
+
+describe('POST /api/units/:id/decision (github dispatch)', () => {
+  it('posts the verdict to GitHub, records the decision + reviewed SHA, and broadcasts', async () => {
+    const calls: Array<[ReviewUnit, Decision]> = [];
+    const { store, decision, events, app } = setup({
+      reviewPoster: async (unit, d) => {
+        calls.push([unit, d]);
+      },
+    });
+    const gh = seedGithubUnit(store, { headSha: 'sha-1' });
+
+    // A github decision must NOT touch the agent decision channel.
+    const parked = decision.wait(gh.unitId, 200);
+
+    const res = await app.request(`/api/units/${gh.unitId}/decision`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind: 'approved', note: 'lgtm' }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; unit: ReviewUnit };
+    expect(body.ok).toBe(true);
+
+    // (a) the injected poster was called with the unit + the decision
+    expect(calls).toHaveLength(1);
+    expect(calls[0]![0].unitId).toBe(gh.unitId);
+    expect(calls[0]![1]).toMatchObject({ kind: 'approved', note: 'lgtm' });
+
+    // recorded locally: decision + freshness SHA from metadata.headSha
+    const after = store.get(gh.unitId)!;
+    expect(after.status).toBe('approved');
+    expect(after.decision).toMatchObject({ kind: 'approved', note: 'lgtm' });
+    expect(after.lastReviewedSha).toBe('sha-1');
+
+    expect(events).toContain('units');
+    expect(await parked).toBeNull(); // the channel was never delivered to
+  });
+
+  it('502s and does NOT record the decision when the review poster throws', async () => {
+    const { store, app } = setup({
+      reviewPoster: async () => {
+        throw new Error('github 500');
+      },
+    });
+    const gh = seedGithubUnit(store);
+
+    const res = await app.request(`/api/units/${gh.unitId}/decision`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind: 'changes_requested', note: 'nope' }),
+    });
+    expect(res.status).toBe(502);
+
+    // dad and GitHub must not disagree: nothing recorded locally.
+    const after = store.get(gh.unitId)!;
+    expect(after.status).toBe('queued');
+    expect(after.decision).toBeUndefined();
+    expect(after.lastReviewedSha).toBeUndefined();
+  });
+
+  it('400s a github unit with no PR number', async () => {
+    const { store, app } = setup({ reviewPoster: async () => {} });
+    // A github unit minted without a prNumber (shouldn't happen via addGithubUnit, but guard anyway).
+    const gh = seedGithubUnit(store);
+    store.get(gh.unitId)!.prNumber = undefined;
+
+    const res = await app.request(`/api/units/${gh.unitId}/decision`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind: 'approved' }),
+    });
+    expect(res.status).toBe(400);
+    expect(store.get(gh.unitId)!.decision).toBeUndefined();
+  });
+
+  it('503s (and records nothing) on a github decision when GitHub is not configured (no reviewPoster)', async () => {
+    const { store, events, app } = setup(); // no reviewPoster wired
+    const gh = seedGithubUnit(store, { headSha: 'sha-1' });
+
+    const res = await app.request(`/api/units/${gh.unitId}/decision`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind: 'approved', note: 'lgtm' }),
+    });
+    expect(res.status).toBe(503);
+
+    // refuse rather than record a local "approved" that never reaches GitHub
+    const after = store.get(gh.unitId)!;
+    expect(after.status).toBe('queued');
+    expect(after.decision).toBeUndefined();
+    expect(after.lastReviewedSha).toBeUndefined();
+    expect(events).not.toContain('units');
+  });
+
+  it('409s a repeat decision on an already-decided github unit WITHOUT posting a second review', async () => {
+    const calls: Array<[ReviewUnit, Decision]> = [];
+    const { store, app } = setup({
+      reviewPoster: async (unit, d) => {
+        calls.push([unit, d]);
+      },
+    });
+    const gh = seedGithubUnit(store, { headSha: 'sha-1' });
+    // Drive the unit to a decided state the way a first decision would have.
+    (store.get(gh.unitId) as { status: string }).status = 'approved';
+    (store.get(gh.unitId) as { decision?: unknown }).decision = { kind: 'approved' };
+
+    const res = await app.request(`/api/units/${gh.unitId}/decision`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind: 'approved', note: 'again' }),
+    });
+    expect(res.status).toBe(409);
+    // the divergence we forbid: a second real review must NOT be posted before the local 409
+    expect(calls).toHaveLength(0);
+  });
+});
+
+describe('POST /api/units/:id/hydrate (lazy narrative on open)', () => {
+  const post = (app: ReturnType<typeof setup>['app'], id: string) =>
+    app.request(`/api/units/${id}/hydrate`, { method: 'POST' });
+
+  it('calls the injected hydrate on a github unit with no narrative, returns the updated unit, broadcasts', async () => {
+    const calls: ReviewUnit[] = [];
+    let store!: UnitStore;
+    const ctx = setup({
+      hydrate: async (unit) => {
+        calls.push(unit);
+        // mimic the real hydrate: attach a narrative without a status transition
+        return store.attachReview(unit.unitId, [], NARRATIVE, 0);
+      },
+    });
+    store = ctx.store;
+    const gh = seedGithubUnit(store);
+    expect(store.get(gh.unitId)!.narrative).toBeUndefined();
+
+    const res = await post(ctx.app, gh.unitId);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { unit: ReviewUnit };
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.unitId).toBe(gh.unitId);
+    expect(body.unit.narrative).toEqual(NARRATIVE);
+    expect(body.unit.status).toBe('queued'); // no status transition
+    expect(ctx.events).toContain('units');
+  });
+
+  it('is a no-op (no hydrate call) on a github unit that already has a narrative', async () => {
+    let called = false;
+    const { store, app, events } = setup({
+      hydrate: async (unit) => {
+        called = true;
+        return unit;
+      },
+    });
+    const gh = seedGithubUnit(store);
+    store.attachReview(gh.unitId, [], NARRATIVE, 1); // already hydrated
+
+    const res = await post(app, gh.unitId);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { unit: ReviewUnit };
+    expect(called).toBe(false);
+    expect(body.unit.unitId).toBe(gh.unitId);
+    expect(events).not.toContain('units'); // no broadcast for a no-op
+  });
+
+  it('is a no-op (no hydrate call) on a non-github unit', async () => {
+    let called = false;
+    const { store, app } = setup({
+      hydrate: async (unit) => {
+        called = true;
+        return unit;
+      },
+    });
+    const u = await addUnit(store); // source defaults to 'agent'
+
+    const res = await post(app, u.unitId);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { unit: ReviewUnit };
+    expect(called).toBe(false);
+    expect(body.unit.unitId).toBe(u.unitId);
+  });
+
+  it('returns the unit unchanged when no hydrate dep is wired', async () => {
+    const { store, app } = setup(); // no hydrate injected
+    const gh = seedGithubUnit(store);
+    const res = await post(app, gh.unitId);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { unit: ReviewUnit };
+    expect(body.unit.unitId).toBe(gh.unitId);
+    expect(body.unit.narrative).toBeUndefined();
+  });
+
+  it('404s for an unknown unit', async () => {
+    const { app } = setup({ hydrate: async (unit) => unit });
+    const res = await post(app, 'nope');
+    expect(res.status).toBe(404);
+  });
+
+  it('502s (not 500) and leaves the unit unchanged when hydrate throws', async () => {
+    const { store, events, app } = setup({
+      hydrate: async () => {
+        throw new Error('PR fetch failed');
+      },
+    });
+    const gh = seedGithubUnit(store);
+
+    const res = await post(app, gh.unitId);
+    expect(res.status).toBe(502); // a real fetch/LLM failure is a bad-gateway, not an unhandled 500
+
+    const after = store.get(gh.unitId)!;
+    expect(after.narrative).toBeUndefined(); // unchanged
+    expect(after.status).toBe('queued');
+    expect(events).not.toContain('units'); // no broadcast on failure
   });
 });

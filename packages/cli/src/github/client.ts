@@ -129,6 +129,16 @@ export class GitHubClient {
     return parseDiff(text);
   }
 
+  /**
+   * The PR's raw unified diff (not parsed). `getDiff` above is the parsed near-equivalent; the lazy
+   * github-unit hydration path wants the unparsed text so it can run the shared `parseDiff` itself
+   * (keeping the daemon's hydrate closure symmetric with the local slice path).
+   */
+  async getPRDiff(owner: string, repo: string, number: number): Promise<string> {
+    const res = await this.fetch(`/repos/${owner}/${repo}/pulls/${number}`, {}, 'application/vnd.github.v3.diff');
+    return res.text();
+  }
+
   async getComments(owner: string, repo: string, number: number): Promise<PRComment[]> {
     const [reviewRes, issueRes] = await Promise.all([
       this.fetch(`/repos/${owner}/${repo}/pulls/${number}/comments?per_page=100`),

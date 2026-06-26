@@ -266,6 +266,10 @@ export type Unit = {
   status: UnitStatus;
   /** Ingestion door (CLI mirror of `UnitSource`). Defaults to `'agent'` server-side for back-compat. */
   source?: 'agent' | 'cli' | 'github';
+  /** github-only: the PR this unit mirrors. Drives the author cue + "View on GitHub" link + lazy hydrate. */
+  prNumber?: number;
+  prUrl?: string;
+  prAuthor?: string;
   toResolve: number;
   verdict?: NarrativeResponse['verdict'];
   /** Set when the review worker threw — the unit still queues so it reaches the reviewer. */

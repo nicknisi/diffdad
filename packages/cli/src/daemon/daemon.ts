@@ -4,12 +4,13 @@ import { join } from 'path';
 import { resolveGitHubToken } from '../auth';
 import { readConfig } from '../config';
 import { GitHubClient } from '../github/client';
+import { parseDiff } from '../github/diff-parser';
 import { buildLocalReview } from '../local/diff-source';
 import { generateNarrative } from '../narrative/engine';
 import type { ComputeSlice } from '../mcp/submit';
 import { DecisionChannel } from '../units/decision-channel';
 import { UnitStore } from '../units/store';
-import type { ReviewUnit } from '../units/types';
+import type { Decision, ReviewUnit } from '../units/types';
 import { createDaemonApp, SseHub } from './app';
 import { pollOnce } from './poller';
 import { ReviewWorkerPool, type ReviewResult } from './pool';
@@ -99,22 +100,17 @@ const a = {
 export type DaemonOptions = { port?: number; concurrency?: number; open?: boolean; pollMs?: number };
 
 /**
- * Start the GitHub review-request poller on an interval, if a token is available. Runs one pass at
- * startup, then every `pollMs`. Each pass is wrapped so a transient GitHub/network failure logs a
- * one-line warning and never crashes the daemon. With no token, the poller is skipped entirely — the
- * daemon still serves local (agent/cli) units; only the GitHub inbox door is closed.
+ * Start the GitHub review-request poller on an interval. Runs one pass at startup, then every
+ * `pollMs`. Each pass is wrapped so a transient GitHub/network failure logs a one-line warning and
+ * never crashes the daemon. The authenticated client is resolved once by the caller and shared with
+ * the decision/hydrate deps, so there is a single source of truth for "is GitHub wired".
  */
-async function startPoller(store: UnitStore, broadcast: SseHub['broadcast'], pollMs: number): Promise<void> {
-  const token = await resolveGitHubToken();
-  if (!token) {
-    console.log(
-      `  ${a.gray}○${a.reset} ${a.dim}GitHub poller off — no token. Set ${a.reset}${a.cyan}DIFFDAD_GITHUB_TOKEN${a.reset}` +
-        `${a.dim}, run ${a.reset}${a.cyan}gh auth login${a.reset}${a.dim}, or ${a.reset}${a.cyan}dad config${a.reset}` +
-        `${a.dim} to watch review requests.${a.reset}`,
-    );
-    return;
-  }
-  const client = new GitHubClient(token);
+async function startPoller(
+  client: GitHubClient,
+  store: UnitStore,
+  broadcast: SseHub['broadcast'],
+  pollMs: number,
+): Promise<void> {
   const tick = async () => {
     try {
       await pollOnce({ search: () => client.searchReviewRequested(), store, broadcast });
@@ -124,6 +120,56 @@ async function startPoller(store: UnitStore, broadcast: SseHub['broadcast'], pol
   };
   await tick();
   setInterval(tick, pollMs);
+}
+
+/**
+ * Post a `github` unit's verdict to GitHub as a real review. APPROVE / REQUEST_CHANGES per the
+ * decision kind. The review body prefers the reviewer's free-form note; absent one, it summarizes
+ * the curated concerns into a short line so the PR review is never blank. Throws on API failure —
+ * the decision route relies on that to 502 and record NOTHING locally (dad ⇄ GitHub never disagree).
+ */
+function makeReviewPoster(client: GitHubClient): (unit: ReviewUnit, decision: Decision) => Promise<void> {
+  return async (unit, decision) => {
+    const { owner, name } = splitRepo(unit.repo);
+    if (unit.prNumber === undefined) {
+      throw new Error(`unit ${unit.unitId} has no PR number`);
+    }
+    const event = decision.kind === 'approved' ? 'APPROVE' : 'REQUEST_CHANGES';
+    let body = (decision.note && decision.note.trim()) || summarizeConcerns(decision);
+    // GitHub rejects a REQUEST_CHANGES review with an empty body (422); an empty APPROVE body is fine.
+    if (!body && event === 'REQUEST_CHANGES') body = 'Changes requested — see Diff Dad.';
+    await client.submitReview(owner, name, unit.prNumber, event, body);
+  };
+}
+
+/** A short review body built from the curated concerns when the reviewer left no free-form note. */
+function summarizeConcerns(decision: Decision): string {
+  const questions = (decision.concerns ?? []).map((c) => c.question).filter(Boolean);
+  if (questions.length === 0) return '';
+  return questions.map((q) => `- ${q}`).join('\n');
+}
+
+/**
+ * Lazily hydrate a `github` unit on open: fetch the PR's unified diff, parse it, generate the
+ * Phase-1 narrative, attach both to the unit (no status transition — it stays `queued`), and return
+ * the updated unit. Wired only when a GitHub client exists; otherwise the hydrate route no-ops.
+ */
+function makeHydrate(client: GitHubClient, store: UnitStore): (unit: ReviewUnit) => Promise<ReviewUnit> {
+  return async (unit) => {
+    const { owner, name } = splitRepo(unit.repo);
+    if (unit.prNumber === undefined) {
+      throw new Error(`unit ${unit.unitId} has no PR number`);
+    }
+    const diff = await client.getPRDiff(owner, name, unit.prNumber);
+    const files = parseDiff(diff);
+    const { narrative } = await generateNarrative(unit.metadata, files, [], await readConfig(), undefined, {
+      // contentKey-style cache key: keyed on the head SHA carried in diffContentKey at mint time.
+      cacheKey: { owner, repo: name, number: unit.prNumber, sha: unit.diffContentKey },
+      comments: [],
+    });
+    store.attachReview(unit.unitId, files, narrative, narrative.concerns?.length ?? 0);
+    return store.get(unit.unitId)!;
+  };
 }
 
 /** Split `owner/name` for the narrative cache key; tolerate a bare name. */
@@ -183,12 +229,19 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<number> {
   const pool = new ReviewWorkerPool({ store, review: reviewUnit, broadcast: hub.broadcast, concurrency });
   const computeSlice: ComputeSlice = (worktreePath, baseRef) => buildLocalReview(baseRef, { cwd: worktreePath });
 
+  // Resolve GitHub auth once: the same client drives the poller AND the github decision/hydrate deps.
+  // No token → all three are skipped/undefined and the routes no-op gracefully (local units still work).
+  const githubToken = await resolveGitHubToken();
+  const githubClient = githubToken ? new GitHubClient(githubToken) : null;
+
   const { app } = createDaemonApp({
     store,
     decision,
     hub,
     computeSlice,
     onSubmitted: () => pool.kick(),
+    reviewPoster: githubClient ? makeReviewPoster(githubClient) : undefined,
+    hydrate: githubClient ? makeHydrate(githubClient, store) : undefined,
   });
 
   let server: ReturnType<typeof Bun.serve>;
@@ -222,8 +275,17 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<number> {
   pool.kick();
 
   // Open the GitHub "reviews requested of me" door: poll on an interval, mint/link/resurface units.
-  // Awaited only through the first token resolution + initial pass; the interval then runs detached.
-  await startPoller(store, hub.broadcast, pollMs);
+  // Awaited only through the initial pass; the interval then runs detached. With no token the whole
+  // GitHub door is closed (no poll, no review-post, no lazy-narrate) — local units still flow.
+  if (githubClient) {
+    await startPoller(githubClient, store, hub.broadcast, pollMs);
+  } else {
+    console.log(
+      `  ${a.gray}○${a.reset} ${a.dim}GitHub poller off — no token. Set ${a.reset}${a.cyan}DIFFDAD_GITHUB_TOKEN${a.reset}` +
+        `${a.dim}, run ${a.reset}${a.cyan}gh auth login${a.reset}${a.dim}, or ${a.reset}${a.cyan}dad config${a.reset}` +
+        `${a.dim} to watch review requests.${a.reset}`,
+    );
+  }
 
   if (opts.open) {
     const { default: open } = await import('open');

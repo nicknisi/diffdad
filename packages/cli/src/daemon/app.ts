@@ -8,6 +8,7 @@ import { mountMcp } from '../mcp/server';
 import { type ComputeSlice, registerSubmitTools } from '../mcp/submit';
 import type { Broadcast } from '../mcp/tools';
 import type { DecisionChannel } from '../units/decision-channel';
+import { decisionTarget } from '../units/decision-target';
 import type { UnitStore } from '../units/store';
 import { type Decision, IllegalTransitionError, type ReviewUnit, UnknownUnitError } from '../units/types';
 
@@ -43,6 +44,18 @@ export type DaemonAppDeps = {
   computeSlice: ComputeSlice;
   /** Fired after a unit is submitted so the daemon can kick the review-worker pool. */
   onSubmitted?: (unit: ReviewUnit) => void;
+  /**
+   * Posts a `github` unit's verdict to GitHub as a real review. Injected so tests fake it and the
+   * daemon wires the authenticated client. Must throw on failure — the route then 502s and records
+   * NOTHING locally, so dad and GitHub never disagree.
+   */
+  reviewPoster?: (unit: ReviewUnit, decision: Decision) => Promise<void>;
+  /**
+   * Lazily hydrates a `github` unit on open: fetch the PR diff, generate the narrative, store it, and
+   * return the updated unit. Injected so tests fake it and the daemon wires the real fetch+generate
+   * path. Absent → the hydrate route is a graceful no-op (the unit is returned unchanged).
+   */
+  hydrate?: (unit: ReviewUnit) => Promise<ReviewUnit>;
   /** Long-poll ceiling for `await_decision`; tests shrink it. */
   awaitTimeoutMs?: number;
   /** Override the command-center static root (defaults to the same fallbacks as `server.ts`). */
@@ -68,7 +81,7 @@ function resolveWebDist(override?: string): string {
  * route handlers; the unit-scoped store is a cleaner seam.
  */
 export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
-  const { store, decision, hub, computeSlice, onSubmitted, awaitTimeoutMs } = deps;
+  const { store, decision, hub, computeSlice, onSubmitted, reviewPoster, hydrate, awaitTimeoutMs } = deps;
   const app = new Hono();
   const broadcast = hub.broadcast;
 
@@ -107,6 +120,42 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
     }
     const decisionValue: Decision = { kind: body.kind, concerns: body.concerns, note: body.note };
 
+    const existing = store.get(id);
+    if (!existing) return c.json({ error: new UnknownUnitError(id).message }, 404);
+
+    // --- github units: the verdict becomes a real GitHub review --------------
+    // Post to GitHub FIRST; only record locally if that succeeds, so dad and GitHub never disagree.
+    if (decisionTarget(existing) === 'github') {
+      // Validate the transition BEFORE the network call: a github verdict is only valid on a unit
+      // awaiting review. A repeat decision (double-click / second tab) must not post a second real
+      // review to GitHub and then fail locally — the exact dad⇄GitHub divergence we forbid.
+      if (existing.status !== 'queued') {
+        return c.json({ error: `unit is ${existing.status}, not awaiting a decision` }, 409);
+      }
+      if (existing.prNumber === undefined) return c.json({ error: 'unit has no PR' }, 400);
+      // A github verdict is meaningless without a way to post it — refuse rather than record a local
+      // "approved" that never reaches GitHub.
+      if (!reviewPoster) {
+        return c.json({ error: 'GitHub is not configured — cannot post a review for this unit' }, 503);
+      }
+      try {
+        await reviewPoster(existing, decisionValue);
+      } catch (err) {
+        return c.json({ error: err instanceof Error ? err.message : String(err) }, 502);
+      }
+      let unit: ReviewUnit;
+      try {
+        await store.setDecision(id, decisionValue);
+        unit = store.setReviewedSha(id, existing.metadata.headSha);
+      } catch (err) {
+        if (err instanceof IllegalTransitionError) return c.json({ error: err.message }, 409);
+        throw err;
+      }
+      broadcast('units', { units: store.list() });
+      return c.json({ ok: true, unit });
+    }
+
+    // --- agent / cli units: delivered over the decision channel --------------
     let unit: ReviewUnit;
     try {
       unit = await store.setDecision(id, decisionValue);
@@ -160,6 +209,28 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
     onSubmitted?.(unit);
     broadcast('units', { units: store.list() });
     return c.json({ unitId: unit.unitId });
+  });
+
+  // Lazy narrative for `github` units — generated on open, not on poll, so dad never burns tokens
+  // narrating PRs you never click. The web drill-in POSTs this once when it opens a github unit with
+  // no narrative; the `hydrate` dep fetches the PR diff + generates the walkthrough and stores it
+  // (without a status transition). No-op for non-github units, already-hydrated units, or when no
+  // hydrate dep is wired. Must precede the static catch-all or serveStatic swallows it.
+  app.post('/api/units/:id/hydrate', async (c) => {
+    const id = c.req.param('id');
+    const unit = store.get(id);
+    if (!unit) return c.json({ error: new UnknownUnitError(id).message }, 404);
+    if (unit.source !== 'github' || unit.narrative || !hydrate) return c.json({ unit });
+    let updated: ReviewUnit;
+    try {
+      updated = await hydrate(unit);
+    } catch (err) {
+      // A real PR-fetch / LLM failure is a bad gateway, not an unhandled 500 with a stack trace.
+      // Record nothing and don't broadcast — the unit stays as-is for a later retry.
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 502);
+    }
+    broadcast('units', { units: store.list() });
+    return c.json({ unit: updated });
   });
 
   // --- Live updates ---------------------------------------------------------

@@ -4,7 +4,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { UnitStore } from '../store';
 import { IllegalTransitionError, UnknownUnitError } from '../types';
-import type { NewReviewUnit } from '../types';
+import type { NewReviewUnit, ReviewUnit } from '../types';
 import type { NarrativeResponse } from '../../narrative/types';
 import type { PRMetadata } from '../../github/types';
 
@@ -291,6 +291,62 @@ describe('UnitStore', () => {
     });
   });
 
+  describe('attachReview', () => {
+    it('sets files + narrative + verdict + toResolve WITHOUT a status transition (github unit stays queued)', async () => {
+      const store = new UnitStore([], det());
+      const u = store.addGithubUnit({
+        owner: 'octo',
+        repo: 'demo',
+        number: 11,
+        title: 'Lazy',
+        headBranch: 'feat/lazy',
+        headSha: 'lazysha',
+        author: 'octocat',
+        url: 'https://github.com/octo/demo/pull/11',
+        metadata: mkMetadata('feat/lazy'),
+      });
+      const files = [{ path: 'a.ts' }] as unknown as ReviewUnit['files'];
+      const after = store.attachReview(u.unitId, files, NARRATIVE, 4);
+      expect(after.status).toBe('queued'); // critical: lazy hydration does NOT transition state
+      expect(after.files).toBe(files);
+      expect(after.narrative).toEqual(NARRATIVE);
+      expect(after.verdict).toBe(NARRATIVE.verdict);
+      expect(after.toResolve).toBe(4);
+      expect(after.source).toBe('github'); // still a github unit
+    });
+
+    it('round-trips the attached review through a reload', async () => {
+      const opts = det();
+      const store = new UnitStore([], opts);
+      const u = store.addGithubUnit({
+        owner: 'octo',
+        repo: 'demo',
+        number: 12,
+        title: 'Lazy2',
+        headBranch: 'feat/lazy2',
+        headSha: 'lazysha2',
+        author: 'octocat',
+        url: 'https://github.com/octo/demo/pull/12',
+        metadata: mkMetadata('feat/lazy2'),
+      });
+      const files = [{ path: 'b.ts' }] as unknown as ReviewUnit['files'];
+      store.attachReview(u.unitId, files, NARRATIVE, 2);
+      await new Promise((r) => setTimeout(r, 20)); // best-effort save() isn't awaited
+      const reloaded = await UnitStore.load(opts);
+      const r = reloaded.get(u.unitId)!;
+      expect(r.status).toBe('queued');
+      expect(r.narrative).toEqual(NARRATIVE);
+      expect(r.verdict).toBe(NARRATIVE.verdict);
+      expect(r.toResolve).toBe(2);
+      expect(r.files).toEqual(files);
+    });
+
+    it('throws UnknownUnitError for an unknown id', () => {
+      const store = new UnitStore([], det());
+      expect(() => store.attachReview('nope', [], NARRATIVE, 0)).toThrow(UnknownUnitError);
+    });
+  });
+
   describe('linkPr', () => {
     it('attaches pr fields to an existing agent unit without changing status', async () => {
       const store = new UnitStore([], det());
@@ -369,6 +425,22 @@ describe('UnitStore', () => {
       expect(after.status).toBe('queued');
       expect(after.decision).toBeUndefined();
       expect(after.metadata.headSha).toBe('fresh');
+    });
+
+    it('resets the stale walkthrough (narrative/files/verdict/toResolve) so the next open re-hydrates fresh', async () => {
+      const { store, unitId } = await approvedGithubUnit();
+      // Seed a stale walkthrough from the prior review the way lazy hydration would.
+      store.attachReview(unitId, [{ path: 'a.ts' }] as unknown as ReviewUnit['files'], NARRATIVE, 3);
+      const before = store.get(unitId)!;
+      expect(before.narrative).toEqual(NARRATIVE);
+      expect(before.files).toHaveLength(1);
+
+      const after = store.resurfaceForNewPush(unitId, 'fresh');
+      expect(after.status).toBe('queued');
+      expect(after.narrative).toBeUndefined();
+      expect(after.files).toEqual([]);
+      expect(after.verdict).toBeUndefined();
+      expect(after.toResolve).toBe(0);
     });
 
     it('advances diffContentKey to the new head so the narrative cache key is not pinned to the old sha', async () => {

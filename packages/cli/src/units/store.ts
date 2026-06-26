@@ -1,7 +1,7 @@
 import { mkdir, readdir, readFile, writeFile } from 'fs/promises';
 import { homedir } from 'os';
 import { join } from 'path';
-import type { PRMetadata } from '../github/types';
+import type { DiffFile, PRMetadata } from '../github/types';
 import type { NarrativeResponse } from '../narrative/types';
 import {
   type Decision,
@@ -222,6 +222,29 @@ export class UnitStore {
     // Mirror the mint-time invariant (diffContentKey = headSha): the narrative cache key must advance
     // with the head, else a re-review re-uses the stale cache entry keyed on the old sha.
     unit.diffContentKey = headSha;
+    // Drop the prior push's walkthrough so the lazy-hydrate route (a no-op when a narrative exists)
+    // re-fetches + re-narrates the NEW diff — otherwise the reviewer reads a stale walkthrough.
+    unit.narrative = undefined;
+    unit.files = [];
+    unit.verdict = undefined;
+    unit.toResolve = 0;
+    unit.updatedAt = this.now();
+    void this.save(unit);
+    return unit;
+  }
+
+  /**
+   * Lazy-hydration write for `github` units: attach the fetched diff + generated narrative WITHOUT a
+   * status transition (a github unit stays `queued`). Distinct from `setQueued`, which owns the
+   * reviewing→queued edge for the agent/cli worker-pool path; here the unit is already `queued` and we
+   * only fill in the deferred walkthrough. Synchronous; persistence is best-effort via `save()`.
+   */
+  attachReview(unitId: string, files: DiffFile[], narrative: NarrativeResponse, toResolve: number): ReviewUnit {
+    const unit = this.require(unitId);
+    unit.files = files;
+    unit.narrative = narrative;
+    unit.verdict = narrative.verdict;
+    unit.toResolve = toResolve;
     unit.updatedAt = this.now();
     void this.save(unit);
     return unit;
