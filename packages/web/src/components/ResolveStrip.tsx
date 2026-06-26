@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { aiEndpoint } from '../lib/units-view';
 import { useReviewStore } from '../state/review-store';
 import { Markdown } from './markdown/Markdown';
 import type { ResolveItem, ResolveSeverity } from '../lib/walkthrough';
@@ -11,7 +12,8 @@ const STRIP: Record<ResolveSeverity, { bg: string; border: string; accent: strin
 };
 
 async function askDad(chapterIndex: number, question: string): Promise<string> {
-  const res = await fetch('/api/ai', {
+  const { mode, route } = useReviewStore.getState();
+  const res = await fetch(aiEndpoint(mode, route), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'ask', chapterIndex, question }),

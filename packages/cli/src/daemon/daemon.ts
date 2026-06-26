@@ -5,7 +5,7 @@ import { resolveGitHubToken } from '../auth';
 import { readConfig } from '../config';
 import { GitHubClient, type PostCommentOptions } from '../github/client';
 import { parseDiff } from '../github/diff-parser';
-import type { PRComment } from '../github/types';
+import type { CheckRun, PRComment, PRReview } from '../github/types';
 import { buildLocalReview } from '../local/diff-source';
 import { callAi, generateNarrative } from '../narrative/engine';
 import type { ComputeSlice } from '../mcp/submit';
@@ -216,6 +216,24 @@ function makeReviewSubmitter(
   };
 }
 
+/**
+ * Fetch a `github` unit's CI checks + GitHub reviews (its merge-readiness context for the drill-in).
+ * Checks key off the head SHA, reviews off the PR number. Read live; never stored on the unit.
+ */
+function makeStatusFetcher(
+  client: GitHubClient,
+): (unit: ReviewUnit) => Promise<{ checks: CheckRun[]; reviews: PRReview[] }> {
+  return async (unit) => {
+    const { owner, name } = splitRepo(unit.repo);
+    if (unit.prNumber === undefined) throw new Error(`unit ${unit.unitId} has no PR number`);
+    const [checks, reviews] = await Promise.all([
+      client.getCheckRuns(owner, name, unit.metadata.headSha),
+      client.getReviews(owner, name, unit.prNumber),
+    ]);
+    return { checks, reviews };
+  };
+}
+
 /** Split `owner/name` for the narrative cache key; tolerate a bare name. */
 function splitRepo(repo: string): { owner: string; name: string } {
   const slash = repo.indexOf('/');
@@ -289,6 +307,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<number> {
     commentFetcher: githubClient ? makeCommentFetcher(githubClient) : undefined,
     commentPoster: githubClient ? makeCommentPoster(githubClient) : undefined,
     reviewSubmitter: githubClient ? makeReviewSubmitter(githubClient) : undefined,
+    statusFetcher: githubClient ? makeStatusFetcher(githubClient) : undefined,
     // AI works without a GitHub token (the default provider shells out to `claude -p`), so it's
     // always wired — the route reads config per-call, mirroring the PR server's /api/ai.
     ai: async (system, user) => callAi(await readConfig(), system, user),

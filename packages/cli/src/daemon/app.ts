@@ -6,7 +6,9 @@ import type { PostCommentOptions } from '../github/client';
 import { mapCommentsToChapters } from '../github/comments';
 import type { PRComment } from '../github/types';
 import { CleanTreeError } from '../local/diff-source';
+import { buildChapterAiPrompt } from '../narrative/chapter-ai';
 import { buildReviewSummaryPrompt } from '../narrative/review-summary';
+import type { CheckRun, PRReview } from '../github/types';
 import type { Concern } from '../narrative/types';
 import { mountMcp } from '../mcp/server';
 import { type ComputeSlice, registerSubmitTools } from '../mcp/submit';
@@ -97,6 +99,11 @@ export type DaemonAppDeps = {
    * Injected so tests fake it and the daemon wires the configured provider. Absent → the AI route 503s.
    */
   ai?: (systemPrompt: string, userPrompt: string) => Promise<{ text: string }>;
+  /**
+   * Fetches a `github` unit's CI checks + GitHub reviews (the PR's merge-readiness context). Injected
+   * like the other GitHub deps; absent → the status route returns empties. Read live, not stored.
+   */
+  statusFetcher?: (unit: ReviewUnit) => Promise<{ checks: CheckRun[]; reviews: PRReview[] }>;
   /** Long-poll ceiling for `await_decision`; tests shrink it. */
   awaitTimeoutMs?: number;
   /** Override the command-center static root (defaults to the same fallbacks as `server.ts`). */
@@ -123,7 +130,7 @@ function resolveWebDist(override?: string): string {
  */
 export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
   const { store, decision, hub, computeSlice, onSubmitted, reviewPoster, hydrate, awaitTimeoutMs } = deps;
-  const { commentFetcher, commentPoster, reviewSubmitter, ai } = deps;
+  const { commentFetcher, commentPoster, reviewSubmitter, ai, statusFetcher } = deps;
   const app = new Hono();
   const broadcast = hub.broadcast;
 
@@ -456,9 +463,10 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
     return c.json({ ok: true, unit: updated });
   });
 
-  // --- AI (review-summary draft; ask/renarrate land in a later slice) -------
-  // The drill-in's "Draft with AI" button. Mirrors the PR server's /api/ai 'summarize' action, but
-  // scoped to a unit's narrative. 503 (not 500) when the unit isn't hydrated or no provider is wired.
+  // --- AI (review-summary draft + per-chapter ask / re-narrate) -------------
+  // The drill-in's "Draft with AI" summary and the per-chapter "Ask Dad" / re-narrate. Mirrors the
+  // PR server's /api/ai, scoped to a unit's narrative (+ diff for ask/renarrate). 503 (not 500) when
+  // the unit isn't hydrated or no provider is wired; a bad chapter/question/lens is a 400.
   app.post('/api/units/:id/ai', async (c) => {
     const id = c.req.param('id');
     const unit = store.get(id);
@@ -470,6 +478,9 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
       reviewedChapters?: number[];
       pendingComments?: { path?: string; line?: number; body?: string }[];
       userDraft?: string;
+      chapterIndex?: number;
+      question?: string;
+      lens?: string;
     };
     try {
       body = (await c.req.json()) as typeof body;
@@ -477,22 +488,52 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
       return c.json({ error: 'invalid JSON body' }, 400);
     }
 
-    if (body.action !== 'summarize') return c.json({ error: `unsupported action: ${body.action}` }, 400);
+    const { action } = body;
+    if (action !== 'summarize' && action !== 'ask' && action !== 'renarrate') {
+      return c.json({ error: `unsupported action: ${action}` }, 400);
+    }
     if (!unit.narrative) return c.json({ error: 'narrative still generating' }, 503);
     if (!ai) return c.json({ error: 'AI is not configured' }, 503);
 
-    const { systemPrompt, userPrompt } = buildReviewSummaryPrompt(unit.narrative, {
-      resolution: body.resolution,
-      reviewedChapters: body.reviewedChapters,
-      pendingComments: body.pendingComments,
-      userDraft: body.userDraft,
-    });
+    let systemPrompt: string;
+    let userPrompt: string;
+    if (action === 'summarize') {
+      ({ systemPrompt, userPrompt } = buildReviewSummaryPrompt(unit.narrative, {
+        resolution: body.resolution,
+        reviewedChapters: body.reviewedChapters,
+        pendingComments: body.pendingComments,
+        userDraft: body.userDraft,
+      }));
+    } else {
+      const built = buildChapterAiPrompt(unit.narrative, unit.files, {
+        action,
+        chapterIndex: body.chapterIndex,
+        question: body.question,
+        lens: body.lens,
+      });
+      if (!built.ok) return c.json({ error: built.error }, 400);
+      ({ systemPrompt, userPrompt } = built);
+    }
+
     try {
       const result = await ai(systemPrompt, userPrompt);
       return c.json({ text: result.text.trim() });
     } catch (err) {
       return c.json({ error: `AI request failed: ${err instanceof Error ? err.message : String(err)}` }, 500);
     }
+  });
+
+  // --- Status (github units): CI checks + reviews ---------------------------
+  // The PR's merge-readiness context for the drill-in (is CI green, who's approved). Read live from
+  // GitHub, never stored. Non-github units / no fetcher → empties (they have no PR).
+  app.get('/api/units/:id/status', async (c) => {
+    const id = c.req.param('id');
+    const unit = store.get(id);
+    if (!unit) return c.json({ error: new UnknownUnitError(id).message }, 404);
+    if (unit.source !== 'github' || !statusFetcher) {
+      return c.json({ checks: [] as CheckRun[], reviews: [] as PRReview[] });
+    }
+    return c.json(await statusFetcher(unit));
   });
 
   // --- Live updates ---------------------------------------------------------

@@ -7,7 +7,7 @@ import { DecisionChannel } from '../units/decision-channel';
 import { createDaemonApp, SseHub } from '../daemon/app';
 import type { ComputeSlice } from '../mcp/submit';
 import { CleanTreeError, type LocalReview } from '../local/diff-source';
-import type { PRComment, PRMetadata } from '../github/types';
+import type { CheckRun, PRComment, PRMetadata, PRReview } from '../github/types';
 import type { PostCommentOptions } from '../github/client';
 import type { Decision, ReviewUnit } from '../units/types';
 import type { NarrativeResponse } from '../narrative/types';
@@ -78,10 +78,12 @@ type SetupOpts = {
     comments: SubmitInlineComment[],
   ) => Promise<void>;
   ai?: (system: string, user: string) => Promise<{ text: string }>;
+  statusFetcher?: (unit: ReviewUnit) => Promise<{ checks: CheckRun[]; reviews: PRReview[] }>;
 };
 
 function setup(opts: SetupOpts = {}) {
   const { computeSlice = fakeSlice, reviewPoster, hydrate, commentFetcher, commentPoster, reviewSubmitter, ai } = opts;
+  const { statusFetcher } = opts;
   const store = new UnitStore([], { dir, ...deterministic() });
   const decision = new DecisionChannel();
   const hub = new SseHub();
@@ -104,6 +106,7 @@ function setup(opts: SetupOpts = {}) {
     commentPoster,
     reviewSubmitter,
     ai,
+    statusFetcher,
   });
   return { store, decision, hub, events, messages, submitted, app };
 }
@@ -986,8 +989,104 @@ describe('POST /api/units/:id/ai (review-summary draft)', () => {
     expect((await post(app, gh.unitId, { action: 'frobnicate' })).status).toBe(400);
   });
 
+  it('asks: answers a question about a chapter using its diff', async () => {
+    const calls: Array<[string, string]> = [];
+    const { store, app } = setup({
+      ai: async (system, user) => {
+        calls.push([system, user]);
+        return { text: 'Because the API changed.' };
+      },
+    });
+    const gh = seedGithubUnit(store);
+    store.attachReview(gh.unitId, [], narrativeWithFile('src/a.ts'), 0);
+
+    const res = await post(app, gh.unitId, { action: 'ask', chapterIndex: 0, question: 'why this change?' });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { text: string }).text).toBe('Because the API changed.');
+    expect(calls[0]![1]).toContain('why this change?'); // the question is in the user prompt
+  });
+
+  it('400s an ask with no question', async () => {
+    const { store, app } = setup({ ai: async () => ({ text: 'x' }) });
+    const gh = seedGithubUnit(store);
+    store.attachReview(gh.unitId, [], narrativeWithFile('src/a.ts'), 0);
+    expect((await post(app, gh.unitId, { action: 'ask', chapterIndex: 0 })).status).toBe(400);
+  });
+
+  it('400s an ask for a chapter that does not exist', async () => {
+    const { store, app } = setup({ ai: async () => ({ text: 'x' }) });
+    const gh = seedGithubUnit(store);
+    store.attachReview(gh.unitId, [], NARRATIVE, 0); // no chapters
+    expect((await post(app, gh.unitId, { action: 'ask', chapterIndex: 5, question: 'q' })).status).toBe(400);
+  });
+
   it('404s for an unknown unit', async () => {
     const { app } = setup({ ai: async () => ({ text: 'x' }) });
     expect((await post(app, 'nope', { action: 'summarize' })).status).toBe(404);
+  });
+});
+
+describe('GET /api/units/:id/status (checks + reviews)', () => {
+  const mkCheck = (over: Partial<CheckRun> = {}): CheckRun => ({
+    id: over.id ?? 1,
+    name: over.name ?? 'ci',
+    status: over.status ?? 'completed',
+    conclusion: over.conclusion ?? 'success',
+    startedAt: null,
+    completedAt: null,
+    detailsUrl: null,
+    output: {},
+  });
+  const mkReview = (over: Partial<PRReview> = {}): PRReview => ({
+    id: over.id ?? 1,
+    user: over.user ?? 'octocat',
+    avatarUrl: '',
+    state: over.state ?? 'APPROVED',
+    submittedAt: 'now',
+  });
+
+  it('returns a github unit’s checks + reviews from the fetcher', async () => {
+    const seen: ReviewUnit[] = [];
+    const { store, app } = setup({
+      statusFetcher: async (unit) => {
+        seen.push(unit);
+        return { checks: [mkCheck({ conclusion: 'failure' })], reviews: [mkReview()] };
+      },
+    });
+    const gh = seedGithubUnit(store);
+    const res = await app.request(`/api/units/${gh.unitId}/status`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { checks: CheckRun[]; reviews: PRReview[] };
+    expect(seen[0]!.unitId).toBe(gh.unitId);
+    expect(body.checks[0]!.conclusion).toBe('failure');
+    expect(body.reviews[0]!.state).toBe('APPROVED');
+  });
+
+  it('returns empty for a non-github unit without calling the fetcher', async () => {
+    let called = false;
+    const { store, app } = setup({
+      statusFetcher: async () => {
+        called = true;
+        return { checks: [mkCheck()], reviews: [] };
+      },
+    });
+    const u = await addUnit(store);
+    const res = await app.request(`/api/units/${u.unitId}/status`);
+    expect(res.status).toBe(200);
+    expect((await res.json()) as unknown).toEqual({ checks: [], reviews: [] });
+    expect(called).toBe(false);
+  });
+
+  it('returns empty when no fetcher is wired', async () => {
+    const { store, app } = setup();
+    const gh = seedGithubUnit(store);
+    const res = await app.request(`/api/units/${gh.unitId}/status`);
+    expect(res.status).toBe(200);
+    expect((await res.json()) as unknown).toEqual({ checks: [], reviews: [] });
+  });
+
+  it('404s for an unknown unit', async () => {
+    const { app } = setup({ statusFetcher: async () => ({ checks: [], reviews: [] }) });
+    expect((await app.request('/api/units/nope/status')).status).toBe(404);
   });
 });

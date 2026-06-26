@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { getAccentMeta } from '../lib/accents';
 import { loadDrafts, pendingReviewComments, useReviewStore } from '../state/review-store';
-import { reviewEndpoint } from '../lib/units-view';
+import { reviewEndpoint, summarizeChecks, summarizeReviews } from '../lib/units-view';
 import { useComments } from '../hooks/useComments';
 import { postDecision, removeUnit, retryUnit } from '../hooks/useUnits';
 import { AccentPicker } from './AccentPicker';
@@ -11,7 +11,7 @@ import { ReviewProgress } from './ReviewProgress';
 import { StoryView } from './StoryView';
 import { SubmitDialog } from './SubmitDialog';
 import { ThemeToggle } from './ThemeToggle';
-import type { ChapterState, Unit } from '../state/types';
+import type { ChapterState, CheckRun, PRReview, Unit } from '../state/types';
 
 /**
  * Feed a unit's diff slice + brief into the review store so the existing review surface
@@ -71,6 +71,10 @@ export function UnitReview() {
   const setComments = useReviewStore((s) => s.setComments);
   const draftCount = useReviewStore((s) => pendingReviewComments(s.drafts).length);
   const clearDrafts = useReviewStore((s) => s.clearDrafts);
+  const setCheckRuns = useReviewStore((s) => s.setCheckRuns);
+  const setReviews = useReviewStore((s) => s.setReviews);
+  const checkRuns = useReviewStore((s) => s.checkRuns);
+  const reviews = useReviewStore((s) => s.reviews);
   const { refreshComments } = useComments();
 
   const [unit, setUnit] = useState<Unit | null>(null);
@@ -129,6 +133,31 @@ export function UnitReview() {
     void refreshComments();
   }, [unitId, hasNarrative, setComments, refreshComments]);
 
+  // Load this github unit's CI checks + reviews. Keyed on the head SHA too, so a new push (the SSE
+  // `units` event updates the unit's metadata) re-fetches the status — modest liveness without a poll.
+  const headSha = unit?.metadata?.headSha;
+  useEffect(() => {
+    if (!unitId) return;
+    let cancelled = false;
+    setCheckRuns([]);
+    setReviews([]);
+    void (async () => {
+      try {
+        const res = await fetch(`/api/units/${encodeURIComponent(unitId)}/status`);
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as { checks: CheckRun[]; reviews: PRReview[] };
+        if (cancelled) return;
+        setCheckRuns(data.checks ?? []);
+        setReviews(data.reviews ?? []);
+      } catch {
+        // ignore — status is best-effort context, not load-blocking
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [unitId, headSha, setCheckRuns, setReviews]);
+
   // Lazy narrative for github units: PRs aren't narrated until opened. Fire one hydrate POST when a
   // github unit with no narrative comes into view; the SSE `units` broadcast (and the response, as a
   // fallback) repaint the walkthrough when generation lands. Deduped per unit so SSE re-renders don't refire.
@@ -174,6 +203,9 @@ export function UnitReview() {
   const status = unit?.status;
   const decidable = status === 'queued';
   const isGithub = unit?.source === 'github';
+  const checks = summarizeChecks(checkRuns);
+  const rv = summarizeReviews(reviews);
+  const showStatus = isGithub && (checkRuns.length > 0 || reviews.length > 0);
 
   async function decide(kind: 'approved' | 'changes_requested') {
     if (!unitId) return;
@@ -291,6 +323,34 @@ export function UnitReview() {
           style={{ background: 'var(--red-3)', color: 'var(--red-11)', boxShadow: 'inset 0 0 0 1px var(--red-a6)' }}
         >
           {error}
+        </div>
+      )}
+
+      {showStatus && (
+        <div className="mx-auto mt-3 flex max-w-[1100px] flex-wrap items-center gap-x-5 gap-y-1 px-6 text-[12.5px]">
+          {checkRuns.length > 0 && (
+            <span className="inline-flex items-center gap-2">
+              <span className="font-medium text-[var(--fg-3)]">CI</span>
+              {checks.passed > 0 && <span style={{ color: 'var(--green-11)' }}>✓ {checks.passed}</span>}
+              {checks.failed > 0 && <span style={{ color: 'var(--red-11)' }}>✗ {checks.failed}</span>}
+              {checks.running > 0 && <span style={{ color: 'var(--amber-11)' }}>◐ {checks.running}</span>}
+              {checks.passed === 0 && checks.failed === 0 && checks.running === 0 && (
+                <span className="text-[var(--fg-3)]">—</span>
+              )}
+            </span>
+          )}
+          {reviews.length > 0 && (
+            <span className="inline-flex items-center gap-2">
+              <span className="font-medium text-[var(--fg-3)]">Reviews</span>
+              {rv.approved > 0 && <span style={{ color: 'var(--green-11)' }}>✓ {rv.approved} approved</span>}
+              {rv.changesRequested > 0 && (
+                <span style={{ color: 'var(--red-11)' }}>✗ {rv.changesRequested} changes requested</span>
+              )}
+              {rv.approved === 0 && rv.changesRequested === 0 && (
+                <span className="text-[var(--fg-3)]">comments only</span>
+              )}
+            </span>
+          )}
         </div>
       )}
 

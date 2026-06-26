@@ -1,4 +1,4 @@
-import type { Unit, UnitStatus } from '../state/types';
+import type { CheckRun, PRReview, Unit, UnitStatus } from '../state/types';
 
 /**
  * The command center's three lanes. Status grouping is primary (repo is a filter, per the
@@ -139,3 +139,41 @@ export const reviewEndpoint = (mode: 'pr' | 'watch' | 'command-center', route: R
 /** AI endpoint (summary draft, ask) for the submit dialog and ask-Dad features. */
 export const aiEndpoint = (mode: 'pr' | 'watch' | 'command-center', route: Route): string =>
   resourceEndpoint(mode, route, 'ai');
+
+// --- CI checks + reviews rollups (the drill-in's merge-readiness strip) ------------------------
+
+const FAILED_CONCLUSIONS = new Set(['failure', 'timed_out', 'cancelled', 'action_required', 'startup_failure', 'stale']);
+
+/** Roll up CI check runs into passed / failed / running counts. Neutral & skipped count as neither. */
+export function summarizeChecks(checks: CheckRun[]): { passed: number; failed: number; running: number } {
+  let passed = 0;
+  let failed = 0;
+  let running = 0;
+  for (const c of checks) {
+    if (c.status !== 'completed') running++;
+    else if (c.conclusion === 'success') passed++;
+    else if (c.conclusion && FAILED_CONCLUSIONS.has(c.conclusion)) failed++;
+  }
+  return { passed, failed, running };
+}
+
+/**
+ * Roll up reviews into approved / changes-requested counts by each reviewer's *latest* verdict —
+ * APPROVED / CHANGES_REQUESTED set it, DISMISSED clears it, COMMENTED / PENDING don't change it
+ * (mirrors GitHub's own per-reviewer rollup, so one person can't be double-counted).
+ */
+export function summarizeReviews(reviews: PRReview[]): { approved: number; changesRequested: number } {
+  const byUser = new Map<string, 'APPROVED' | 'CHANGES_REQUESTED'>();
+  const ordered = [...reviews].sort((a, b) => a.submittedAt.localeCompare(b.submittedAt));
+  for (const r of ordered) {
+    if (r.state === 'APPROVED' || r.state === 'CHANGES_REQUESTED') byUser.set(r.user, r.state);
+    else if (r.state === 'DISMISSED') byUser.delete(r.user);
+  }
+  let approved = 0;
+  let changesRequested = 0;
+  for (const v of byUser.values()) {
+    if (v === 'APPROVED') approved++;
+    else changesRequested++;
+  }
+  return { approved, changesRequested };
+}

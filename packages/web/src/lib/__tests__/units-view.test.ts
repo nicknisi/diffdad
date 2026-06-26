@@ -10,9 +10,11 @@ import {
   repoOptions,
   reviewEndpoint,
   routePath,
+  summarizeChecks,
+  summarizeReviews,
   verdictTone,
 } from '../units-view';
-import type { Unit, UnitStatus } from '../../state/types';
+import type { CheckRun, PRReview, Unit, UnitStatus } from '../../state/types';
 
 function mkUnit(over: Partial<Unit> = {}): Unit {
   return {
@@ -181,5 +183,57 @@ describe('reviewEndpoint / aiEndpoint', () => {
     expect(reviewEndpoint('pr', { name: 'center' })).toBe('/api/review');
     expect(aiEndpoint('pr', { name: 'center' })).toBe('/api/ai');
     expect(reviewEndpoint('command-center', { name: 'center' })).toBe('/api/review');
+  });
+});
+
+function mkCheck(over: Partial<CheckRun>): CheckRun {
+  return {
+    id: over.id ?? 1,
+    name: over.name ?? 'ci',
+    status: over.status ?? 'completed',
+    conclusion: over.conclusion ?? null,
+    startedAt: null,
+    completedAt: null,
+    detailsUrl: null,
+    output: {},
+  };
+}
+function mkReview(over: Partial<PRReview>): PRReview {
+  return { id: over.id ?? 1, user: over.user ?? 'a', avatarUrl: '', state: over.state ?? 'COMMENTED', submittedAt: over.submittedAt ?? '1' };
+}
+
+describe('summarizeChecks', () => {
+  it('counts passed / failed / running, ignoring neutral & skipped', () => {
+    const checks = [
+      mkCheck({ status: 'completed', conclusion: 'success' }),
+      mkCheck({ status: 'completed', conclusion: 'failure' }),
+      mkCheck({ status: 'completed', conclusion: 'timed_out' }),
+      mkCheck({ status: 'in_progress', conclusion: null }),
+      mkCheck({ status: 'completed', conclusion: 'neutral' }),
+      mkCheck({ status: 'completed', conclusion: 'skipped' }),
+    ];
+    expect(summarizeChecks(checks)).toEqual({ passed: 1, failed: 2, running: 1 });
+  });
+  it('is all-zero for no checks', () => {
+    expect(summarizeChecks([])).toEqual({ passed: 0, failed: 0, running: 0 });
+  });
+});
+
+describe('summarizeReviews', () => {
+  it('counts each reviewer’s latest verdict', () => {
+    const reviews = [
+      mkReview({ user: 'a', state: 'COMMENTED', submittedAt: '1' }),
+      mkReview({ user: 'a', state: 'APPROVED', submittedAt: '2' }),
+      mkReview({ user: 'b', state: 'CHANGES_REQUESTED', submittedAt: '1' }),
+      mkReview({ user: 'b', state: 'APPROVED', submittedAt: '3' }), // changed their mind
+    ];
+    expect(summarizeReviews(reviews)).toEqual({ approved: 2, changesRequested: 0 });
+  });
+  it('a dismissed review clears that reviewer', () => {
+    const reviews = [
+      mkReview({ user: 'a', state: 'CHANGES_REQUESTED', submittedAt: '1' }),
+      mkReview({ user: 'a', state: 'DISMISSED', submittedAt: '2' }),
+    ];
+    expect(summarizeReviews(reviews)).toEqual({ approved: 0, changesRequested: 0 });
   });
 });

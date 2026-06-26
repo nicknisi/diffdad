@@ -8,6 +8,7 @@ import { mapCommentsToChapters } from './github/comments';
 import type { CheckRun, DiffFile, PRComment, PRMetadata, PRReview } from './github/types';
 import { cacheNarrative, computePromptMetaHash, getCachedNarrative } from './narrative/cache';
 import { callAi, generateNarrative, resolveAiPath, resolveProviderKey } from './narrative/engine';
+import { buildChapterAiPrompt } from './narrative/chapter-ai';
 import { buildReviewSummaryPrompt } from './narrative/review-summary';
 import type { NarrativeResponse } from './narrative/types';
 import { cacheRecap } from './recap/cache';
@@ -330,72 +331,17 @@ export function createServer(ctx: ServerContext) {
       }
     }
 
-    const { chapterIndex, question, lens } = body;
-
-    if (typeof chapterIndex !== 'number') {
-      return c.json({ error: 'missing chapterIndex' }, 400);
-    }
-
     if (!ctx.narrative) return c.json({ error: 'narrative still generating' }, 503);
-    const chapter = ctx.narrative.chapters[chapterIndex];
-    if (!chapter) return c.json({ error: 'invalid chapter' }, 400);
-
-    // hunkIndex is per-file (index into DiffFile.hunks), not a flat index
-    // across all files. Look up by file + index.
-    const filesByPath = new Map(ctx.files.map((f) => [f.file, f]));
-    const chapterDiff = chapter.sections
-      .filter((s): s is Extract<typeof s, { type: 'diff' }> => s.type === 'diff')
-      .map((s) => {
-        const diffFile = filesByPath.get(s.file);
-        if (!diffFile) return '';
-        const hunk = diffFile.hunks[s.hunkIndex];
-        if (!hunk) return '';
-        return (
-          `--- ${diffFile.file} ---\n` +
-          hunk.lines
-            .map((l) => {
-              const prefix = l.type === 'add' ? '+' : l.type === 'remove' ? '-' : ' ';
-              return prefix + l.content;
-            })
-            .join('\n')
-        );
-      })
-      .join('\n\n');
-
-    let systemPrompt: string;
-    let userPrompt: string;
-
-    if (action === 'ask') {
-      if (!question || typeof question !== 'string') {
-        return c.json({ error: 'missing question' }, 400);
-      }
-      systemPrompt =
-        'You are a code review assistant. Answer questions about the code changes concisely. Use markdown.';
-      userPrompt = `Chapter: ${chapter.title}\n\nNarration: ${chapter.summary}\n\nDiff:\n${chapterDiff}\n\nQuestion: ${question}`;
-    } else if (action === 'renarrate') {
-      if (!lens || typeof lens !== 'string') {
-        return c.json({ error: 'missing lens' }, 400);
-      }
-      const densityLenses = ['terse', 'normal', 'verbose'];
-      const isDensity = densityLenses.includes(lens);
-      if (isDensity) {
-        const sizing =
-          lens === 'terse'
-            ? 'One sentence max.'
-            : lens === 'verbose'
-              ? 'One detailed paragraph.'
-              : 'Two to three sentences.';
-        systemPrompt = `You are a code review narrator. Rewrite this chapter narration in a ${lens} style. ${sizing} Use markdown.`;
-      } else {
-        systemPrompt = `You are a code review narrator. Re-narrate through a ${lens} lens. Focus on what matters from that perspective. 2-3 sentences, markdown.`;
-      }
-      userPrompt = `Chapter: ${chapter.title}\n\nOriginal: ${chapter.summary}\n\nDiff:\n${chapterDiff}`;
-    } else {
-      return c.json({ error: 'unknown action' }, 400);
-    }
+    const built = buildChapterAiPrompt(ctx.narrative, ctx.files, {
+      action,
+      chapterIndex: body.chapterIndex,
+      question: body.question,
+      lens: body.lens,
+    });
+    if (!built.ok) return c.json({ error: built.error }, 400);
 
     try {
-      const result = await callAi(config, systemPrompt, userPrompt);
+      const result = await callAi(config, built.systemPrompt, built.userPrompt);
       return c.json({ text: result.text });
     } catch (err) {
       return c.json({ error: `AI request failed: ${(err as Error).message}` }, 500);
