@@ -63,3 +63,25 @@ export async function postDecision(unitId: string, decision: UnitDecisionInput):
     throw new Error(`Decision failed (${res.status})${detail ? `: ${detail}` : ''}`);
   }
 }
+
+/** Remove a unit from the queue (manual cleanup of failed / stale work). SSE repaints the list. */
+export async function removeUnit(unitId: string): Promise<void> {
+  const res = await fetch(`/api/units/${encodeURIComponent(unitId)}`, { method: 'DELETE' });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new Error(`Remove failed (${res.status})${detail ? `: ${detail}` : ''}`);
+  }
+}
+
+/**
+ * Re-run the review for a local unit (used after a failed review, or to re-review the current worktree).
+ * Resolves `{ ok:false, reason:'clean-tree' }` when there's nothing left to review.
+ */
+export async function retryUnit(unitId: string): Promise<{ ok: boolean; reason?: string }> {
+  const res = await fetch(`/api/units/${encodeURIComponent(unitId)}/retry`, { method: 'POST' });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new Error(`Retry failed (${res.status})${detail ? `: ${detail}` : ''}`);
+  }
+  return (await res.json().catch(() => ({ ok: true }))) as { ok: boolean; reason?: string };
+}

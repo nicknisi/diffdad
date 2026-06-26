@@ -491,4 +491,93 @@ describe('UnitStore', () => {
       expect(() => store.resurfaceForNewPush('nope', 's')).toThrow(UnknownUnitError);
     });
   });
+
+  describe('remove', () => {
+    it('drops the unit from memory and disk, returning true', async () => {
+      const store = new UnitStore([], det());
+      const u = await store.add(mkInput());
+      expect(await store.remove(u.unitId)).toBe(true);
+      expect(store.get(u.unitId)).toBeUndefined();
+      // gone from disk too: a fresh load must not resurrect it
+      const reloaded = await UnitStore.load(det());
+      expect(reloaded.get(u.unitId)).toBeUndefined();
+    });
+
+    it('returns false for an unknown id', async () => {
+      const store = new UnitStore([], det());
+      expect(await store.remove('nope')).toBe(false);
+    });
+  });
+
+  describe('findByWorktree', () => {
+    it('finds a local unit by its worktree path', async () => {
+      const store = new UnitStore([], det());
+      const u = await store.add(mkInput({ worktreePath: '/tmp/a', source: 'cli' }));
+      await store.add(mkInput({ worktreePath: '/tmp/b', source: 'cli' }));
+      expect(store.findByWorktree('/tmp/a')?.unitId).toBe(u.unitId);
+      expect(store.findByWorktree('/tmp/missing')).toBeUndefined();
+    });
+
+    it('ignores github units (they carry no worktree)', () => {
+      const store = new UnitStore([], det());
+      store.addGithubUnit({
+        owner: 'o',
+        repo: 'r',
+        number: 1,
+        title: 't',
+        headBranch: 'b',
+        headSha: 'h',
+        author: 'a',
+        url: 'u',
+        metadata: mkMetadata('b'),
+      });
+      expect(store.findByWorktree('')).toBeUndefined();
+    });
+  });
+
+  describe('resubmit', () => {
+    it('resets a failed unit to submitted with a fresh slice, clearing prior review state', async () => {
+      const store = new UnitStore([], det());
+      const u = await store.add(mkInput({ source: 'cli' }));
+      await store.setReviewing(u.unitId);
+      await store.setReviewFailed(u.unitId, 'Planner returned non-JSON');
+      expect(store.get(u.unitId)!.status).toBe('queued');
+
+      const out = await store.resubmit(u.unitId, {
+        taskLabel: 'fresh task',
+        baseRef: 'main',
+        diffContentKey: 'key-2',
+        files: [],
+        metadata: mkMetadata('feat/x'),
+      });
+      expect(out.status).toBe('submitted');
+      expect(out.error).toBeUndefined();
+      expect(out.narrative).toBeUndefined();
+      expect(out.verdict).toBeUndefined();
+      expect(out.decision).toBeUndefined();
+      expect(out.toResolve).toBe(0);
+      expect(out.diffContentKey).toBe('key-2');
+      expect(out.taskLabel).toBe('fresh task');
+    });
+
+    it('keeps the existing taskLabel/intent when not provided', async () => {
+      const store = new UnitStore([], det());
+      const u = await store.add(mkInput({ taskLabel: 'orig', intent: 'orig intent', source: 'cli' }));
+      const out = await store.resubmit(u.unitId, {
+        baseRef: 'main',
+        diffContentKey: 'k',
+        files: [],
+        metadata: mkMetadata(),
+      });
+      expect(out.taskLabel).toBe('orig');
+      expect(out.intent).toBe('orig intent');
+    });
+
+    it('throws UnknownUnitError for an unknown id', async () => {
+      const store = new UnitStore([], det());
+      await expect(
+        store.resubmit('nope', { baseRef: 'main', diffContentKey: 'k', files: [], metadata: mkMetadata() }),
+      ).rejects.toThrow(UnknownUnitError);
+    });
+  });
 });

@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { getAccentMeta } from '../lib/accents';
 import { useReviewStore } from '../state/review-store';
-import { postDecision } from '../hooks/useUnits';
+import { postDecision, removeUnit, retryUnit } from '../hooks/useUnits';
 import { AccentPicker } from './AccentPicker';
 import { ClassicView } from './ClassicView';
 import { DadMark } from './DadMark';
+import { ReviewProgress } from './ReviewProgress';
 import { StoryView } from './StoryView';
 import { ThemeToggle } from './ThemeToggle';
 import type { ChapterState, Unit } from '../state/types';
@@ -165,6 +166,36 @@ export function UnitReview() {
     }
   }
 
+  async function retry() {
+    if (!unitId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await retryUnit(unitId);
+      if (r.ok === false) {
+        setError(r.reason === 'clean-tree' ? 'Nothing to re-review — the working tree is clean.' : 'Could not retry.');
+      }
+      // else: the unit flips back to reviewing via SSE and the live effect repaints with the loader
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Retry failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove() {
+    if (!unitId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await removeUnit(unitId);
+      navigate({ name: 'center' });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Remove failed');
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-[var(--bg-page)] pb-28 text-[var(--fg-1)]">
       <header
@@ -208,18 +239,36 @@ export function UnitReview() {
         <StoryView />
       ) : unit?.error ? (
         <div className="mx-auto max-w-[1100px] px-6 pt-10 text-[14px] text-[var(--fg-2)]">
-          <p className="font-medium text-[var(--red-11)]">The review worker failed for this unit.</p>
+          <p className="font-medium text-[var(--red-11)]">Dad couldn't get through this one.</p>
           <p className="mt-1 font-mono text-[12.5px] text-[var(--fg-3)]">{unit.error}</p>
-          <p className="mt-3">The diff is below — decide manually.</p>
+          <p className="mt-3">Retry the review, decide from the diff below, or clear it from the queue.</p>
+          <div className="mt-4 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={retry}
+              disabled={busy}
+              className="rounded-md px-3 py-1.5 text-[13px] font-semibold text-white disabled:opacity-50"
+              style={{ background: 'var(--blue-9)' }}
+            >
+              Retry review
+            </button>
+            <button
+              type="button"
+              onClick={remove}
+              disabled={busy}
+              className="rounded-md px-3 py-1.5 text-[13px] font-medium text-[var(--fg-2)] disabled:opacity-50"
+              style={{ boxShadow: 'inset 0 0 0 1px var(--gray-a5)' }}
+            >
+              Remove from queue
+            </button>
+          </div>
           <div className="mt-4">
             <ClassicView />
           </div>
         </div>
       ) : (
         <>
-          <p className="mx-auto max-w-[1100px] px-6 pt-6 text-[13px] text-[var(--fg-3)]">
-            Reviewing… the diff is below; the walkthrough streams in when it's ready.
-          </p>
+          <ReviewProgress />
           <ClassicView />
         </>
       )}

@@ -194,21 +194,76 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
       throw err;
     }
 
-    const unit = await store.add({
-      repo,
-      worktreePath,
-      taskLabel,
-      intent: intent ?? '',
-      uncertainties: [],
+    // Dedup: a second `dad add` from the same worktree updates the existing unit in place (fresh slice,
+    // back to `submitted`, prior verdict/error cleared) rather than minting a duplicate — which also
+    // re-reviews a unit whose first review failed.
+    const existing = store.findByWorktree(worktreePath);
+    const unit = existing
+      ? await store.resubmit(existing.unitId, {
+          taskLabel,
+          intent,
+          baseRef: review.baseRef,
+          diffContentKey: review.contentKey,
+          files: review.files,
+          metadata: review.metadata,
+        })
+      : await store.add({
+          repo,
+          worktreePath,
+          taskLabel,
+          intent: intent ?? '',
+          uncertainties: [],
+          baseRef: review.baseRef,
+          diffContentKey: review.contentKey,
+          files: review.files,
+          metadata: review.metadata,
+          source: 'cli',
+        });
+    onSubmitted?.(unit);
+    broadcast('units', { units: store.list() });
+    return c.json({ unitId: unit.unitId });
+  });
+
+  // Retry a local unit's review — re-compute the worktree slice and resubmit it to the worker pool.
+  // The one way a `queued` unit that failed its review (the forward machine has no edge out of `queued`
+  // back to `submitted`) gets re-evaluated from the UI. github units have no worktree → 400 (they
+  // re-review via the poller / lazy hydrate instead). A now-clean tree is a friendly no-op.
+  app.post('/api/units/:id/retry', async (c) => {
+    const id = c.req.param('id');
+    const unit = store.get(id);
+    if (!unit) return c.json({ error: new UnknownUnitError(id).message }, 404);
+    if (unit.source === 'github') {
+      return c.json({ error: 'github units cannot be retried — they re-review on a new push' }, 400);
+    }
+    let review;
+    try {
+      review = await computeSlice(unit.worktreePath, unit.baseRef);
+    } catch (err) {
+      if (err instanceof CleanTreeError) {
+        return c.json({ ok: false, reason: 'clean-tree', message: err.message }, 200);
+      }
+      throw err;
+    }
+    const updated = await store.resubmit(id, {
       baseRef: review.baseRef,
       diffContentKey: review.contentKey,
       files: review.files,
       metadata: review.metadata,
-      source: 'cli',
     });
-    onSubmitted?.(unit);
+    onSubmitted?.(updated);
     broadcast('units', { units: store.list() });
-    return c.json({ unitId: unit.unitId });
+    return c.json({ ok: true, unit: updated });
+  });
+
+  // Remove a unit from the queue (the reviewer's manual cleanup of failed / stale / abandoned units).
+  // Hard delete: drops it from memory + disk. For github units the poller may re-mint it next cycle if
+  // the review is still requested — that's intended (it's still on your plate); local units stay gone.
+  app.delete('/api/units/:id', async (c) => {
+    const id = c.req.param('id');
+    const removed = await store.remove(id);
+    if (!removed) return c.json({ error: new UnknownUnitError(id).message }, 404);
+    broadcast('units', { units: store.list() });
+    return c.json({ ok: true });
   });
 
   // Lazy narrative for `github` units — generated on open, not on poll, so dad never burns tokens

@@ -26,6 +26,10 @@ type Props = {
   onOpen: (unit: Unit) => void;
   onApprove?: (unit: Unit) => void;
   onRequestChanges?: (unit: Unit) => void;
+  /** Re-run a failed review (local units). Shown on rows whose review errored. */
+  onRetry?: (unit: Unit) => void;
+  /** Remove the unit from the queue (manual cleanup). Shown on every row when provided. */
+  onRemove?: (unit: Unit) => void;
   /** A decision for this unit is in flight — disables its buttons. */
   busy?: boolean;
 };
@@ -64,12 +68,14 @@ function PillButton({
  * target that opens the unit's review) so we never nest the decision buttons inside it. Needs-you
  * rows carry the recommended action + Approve / Request-changes; other groups are read-only digest.
  */
-export function UnitRow({ unit, now, onOpen, onApprove, onRequestChanges, busy }: Props) {
+export function UnitRow({ unit, now, onOpen, onApprove, onRequestChanges, onRetry, onRemove, busy }: Props) {
   const group = groupOf(unit.status);
   const isNeedsYou = group === 'needs-you';
   const tone = TONE[verdictTone(unit.verdict)];
   const status = STATUS_META[unit.status];
   const lead = isNeedsYou ? tone : { fg: status.color, glyph: status.glyph };
+  // A unit the worker is actively chewing on — pulse its glyph so the row reads as "working".
+  const working = unit.status === 'submitted' || unit.status === 'reviewing';
   const branch = unit.metadata?.branch;
   const elapsed = relativeTime(unit.updatedAt, now);
   const action = isNeedsYou ? recommendedAction(unit) : null;
@@ -89,7 +95,11 @@ export function UnitRow({ unit, now, onOpen, onApprove, onRequestChanges, busy }
         className="flex min-w-0 flex-1 items-start gap-2.5 text-left"
         aria-label={`Open ${unit.taskLabel}`}
       >
-        <span className="mt-[2px] shrink-0 text-[13px] leading-none" style={{ color: lead.fg }} aria-hidden>
+        <span
+          className={`mt-[2px] shrink-0 text-[13px] leading-none ${working ? 'animate-pulse' : ''}`}
+          style={{ color: lead.fg }}
+          aria-hidden
+        >
           {lead.glyph}
         </span>
         <span className="min-w-0 flex-1">
@@ -133,11 +143,27 @@ export function UnitRow({ unit, now, onOpen, onApprove, onRequestChanges, busy }
               {action?.label}
             </span>
           )}
+          {unit.error && onRetry && (
+            <PillButton label="Retry" tone="neutral" disabled={busy} onClick={() => onRetry(unit)} />
+          )}
           {onApprove && <PillButton label="Approve" tone="approve" disabled={busy} onClick={() => onApprove(unit)} />}
           {onRequestChanges && (
             <PillButton label="Request changes" tone="warn" disabled={busy} onClick={() => onRequestChanges(unit)} />
           )}
         </div>
+      )}
+
+      {onRemove && (
+        <button
+          type="button"
+          onClick={() => onRemove(unit)}
+          disabled={busy}
+          title="Remove from queue"
+          aria-label="Remove from queue"
+          className="shrink-0 rounded p-1 text-[13px] leading-none text-[var(--fg-3)] opacity-40 transition-opacity hover:text-[var(--red-11)] hover:opacity-100 disabled:opacity-20"
+        >
+          ✕
+        </button>
       )}
     </div>
   );

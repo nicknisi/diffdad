@@ -522,3 +522,92 @@ describe('POST /api/units/:id/hydrate (lazy narrative on open)', () => {
     expect(events).not.toContain('units'); // no broadcast on failure
   });
 });
+
+describe('POST /api/units (re-add dedup)', () => {
+  const post = (app: ReturnType<typeof setup>['app'], body: unknown) =>
+    app.request('/api/units', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+
+  it('updates the existing local unit in place rather than minting a duplicate', async () => {
+    const { store, submitted, app } = setup();
+    const r1 = await post(app, { taskLabel: 'v1', repo: 'owner/a', worktreePath: '/wt' });
+    const id1 = ((await r1.json()) as { unitId: string }).unitId;
+    const r2 = await post(app, { taskLabel: 'v2', repo: 'owner/a', worktreePath: '/wt' });
+    const id2 = ((await r2.json()) as { unitId: string }).unitId;
+
+    expect(id2).toBe(id1); // same unit
+    expect(store.list()).toHaveLength(1);
+    expect(store.get(id1)!.taskLabel).toBe('v2');
+    expect(store.get(id1)!.status).toBe('submitted');
+    expect(submitted).toHaveLength(2); // worker re-kicked each time
+  });
+
+  it('re-adding a failed unit clears its error and re-queues it', async () => {
+    const { store, app } = setup();
+    const r = await post(app, { taskLabel: 't', repo: 'owner/a', worktreePath: '/wt' });
+    const id = ((await r.json()) as { unitId: string }).unitId;
+    await store.setReviewing(id);
+    await store.setReviewFailed(id, 'Planner returned non-JSON');
+
+    await post(app, { taskLabel: 't', repo: 'owner/a', worktreePath: '/wt' });
+    expect(store.get(id)!.error).toBeUndefined();
+    expect(store.get(id)!.status).toBe('submitted');
+  });
+});
+
+describe('POST /api/units/:id/retry', () => {
+  it('recomputes the slice, resubmits the unit, and re-kicks the worker', async () => {
+    const { store, submitted, events, app } = setup();
+    const u = await addUnit(store);
+    await store.setReviewing(u.unitId);
+    await store.setReviewFailed(u.unitId, 'boom');
+
+    const res = await app.request(`/api/units/${u.unitId}/retry`, { method: 'POST' });
+    expect(res.status).toBe(200);
+    expect(store.get(u.unitId)!.status).toBe('submitted');
+    expect(store.get(u.unitId)!.error).toBeUndefined();
+    expect(submitted.map((s) => s.unitId)).toContain(u.unitId);
+    expect(events).toContain('units');
+  });
+
+  it('404s for an unknown unit', async () => {
+    const { app } = setup();
+    expect((await app.request('/api/units/nope/retry', { method: 'POST' })).status).toBe(404);
+  });
+
+  it('400s for a github unit — retry is for local work', async () => {
+    const { store, app } = setup();
+    const gh = seedGithubUnit(store);
+    expect((await app.request(`/api/units/${gh.unitId}/retry`, { method: 'POST' })).status).toBe(400);
+  });
+
+  it('returns { ok:false, reason:clean-tree } when the worktree is now clean', async () => {
+    const cleanSlice: ComputeSlice = async () => {
+      throw new CleanTreeError('main');
+    };
+    const { store, app } = setup({ computeSlice: cleanSlice });
+    const u = await addUnit(store);
+    await store.setReviewing(u.unitId);
+    await store.setReviewFailed(u.unitId, 'boom');
+    const res = await app.request(`/api/units/${u.unitId}/retry`, { method: 'POST' });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; reason?: string };
+    expect(body.ok).toBe(false);
+    expect(body.reason).toBe('clean-tree');
+  });
+});
+
+describe('DELETE /api/units/:id', () => {
+  it('removes the unit and broadcasts', async () => {
+    const { store, events, app } = setup();
+    const u = await addUnit(store);
+    const res = await app.request(`/api/units/${u.unitId}`, { method: 'DELETE' });
+    expect(res.status).toBe(200);
+    expect(store.get(u.unitId)).toBeUndefined();
+    expect(events).toContain('units');
+  });
+
+  it('404s for an unknown unit', async () => {
+    const { app } = setup();
+    expect((await app.request('/api/units/nope', { method: 'DELETE' })).status).toBe(404);
+  });
+});

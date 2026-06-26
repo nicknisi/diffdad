@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, writeFile } from 'fs/promises';
+import { mkdir, readdir, readFile, unlink, writeFile } from 'fs/promises';
 import { homedir } from 'os';
 import { join } from 'path';
 import type { DiffFile, PRMetadata } from '../github/types';
@@ -39,6 +39,16 @@ export type StoreOptions = {
 };
 
 export type UnitFilter = { status?: UnitStatus; repo?: string };
+
+/** A fresh diff slice re-ingested into an existing local unit (re-`add` dedup, or retry of a review). */
+export type ResubmitInput = {
+  taskLabel?: string;
+  intent?: string;
+  baseRef: string;
+  diffContentKey: string;
+  files: DiffFile[];
+  metadata: PRMetadata;
+};
 
 /**
  * The cross-repo review-unit store — the spine of the daemon, shared by the MCP tools and the
@@ -99,6 +109,60 @@ export class UnitStore {
     if (filter.status) out = out.filter((u) => u.status === filter.status);
     if (filter.repo) out = out.filter((u) => u.repo === filter.repo);
     return out;
+  }
+
+  /**
+   * Drop a unit from memory and disk; returns whether it existed. The only removal path — used by the
+   * DELETE route so the reviewer can clear failed or stale units, which the forward-only state machine
+   * has no edge to retire on its own.
+   */
+  async remove(unitId: string): Promise<boolean> {
+    const unit = this.units.get(unitId);
+    if (!unit) return false;
+    this.units.delete(unitId);
+    try {
+      await unlink(unitFile(this.dir, unit.repo, unitId));
+    } catch {
+      // never persisted, or already gone — the in-memory delete is what's authoritative
+    }
+    return true;
+  }
+
+  /**
+   * Find a local (cli/agent) unit by its worktree path — the dedup/retry identity. A second `dad add`
+   * from the same checkout updates this unit in place rather than minting a duplicate. github units
+   * carry no worktree (`''`), so they never match.
+   */
+  findByWorktree(worktreePath: string): ReviewUnit | undefined {
+    for (const u of this.units.values()) {
+      if (u.source !== 'github' && u.worktreePath === worktreePath) return u;
+    }
+    return undefined;
+  }
+
+  /**
+   * Re-ingest a fresh slice into an existing local unit: back to `submitted` for re-review, prior
+   * narrative / verdict / decision / error cleared. Deliberately bypasses the forward-only machine —
+   * this is new content for the same worktree (a re-`add` or a retry of a failed review), not a state
+   * transition — which is also the only way a `queued` (failed) unit can re-enter the worker pool.
+   */
+  async resubmit(unitId: string, input: ResubmitInput): Promise<ReviewUnit> {
+    const unit = this.require(unitId);
+    unit.status = 'submitted';
+    unit.baseRef = input.baseRef;
+    unit.diffContentKey = input.diffContentKey;
+    unit.files = input.files;
+    unit.metadata = input.metadata;
+    if (input.taskLabel !== undefined) unit.taskLabel = input.taskLabel;
+    if (input.intent !== undefined) unit.intent = input.intent;
+    unit.narrative = undefined;
+    unit.verdict = undefined;
+    unit.decision = undefined;
+    unit.error = undefined;
+    unit.toResolve = 0;
+    unit.updatedAt = this.now();
+    await this.save(unit);
+    return unit;
   }
 
   async add(input: NewReviewUnit): Promise<ReviewUnit> {
