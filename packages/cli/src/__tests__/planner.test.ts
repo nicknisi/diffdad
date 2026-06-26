@@ -1,7 +1,32 @@
 import { describe, expect, it } from 'vitest';
-import { formatPlanViolation, normalizePlan, validatePlan } from '../narrative/planner';
+import { formatPlanViolation, normalizePlan, parsePlanResponse, validatePlan } from '../narrative/planner';
 import type { DiffFile, DiffHunk } from '../github/types';
 import type { Plan } from '../narrative/plan-types';
+
+describe('parsePlanResponse', () => {
+  it('parses a complete JSON object', () => {
+    const out = parsePlanResponse('{"prTldr":"x","themes":[{"id":"t1"}]}') as { themes: unknown[] };
+    expect(out.themes).toHaveLength(1);
+  });
+
+  it('strips a fenced code block', () => {
+    const out = parsePlanResponse('```json\n{"themes":[]}\n```') as { themes: unknown[] };
+    expect(out.themes).toEqual([]);
+  });
+
+  it("salvages a plan truncated mid-array (hit max tokens → \"Expected ']'\")", () => {
+    // themes array opened with two complete entries, then cut off mid-third — no closing `]`/`}`.
+    const truncated = '{"prTldr":"x","themes":[{"id":"a","title":"A"},{"id":"b","title":"B"},{"id":"c","ti';
+    const out = parsePlanResponse(truncated) as { themes: { id: string }[] };
+    expect(out.themes.length).toBeGreaterThanOrEqual(2);
+    expect(out.themes[0]!.id).toBe('a');
+    expect(out.themes[1]!.id).toBe('b');
+  });
+
+  it('throws when there is no recoverable object at all', () => {
+    expect(() => parsePlanResponse('I cannot help with that.')).toThrow(/non-JSON/);
+  });
+});
 
 function hunk(): DiffHunk {
   return { header: '@@', oldStart: 1, oldCount: 1, newStart: 1, newCount: 1, lines: [] };

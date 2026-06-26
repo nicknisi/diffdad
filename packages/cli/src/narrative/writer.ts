@@ -1,7 +1,7 @@
 import type { DiffDadConfig } from '../config';
 import type { DiffFile } from '../github/types';
 import { callAi, type AiUsage } from './ai-runtime';
-import { extractJson } from './json-parse';
+import { parseLooseJson } from './json-parse';
 import { buildWriterPrompt } from './prompt';
 import type { Plan, PlanTheme } from './plan-types';
 import type { NarrativeChapter, NarrativeSection } from './types';
@@ -38,13 +38,10 @@ export async function writeChapter(input: WriterInput): Promise<WriterResult> {
   const prompt = buildWriterPrompt({ plan, theme, files, fullFileTree: fileTree });
 
   const result = await callAi(config, prompt.system, prompt.user, WRITER_MAX_TOKENS);
-  const json = extractJson(result.text);
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(json);
-  } catch (err) {
-    throw new Error(`Writer for theme ${theme.id} returned non-JSON: ${(err as Error).message}`);
-  }
+  // Salvage a chapter truncated at WRITER_MAX_TOKENS rather than failing the theme; normalizeChapter
+  // backfills whatever sections didn't make it. Only a response with no object at all is fatal.
+  const parsed = parseLooseJson(result.text);
+  if (parsed == null) throw new Error(`Writer for theme ${theme.id} returned non-JSON (no recoverable object)`);
   const chapter = normalizeChapter(parsed, theme);
   return { chapter, provider: result.provider, usage: result.usage };
 }

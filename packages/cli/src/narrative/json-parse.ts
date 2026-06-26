@@ -19,6 +19,21 @@ export function extractJson(text: string): string {
 }
 
 /**
+ * Parse an LLM JSON response, tolerating truncation. Tries a strict parse of the extracted JSON
+ * first; if that fails, falls back to the partial parser below — so a response the model cut off at
+ * its `max_tokens` ceiling (the classic "Expected ']'" mid-array) still yields the prefix that
+ * completed cleanly. Returns null only when no object is recoverable at all (e.g. the model replied
+ * with prose instead of JSON), leaving the caller to decide how to surface that.
+ */
+export function parseLooseJson(text: string): unknown | null {
+  try {
+    return JSON.parse(extractJson(text));
+  } catch {
+    return tryParsePartialJson(text);
+  }
+}
+
+/**
  * Best-effort partial JSON parser. Walks the prefix and emits a JSON object
  * with whatever values have closed cleanly. Used to render incremental
  * narrative updates while the LLM is still streaming.
