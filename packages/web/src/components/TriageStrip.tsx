@@ -1,14 +1,9 @@
 import { useReviewStore } from '../state/review-store';
-import type { TriageFlag, TriageSeverity } from '../state/types';
-
-const SEV: Record<TriageSeverity, { color: string; bg: string; label: string }> = {
-  risk: { color: 'var(--red-11)', bg: 'var(--red-3)', label: 'risk' },
-  warn: { color: 'var(--amber-11)', bg: 'var(--gray-3)', label: 'warn' },
-  info: { color: 'var(--gray-11)', bg: 'var(--gray-3)', label: 'info' },
-};
+import type { TriageFlag } from '../state/types';
+import { SEVERITY } from '../lib/severity';
 
 function TriageRow({ flag }: { flag: TriageFlag }) {
-  const sev = SEV[flag.severity];
+  const sev = SEVERITY[flag.severity];
   return (
     <li className="flex items-start gap-2.5 text-[13px] leading-[1.5]">
       <span
