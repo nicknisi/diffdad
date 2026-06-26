@@ -10,12 +10,12 @@ export type AgentToolDeps = {
   broadcast: Broadcast;
 };
 
-type ToolResult = { content: { type: 'text'; text: string }[]; isError?: boolean };
+export type ToolResult = { content: { type: 'text'; text: string }[]; isError?: boolean };
 
 // The SDK's `registerTool` generics recurse infinitely over zod raw shapes (TS2589),
 // so we register through a minimal structural interface. Zod still validates inputs at
 // runtime; tool callbacks receive already-validated args.
-type ToolHost = {
+export type ToolHost = {
   registerTool(
     name: string,
     config: { title?: string; description?: string; inputSchema?: Record<string, z.ZodTypeAny> },
@@ -38,8 +38,10 @@ function project(c: AgentComment) {
   };
 }
 
-const text = (value: unknown): ToolResult => ({ content: [{ type: 'text', text: JSON.stringify(value, null, 2) }] });
-const errorText = (message: string): ToolResult => ({ content: [{ type: 'text', text: message }], isError: true });
+export const text = (value: unknown): ToolResult => ({
+  content: [{ type: 'text', text: JSON.stringify(value, null, 2) }],
+});
+export const errorText = (message: string): ToolResult => ({ content: [{ type: 'text', text: message }], isError: true });
 
 /**
  * Register the three agent-comment tools on an MCP server. Every mutation broadcasts
