@@ -492,3 +492,155 @@ describe('GitHubClient.getForcePushEvents', () => {
     });
   });
 });
+
+describe('GitHubClient.searchReviewRequested', () => {
+  // A search/issues item as GitHub returns it: no head branch/sha — those come from the PR fetch.
+  function searchItem(over: Partial<Record<string, unknown>> = {}) {
+    return {
+      number: 7,
+      title: 'search title',
+      html_url: 'https://github.com/octo/repo/pull/7',
+      repository_url: 'https://api.github.com/repos/octo/repo',
+      user: { login: 'author', avatar_url: '' },
+      updated_at: '2026-02-01T00:00:00Z',
+      pull_request: { url: 'https://api.github.com/repos/octo/repo/pulls/7' },
+      ...over,
+    };
+  }
+
+  // A pulls/{n} payload (GhPullResponse) — supplies head.ref / head.sha.
+  function prResponse(over: Partial<Record<string, unknown>> = {}) {
+    return {
+      number: 7,
+      title: 'pr title',
+      body: null,
+      state: 'open',
+      draft: false,
+      merged: false,
+      user: { login: 'author', avatar_url: '' },
+      head: { ref: 'feature-branch', sha: 'headsha7' },
+      base: { ref: 'main' },
+      labels: [],
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-02-01T00:00:00Z',
+      additions: 0,
+      deletions: 0,
+      changed_files: 0,
+      commits: 0,
+      ...over,
+    };
+  }
+
+  it('queries both review-requested and assignee, then enriches each via the PR fetch', async () => {
+    responder = (call) => {
+      if (call.url.includes('/search/issues')) {
+        // distinguish the two queries by their q param
+        if (call.url.includes('review-requested')) return jsonResponse({ items: [searchItem()] });
+        return jsonResponse({ items: [] }); // assignee query: nothing
+      }
+      if (call.url.includes('/repos/octo/repo/pulls/7')) return jsonResponse(prResponse());
+      return new Response('unexpected ' + call.url, { status: 500 });
+    };
+
+    const prs = await new GitHubClient('t').searchReviewRequested();
+
+    // two search calls were issued (review-requested + assignee)
+    const searchCalls = calls.filter((c) => c.url.includes('/search/issues'));
+    expect(searchCalls).toHaveLength(2);
+    expect(searchCalls.some((c) => c.url.includes('review-requested'))).toBe(true);
+    expect(searchCalls.some((c) => c.url.includes('assignee'))).toBe(true);
+
+    expect(prs).toHaveLength(1);
+    expect(prs[0]).toEqual({
+      owner: 'octo',
+      repo: 'repo',
+      number: 7,
+      title: 'pr title', // authoritative from the PR fetch
+      headBranch: 'feature-branch',
+      headSha: 'headsha7',
+      base: 'main', // real base ref from the PR fetch, not discarded
+      author: 'author',
+      url: 'https://github.com/octo/repo/pull/7',
+      updatedAt: '2026-02-01T00:00:00Z',
+    });
+  });
+
+  it('propagates a non-default base ref from the PR fetch', async () => {
+    responder = (call) => {
+      if (call.url.includes('/search/issues')) {
+        if (call.url.includes('review-requested')) return jsonResponse({ items: [searchItem()] });
+        return jsonResponse({ items: [] });
+      }
+      if (call.url.includes('/repos/octo/repo/pulls/7')) return jsonResponse(prResponse({ base: { ref: 'develop' } }));
+      return new Response('unexpected ' + call.url, { status: 500 });
+    };
+    const prs = await new GitHubClient('t').searchReviewRequested();
+    expect(prs[0]?.base).toBe('develop');
+  });
+
+  it('URL-encodes the search query and scopes to open PRs', async () => {
+    responder = (call) => {
+      if (call.url.includes('/search/issues')) return jsonResponse({ items: [] });
+      return new Response('unexpected', { status: 500 });
+    };
+    await new GitHubClient('t').searchReviewRequested();
+    const searchCalls = calls.filter((c) => c.url.includes('/search/issues'));
+    // q is URL-encoded (spaces → %20 or +) and includes the open-PR scope
+    for (const c of searchCalls) {
+      const q = new URL(c.url).searchParams.get('q') ?? '';
+      expect(q).toContain('is:open');
+      expect(q).toContain('is:pr');
+    }
+  });
+
+  it('de-dupes a PR returned by both queries (by url) and fetches it once', async () => {
+    responder = (call) => {
+      if (call.url.includes('/search/issues')) return jsonResponse({ items: [searchItem()] }); // both queries return it
+      if (call.url.includes('/repos/octo/repo/pulls/7')) return jsonResponse(prResponse());
+      return new Response('unexpected', { status: 500 });
+    };
+    const prs = await new GitHubClient('t').searchReviewRequested();
+    expect(prs).toHaveLength(1);
+    const prFetches = calls.filter((c) => c.url.includes('/pulls/7'));
+    expect(prFetches).toHaveLength(1);
+  });
+
+  it('skips a PR whose getPR fetch fails and still surfaces the other (one bad PR does not drop the inbox)', async () => {
+    const warn = console.warn;
+    const warned: string[] = [];
+    console.warn = (...args: unknown[]) => warned.push(args.map(String).join(' '));
+    try {
+      responder = (call) => {
+        if (call.url.includes('/search/issues')) {
+          if (call.url.includes('review-requested')) {
+            // two results: #7 (will fail its PR fetch) and #8 (will succeed)
+            return jsonResponse({
+              items: [
+                searchItem(),
+                searchItem({
+                  number: 8,
+                  html_url: 'https://github.com/octo/repo/pull/8',
+                  pull_request: { url: 'https://api.github.com/repos/octo/repo/pulls/8' },
+                }),
+              ],
+            });
+          }
+          return jsonResponse({ items: [] });
+        }
+        if (call.url.includes('/repos/octo/repo/pulls/7')) return new Response('boom', { status: 500 });
+        if (call.url.includes('/repos/octo/repo/pulls/8')) return jsonResponse(prResponse({ number: 8 }));
+        return new Response('unexpected ' + call.url, { status: 500 });
+      };
+
+      const prs = await new GitHubClient('t').searchReviewRequested();
+
+      // the failing PR is dropped, the good one survives — method does not throw
+      expect(prs).toHaveLength(1);
+      expect(prs[0]?.number).toBe(8);
+      // the failure was reported with the offending owner/repo#number
+      expect(warned.some((w) => w.includes('octo/repo#7'))).toBe(true);
+    } finally {
+      console.warn = warn;
+    }
+  });
+});

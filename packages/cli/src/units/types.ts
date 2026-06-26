@@ -55,6 +55,15 @@ export type ReviewUnit = {
   decision?: Decision;
   /** Set when the review worker threw — the unit still queues so it reaches the reviewer. */
   error?: string;
+  // --- github-source fields (multi-source ingestion) ---
+  /** The PR this unit tracks (github units; also set on agent/cli units once linked to a PR). */
+  prNumber?: number;
+  /** The PR's html URL. */
+  prUrl?: string;
+  /** The PR author's login — so the row can show whose PR it is. */
+  prAuthor?: string;
+  /** Freshness: the head SHA the last decision was recorded against. A newer push re-opens review. */
+  lastReviewedSha?: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -72,6 +81,28 @@ export type NewReviewUnit = {
   diffContentKey: string;
   files: DiffFile[];
   metadata: PRMetadata;
+  /** Optional PR linkage, carried through when a unit is born already tied to a PR. */
+  prNumber?: number;
+  prUrl?: string;
+  prAuthor?: string;
+};
+
+/**
+ * A PR returned by the background review-request poller — only the cheap metadata needed to mint or
+ * link a `github` unit (the diff/narrative are fetched lazily on open, not here).
+ */
+export type PolledPr = {
+  owner: string;
+  repo: string;
+  number: number;
+  title: string;
+  headBranch: string;
+  headSha: string;
+  /** The PR's base branch (e.g. `main`/`develop`), straight from the PR fetch — not assumed. */
+  base: string;
+  author: string;
+  url: string;
+  updatedAt: string;
 };
 
 /** Thrown when a mutation references a unit id the store doesn't hold. */

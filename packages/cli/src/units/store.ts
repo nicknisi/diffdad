@@ -1,6 +1,7 @@
 import { mkdir, readdir, readFile, writeFile } from 'fs/promises';
 import { homedir } from 'os';
 import { join } from 'path';
+import type { PRMetadata } from '../github/types';
 import type { NarrativeResponse } from '../narrative/types';
 import {
   type Decision,
@@ -121,6 +122,108 @@ export class UnitStore {
     };
     this.units.set(unit.unitId, unit);
     await this.save(unit);
+    return unit;
+  }
+
+  /**
+   * Mint a `github` unit from polled PR metadata. Unlike `add()`, it is born **`queued`**, not
+   * `submitted` — github units must never enter the local worker pool (which only claims
+   * `submitted`/`reviewing`); their walkthrough is generated lazily on open. The `headSha` keys the
+   * (lazy) narrative cache via `diffContentKey`, and `files` start empty until that fetch.
+   *
+   * Synchronous (returns the unit immediately for the poller's reducer); the disk write goes through
+   * the same best-effort `save()` path as every other mutation, the in-memory copy authoritative.
+   */
+  addGithubUnit(input: {
+    owner: string;
+    repo: string;
+    number: number;
+    title: string;
+    headBranch: string;
+    headSha: string;
+    author: string;
+    url: string;
+    baseRef?: string;
+    metadata: PRMetadata;
+  }): ReviewUnit {
+    const ts = this.now();
+    const unit: ReviewUnit = {
+      unitId: this.genId(),
+      repo: `${input.owner}/${input.repo}`,
+      source: 'github',
+      worktreePath: '',
+      taskLabel: input.title,
+      intent: '',
+      uncertainties: [],
+      baseRef: input.baseRef ?? 'main',
+      diffContentKey: input.headSha,
+      status: 'queued',
+      toResolve: 0,
+      files: [],
+      metadata: input.metadata,
+      prNumber: input.number,
+      prUrl: input.url,
+      prAuthor: input.author,
+      lastReviewedSha: undefined,
+      createdAt: ts,
+      updatedAt: ts,
+    };
+    this.units.set(unit.unitId, unit);
+    void this.save(unit);
+    return unit;
+  }
+
+  /**
+   * Attach PR linkage to an EXISTING agent/cli unit the poller matched by repo + branch. Status is
+   * left untouched (the unit keeps advancing through the agent loop); only PR identity + the current
+   * `metadata.headSha` are recorded. Synchronous; persistence is best-effort via `save()`.
+   */
+  linkPr(unitId: string, link: { prNumber: number; prUrl: string; prAuthor: string; headSha: string }): ReviewUnit {
+    const unit = this.require(unitId);
+    unit.prNumber = link.prNumber;
+    unit.prUrl = link.prUrl;
+    unit.prAuthor = link.prAuthor;
+    unit.metadata = { ...unit.metadata, headSha: link.headSha };
+    unit.updatedAt = this.now();
+    void this.save(unit);
+    return unit;
+  }
+
+  /**
+   * Record the head SHA a decision was made against (freshness). A later push past this SHA is what
+   * lets the poller re-open the review. Used by the decision-dispatch slice. Synchronous.
+   */
+  setReviewedSha(unitId: string, sha: string): ReviewUnit {
+    const unit = this.require(unitId);
+    unit.lastReviewedSha = sha;
+    unit.updatedAt = this.now();
+    void this.save(unit);
+    return unit;
+  }
+
+  /**
+   * Re-open a reviewed `github` unit when the author pushes again: back to `queued`, decision cleared,
+   * `metadata.headSha` advanced. This is the one source-gated reverse edge (`approved|changes_requested
+   * → queued`); it lives here rather than in the shared `TRANSITIONS` table so the strict forward-only
+   * machine the agent loop relies on stays intact. Throws if the unit isn't a github unit in a reviewed
+   * state. Synchronous.
+   */
+  resurfaceForNewPush(unitId: string, headSha: string): ReviewUnit {
+    const unit = this.require(unitId);
+    if (unit.source !== 'github') {
+      throw new IllegalTransitionError(unit.status, 'queued', unitId);
+    }
+    if (unit.status !== 'approved' && unit.status !== 'changes_requested') {
+      throw new IllegalTransitionError(unit.status, 'queued', unitId);
+    }
+    unit.status = 'queued';
+    unit.decision = undefined;
+    unit.metadata = { ...unit.metadata, headSha };
+    // Mirror the mint-time invariant (diffContentKey = headSha): the narrative cache key must advance
+    // with the head, else a re-review re-uses the stale cache entry keyed on the old sha.
+    unit.diffContentKey = headSha;
+    unit.updatedAt = this.now();
+    void this.save(unit);
     return unit;
   }
 

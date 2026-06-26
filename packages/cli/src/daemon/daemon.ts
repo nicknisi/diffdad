@@ -1,7 +1,9 @@
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
+import { resolveGitHubToken } from '../auth';
 import { readConfig } from '../config';
+import { GitHubClient } from '../github/client';
 import { buildLocalReview } from '../local/diff-source';
 import { generateNarrative } from '../narrative/engine';
 import type { ComputeSlice } from '../mcp/submit';
@@ -9,11 +11,14 @@ import { DecisionChannel } from '../units/decision-channel';
 import { UnitStore } from '../units/store';
 import type { ReviewUnit } from '../units/types';
 import { createDaemonApp, SseHub } from './app';
+import { pollOnce } from './poller';
 import { ReviewWorkerPool, type ReviewResult } from './pool';
 
 /** Stable default port so launchd (Phase #23) and manual launches agree. Override with `--port=`. */
 export const DEFAULT_DAEMON_PORT = 4319;
 const DEFAULT_CONCURRENCY = 3;
+/** Cadence for the GitHub review-request poller. One search per tick — well within auth'd rate limits. */
+const DEFAULT_POLL_MS = 60_000;
 
 /** Single-instance pidfile. Beside the rest of dad's state so a stale file is easy to find/clear. */
 const PIDFILE = join(homedir(), '.cache', 'diffdad', 'daemon.pid');
@@ -91,7 +96,35 @@ const a = {
   white: '\x1b[97m',
 };
 
-export type DaemonOptions = { port?: number; concurrency?: number; open?: boolean };
+export type DaemonOptions = { port?: number; concurrency?: number; open?: boolean; pollMs?: number };
+
+/**
+ * Start the GitHub review-request poller on an interval, if a token is available. Runs one pass at
+ * startup, then every `pollMs`. Each pass is wrapped so a transient GitHub/network failure logs a
+ * one-line warning and never crashes the daemon. With no token, the poller is skipped entirely — the
+ * daemon still serves local (agent/cli) units; only the GitHub inbox door is closed.
+ */
+async function startPoller(store: UnitStore, broadcast: SseHub['broadcast'], pollMs: number): Promise<void> {
+  const token = await resolveGitHubToken();
+  if (!token) {
+    console.log(
+      `  ${a.gray}○${a.reset} ${a.dim}GitHub poller off — no token. Set ${a.reset}${a.cyan}DIFFDAD_GITHUB_TOKEN${a.reset}` +
+        `${a.dim}, run ${a.reset}${a.cyan}gh auth login${a.reset}${a.dim}, or ${a.reset}${a.cyan}dad config${a.reset}` +
+        `${a.dim} to watch review requests.${a.reset}`,
+    );
+    return;
+  }
+  const client = new GitHubClient(token);
+  const tick = async () => {
+    try {
+      await pollOnce({ search: () => client.searchReviewRequested(), store, broadcast });
+    } catch (err) {
+      console.warn(`[diffdad] review poll failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+  await tick();
+  setInterval(tick, pollMs);
+}
 
 /** Split `owner/name` for the narrative cache key; tolerate a bare name. */
 function splitRepo(repo: string): { owner: string; name: string } {
@@ -119,6 +152,9 @@ async function reviewUnit(unit: ReviewUnit): Promise<ReviewResult> {
 export async function startDaemon(opts: DaemonOptions = {}): Promise<number> {
   const port = opts.port ?? DEFAULT_DAEMON_PORT;
   const concurrency = opts.concurrency ?? DEFAULT_CONCURRENCY;
+  const pollFlag = Bun.argv.find((f) => f.startsWith('--poll='));
+  const pollMs =
+    opts.pollMs ?? (pollFlag ? parseInt(pollFlag.split('=')[1] ?? '0', 10) || undefined : undefined) ?? DEFAULT_POLL_MS;
 
   // Single-instance guard (FailureModes: launchd + a manual `dad daemon` → split queue / port conflict).
   // Refusing is an intentional, *successful* outcome — a daemon is already up — so we exit 0. The plist's
@@ -184,6 +220,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<number> {
 
   // Resume any work persisted across a restart (submitted never started; reviewing crashed mid-flight).
   pool.kick();
+
+  // Open the GitHub "reviews requested of me" door: poll on an interval, mint/link/resurface units.
+  // Awaited only through the first token resolution + initial pass; the interval then runs detached.
+  await startPoller(store, hub.broadcast, pollMs);
 
   if (opts.open) {
     const { default: open } = await import('open');

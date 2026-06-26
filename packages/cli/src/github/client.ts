@@ -1,5 +1,6 @@
 import { parseDiff } from './diff-parser';
 import type { CheckRun, DiffFile, ForcePushEvent, IssueRef, PRComment, PRCommit, PRMetadata, PRReview } from './types';
+import type { PolledPr } from '../units/types';
 
 const GITHUB_API = 'https://api.github.com';
 
@@ -58,6 +59,21 @@ type GhIssueComment = {
   body: string;
   created_at: string;
   updated_at: string;
+};
+
+/**
+ * A single result from GET /search/issues. The search endpoint returns issues and PRs together; a
+ * `pull_request` marker distinguishes PRs. It does NOT carry head branch/sha, so each result is
+ * enriched via a follow-up PR fetch. `repository_url` is the canonical source for owner/repo.
+ */
+type GhSearchIssueItem = {
+  number: number;
+  title: string;
+  html_url: string;
+  repository_url: string;
+  user: GhUser;
+  updated_at: string;
+  pull_request?: { url?: string } | null;
 };
 
 export class GitHubClient {
@@ -439,4 +455,65 @@ export class GitHubClient {
       return null;
     }
   }
+
+  /**
+   * Open PRs the authenticated user is asked to look at — either a requested reviewer or an assignee.
+   * Drives the background poller's "GitHub reviews" door.
+   *
+   * Issued as two searches (`review-requested:@me` and `assignee:@me`) rather than one OR'd query:
+   * GitHub's issue/PR search ANDs space-separated qualifiers and doesn't reliably honor `OR` between
+   * them. Results are merged and de-duped by html URL (a PR can match both). The search payload omits
+   * head branch/sha, so each unique PR is enriched with a single `getPR` fetch.
+   */
+  async searchReviewRequested(): Promise<PolledPr[]> {
+    const queries = ['is:open is:pr review-requested:@me', 'is:open is:pr assignee:@me'];
+    const itemsByUrl = new Map<string, GhSearchIssueItem>();
+    for (const q of queries) {
+      const params = new URLSearchParams({ q, per_page: '100' });
+      const res = await this.fetch(`/search/issues?${params.toString()}`);
+      const data = (await res.json()) as { items?: GhSearchIssueItem[] };
+      for (const item of data.items ?? []) {
+        // Search returns issues too; keep only PRs and de-dupe by canonical URL.
+        if (!item.pull_request) continue;
+        if (!itemsByUrl.has(item.html_url)) itemsByUrl.set(item.html_url, item);
+      }
+    }
+
+    const out: PolledPr[] = [];
+    for (const item of itemsByUrl.values()) {
+      const ownerRepo = parseOwnerRepo(item.repository_url);
+      if (!ownerRepo) continue;
+      const { owner, repo } = ownerRepo;
+      // Head branch/sha + base + authoritative title/author/updatedAt come from the PR itself. Guard the
+      // per-PR fetch: one inaccessible/transient/deleted PR must not throw out of the loop and drop the
+      // entire inbox for this poll — log it and move on so the rest still surface.
+      try {
+        const pr = await this.getPR(owner, repo, item.number);
+        out.push({
+          owner,
+          repo,
+          number: pr.number,
+          title: pr.title,
+          headBranch: pr.branch,
+          headSha: pr.headSha,
+          base: pr.base,
+          author: pr.author.login,
+          url: item.html_url,
+          updatedAt: pr.updatedAt,
+        });
+      } catch (err) {
+        console.warn(
+          `[diffdad] poller: skipping ${owner}/${repo}#${item.number} — ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+    return out;
+  }
+}
+
+/** Pull `{ owner, repo }` out of a GitHub API repository URL (`.../repos/{owner}/{repo}`). */
+function parseOwnerRepo(repositoryUrl: string): { owner: string; repo: string } | null {
+  const m = repositoryUrl.match(/\/repos\/([^/]+)\/([^/]+)$/);
+  if (!m || !m[1] || !m[2]) return null;
+  return { owner: m[1], repo: m[2] };
 }
