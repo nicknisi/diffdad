@@ -20,7 +20,11 @@ export type WriterResult = {
   usage?: AiUsage;
 };
 
-const WRITER_MAX_TOKENS = 4_000;
+// One chapter is a 1-sentence summary + 1-2-sentence whyMatters + a few short
+// narrative sections + cheap diff refs + a few callouts — well under this. The cap
+// is a guardrail against a runaway chapter (which also dominates the parallel
+// writers' wall-clock), not the target length; the prompt asks for brevity.
+const WRITER_MAX_TOKENS = 3_000;
 
 function normalizePath(p: string): string {
   return p
