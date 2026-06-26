@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  commentsEndpoint,
   groupOf,
   groupUnits,
   parseRoute,
@@ -151,5 +152,19 @@ describe('parseRoute / routePath', () => {
     expect(routePath({ name: 'center' })).toBe('/');
     expect(routePath({ name: 'unit', unitId: 'u_123' })).toBe('/units/u_123');
     expect(parseRoute(routePath({ name: 'unit', unitId: 'a/b' }))).toEqual({ name: 'unit', unitId: 'a/b' });
+  });
+});
+
+describe('commentsEndpoint', () => {
+  it('targets the unit-scoped endpoint when drilled into a unit in command-center mode', () => {
+    expect(commentsEndpoint('command-center', { name: 'unit', unitId: 'u_1' })).toBe('/api/units/u_1/comments');
+    expect(commentsEndpoint('command-center', { name: 'unit', unitId: 'a/b' })).toBe('/api/units/a%2Fb/comments');
+  });
+  it('falls back to the PR endpoint at the command center root (no open unit)', () => {
+    expect(commentsEndpoint('command-center', { name: 'center' })).toBe('/api/comments');
+  });
+  it('uses the PR endpoint in pr and watch modes', () => {
+    expect(commentsEndpoint('pr', { name: 'center' })).toBe('/api/comments');
+    expect(commentsEndpoint('watch', { name: 'unit', unitId: 'u_1' })).toBe('/api/comments');
   });
 });

@@ -1,7 +1,14 @@
 import { useCallback } from 'react';
 import { agentToPRComments } from '../lib/agent-comments';
+import { commentsEndpoint } from '../lib/units-view';
 import { useReviewStore } from '../state/review-store';
 import type { AgentComment, CommentId, PRComment } from '../state/types';
+
+/** The comments endpoint for the current surface (PR `/api/comments`, or a unit's PR in the daemon). */
+function endpoint(): string {
+  const { mode, route } = useReviewStore.getState();
+  return commentsEndpoint(mode, route);
+}
 
 type PostCommentOpts = {
   path?: string;
@@ -18,7 +25,7 @@ export function useComments() {
 
   const refreshComments = useCallback(async () => {
     try {
-      const res = await fetch('/api/comments');
+      const res = await fetch(endpoint());
       if (!res.ok) return;
       const comments = (await res.json()) as PRComment[];
       setComments(comments);
@@ -53,7 +60,7 @@ export function useComments() {
         return agentToPRComments([created])[0]!;
       }
 
-      const res = await fetch('/api/comments', {
+      const res = await fetch(endpoint(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ body, ...opts }),

@@ -2,6 +2,9 @@ import { existsSync } from 'fs';
 import { Hono } from 'hono';
 import { serveStatic } from 'hono/bun';
 import { dirname, resolve } from 'path';
+import type { PostCommentOptions } from '../github/client';
+import { mapCommentsToChapters } from '../github/comments';
+import type { PRComment } from '../github/types';
 import { CleanTreeError } from '../local/diff-source';
 import type { Concern } from '../narrative/types';
 import { mountMcp } from '../mcp/server';
@@ -56,6 +59,17 @@ export type DaemonAppDeps = {
    * path. Absent → the hydrate route is a graceful no-op (the unit is returned unchanged).
    */
   hydrate?: (unit: ReviewUnit) => Promise<ReviewUnit>;
+  /**
+   * Fetches a `github` unit's live comments from GitHub (review + issue comments). Injected so tests
+   * fake it and the daemon wires the authenticated client. Absent → the comments route returns []
+   * (no GitHub, no comments). Comments are never stored on the unit — fetched live, like PR mode.
+   */
+  commentFetcher?: (unit: ReviewUnit) => Promise<PRComment[]>;
+  /**
+   * Posts a comment to a `github` unit's PR (inline or top-level). Injected like `commentFetcher`.
+   * Must throw on failure — the route then 502s so a comment never appears locally but not on GitHub.
+   */
+  commentPoster?: (unit: ReviewUnit, body: string, opts: PostCommentOptions) => Promise<PRComment>;
   /** Long-poll ceiling for `await_decision`; tests shrink it. */
   awaitTimeoutMs?: number;
   /** Override the command-center static root (defaults to the same fallbacks as `server.ts`). */
@@ -82,6 +96,7 @@ function resolveWebDist(override?: string): string {
  */
 export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
   const { store, decision, hub, computeSlice, onSubmitted, reviewPoster, hydrate, awaitTimeoutMs } = deps;
+  const { commentFetcher, commentPoster } = deps;
   const app = new Hono();
   const broadcast = hub.broadcast;
 
@@ -286,6 +301,69 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
     }
     broadcast('units', { units: store.list() });
     return c.json({ unit: updated });
+  });
+
+  // --- Comments (github units) ----------------------------------------------
+  // Two-way with GitHub, mirroring the PR server's /api/comments: a github unit's comments are
+  // fetched and posted LIVE from GitHub (never stored on the unit), so dad and the PR can't drift —
+  // the same reason the decision route posts to GitHub first. Non-github units (agent/cli) have no PR
+  // to comment on, so GET returns [] and POST 400s. Both routes must precede the static catch-all.
+  app.get('/api/units/:id/comments', async (c) => {
+    const id = c.req.param('id');
+    const unit = store.get(id);
+    if (!unit) return c.json({ error: new UnknownUnitError(id).message }, 404);
+    if (unit.source !== 'github' || !commentFetcher) return c.json([] as PRComment[]);
+    const raw = await commentFetcher(unit);
+    // Map to chapters once the walkthrough exists (the drill-in hydrates on open); before that, the
+    // raw comments are still returned so they're never invisible — they just carry no chapterIndices.
+    return c.json(unit.narrative ? mapCommentsToChapters(raw, unit.narrative) : raw);
+  });
+
+  app.post('/api/units/:id/comments', async (c) => {
+    const id = c.req.param('id');
+    const unit = store.get(id);
+    if (!unit) return c.json({ error: new UnknownUnitError(id).message }, 404);
+    if (unit.source !== 'github') return c.json({ error: 'only github units have a PR to comment on' }, 400);
+    // A comment we can't post is worse than no comment — refuse rather than show a local ghost.
+    if (!commentPoster) return c.json({ error: 'GitHub is not configured — cannot post a comment' }, 503);
+
+    let body: {
+      body?: string;
+      path?: string;
+      line?: number;
+      side?: 'LEFT' | 'RIGHT';
+      startLine?: number;
+      startSide?: 'LEFT' | 'RIGHT';
+      commitId?: string;
+      inReplyToId?: number;
+    };
+    try {
+      body = (await c.req.json()) as typeof body;
+    } catch {
+      return c.json({ error: 'invalid JSON body' }, 400);
+    }
+    if (!body.body || !body.body.trim()) return c.json({ error: 'comment body is required' }, 400);
+
+    const opts: PostCommentOptions = {
+      path: body.path,
+      line: body.line,
+      side: body.side,
+      startLine: body.startLine,
+      startSide: body.startSide,
+      inReplyToId: body.inReplyToId,
+      // Inline comments anchor to a commit; default to the unit's head SHA (what the diff shows).
+      commitId: body.commitId ?? unit.metadata.headSha,
+    };
+
+    let created: PRComment;
+    try {
+      created = await commentPoster(unit, body.body, opts);
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 502);
+    }
+    // (Per-unit SSE scoping lands with Slice 3 — for now the posting tab adds it optimistically.)
+    broadcast('comment', created);
+    return c.json(created, 201);
   });
 
   // --- Live updates ---------------------------------------------------------

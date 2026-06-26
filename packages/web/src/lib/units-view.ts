@@ -114,3 +114,16 @@ export function parseRoute(pathname: string): Route {
 export function routePath(route: Route): string {
   return route.name === 'unit' ? `/units/${encodeURIComponent(route.unitId)}` : '/';
 }
+
+/**
+ * Which comments endpoint `useComments` should hit. In the daemon's command center, an open unit
+ * drill-in reads/writes that unit's GitHub PR comments (`/api/units/:id/comments`); everywhere else
+ * (PR mode, watch mode, the center root) it's the single-PR `/api/comments`. Pure so it's unit-tested
+ * without rendering the hook. Watch mode's agent-comment path is handled separately in the hook.
+ */
+export function commentsEndpoint(mode: 'pr' | 'watch' | 'command-center', route: Route): string {
+  if (mode === 'command-center' && route.name === 'unit') {
+    return `/api/units/${encodeURIComponent(route.unitId)}/comments`;
+  }
+  return '/api/comments';
+}

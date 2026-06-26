@@ -7,7 +7,8 @@ import { DecisionChannel } from '../units/decision-channel';
 import { createDaemonApp, SseHub } from '../daemon/app';
 import type { ComputeSlice } from '../mcp/submit';
 import { CleanTreeError, type LocalReview } from '../local/diff-source';
-import type { PRMetadata } from '../github/types';
+import type { PRComment, PRMetadata } from '../github/types';
+import type { PostCommentOptions } from '../github/client';
 import type { Decision, ReviewUnit } from '../units/types';
 import type { NarrativeResponse } from '../narrative/types';
 
@@ -65,10 +66,12 @@ type SetupOpts = {
   computeSlice?: ComputeSlice;
   reviewPoster?: (unit: ReviewUnit, decision: Decision) => Promise<void>;
   hydrate?: (unit: ReviewUnit) => Promise<ReviewUnit>;
+  commentFetcher?: (unit: ReviewUnit) => Promise<PRComment[]>;
+  commentPoster?: (unit: ReviewUnit, body: string, opts: PostCommentOptions) => Promise<PRComment>;
 };
 
 function setup(opts: SetupOpts = {}) {
-  const { computeSlice = fakeSlice, reviewPoster, hydrate } = opts;
+  const { computeSlice = fakeSlice, reviewPoster, hydrate, commentFetcher, commentPoster } = opts;
   const store = new UnitStore([], { dir, ...deterministic() });
   const decision = new DecisionChannel();
   const hub = new SseHub();
@@ -83,6 +86,8 @@ function setup(opts: SetupOpts = {}) {
     onSubmitted: (unit) => submitted.push(unit),
     reviewPoster,
     hydrate,
+    commentFetcher,
+    commentPoster,
   });
   return { store, decision, hub, events, submitted, app };
 }
@@ -609,5 +614,179 @@ describe('DELETE /api/units/:id', () => {
   it('404s for an unknown unit', async () => {
     const { app } = setup();
     expect((await app.request('/api/units/nope', { method: 'DELETE' })).status).toBe(404);
+  });
+});
+
+/** A narrative whose only chapter references `file` via a diff section — so an inline comment on
+ * that path maps to chapter 0 (mirrors PR mode's `mapCommentsToChapters`). */
+function narrativeWithFile(file: string): NarrativeResponse {
+  return {
+    ...NARRATIVE,
+    chapters: [{ title: 'c', sections: [{ type: 'diff', file, hunkIndex: 0 }] }] as NarrativeResponse['chapters'],
+  };
+}
+
+function mkComment(over: Partial<PRComment> = {}): PRComment {
+  return {
+    id: over.id ?? 1,
+    author: over.author ?? 'octocat',
+    body: over.body ?? 'a comment',
+    createdAt: over.createdAt ?? 'now',
+    updatedAt: over.updatedAt ?? 'now',
+    ...over,
+  };
+}
+
+describe('GET /api/units/:id/comments', () => {
+  it('fetches a github unit’s comments and maps them to its narrative chapters', async () => {
+    const fetched: ReviewUnit[] = [];
+    const { store, app } = setup({
+      commentFetcher: async (unit) => {
+        fetched.push(unit);
+        return [mkComment({ id: 9, path: 'src/a.ts', line: 3 })];
+      },
+    });
+    const gh = seedGithubUnit(store);
+    store.attachReview(gh.unitId, [], narrativeWithFile('src/a.ts'), 0);
+
+    const res = await app.request(`/api/units/${gh.unitId}/comments`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Array<PRComment & { chapterIndices: number[] }>;
+    expect(fetched).toHaveLength(1);
+    expect(fetched[0]!.unitId).toBe(gh.unitId);
+    expect(body).toHaveLength(1);
+    expect(body[0]!.id).toBe(9);
+    expect(body[0]!.chapterIndices).toEqual([0]); // inline comment on src/a.ts → chapter 0
+  });
+
+  it('returns the raw comments unmapped when the github unit has no narrative yet', async () => {
+    const { store, app } = setup({
+      commentFetcher: async () => [mkComment({ id: 5, path: 'x.ts', line: 1 })],
+    });
+    const gh = seedGithubUnit(store); // not hydrated — no narrative
+    const res = await app.request(`/api/units/${gh.unitId}/comments`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PRComment[];
+    expect(body.map((c) => c.id)).toEqual([5]);
+  });
+
+  it('returns [] for a non-github unit without calling the fetcher', async () => {
+    let called = false;
+    const { store, app } = setup({
+      commentFetcher: async () => {
+        called = true;
+        return [mkComment()];
+      },
+    });
+    const u = await addUnit(store); // source defaults to 'agent'
+    const res = await app.request(`/api/units/${u.unitId}/comments`);
+    expect(res.status).toBe(200);
+    expect((await res.json()) as PRComment[]).toEqual([]);
+    expect(called).toBe(false);
+  });
+
+  it('returns [] for a github unit when no fetcher is wired', async () => {
+    const { store, app } = setup(); // no commentFetcher
+    const gh = seedGithubUnit(store);
+    const res = await app.request(`/api/units/${gh.unitId}/comments`);
+    expect(res.status).toBe(200);
+    expect((await res.json()) as PRComment[]).toEqual([]);
+  });
+
+  it('404s for an unknown unit', async () => {
+    const { app } = setup({ commentFetcher: async () => [] });
+    expect((await app.request('/api/units/nope/comments')).status).toBe(404);
+  });
+});
+
+describe('POST /api/units/:id/comments', () => {
+  const post = (app: ReturnType<typeof setup>['app'], id: string, body: unknown) =>
+    app.request(`/api/units/${id}/comments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+  it('posts an inline comment to GitHub (commitId defaulting to the head SHA) and broadcasts', async () => {
+    const calls: Array<[ReviewUnit, string, PostCommentOptions]> = [];
+    const { store, events, app } = setup({
+      commentPoster: async (unit, body, opts) => {
+        calls.push([unit, body, opts]);
+        return mkComment({ id: 42, body, path: opts.path, line: opts.line });
+      },
+    });
+    const gh = seedGithubUnit(store, { headSha: 'sha-1' });
+
+    const res = await post(app, gh.unitId, { body: 'nit: rename this', path: 'src/a.ts', line: 3, side: 'RIGHT' });
+    expect(res.status).toBe(201);
+    const created = (await res.json()) as PRComment;
+    expect(created.id).toBe(42);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]![0].unitId).toBe(gh.unitId);
+    expect(calls[0]![1]).toBe('nit: rename this');
+    expect(calls[0]![2]).toMatchObject({ path: 'src/a.ts', line: 3, side: 'RIGHT', commitId: 'sha-1' });
+    expect(events).toContain('comment');
+  });
+
+  it('honors an explicit commitId over the unit head SHA', async () => {
+    const calls: PostCommentOptions[] = [];
+    const { store, app } = setup({
+      commentPoster: async (_u, _b, opts) => {
+        calls.push(opts);
+        return mkComment();
+      },
+    });
+    const gh = seedGithubUnit(store, { headSha: 'sha-1' });
+    await post(app, gh.unitId, { body: 'x', path: 'a.ts', line: 1, commitId: 'sha-override' });
+    expect(calls[0]!.commitId).toBe('sha-override');
+  });
+
+  it('400s a non-github unit (no PR to comment on)', async () => {
+    let called = false;
+    const { store, app } = setup({
+      commentPoster: async () => {
+        called = true;
+        return mkComment();
+      },
+    });
+    const u = await addUnit(store);
+    expect((await post(app, u.unitId, { body: 'hi' })).status).toBe(400);
+    expect(called).toBe(false);
+  });
+
+  it('503s a github unit when GitHub is not configured (no poster)', async () => {
+    const { store, app } = setup(); // no commentPoster
+    const gh = seedGithubUnit(store);
+    expect((await post(app, gh.unitId, { body: 'hi' })).status).toBe(503);
+  });
+
+  it('400s when the body is missing or empty', async () => {
+    let called = false;
+    const { store, app } = setup({
+      commentPoster: async () => {
+        called = true;
+        return mkComment();
+      },
+    });
+    const gh = seedGithubUnit(store);
+    expect((await post(app, gh.unitId, { path: 'a.ts', line: 1 })).status).toBe(400);
+    expect((await post(app, gh.unitId, { body: '   ' })).status).toBe(400);
+    expect(called).toBe(false);
+  });
+
+  it('502s when the poster throws (GitHub rejected the comment)', async () => {
+    const { store, app } = setup({
+      commentPoster: async () => {
+        throw new Error('github 422');
+      },
+    });
+    const gh = seedGithubUnit(store);
+    expect((await post(app, gh.unitId, { body: 'hi' })).status).toBe(502);
+  });
+
+  it('404s for an unknown unit', async () => {
+    const { app } = setup({ commentPoster: async () => mkComment() });
+    expect((await post(app, 'nope', { body: 'hi' })).status).toBe(404);
   });
 });

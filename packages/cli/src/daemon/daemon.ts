@@ -3,8 +3,9 @@ import { homedir } from 'os';
 import { join } from 'path';
 import { resolveGitHubToken } from '../auth';
 import { readConfig } from '../config';
-import { GitHubClient } from '../github/client';
+import { GitHubClient, type PostCommentOptions } from '../github/client';
 import { parseDiff } from '../github/diff-parser';
+import type { PRComment } from '../github/types';
 import { buildLocalReview } from '../local/diff-source';
 import { generateNarrative } from '../narrative/engine';
 import type { ComputeSlice } from '../mcp/submit';
@@ -172,6 +173,34 @@ function makeHydrate(client: GitHubClient, store: UnitStore): (unit: ReviewUnit)
   };
 }
 
+/**
+ * Fetch a `github` unit's live comments from GitHub (review + issue comments, already normalized to
+ * `PRComment[]` by the client). Wired only when a GitHub client exists; otherwise the comments route
+ * returns []. Comments are read live, never persisted on the unit — so dad mirrors the PR exactly.
+ */
+function makeCommentFetcher(client: GitHubClient): (unit: ReviewUnit) => Promise<PRComment[]> {
+  return (unit) => {
+    const { owner, name } = splitRepo(unit.repo);
+    if (unit.prNumber === undefined) throw new Error(`unit ${unit.unitId} has no PR number`);
+    return client.getComments(owner, name, unit.prNumber);
+  };
+}
+
+/**
+ * Post a comment to a `github` unit's PR (inline or top-level). The route supplies a `commitId`
+ * (defaulting to the unit's head SHA) so inline comments anchor correctly. Throws on API failure —
+ * the route relies on that to 502 and surface nothing locally that isn't really on GitHub.
+ */
+function makeCommentPoster(
+  client: GitHubClient,
+): (unit: ReviewUnit, body: string, opts: PostCommentOptions) => Promise<PRComment> {
+  return (unit, body, opts) => {
+    const { owner, name } = splitRepo(unit.repo);
+    if (unit.prNumber === undefined) throw new Error(`unit ${unit.unitId} has no PR number`);
+    return client.postComment(owner, name, unit.prNumber, body, opts);
+  };
+}
+
 /** Split `owner/name` for the narrative cache key; tolerate a bare name. */
 function splitRepo(repo: string): { owner: string; name: string } {
   const slash = repo.indexOf('/');
@@ -242,6 +271,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<number> {
     onSubmitted: () => pool.kick(),
     reviewPoster: githubClient ? makeReviewPoster(githubClient) : undefined,
     hydrate: githubClient ? makeHydrate(githubClient, store) : undefined,
+    commentFetcher: githubClient ? makeCommentFetcher(githubClient) : undefined,
+    commentPoster: githubClient ? makeCommentPoster(githubClient) : undefined,
   });
 
   let server: ReturnType<typeof Bun.serve>;

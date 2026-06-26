@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { getAccentMeta } from '../lib/accents';
 import { useReviewStore } from '../state/review-store';
+import { useComments } from '../hooks/useComments';
 import { postDecision, removeUnit, retryUnit } from '../hooks/useUnits';
 import { AccentPicker } from './AccentPicker';
 import { ClassicView } from './ClassicView';
@@ -15,6 +16,10 @@ import type { ChapterState, Unit } from '../state/types';
  * (StoryView / ClassicView, both store-driven) renders it. We set state directly rather than
  * via `setData` so the per-unit reviewed/draft localStorage (keyed by `pr.number`, which is the
  * 0 sentinel for every local unit) can't bleed across units — each open starts fresh.
+ *
+ * Comments are intentionally NOT set here: they're loaded separately (and live, from GitHub for
+ * github units) by the drill-in's comment effect. Clobbering them on every live re-apply would wipe
+ * the loaded thread each time the unit's `updatedAt` ticks.
  */
 function applyUnitToStore(unit: Unit): void {
   const narrative = unit.narrative ?? null;
@@ -24,7 +29,6 @@ function applyUnitToStore(unit: Unit): void {
     pr: unit.metadata ?? null,
     files: unit.files ?? [],
     narrative,
-    comments: [],
     chapterStates,
     activeChapterId: narrative && narrative.chapters.length > 0 ? 'ch-0' : null,
     drafts: [],
@@ -59,6 +63,8 @@ export function UnitReview() {
   const unitId = route.name === 'unit' ? route.unitId : null;
   const liveUnit = useReviewStore((s) => (unitId ? s.units.find((u) => u.unitId === unitId) : undefined));
   const narrative = useReviewStore((s) => s.narrative);
+  const setComments = useReviewStore((s) => s.setComments);
+  const { refreshComments } = useComments();
 
   const [unit, setUnit] = useState<Unit | null>(null);
   // Dedupe the lazy-hydrate POST: a github unit with no narrative triggers generation once per open.
@@ -103,6 +109,17 @@ export function UnitReview() {
       applyUnitToStore(liveUnit);
     }
   }, [liveUnit?.unitId, liveUnit?.updatedAt]);
+
+  // Load this unit's GitHub PR comments into the store so the existing comment UI (StoryView /
+  // ClassicView threads + composer) works unchanged. `refreshComments` is unit-aware in command-center
+  // mode. Clear first so switching units never flashes the prior unit's thread; re-fetch once the
+  // narrative lands so inline comments map to their chapters (the server maps against unit.narrative).
+  const hasNarrative = narrative !== null;
+  useEffect(() => {
+    if (!unitId) return;
+    setComments([]);
+    void refreshComments();
+  }, [unitId, hasNarrative, setComments, refreshComments]);
 
   // Lazy narrative for github units: PRs aren't narrated until opened. Fire one hydrate POST when a
   // github unit with no narrative comes into view; the SSE `units` broadcast (and the response, as a
