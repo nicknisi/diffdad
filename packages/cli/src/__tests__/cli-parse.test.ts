@@ -7,6 +7,10 @@ describe('classifyCommand', () => {
     expect(classifyCommand('comments')).toBe('comments');
   });
 
+  it('recognizes daemon as a subcommand', () => {
+    expect(classifyCommand('daemon')).toBe('daemon');
+  });
+
   it('keeps existing subcommands and treats unknown tokens as PR shorthands', () => {
     expect(classifyCommand('review')).toBe('review');
     expect(classifyCommand('config')).toBe('config');

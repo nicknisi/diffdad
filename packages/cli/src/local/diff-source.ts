@@ -3,7 +3,7 @@ import { statSync } from 'fs';
 import { join } from 'path';
 import { parseDiff } from '../github/diff-parser';
 import type { DiffFile, PRMetadata } from '../github/types';
-import { assertGitRepo, resolveDefaultBranch, spawnText } from './git';
+import { assertGitRepo, type GitOptions, resolveDefaultBranch, spawnText } from './git';
 
 export class CleanTreeError extends Error {
   constructor(public readonly baseRef: string) {
@@ -75,13 +75,13 @@ export function buildReviewFromDiff(diff: string, meta: DiffMeta): LocalReview {
  * the default branch. Stable per branch → used as the agent-comment store key by both
  * `dad watch` and `dad comments` so they share a comment thread.
  */
-export async function resolveBaseRef(base?: string): Promise<string> {
+export async function resolveBaseRef(base?: string, opts: GitOptions = {}): Promise<string> {
   if (base) return base;
-  const def = await resolveDefaultBranch();
+  const def = await resolveDefaultBranch(opts);
   if (!def) {
     throw new Error('could not determine a base branch — pass one explicitly, e.g. `dad watch main`');
   }
-  const mb = await spawnText(['git', 'merge-base', 'HEAD', def]);
+  const mb = await spawnText(['git', 'merge-base', 'HEAD', def], opts);
   return mb.code === 0 && mb.stdout.trim() ? mb.stdout.trim() : def;
 }
 
@@ -105,18 +105,24 @@ function sortByRecency(files: DiffFile[], repoRoot: string): DiffFile[] {
     .sort((a, b) => (b.mtime ?? -Infinity) - (a.mtime ?? -Infinity));
 }
 
-/** Shell out to git, building a LocalReview of the working tree against `base` (or the default branch). */
-export async function buildLocalReview(base?: string): Promise<LocalReview> {
-  await assertGitRepo();
-  const baseRef = await resolveBaseRef(base);
+/**
+ * Shell out to git, building a LocalReview of the working tree against `base` (or the default branch).
+ * Pass `opts.cwd` to review a different worktree than the process directory — the daemon submits each
+ * unit's `worktreePath` this way. Every git call is bound to `opts` up front so no call site can run
+ * in the wrong directory.
+ */
+export async function buildLocalReview(base?: string, opts: GitOptions = {}): Promise<LocalReview> {
+  await assertGitRepo(opts);
+  const baseRef = await resolveBaseRef(base, opts);
+  const git = (args: string[]) => spawnText(args, opts);
 
   const [diff, branch, headSha, root] = await Promise.all([
     // Force standard a/ b/ prefixes — the diff parser requires them, but a user's git config
     // (diff.mnemonicPrefix → c/ w/, or diff.noprefix → none) would otherwise break parsing.
-    spawnText(['git', '-c', 'diff.mnemonicPrefix=false', '-c', 'diff.noprefix=false', 'diff', baseRef]),
-    spawnText(['git', 'rev-parse', '--abbrev-ref', 'HEAD']),
-    spawnText(['git', 'rev-parse', 'HEAD']),
-    spawnText(['git', 'rev-parse', '--show-toplevel']),
+    git(['git', '-c', 'diff.mnemonicPrefix=false', '-c', 'diff.noprefix=false', 'diff', baseRef]),
+    git(['git', 'rev-parse', '--abbrev-ref', 'HEAD']),
+    git(['git', 'rev-parse', 'HEAD']),
+    git(['git', 'rev-parse', '--show-toplevel']),
   ]);
   if (diff.code !== 0) {
     throw new Error(`git diff failed: ${diff.stderr.trim() || `exit ${diff.code}`}`);

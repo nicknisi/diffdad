@@ -11,6 +11,7 @@ import { cacheNarrative, clearCache, computePromptMetaHash, getCachedNarrative }
 import { generateNarrative, resolveAiPath, resolveProviderKey, setCliOverride } from './narrative/engine';
 import { getCachedRecap } from './recap/cache';
 import { createServer } from './server';
+import { daemonStatus, startDaemon } from './daemon/daemon';
 
 const a = {
   reset: '\x1b[0m',
@@ -65,6 +66,12 @@ Usage:
                                      over MCP. No PR or GitHub token needed.
   dad comments [base]                Print open watch-mode comments as markdown
                                      (manual fallback for non-MCP agents).
+  dad daemon                         Start the per-machine review daemon: a
+                                     long-lived process that owns a cross-repo
+                                     review queue and serves the command center
+                                     + MCP endpoint. Agents submit_for_review
+                                     and park on await_decision.
+  dad daemon status                  Report whether the daemon is running.
   dad config                         Configure dad (interactive)
   dad config show                    Print the current config (secrets redacted)
   dad config reset [--yes]           Delete the saved config
@@ -458,6 +465,31 @@ async function commentsCommand(base?: string): Promise<number> {
   return 0;
 }
 
+async function daemonCommand(sub?: string): Promise<number> {
+  const portFlag = Bun.argv.find((f) => f.startsWith('--port='));
+  const port = portFlag ? parseInt(portFlag.split('=')[1] ?? '0', 10) || undefined : undefined;
+  const concFlag = Bun.argv.find((f) => f.startsWith('--concurrency='));
+  const concurrency = concFlag ? parseInt(concFlag.split('=')[1] ?? '0', 10) || undefined : undefined;
+
+  switch (sub) {
+    case undefined:
+    case 'start':
+      return await startDaemon({ port, concurrency, open: !Bun.argv.includes('--no-open') });
+    case 'status':
+      return await daemonStatus(port);
+    case 'install':
+    case 'uninstall':
+      console.error(
+        `error: \`dad daemon ${sub}\` (launchd terminal-survival) ships in the hardening slice — run \`dad daemon\` from a terminal for now.`,
+      );
+      return 1;
+    default:
+      console.error(`error: unknown daemon subcommand: ${sub}`);
+      console.error('usage: dad daemon [start|status]');
+      return 2;
+  }
+}
+
 async function configCommand(sub?: string): Promise<number> {
   if (sub === 'show') return await showConfig();
   if (sub === 'reset') {
@@ -472,7 +504,7 @@ async function configCommand(sub?: string): Promise<number> {
   return await runConfig();
 }
 
-export type Command = 'review' | 'watch' | 'comments' | 'config' | 'cache' | 'pr-shorthand';
+export type Command = 'review' | 'watch' | 'comments' | 'daemon' | 'config' | 'cache' | 'pr-shorthand';
 
 /** Map the first positional token to a command. Unknown tokens are PR shorthands. */
 export function classifyCommand(cmd: string | undefined): Command {
@@ -483,6 +515,8 @@ export function classifyCommand(cmd: string | undefined): Command {
       return 'watch';
     case 'comments':
       return 'comments';
+    case 'daemon':
+      return 'daemon';
     case 'config':
       return 'config';
     case 'cache':
@@ -524,6 +558,8 @@ async function main(argv: string[]): Promise<number> {
       return await watchCommand(rest[0]);
     case 'comments':
       return await commentsCommand(rest[0]);
+    case 'daemon':
+      return await daemonCommand(rest[0]);
     case 'config':
       return await configCommand(rest[0]);
     case 'cache': {
