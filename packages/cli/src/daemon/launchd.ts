@@ -1,6 +1,7 @@
 import { mkdir, rm, writeFile } from 'fs/promises';
 import { homedir } from 'os';
 import { basename, join } from 'path';
+import { dataDir } from '../paths';
 import { DEFAULT_DAEMON_PORT } from './daemon';
 
 /** Reverse-DNS label for the per-user LaunchAgent. Also the plist basename and the launchctl target. */
@@ -13,7 +14,7 @@ function plistPath(): string {
 
 /** Daemon stdout/stderr land beside the rest of dad's state so logs are findable. */
 function logDir(): string {
-  return join(homedir(), '.cache', 'diffdad');
+  return dataDir();
 }
 
 /** The `gui/<uid>` domain a per-user LaunchAgent is bootstrapped into (modern launchctl). */

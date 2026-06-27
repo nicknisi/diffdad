@@ -1,8 +1,10 @@
-import { mkdtemp, rm } from 'fs/promises';
+import { mkdtemp, readdir, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { Hono } from 'hono';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { AgentCommentStore } from '../agent-comments/store';
+import { dataDir } from '../paths';
 import { UnitStore } from '../units/store';
 import { DecisionChannel } from '../units/decision-channel';
 import { type ComputeSlice, registerSubmitTools } from '../mcp/submit';
@@ -89,19 +91,48 @@ async function callTool(app: Hono, sessionId: string, name: string, args: Record
   return { parsed, isError: json.result?.isError ?? false };
 }
 
+const COMMENT_DIR = join(dataDir(), 'agent-comments');
+async function cleanCommentFixture() {
+  try {
+    for (const e of await readdir(COMMENT_DIR)) {
+      if (e.startsWith('__diffdad_test__submit')) await rm(join(COMMENT_DIR, e), { force: true });
+    }
+  } catch {
+    /* dir may not exist */
+  }
+}
+
 let dir: string;
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'diffdad-mcp-submit-'));
 });
 afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
+  await cleanCommentFixture();
 });
 
-function setup(computeSlice: ComputeSlice = async () => fakeReview()) {
+function setup(computeSlice: ComputeSlice = async () => fakeReview(), opts: { withComments?: boolean } = {}) {
   const store = new UnitStore([], { dir, ...deterministic() });
   const decision = new DecisionChannel();
   const events: { event: string; data: unknown }[] = [];
   const submitted: ReviewUnit[] = [];
+  // Per-unit comment stores, mirroring the daemon's getCommentStore (undefined for unknown units).
+  const commentStores = new Map<string, AgentCommentStore>();
+  let cid = 0;
+  const getCommentStore = opts.withComments
+    ? async (unitId: string): Promise<AgentCommentStore | undefined> => {
+        if (!store.get(unitId)) return undefined;
+        let cs = commentStores.get(unitId);
+        if (!cs) {
+          cs = new AgentCommentStore(`__diffdad_test__submit-${unitId}`, [], {
+            genId: () => `c-${++cid}`,
+            now: () => '2026-06-26T00:00:00.000Z',
+          });
+          commentStores.set(unitId, cs);
+        }
+        return cs;
+      }
+    : undefined;
   const app = new Hono();
   mountMcp(app, (server) =>
     registerSubmitTools(server, {
@@ -111,9 +142,20 @@ function setup(computeSlice: ComputeSlice = async () => fakeReview()) {
       computeSlice,
       onSubmitted: (u) => submitted.push(u),
       awaitTimeoutMs: 40,
+      getCommentStore,
     }),
   );
-  return { store, decision, events, submitted, app };
+  return { store, decision, events, submitted, app, getCommentStore };
+}
+
+async function submitUnit(app: Hono, sid: string): Promise<string> {
+  const { parsed } = await callTool(app, sid, 'submit_for_review', {
+    taskLabel: 't',
+    intent: 'x',
+    repo: 'owner/a',
+    worktreePath: '/wt',
+  });
+  return (parsed as { unitId: string }).unitId;
 }
 
 describe('MCP submit/decision tools', () => {
@@ -191,5 +233,77 @@ describe('MCP submit/decision tools', () => {
     const sid = await connect(app);
     const { isError } = await callTool(app, sid, 'await_decision', { unitId: 'nope' });
     expect(isError).toBe(true);
+  });
+});
+
+describe('await_decision bundles outstanding comments (beats can’t be missed)', () => {
+  it('returns + delivers open comments on a pending poll, and broadcasts the change', async () => {
+    const { app, events, getCommentStore } = setup(undefined, { withComments: true });
+    const sid = await connect(app);
+    const unitId = await submitUnit(app, sid);
+    const cs = (await getCommentStore!(unitId))!;
+    await cs.add({ path: 'a.ts', line: 3, body: 'extract this guard' });
+
+    const res = await callTool(app, sid, 'await_decision', { unitId });
+    const out = res.parsed as { pending?: boolean; comments?: { body: string; status: string }[] };
+    expect(out.pending).toBe(true);
+    expect(out.comments?.map((c) => c.body)).toEqual(['extract this guard']);
+    expect(out.comments?.[0]!.status).toBe('delivered'); // bundling IS delivery
+
+    // Persisted: the open comment is now delivered, and the UI was told over SSE.
+    expect(cs.list('open')).toHaveLength(0);
+    expect(cs.list('delivered')).toHaveLength(1);
+    expect(events.some((e) => e.event === 'agent-comment' && (e.data as { unitId: string }).unitId === unitId)).toBe(
+      true,
+    );
+  });
+
+  it('bundles outstanding comments alongside a recorded decision too', async () => {
+    const { store, app, getCommentStore } = setup(undefined, { withComments: true });
+    const sid = await connect(app);
+    const unitId = await submitUnit(app, sid);
+    await store.setReviewing(unitId);
+    await store.setQueued(unitId, NARRATIVE, 1);
+    await store.setDecision(unitId, { kind: 'approved' });
+    const cs = (await getCommentStore!(unitId))!;
+    await cs.add({ path: 'a.ts', line: 1, body: 'nit: rename' });
+
+    const res = await callTool(app, sid, 'await_decision', { unitId });
+    const out = res.parsed as { decision?: { kind: string }; comments?: { body: string }[] };
+    expect(out.decision).toMatchObject({ kind: 'approved' });
+    expect(out.comments?.map((c) => c.body)).toEqual(['nit: rename']);
+  });
+
+  it('keeps surfacing an already-delivered-but-unaddressed comment (so it can’t be lost)', async () => {
+    const { app, getCommentStore } = setup(undefined, { withComments: true });
+    const sid = await connect(app);
+    const unitId = await submitUnit(app, sid);
+    const cs = (await getCommentStore!(unitId))!;
+    const c = await cs.add({ path: 'a.ts', line: 1, body: 'still open' });
+    await cs.markDelivered([c.id]); // first poll already delivered it
+
+    const res = await callTool(app, sid, 'await_decision', { unitId });
+    expect((res.parsed as { comments?: { body: string }[] }).comments?.map((x) => x.body)).toEqual(['still open']);
+  });
+
+  it('drops an addressed comment from the bundle', async () => {
+    const { app, getCommentStore } = setup(undefined, { withComments: true });
+    const sid = await connect(app);
+    const unitId = await submitUnit(app, sid);
+    const cs = (await getCommentStore!(unitId))!;
+    const c = await cs.add({ path: 'a.ts', line: 1, body: 'done already' });
+    await cs.resolve(c.id, 'fixed');
+
+    const res = await callTool(app, sid, 'await_decision', { unitId });
+    expect((res.parsed as { comments?: unknown }).comments).toBeUndefined();
+    expect((res.parsed as { pending?: boolean }).pending).toBe(true);
+  });
+
+  it('omits the comments field entirely when there are none outstanding', async () => {
+    const { app } = setup(undefined, { withComments: true });
+    const sid = await connect(app);
+    const unitId = await submitUnit(app, sid);
+    const res = await callTool(app, sid, 'await_decision', { unitId });
+    expect((res.parsed as { comments?: unknown }).comments).toBeUndefined();
   });
 });

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { getAccentMeta } from '../lib/accents';
 import { loadDrafts, pendingReviewComments, useReviewStore } from '../state/review-store';
-import { reviewEndpoint, summarizeChecks, summarizeReviews } from '../lib/units-view';
+import { agentPresence, reviewEndpoint, summarizeChecks, summarizeReviews } from '../lib/units-view';
 import { useComments } from '../hooks/useComments';
 import { postDecision, removeUnit, retryUnit } from '../hooks/useUnits';
 import { AccentPicker } from './AccentPicker';
@@ -39,6 +39,43 @@ function applyUnitToStore(unit: Unit): void {
   });
 }
 
+/**
+ * The drill-in's honest "is anyone listening" cue for local units. Reads the unit's agent last-seen
+ * from the store (seeded on open, kept live by the `presence` SSE event) and ticks its own clock so a
+ * fresh stamp goes stale on its own. Steady, not flickery: an active agent refreshes every poll, so
+ * working between polls doesn't flip it — see {@link agentPresence}.
+ */
+function AgentPresencePill({ unitId }: { unitId: string }) {
+  const lastSeenAt = useReviewStore((s) => s.presence[unitId]);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
+  const { connected, label } = agentPresence(lastSeenAt, now);
+  const title = connected
+    ? 'An agent is on this review — your comments and the verdict reach it on its next poll (≤4 min).'
+    : lastSeenAt == null
+      ? 'No agent has connected to this review yet. Your notes are saved and delivered when one does.'
+      : 'No agent connected right now. Your notes are saved and delivered when an agent reconnects.';
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11.5px] font-medium"
+      style={{
+        background: connected ? 'var(--green-3)' : 'var(--gray-3)',
+        color: connected ? 'var(--green-11)' : 'var(--fg-3)',
+      }}
+      title={title}
+    >
+      <span
+        className={`inline-block h-1.5 w-1.5 rounded-full ${connected ? 'live-ping-dot' : ''}`}
+        style={{ background: connected ? 'var(--green-10)' : 'var(--gray-8)' }}
+      />
+      {label}
+    </span>
+  );
+}
+
 function BackLink() {
   const navigate = useReviewStore((s) => s.navigate);
   return (
@@ -70,6 +107,7 @@ export function UnitReview() {
   const mode = useReviewStore((s) => s.mode);
   const setComments = useReviewStore((s) => s.setComments);
   const setAgentComments = useReviewStore((s) => s.setAgentComments);
+  const setPresence = useReviewStore((s) => s.setPresence);
   const draftCount = useReviewStore((s) => pendingReviewComments(s.drafts).length);
   const clearDrafts = useReviewStore((s) => s.clearDrafts);
   const setCheckRuns = useReviewStore((s) => s.setCheckRuns);
@@ -155,6 +193,26 @@ export function UnitReview() {
       cancelled = true;
     };
   }, [unitId, setAgentComments]);
+
+  // Seed the agent-presence cue on open (the `presence` SSE event keeps it live thereafter). Cheap
+  // enough to fetch for any unit; the pill only renders for local units.
+  useEffect(() => {
+    if (!unitId) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/units/${encodeURIComponent(unitId)}/presence`);
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as { lastSeenAt: number | null };
+        if (!cancelled) setPresence(unitId, data.lastSeenAt ?? null);
+      } catch {
+        // ignore — the SSE stream backfills
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [unitId, setPresence]);
 
   // Load this github unit's CI checks + reviews. Keyed on the head SHA too, so a new push (the SSE
   // `units` event updates the unit's metadata) re-fetches the status — modest liveness without a poll.
@@ -325,6 +383,8 @@ export function UnitReview() {
         )}
         <span className="truncate text-[13.5px] font-semibold text-[var(--fg-1)]">{unit?.taskLabel}</span>
         <div className="ml-auto flex items-center gap-2">
+          {/* Local units run the agent loop — show whether an agent is actually there to receive notes. */}
+          {unitId && unit && unit.source !== 'github' && <AgentPresencePill unitId={unitId} />}
           {unit?.source === 'github' && unit.prUrl && (
             <a
               href={unit.prUrl}

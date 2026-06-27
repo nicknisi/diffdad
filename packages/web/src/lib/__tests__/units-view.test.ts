@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   agentCommentsEndpoint,
+  agentPresence,
   aiEndpoint,
   commentGoesToAgent,
   commentsEndpoint,
@@ -11,7 +12,9 @@ import {
   relativeTime,
   repoOptions,
   reviewEndpoint,
+  commentTarget,
   routePath,
+  sourceBadge,
   summarizeChecks,
   summarizeReviews,
   verdictTone,
@@ -200,6 +203,24 @@ describe('agentCommentsEndpoint', () => {
   });
 });
 
+describe('commentTarget', () => {
+  it('sends to the agent loop in watch mode and on local daemon units', () => {
+    expect(commentTarget('watch', { name: 'center' }, [])).toBe('agent');
+    const units = [mkUnit({ unitId: 'u1', source: 'cli' }), mkUnit({ unitId: 'u2', source: 'agent' })];
+    expect(commentTarget('command-center', { name: 'unit', unitId: 'u1' }, units)).toBe('agent');
+    expect(commentTarget('command-center', { name: 'unit', unitId: 'u2' }, units)).toBe('agent');
+  });
+  it('targets the GitHub PR on a github daemon unit (the relabel case)', () => {
+    const units = [mkUnit({ unitId: 'g1', source: 'github' })];
+    expect(commentTarget('command-center', { name: 'unit', unitId: 'g1' }, units)).toBe('github');
+  });
+  it('falls back to the PR review flow in pr mode and at the center root', () => {
+    expect(commentTarget('pr', { name: 'center' }, [])).toBe('review');
+    expect(commentTarget('command-center', { name: 'center' }, [])).toBe('review');
+    expect(commentTarget('command-center', { name: 'unit', unitId: 'missing' }, [])).toBe('review');
+  });
+});
+
 describe('commentGoesToAgent', () => {
   it('always routes to the agent loop in watch mode', () => {
     expect(commentGoesToAgent('watch', { name: 'center' }, [])).toBe(true);
@@ -219,6 +240,35 @@ describe('commentGoesToAgent', () => {
   it('routes to GitHub at the center root or for an unknown unit', () => {
     expect(commentGoesToAgent('command-center', { name: 'center' }, [])).toBe(false);
     expect(commentGoesToAgent('command-center', { name: 'unit', unitId: 'missing' }, [])).toBe(false);
+  });
+});
+
+describe('sourceBadge', () => {
+  it('labels each ingestion door distinctly so the queue is legible', () => {
+    expect(sourceBadge('agent')).toMatchObject({ label: 'agent', tone: 'agent' });
+    expect(sourceBadge('cli')).toMatchObject({ label: 'local', tone: 'local' });
+    expect(sourceBadge('github')).toMatchObject({ label: 'GitHub', tone: 'github' });
+  });
+  it('defaults an unset source to the agent door (matches server back-compat)', () => {
+    expect(sourceBadge(undefined)).toMatchObject({ label: 'agent', tone: 'agent' });
+  });
+  it('carries a human title explaining where the unit came from', () => {
+    expect(sourceBadge('github').title).toMatch(/github/i);
+    expect(sourceBadge('cli').title).toMatch(/dad add/i);
+  });
+});
+
+describe('agentPresence', () => {
+  const now = Date.parse('2026-06-26T12:00:00.000Z');
+  it('reads as disconnected when an agent has never been seen', () => {
+    expect(agentPresence(null, now)).toEqual({ connected: false, label: 'no agent connected' });
+    expect(agentPresence(undefined, now)).toEqual({ connected: false, label: 'no agent connected' });
+  });
+  it('reads as connected when the agent checked in within the freshness window', () => {
+    expect(agentPresence(now - 60_000, now)).toEqual({ connected: true, label: 'agent connected' });
+  });
+  it('goes stale (disconnected) once the last check-in is past the window', () => {
+    expect(agentPresence(now - 10 * 60_000, now)).toEqual({ connected: false, label: 'no agent connected' });
   });
 });
 

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useComments } from '../hooks/useComments';
-import { commentGoesToAgent } from '../lib/units-view';
+import { commentTarget } from '../lib/units-view';
 import { copy } from '../lib/microcopy';
 import { useReviewStore } from '../state/review-store';
 import type { CommentId, PRComment } from '../state/types';
@@ -78,9 +78,11 @@ export function CommentThread({
   const drafts = useReviewStore((s) => s.drafts);
   const addDraft = useReviewStore((s) => s.addDraft);
   const removeDraft = useReviewStore((s) => s.removeDraft);
-  // Agent target = watch mode, or a local (agent/cli) unit in the daemon — both send to the agent
-  // loop rather than GitHub, so the composer drops the "Add to review" affordance and relabels.
-  const isAgentTarget = useReviewStore((s) => commentGoesToAgent(s.mode, s.route, s.units));
+  // Where this comment lands drives the composer's copy + affordances. `agent` (watch, or a local
+  // daemon unit) drops the "Add to review" batch flow and relabels; `github` (a daemon PR unit) keeps
+  // the GitHub-comment flow but says so plainly ("Comment on PR"); `review` is PR mode's batch flow.
+  const target = useReviewStore((s) => commentTarget(s.mode, s.route, s.units));
+  const isAgentTarget = target === 'agent';
 
   const draftKey = useMemo(() => draftKeyFor(path, line, chapterIndex), [path, line, chapterIndex]);
 
@@ -275,7 +277,15 @@ export function CommentThread({
             onClick={() => void submit()}
             className="rounded-md bg-[var(--brand)] px-3 py-1 text-sm font-semibold text-white shadow-sm hover:bg-[var(--brand-hover)] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {submitting ? (isAgentTarget ? 'Sending…' : 'Posting...') : isAgentTarget ? 'Send to agent' : 'Comment'}
+            {submitting
+              ? isAgentTarget
+                ? 'Sending…'
+                : 'Posting...'
+              : isAgentTarget
+                ? 'Send to agent'
+                : target === 'github'
+                  ? 'Comment on PR'
+                  : 'Comment'}
           </button>
         </div>
       </div>

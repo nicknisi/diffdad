@@ -31,7 +31,7 @@ export type Decision = {
  * A unit of agent work submitted for review. Owns its diff slice (`files`/`metadata`), the
  * Phase-1 review output (`narrative` — the brief is derived in the UI via `buildWalkthrough`,
  * since `WalkthroughModel` is a web type the CLI can't produce), a state-machine `status`, and
- * a `toResolve` count. Persisted one-file-per-unit under ~/.cache/diffdad/units/.
+ * a `toResolve` count. Persisted one-file-per-unit under <dataDir>/units/ (see paths.ts).
  */
 export type ReviewUnit = {
   unitId: string;

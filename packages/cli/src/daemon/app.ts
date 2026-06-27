@@ -16,6 +16,7 @@ import type { Broadcast } from '../mcp/tools';
 import { AgentCommentStore } from '../agent-comments/store';
 import { UnknownCommentError } from '../agent-comments/types';
 import { registerUnitCommentTools } from '../mcp/unit-comments';
+import { AgentActivity } from '../units/agent-activity';
 import type { DecisionChannel } from '../units/decision-channel';
 import { decisionTarget } from '../units/decision-target';
 import type { UnitStore } from '../units/store';
@@ -117,6 +118,8 @@ export type DaemonAppDeps = {
    * agent's reply visible to the UI).
    */
   loadCommentStore?: (unitId: string) => Promise<AgentCommentStore>;
+  /** Last-seen-per-unit tracker behind the presence cue. Injected for tests; defaults to a fresh one. */
+  activity?: AgentActivity;
   /** Override the command-center static root (defaults to the same fallbacks as `server.ts`). */
   webDist?: string;
 };
@@ -160,6 +163,13 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
     }
     return pending;
   };
+
+  // Last-seen-per-unit, the honest backing for the drill-in's "agent connected / no agent connected"
+  // cue: the MCP tools touch it whenever the unit's agent parks or works its comments, and a touch
+  // broadcasts a `presence` snapshot so an open tab updates live.
+  const activity = deps.activity ?? new AgentActivity();
+  activity.onTouch = (unitId, lastSeenAt) => broadcast('presence', { unitId, lastSeenAt });
+  const onAgentSeen = (unitId: string) => activity.touch(unitId);
 
   // --- Command-center bootstrap ---------------------------------------------
   // The web SPA's single bootstrap is `GET /api/narrative`; it multiplexes on `mode`
@@ -494,6 +504,17 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
     return c.json(comment, 201);
   });
 
+  // --- Agent presence (local units) -----------------------------------------
+  // The drill-in's "agent connected / no agent connected" cue. `lastSeenAt` is epoch-ms of the unit's
+  // most recent agent interaction (parking on await_decision, or working its comments), or null if an
+  // agent has never checked in. The client decides "connected" from how fresh it is; live updates
+  // arrive over the `presence` SSE event. Unknown unit → 404. Must precede the static catch-all.
+  app.get('/api/units/:id/presence', (c) => {
+    const id = c.req.param('id');
+    if (!store.get(id)) return c.json({ error: new UnknownUnitError(id).message }, 404);
+    return c.json({ lastSeenAt: activity.lastSeen(id) ?? null });
+  });
+
   // --- Review submission (github units) -------------------------------------
   // The drill-in's full submit: COMMENT/APPROVE/REQUEST_CHANGES + batched inline draft comments, in
   // one GitHub review (mirrors the PR server's /api/review). Unlike that route, a verdict (approve /
@@ -666,8 +687,17 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
   // the same per-unit stores the HTTP routes use). Must be registered BEFORE the static catch-all or
   // `/mcp` is swallowed by serveStatic.
   mountMcp(app, (server) => {
-    registerSubmitTools(server, { store, decision, broadcast, computeSlice, onSubmitted, awaitTimeoutMs });
-    registerUnitCommentTools(server, { getStore: getCommentStore, broadcast });
+    registerSubmitTools(server, {
+      store,
+      decision,
+      broadcast,
+      computeSlice,
+      onSubmitted,
+      awaitTimeoutMs,
+      getCommentStore,
+      onAgentSeen,
+    });
+    registerUnitCommentTools(server, { getStore: getCommentStore, broadcast, onAgentSeen });
   });
 
   // --- Command-center SPA ---------------------------------------------------

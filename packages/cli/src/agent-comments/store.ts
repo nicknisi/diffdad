@@ -1,9 +1,9 @@
 import { mkdir, readFile, writeFile } from 'fs/promises';
-import { homedir } from 'os';
 import { join } from 'path';
+import { dataDir } from '../paths';
 import { type AgentComment, type AgentReply, type NewAgentComment, UnknownCommentError } from './types';
 
-const STORE_DIR = join(homedir(), '.cache', 'diffdad', 'agent-comments');
+const STORE_DIR = join(dataDir(), 'agent-comments');
 
 /** Sanitize a store key (base ref / PR coordinates) into a safe filename segment. */
 function keyToFile(key: string): string {
@@ -20,7 +20,7 @@ export type StoreOptions = {
 /**
  * The single source of truth for agent-bound comments, shared by the HTTP routes
  * (UI) and the MCP tools. In-memory with best-effort write-through persistence to
- * ~/.cache/diffdad/agent-comments/<key>.json — keyed by base ref so threads survive
+ * <dataDir>/agent-comments/<key>.json (see paths.ts) — keyed by base ref so threads survive
  * narrative regeneration, and durable across dad restarts / agent context resets.
  */
 export class AgentCommentStore {

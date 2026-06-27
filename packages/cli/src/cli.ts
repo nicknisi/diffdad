@@ -9,6 +9,7 @@ import { LOCAL_CLIS, readConfig, resetConfig, runConfig, showConfig } from './co
 import { GitHubClient } from './github/client';
 import { cacheNarrative, clearCache, computePromptMetaHash, getCachedNarrative } from './narrative/cache';
 import { generateNarrative, resolveAiPath, resolveProviderKey, setCliOverride } from './narrative/engine';
+import { migrateLegacyData } from './paths';
 import { getCachedRecap } from './recap/cache';
 import { createServer } from './server';
 import { DEFAULT_DAEMON_PORT, daemonStatus, startDaemon } from './daemon/daemon';
@@ -646,6 +647,10 @@ async function main(argv: string[]): Promise<number> {
     console.log(pkg.version ?? '0.0.0');
     return 0;
   }
+
+  // One-time relocation of durable data (queue + agent-comment threads) out of the legacy ~/.cache
+  // dir into the proper app-data location. Best-effort and idempotent — never blocks a command.
+  await migrateLegacyData().catch(() => {});
 
   switch (classifyCommand(cmd)) {
     case 'review':

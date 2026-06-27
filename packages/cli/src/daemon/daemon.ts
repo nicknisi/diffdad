@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
-import { homedir } from 'os';
 import { join } from 'path';
 import { resolveGitHubToken } from '../auth';
+import { dataDir } from '../paths';
 import { readConfig } from '../config';
 import { GitHubClient, type PostCommentOptions } from '../github/client';
 import { parseDiff } from '../github/diff-parser';
@@ -23,7 +23,7 @@ const DEFAULT_CONCURRENCY = 3;
 const DEFAULT_POLL_MS = 60_000;
 
 /** Single-instance pidfile. Beside the rest of dad's state so a stale file is easy to find/clear. */
-const PIDFILE = join(homedir(), '.cache', 'diffdad', 'daemon.pid');
+const PIDFILE = join(dataDir(), 'daemon.pid');
 
 /** True if a process with this pid is alive (signal 0 probes without delivering a signal). */
 function isProcessAlive(pid: number): boolean {
@@ -66,7 +66,7 @@ async function claimPidfile(): Promise<{ conflict: number | null }> {
     if (still !== null) return { conflict: still };
   }
   try {
-    mkdirSync(join(homedir(), '.cache', 'diffdad'), { recursive: true });
+    mkdirSync(dataDir(), { recursive: true });
     writeFileSync(PIDFILE, String(process.pid));
   } catch {
     // best-effort: can't persist the pidfile, but don't block the daemon on it.

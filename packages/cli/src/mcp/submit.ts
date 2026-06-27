@@ -1,10 +1,11 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
+import type { AgentCommentStore } from '../agent-comments/store';
 import { CleanTreeError, type LocalReview } from '../local/diff-source';
 import type { UnitStore } from '../units/store';
 import type { DecisionChannel } from '../units/decision-channel';
 import { type ReviewUnit, UnknownUnitError } from '../units/types';
-import { type Broadcast, errorText, text, type ToolHost } from './tools';
+import { type Broadcast, errorText, project, text, type ToolHost } from './tools';
 
 /** Computes a unit's diff slice from its worktree. The daemon injects `buildLocalReview` bound
  *  to the worktree as cwd; tests inject a fake. Throws `CleanTreeError` when there's nothing to review. */
@@ -19,6 +20,15 @@ export type SubmitToolDeps = {
   onSubmitted?: (unit: ReviewUnit) => void;
   /** Long-poll ceiling for `await_decision`. Kept under Bun's 255s idle timeout. */
   awaitTimeoutMs?: number;
+  /**
+   * Resolve a unit's agent-comment mailbox (the daemon's per-unit `getCommentStore`; `undefined`
+   * for an unknown unit). When provided, `await_decision` bundles the unit's outstanding comments
+   * into its response and marks open ones delivered — so an agent parked on the verdict never has
+   * to remember a separate `list_review_comments` call to catch a hand-typed beat.
+   */
+  getCommentStore?: (unitId: string) => Promise<AgentCommentStore | undefined>;
+  /** Mark the unit's agent as seen (parked on the verdict) — drives the drill-in's presence cue. */
+  onAgentSeen?: (unitId: string) => void;
 };
 
 // Under Bun's `idleTimeout: 255`, a single held request must resolve well before the socket
@@ -31,10 +41,33 @@ const DEFAULT_AWAIT_MS = 240_000;
  * verdict. Both close over the shared `UnitStore` + `DecisionChannel`, mirroring `registerAgentCommentTools`.
  */
 export function registerSubmitTools(server: McpServer, deps: SubmitToolDeps): void {
-  const { store, broadcast, computeSlice, decision, onSubmitted } = deps;
+  const { store, broadcast, computeSlice, decision, onSubmitted, getCommentStore, onAgentSeen } = deps;
   const awaitTimeoutMs = deps.awaitTimeoutMs ?? DEFAULT_AWAIT_MS;
   const host = server as unknown as ToolHost;
   const notify = () => broadcast('units', { units: store.list() });
+
+  /**
+   * The unit's outstanding (open + delivered, i.e. not-yet-addressed) comments, projected for the
+   * agent — or `undefined` when there's no mailbox or nothing outstanding. Marks any `open` ones
+   * delivered as a side effect (bundling them IS delivery) and broadcasts so the UI badge updates.
+   */
+  const bundleComments = async (unitId: string) => {
+    if (!getCommentStore) return undefined;
+    const cs = await getCommentStore(unitId);
+    if (!cs) return undefined;
+    const outstanding = cs.list().filter((c) => c.status !== 'addressed');
+    if (outstanding.length === 0) return undefined;
+    const openIds = outstanding.filter((c) => c.status === 'open').map((c) => c.id);
+    if (openIds.length > 0) {
+      await cs.markDelivered(openIds);
+      broadcast('agent-comment', { unitId, comments: cs.list() });
+    }
+    // Re-read so just-delivered statuses are reflected in what the agent receives.
+    return cs
+      .list()
+      .filter((c) => c.status !== 'addressed')
+      .map(project);
+  };
 
   host.registerTool(
     'submit_for_review',
@@ -87,17 +120,25 @@ export function registerSubmitTools(server: McpServer, deps: SubmitToolDeps): vo
       description:
         'Long-poll for the review decision on your unit. Returns { decision } once the reviewer decides ' +
         '(approved or changes_requested, with curated concerns), or { pending: true } on timeout — re-call ' +
-        'to keep waiting. The decision is persisted, so it is never lost across reconnects.',
+        'to keep waiting. The decision is persisted, so it is never lost across reconnects. Any outstanding ' +
+        'review comments are bundled in as { comments } (and marked delivered), so you never miss a ' +
+        'hand-typed note while parked — reply_to_comment / resolve_comment to close them out.',
       inputSchema: { unitId: z.string() },
     },
     async (args) => {
       const unitId = args.unitId as string;
       const unit = store.get(unitId);
       if (!unit) return errorText(new UnknownUnitError(unitId).message);
-      if (unit.decision) return text({ decision: unit.decision });
+      onAgentSeen?.(unitId); // parking on the verdict means the agent is here right now
+      if (unit.decision) {
+        const comments = await bundleComments(unitId);
+        return text(comments ? { decision: unit.decision, comments } : { decision: unit.decision });
+      }
 
       const decided = await decision.wait(unitId, awaitTimeoutMs);
-      return decided ? text({ decision: decided }) : text({ pending: true });
+      const comments = await bundleComments(unitId);
+      if (decided) return text(comments ? { decision: decided, comments } : { decision: decided });
+      return text(comments ? { pending: true, comments } : { pending: true });
     },
   );
 }

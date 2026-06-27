@@ -188,6 +188,17 @@ export function useLiveStream() {
       }
     };
 
+    // Command center: a unit's agent checked in (parked on the verdict, or worked its comments).
+    const onPresence = (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data) as { unitId: string; lastSeenAt: number | null };
+        useReviewStore.getState().setPresence(data.unitId, data.lastSeenAt ?? null);
+        setLastEventAt(Date.now());
+      } catch {
+        // ignore malformed event
+      }
+    };
+
     const onTriage = (e: MessageEvent) => {
       try {
         const data = JSON.parse(e.data) as { flags: TriageFlag[]; status?: TriageStatus };
@@ -307,6 +318,7 @@ export function useLiveStream() {
     es.addEventListener('pr', onPr as EventListener);
     es.addEventListener('watch-update', onWatchUpdate as EventListener);
     es.addEventListener('units', onUnits as EventListener);
+    es.addEventListener('presence', onPresence as EventListener);
     es.addEventListener('triage', onTriage as EventListener);
     es.addEventListener('regenerating', onRegenerating as EventListener);
     es.addEventListener('narrative-progress', onNarrativeProgress as EventListener);
@@ -337,6 +349,7 @@ export function useLiveStream() {
       es.removeEventListener('pr', onPr as EventListener);
       es.removeEventListener('watch-update', onWatchUpdate as EventListener);
       es.removeEventListener('units', onUnits as EventListener);
+      es.removeEventListener('presence', onPresence as EventListener);
       es.removeEventListener('triage', onTriage as EventListener);
       es.removeEventListener('regenerating', onRegenerating as EventListener);
       es.removeEventListener('narrative-progress', onNarrativeProgress as EventListener);

@@ -40,7 +40,11 @@ export interface DiffDadConfig {
 }
 
 export function getConfigPath(): string {
-  return join(homedir(), '.config', 'diffdad', 'config.json');
+  // Honor XDG_CONFIG_HOME (defaults to ~/.config) — both the standard location and a clean seam for
+  // tests to isolate config instead of reading the developer's real ~/.config/diffdad/config.json.
+  const xdg = process.env.XDG_CONFIG_HOME;
+  const base = xdg ? join(xdg, 'diffdad') : join(homedir(), '.config', 'diffdad');
+  return join(base, 'config.json');
 }
 
 export async function readConfig(): Promise<DiffDadConfig> {

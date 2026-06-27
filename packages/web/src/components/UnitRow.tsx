@@ -1,5 +1,20 @@
-import { groupOf, recommendedAction, relativeTime, type VerdictTone, verdictTone } from '../lib/units-view';
+import {
+  groupOf,
+  recommendedAction,
+  relativeTime,
+  type SourceBadge,
+  sourceBadge,
+  type VerdictTone,
+  verdictTone,
+} from '../lib/units-view';
 import type { Unit, UnitStatus } from '../state/types';
+
+/** Source-badge palette — agent (has a parked agent) reads purple like the bot cue; github blue; local neutral. */
+const SOURCE_TONE: Record<SourceBadge['tone'], React.CSSProperties> = {
+  agent: { background: 'var(--purple-3)', color: 'var(--purple-11)' },
+  github: { background: 'var(--blue-3)', color: 'var(--blue-11)' },
+  local: { background: 'var(--gray-3)', color: 'var(--fg-3)' },
+};
 
 const TONE: Record<VerdictTone, { fg: string; glyph: string }> = {
   risk: { fg: 'var(--red-11)', glyph: '▲' },
@@ -79,6 +94,7 @@ export function UnitRow({ unit, now, onOpen, onApprove, onRequestChanges, onRetr
   const branch = unit.metadata?.branch;
   const elapsed = relativeTime(unit.updatedAt, now);
   const action = isNeedsYou ? recommendedAction(unit) : null;
+  const badge = sourceBadge(unit.source);
 
   const meta: string[] = [];
   if (isNeedsYou) meta.push(unit.toResolve === 1 ? '1 to resolve' : `${unit.toResolve} to resolve`);
@@ -113,15 +129,13 @@ export function UnitRow({ unit, now, onOpen, onApprove, onRequestChanges, onRetr
             )}
             <span className="text-[var(--fg-3)]">·</span>
             <span className="font-medium text-[var(--fg-1)]">{unit.taskLabel}</span>
-            {unit.source === 'cli' && (
-              <span
-                className="rounded px-1 py-px text-[10.5px] font-medium leading-none"
-                style={{ background: 'var(--gray-3)', color: 'var(--fg-3)' }}
-                title="Added locally via dad add"
-              >
-                local
-              </span>
-            )}
+            <span
+              className="rounded px-1 py-px text-[10.5px] font-medium leading-none"
+              style={SOURCE_TONE[badge.tone]}
+              title={badge.title}
+            >
+              {badge.label}
+            </span>
             {unit.source === 'github' && unit.prAuthor && (
               <span className="text-[12px] text-[var(--fg-3)]" title={`PR by @${unit.prAuthor}`}>
                 @{unit.prAuthor}

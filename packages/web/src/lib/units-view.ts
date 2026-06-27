@@ -87,6 +87,30 @@ export function repoOptions(units: Unit[]): string[] {
   return [...new Set(units.map((u) => u.repo))].sort();
 }
 
+/**
+ * The visible "where did this unit come from" badge. The three ingestion doors read very
+ * differently — an `agent` unit has a parked agent that pulls comments, a `cli` unit is a local
+ * `dad add` diff, a `github` unit mirrors a real PR and comments post to GitHub — so making the
+ * door legible is what gates the affordances (see {@link commentGoesToAgent}). An unset source
+ * defaults to `agent`, matching the store's server-side back-compat default.
+ */
+export type SourceBadge = { label: string; title: string; tone: 'agent' | 'local' | 'github' };
+
+export function sourceBadge(source: Unit['source']): SourceBadge {
+  switch (source) {
+    case 'github':
+      return {
+        label: 'GitHub',
+        title: 'Pulled from a GitHub review request — comments post to the PR',
+        tone: 'github',
+      };
+    case 'cli':
+      return { label: 'local', title: 'Added locally via dad add', tone: 'local' };
+    default:
+      return { label: 'agent', title: 'Submitted by an agent via submit_for_review', tone: 'agent' };
+  }
+}
+
 /** Compact elapsed label ("just now" / "5m" / "3h" / "2d"). Empty string for an unparseable date. */
 export function relativeTime(iso: string, nowMs: number): string {
   const then = Date.parse(iso);
@@ -98,6 +122,27 @@ export function relativeTime(iso: string, nowMs: number): string {
   const hours = Math.floor(mins / 60);
   if (hours < 24) return `${hours}h`;
   return `${Math.floor(hours / 24)}d`;
+}
+
+/**
+ * An agent counts as "connected" to a unit if it checked in (parked on the verdict, or worked the
+ * unit's comments) within this window. The daemon's `await_decision` poll ceiling is ~4 min, so an
+ * active agent always refreshes inside 5 min — and the cue won't false-flip to "disconnected" while
+ * the agent is merely working between polls.
+ */
+export const AGENT_PRESENCE_WINDOW_MS = 5 * 60_000;
+
+/**
+ * Turn a unit's `lastSeenAt` (epoch-ms of the agent's most recent interaction, or null/undefined if
+ * never) into the drill-in's honest presence cue. Pure, so it's unit-tested; the component supplies
+ * `nowMs` from a ticking clock so a fresh stamp naturally goes stale without another event.
+ */
+export function agentPresence(
+  lastSeenAt: number | null | undefined,
+  nowMs: number,
+): { connected: boolean; label: string } {
+  const connected = lastSeenAt != null && nowMs - lastSeenAt < AGENT_PRESENCE_WINDOW_MS;
+  return { connected, label: connected ? 'agent connected' : 'no agent connected' };
 }
 
 // --- Client-side routing (the daemon serves index.html for any path, so deep links work) ------
@@ -148,17 +193,31 @@ export const agentCommentsEndpoint = (mode: 'pr' | 'watch' | 'command-center', r
   resourceEndpoint(mode, route, 'agent-comments');
 
 /**
- * Does an inline comment on the current surface go to the agent loop (vs a GitHub PR comment)? Watch
- * mode always does. In the daemon, a LOCAL unit (agent/cli — it has no PR) does; a github unit gets a
- * real PR comment instead. Pure, so the routing is unit-tested without rendering a hook.
+ * Where an inline comment on the current surface actually lands — the one fact that gates the
+ * composer's copy and affordances:
+ *   - `agent`  → the per-unit agent loop (watch mode; a local agent/cli daemon unit with a parked agent)
+ *   - `github` → a real GitHub PR comment (a daemon `github` unit — the relabel "Comment on PR" case)
+ *   - `review` → the standalone PR-review batch flow (pr mode, or the center root with no open unit)
+ * Pure, so the routing is unit-tested without rendering a hook.
  */
-export function commentGoesToAgent(mode: 'pr' | 'watch' | 'command-center', route: Route, units: Unit[]): boolean {
-  if (mode === 'watch') return true;
+export type CommentTarget = 'agent' | 'github' | 'review';
+
+export function commentTarget(mode: 'pr' | 'watch' | 'command-center', route: Route, units: Unit[]): CommentTarget {
+  if (mode === 'watch') return 'agent';
   if (mode === 'command-center' && route.name === 'unit') {
     const unit = units.find((u) => u.unitId === route.unitId);
-    return !!unit && unit.source !== 'github';
+    if (!unit) return 'review';
+    return unit.source === 'github' ? 'github' : 'agent';
   }
-  return false;
+  return 'review';
+}
+
+/**
+ * Does an inline comment on the current surface go to the agent loop (vs a GitHub PR comment)? Thin
+ * wrapper over {@link commentTarget} so callers that only need the agent/not-agent split stay simple.
+ */
+export function commentGoesToAgent(mode: 'pr' | 'watch' | 'command-center', route: Route, units: Unit[]): boolean {
+  return commentTarget(mode, route, units) === 'agent';
 }
 
 // --- CI checks + reviews rollups (the drill-in's merge-readiness strip) ------------------------
