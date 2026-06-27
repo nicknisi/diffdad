@@ -1,9 +1,23 @@
-import { describe, expect, it } from 'vitest';
+import { tmpdir } from 'os';
+import { join } from 'path';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AgentCommentStore } from '../agent-comments/store';
 import { createServer, type ServerContext } from '../server';
 import type { NarrativeResponse } from '../narrative/types';
 import type { CheckRun, DiffFile, PRComment, PRMetadata } from '../github/types';
 import type { GitHubClient, PostCommentOptions } from '../github/client';
+
+// Isolate config: point XDG_CONFIG_HOME at an empty dir so readConfig() returns defaults rather than
+// the developer's real ~/.config/diffdad/config.json (whose theme/layout would break the assertions
+// below). Restored after the file so the env doesn't leak to other test files.
+const prevXdgConfigHome = process.env.XDG_CONFIG_HOME;
+beforeAll(() => {
+  process.env.XDG_CONFIG_HOME = join(tmpdir(), 'diffdad-test-empty-config');
+});
+afterAll(() => {
+  if (prevXdgConfigHome === undefined) delete process.env.XDG_CONFIG_HOME;
+  else process.env.XDG_CONFIG_HOME = prevXdgConfigHome;
+});
 
 const mockNarrative: NarrativeResponse = {
   title: 'Test PR',
