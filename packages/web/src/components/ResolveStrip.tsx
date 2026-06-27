@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { agentCommentsEndpoint, aiEndpoint } from '../lib/units-view';
+import { agentCommentsEndpoint, aiEndpoint, commentGoesToAgent } from '../lib/units-view';
 import { useReviewStore } from '../state/review-store';
 import { Markdown } from './markdown/Markdown';
 import type { ResolveItem, ResolveSeverity } from '../lib/walkthrough';
@@ -57,6 +57,10 @@ const actionBtn =
 export function ResolveStrip({ item, inset = false }: { item: ResolveItem; inset?: boolean }) {
   const resolved = useReviewStore((s) => !!s.resolved[item.id]);
   const setResolved = useReviewStore((s) => s.setResolved);
+  // Only offer "Send to agent" where an agent can actually receive it (watch, or a local daemon unit).
+  // On a github unit there's no parked agent — the comment would orphan — so hide it; the inline
+  // composer already routes those to a real GitHub PR comment.
+  const canSendToAgent = useReviewStore((s) => commentGoesToAgent(s.mode, s.route, s.units));
 
   const [answer, setAnswer] = useState<string | null>(null);
   const [asking, setAsking] = useState(false);
@@ -67,7 +71,7 @@ export function ResolveStrip({ item, inset = false }: { item: ResolveItem; inset
 
   const sev = STRIP[item.severity];
   const canAsk = item.chapterIndex >= 0; // orphan beats have no chapter to ask about
-  const canSend = !!item.file && item.line != null;
+  const canSend = !!item.file && item.line != null && canSendToAgent;
 
   if (resolved) {
     return (
