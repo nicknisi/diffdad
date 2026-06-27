@@ -549,7 +549,11 @@ describe('POST /api/units/:id/hydrate (lazy narrative on open)', () => {
 
 describe('POST /api/units (re-add dedup)', () => {
   const post = (app: ReturnType<typeof setup>['app'], body: unknown) =>
-    app.request('/api/units', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    app.request('/api/units', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
 
   it('updates the existing local unit in place rather than minting a duplicate', async () => {
     const { store, submitted, app } = setup();

@@ -439,179 +439,179 @@ export function createServer(ctx: ServerContext) {
         let regenerating = false;
         const interval = setInterval(
           async () => {
-          try {
-            // Watch mode has no GitHub PR to poll — re-narrate on working-tree change instead.
-            if (ctx.mode === 'watch') {
-              await watchTick();
-              return;
-            }
-            const gh = ctx.github;
-            if (!gh) return;
-            const freshPr = await gh.getPR(ctx.owner, ctx.repo, ctx.pr.number);
-            const shaChanged = freshPr.headSha !== ctx.headSha;
-
-            // These fields feed into the narrative prompt — changes here mean
-            // the cached narrative is stale and we need to regenerate.
-            const promptMetaChanged =
-              freshPr.title !== ctx.pr.title ||
-              freshPr.body !== ctx.pr.body ||
-              freshPr.labels.join(',') !== ctx.pr.labels.join(',');
-            const otherMetaChanged = freshPr.draft !== ctx.pr.draft || freshPr.state !== ctx.pr.state;
-            // If the regen branch below will fire, it'll broadcast the fresh PR
-            // alongside the new narrative — skip the standalone 'pr' event then.
-            const willRegenerate = (shaChanged || promptMetaChanged) && !regenerating;
-            if ((promptMetaChanged || otherMetaChanged) && !shaChanged && !willRegenerate) {
-              ctx.pr = freshPr;
-              send('pr', ctx.pr);
-            }
-
-            const fresh = await gh.getComments(ctx.owner, ctx.repo, ctx.pr.number);
-            const prevIds = new Set(ctx.comments.map((cm) => cm.id));
-            const freshIds = new Set(fresh.map((cm) => cm.id));
-            const hasNew = fresh.some((cm) => !prevIds.has(cm.id));
-            const hasDeleted = ctx.comments.some((cm) => !freshIds.has(cm.id));
-            if (hasNew || hasDeleted) {
-              send('comments', fresh);
-            }
-            ctx.comments = fresh;
-
-            const freshChecks = await gh.getCheckRuns(ctx.owner, ctx.repo, ctx.headSha);
-            ctx.checkRuns = freshChecks;
-            send('checks', freshChecks);
-
-            const freshReviews = await gh.getReviews(ctx.owner, ctx.repo, ctx.pr.number);
-            ctx.reviews = freshReviews;
-            send('reviews', freshReviews);
-
-            if ((shaChanged || promptMetaChanged) && !regenerating) {
-              regenerating = true;
-              const prevSha = ctx.headSha.slice(0, 7);
-              const newSha = freshPr.headSha.slice(0, 7);
-              if (shaChanged) {
-                console.log(`\n  \x1b[38;5;221m↻\x1b[0m New commits detected \x1b[2m(${prevSha} → ${newSha})\x1b[0m`);
-              } else {
-                console.log(`\n  \x1b[38;5;221m↻\x1b[0m PR title/description/labels changed`);
+            try {
+              // Watch mode has no GitHub PR to poll — re-narrate on working-tree change instead.
+              if (ctx.mode === 'watch') {
+                await watchTick();
+                return;
               }
-              console.log(`  \x1b[2mRegenerating narrative...\x1b[0m`);
-              broadcast('regenerating', { previousSha: prevSha, newSha });
+              const gh = ctx.github;
+              if (!gh) return;
+              const freshPr = await gh.getPR(ctx.owner, ctx.repo, ctx.pr.number);
+              const shaChanged = freshPr.headSha !== ctx.headSha;
 
-              try {
-                const prevTldr = ctx.narrative?.tldr;
-                const prevChapterTitles = ctx.narrative?.chapters.map((ch) => ch.title) ?? [];
-
+              // These fields feed into the narrative prompt — changes here mean
+              // the cached narrative is stale and we need to regenerate.
+              const promptMetaChanged =
+                freshPr.title !== ctx.pr.title ||
+                freshPr.body !== ctx.pr.body ||
+                freshPr.labels.join(',') !== ctx.pr.labels.join(',');
+              const otherMetaChanged = freshPr.draft !== ctx.pr.draft || freshPr.state !== ctx.pr.state;
+              // If the regen branch below will fire, it'll broadcast the fresh PR
+              // alongside the new narrative — skip the standalone 'pr' event then.
+              const willRegenerate = (shaChanged || promptMetaChanged) && !regenerating;
+              if ((promptMetaChanged || otherMetaChanged) && !shaChanged && !willRegenerate) {
                 ctx.pr = freshPr;
-                let freshFiles = ctx.files;
-                if (shaChanged) {
-                  ctx.headSha = freshPr.headSha;
-                  freshFiles = await gh.getDiff(ctx.owner, ctx.repo, ctx.pr.number);
-                  ctx.files = freshFiles;
-                }
+                send('pr', ctx.pr);
+              }
 
-                const config = await readConfig();
-                const metaHash = computePromptMetaHash(ctx.pr);
-                const providerKey = await resolveProviderKey(config);
-                const cached = await getCachedNarrative(
-                  ctx.owner,
-                  ctx.repo,
-                  ctx.pr.number,
-                  ctx.headSha,
-                  metaHash,
-                  providerKey,
-                );
-                if (cached) {
-                  ctx.narrative = cached;
-                  console.log(`  \x1b[38;5;78m✓\x1b[0m Using cached narrative \x1b[2m(${newSha})\x1b[0m`);
+              const fresh = await gh.getComments(ctx.owner, ctx.repo, ctx.pr.number);
+              const prevIds = new Set(ctx.comments.map((cm) => cm.id));
+              const freshIds = new Set(fresh.map((cm) => cm.id));
+              const hasNew = fresh.some((cm) => !prevIds.has(cm.id));
+              const hasDeleted = ctx.comments.some((cm) => !freshIds.has(cm.id));
+              if (hasNew || hasDeleted) {
+                send('comments', fresh);
+              }
+              ctx.comments = fresh;
+
+              const freshChecks = await gh.getCheckRuns(ctx.owner, ctx.repo, ctx.headSha);
+              ctx.checkRuns = freshChecks;
+              send('checks', freshChecks);
+
+              const freshReviews = await gh.getReviews(ctx.owner, ctx.repo, ctx.pr.number);
+              ctx.reviews = freshReviews;
+              send('reviews', freshReviews);
+
+              if ((shaChanged || promptMetaChanged) && !regenerating) {
+                regenerating = true;
+                const prevSha = ctx.headSha.slice(0, 7);
+                const newSha = freshPr.headSha.slice(0, 7);
+                if (shaChanged) {
+                  console.log(`\n  \x1b[38;5;221m↻\x1b[0m New commits detected \x1b[2m(${prevSha} → ${newSha})\x1b[0m`);
                 } else {
-                  const regenStartedAt = Date.now();
-                  const isTty = Boolean(process.stdout.isTTY);
-                  const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-                  let spinnerFrame = 0;
-                  let totalChars = 0;
-                  const fmtRegenElapsed = () => {
-                    const s = Math.floor((Date.now() - regenStartedAt) / 1000);
-                    const m = Math.floor(s / 60);
-                    return m > 0 ? `${m}m${String(s % 60).padStart(2, '0')}s` : `${s}s`;
-                  };
-                  const renderRegen = () => {
-                    if (!isTty) return;
-                    const frame = spinnerFrames[spinnerFrame++ % spinnerFrames.length];
-                    const chars = totalChars > 0 ? `\x1b[2m — ${totalChars.toLocaleString()} chars\x1b[0m` : '';
-                    process.stdout.write(`\r  \x1b[2m${frame} ${fmtRegenElapsed()} elapsed\x1b[0m${chars}`);
-                  };
-                  renderRegen();
-                  const heartbeat = setInterval(renderRegen, 250);
-                  let generated;
-                  let provider: string;
-                  try {
-                    const result = await generateNarrative(
-                      ctx.pr,
-                      freshFiles,
-                      [],
-                      config,
-                      {
-                        previousTldr: prevTldr,
-                        previousChapterTitles: prevChapterTitles,
-                      },
-                      {
-                        cacheKey: { owner: ctx.owner, repo: ctx.repo, number: ctx.pr.number, sha: ctx.headSha },
-                        comments: ctx.comments,
-                        onProgress: ({ chars }) => {
-                          totalChars = chars;
-                          broadcast('narrative-progress', { chars });
-                        },
-                        onPartial: (partial) => {
-                          broadcast('narrative.partial', {
-                            narrative: partial,
-                            pr: ctx.pr,
-                            files: freshFiles,
-                            comments: ctx.comments,
-                          });
-                        },
-                        onPlan: (plan) => {
-                          broadcast('plan-ready', { plan });
-                        },
-                        onChapter: ({ themeId, index, chapter }) => {
-                          broadcast('chapter-ready', { themeId, index, chapter });
-                        },
-                      },
-                    );
-                    generated = result.narrative;
-                    provider = result.provider;
-                  } finally {
-                    clearInterval(heartbeat);
-                    if (isTty) process.stdout.write('\r\x1b[2K');
+                  console.log(`\n  \x1b[38;5;221m↻\x1b[0m PR title/description/labels changed`);
+                }
+                console.log(`  \x1b[2mRegenerating narrative...\x1b[0m`);
+                broadcast('regenerating', { previousSha: prevSha, newSha });
+
+                try {
+                  const prevTldr = ctx.narrative?.tldr;
+                  const prevChapterTitles = ctx.narrative?.chapters.map((ch) => ch.title) ?? [];
+
+                  ctx.pr = freshPr;
+                  let freshFiles = ctx.files;
+                  if (shaChanged) {
+                    ctx.headSha = freshPr.headSha;
+                    freshFiles = await gh.getDiff(ctx.owner, ctx.repo, ctx.pr.number);
+                    ctx.files = freshFiles;
                   }
-                  ctx.narrative = generated;
-                  await cacheNarrative(
+
+                  const config = await readConfig();
+                  const metaHash = computePromptMetaHash(ctx.pr);
+                  const providerKey = await resolveProviderKey(config);
+                  const cached = await getCachedNarrative(
                     ctx.owner,
                     ctx.repo,
                     ctx.pr.number,
                     ctx.headSha,
                     metaHash,
                     providerKey,
-                    generated,
                   );
-                  console.log(
-                    `  \x1b[38;5;78m✓\x1b[0m ${generated.chapters.length} chapters regenerated \x1b[2mvia ${provider} in ${fmtRegenElapsed()}\x1b[0m`,
-                  );
-                }
+                  if (cached) {
+                    ctx.narrative = cached;
+                    console.log(`  \x1b[38;5;78m✓\x1b[0m Using cached narrative \x1b[2m(${newSha})\x1b[0m`);
+                  } else {
+                    const regenStartedAt = Date.now();
+                    const isTty = Boolean(process.stdout.isTTY);
+                    const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+                    let spinnerFrame = 0;
+                    let totalChars = 0;
+                    const fmtRegenElapsed = () => {
+                      const s = Math.floor((Date.now() - regenStartedAt) / 1000);
+                      const m = Math.floor(s / 60);
+                      return m > 0 ? `${m}m${String(s % 60).padStart(2, '0')}s` : `${s}s`;
+                    };
+                    const renderRegen = () => {
+                      if (!isTty) return;
+                      const frame = spinnerFrames[spinnerFrame++ % spinnerFrames.length];
+                      const chars = totalChars > 0 ? `\x1b[2m — ${totalChars.toLocaleString()} chars\x1b[0m` : '';
+                      process.stdout.write(`\r  \x1b[2m${frame} ${fmtRegenElapsed()} elapsed\x1b[0m${chars}`);
+                    };
+                    renderRegen();
+                    const heartbeat = setInterval(renderRegen, 250);
+                    let generated;
+                    let provider: string;
+                    try {
+                      const result = await generateNarrative(
+                        ctx.pr,
+                        freshFiles,
+                        [],
+                        config,
+                        {
+                          previousTldr: prevTldr,
+                          previousChapterTitles: prevChapterTitles,
+                        },
+                        {
+                          cacheKey: { owner: ctx.owner, repo: ctx.repo, number: ctx.pr.number, sha: ctx.headSha },
+                          comments: ctx.comments,
+                          onProgress: ({ chars }) => {
+                            totalChars = chars;
+                            broadcast('narrative-progress', { chars });
+                          },
+                          onPartial: (partial) => {
+                            broadcast('narrative.partial', {
+                              narrative: partial,
+                              pr: ctx.pr,
+                              files: freshFiles,
+                              comments: ctx.comments,
+                            });
+                          },
+                          onPlan: (plan) => {
+                            broadcast('plan-ready', { plan });
+                          },
+                          onChapter: ({ themeId, index, chapter }) => {
+                            broadcast('chapter-ready', { themeId, index, chapter });
+                          },
+                        },
+                      );
+                      generated = result.narrative;
+                      provider = result.provider;
+                    } finally {
+                      clearInterval(heartbeat);
+                      if (isTty) process.stdout.write('\r\x1b[2K');
+                    }
+                    ctx.narrative = generated;
+                    await cacheNarrative(
+                      ctx.owner,
+                      ctx.repo,
+                      ctx.pr.number,
+                      ctx.headSha,
+                      metaHash,
+                      providerKey,
+                      generated,
+                    );
+                    console.log(
+                      `  \x1b[38;5;78m✓\x1b[0m ${generated.chapters.length} chapters regenerated \x1b[2mvia ${provider} in ${fmtRegenElapsed()}\x1b[0m`,
+                    );
+                  }
 
-                broadcast('narrative', {
-                  narrative: ctx.narrative,
-                  pr: ctx.pr,
-                  files: ctx.files,
-                  comments: mapCommentsToChapters(ctx.comments, ctx.narrative),
-                });
-              } catch (err) {
-                const msg = err instanceof Error ? err.message : String(err);
-                console.error(`  \x1b[38;5;204m✗\x1b[0m Regeneration failed: ${msg}`);
-              } finally {
-                regenerating = false;
+                  broadcast('narrative', {
+                    narrative: ctx.narrative,
+                    pr: ctx.pr,
+                    files: ctx.files,
+                    comments: mapCommentsToChapters(ctx.comments, ctx.narrative),
+                  });
+                } catch (err) {
+                  const msg = err instanceof Error ? err.message : String(err);
+                  console.error(`  \x1b[38;5;204m✗\x1b[0m Regeneration failed: ${msg}`);
+                } finally {
+                  regenerating = false;
+                }
               }
+            } catch {
+              // swallow polling errors
             }
-          } catch {
-            // swallow polling errors
-          }
           },
           ctx.mode === 'watch' ? 2000 : 10000,
         );

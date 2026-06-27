@@ -34,7 +34,13 @@ describe('renderCommentsMarkdown', () => {
   it('renders multiple comments with hunk context and replies', () => {
     const md = renderCommentsMarkdown([
       mk({ id: '1', path: 'a.ts', line: 1, body: 'one', hunkContext: '@@ -1 +1 @@\n-a\n+b' }),
-      mk({ id: '2', path: 'b.ts', line: 2, body: 'two', replies: [{ id: 'r', author: 'agent', body: 'done', createdAt: 't' }] }),
+      mk({
+        id: '2',
+        path: 'b.ts',
+        line: 2,
+        body: 'two',
+        replies: [{ id: 'r', author: 'agent', body: 'done', createdAt: 't' }],
+      }),
       mk({ id: '3', path: 'c.ts', line: 3, body: 'three', chapterTitle: 'Chapter X' }),
     ]);
     expect(md).toContain('# Review comments (3)');

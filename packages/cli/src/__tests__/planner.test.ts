@@ -14,7 +14,7 @@ describe('parsePlanResponse', () => {
     expect(out.themes).toEqual([]);
   });
 
-  it("salvages a plan truncated mid-array (hit max tokens → \"Expected ']'\")", () => {
+  it('salvages a plan truncated mid-array (hit max tokens → "Expected \']\'")', () => {
     // themes array opened with two complete entries, then cut off mid-third — no closing `]`/`}`.
     const truncated = '{"prTldr":"x","themes":[{"id":"a","title":"A"},{"id":"b","title":"B"},{"id":"c","ti';
     const out = parsePlanResponse(truncated) as { themes: { id: string }[] };

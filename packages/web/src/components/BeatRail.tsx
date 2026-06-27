@@ -103,7 +103,11 @@ export function BeatRail() {
                     ✓
                   </span>
                 ) : flag ? (
-                  <span aria-label={`${flag.label} — needs a look`} title={`${flag.label}`} style={{ color: flag.color }}>
+                  <span
+                    aria-label={`${flag.label} — needs a look`}
+                    title={`${flag.label}`}
+                    style={{ color: flag.color }}
+                  >
                     ⚠
                   </span>
                 ) : null}

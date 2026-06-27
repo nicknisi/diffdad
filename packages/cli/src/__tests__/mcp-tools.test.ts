@@ -67,7 +67,9 @@ function setup() {
   const store = new AgentCommentStore(FIXTURE_KEY, [], deterministic());
   const events: { event: string; data: unknown }[] = [];
   const app = new Hono();
-  mountMcp(app, (server) => registerAgentCommentTools(server, { store, broadcast: (event, data) => events.push({ event, data }) }));
+  mountMcp(app, (server) =>
+    registerAgentCommentTools(server, { store, broadcast: (event, data) => events.push({ event, data }) }),
+  );
   return { store, events, app };
 }
 

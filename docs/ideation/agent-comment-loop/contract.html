@@ -8,12 +8,11 @@
       // Apply a saved forced theme before first paint to avoid a flash
       try {
         const saved = localStorage.getItem('ideation-contract-theme');
-        if (saved === 'light' || saved === 'dark')
-          document.documentElement.dataset.theme = saved;
+        if (saved === 'light' || saved === 'dark') document.documentElement.dataset.theme = saved;
       } catch {}
     </script>
     <style>
-/* Command Deck — Contract Design Tokens & Components
+      /* Command Deck — Contract Design Tokens & Components
    Dark-first instrument panel with a co-equal light deck.
    Cyan-teal telemetry accent; go/caution/danger status trio.
    Inlined into generated HTML by contract-gen.ts at runtime.
@@ -22,992 +21,986 @@
    (status rails, dense data), flight-telemetry go/no-go boards.
    Explicitly NOT: neon glow, scanlines, fake terminal chrome. */
 
-:root {
-  /* Auto: follow the system. The header toggle forces a deck by setting
+      :root {
+        /* Auto: follow the system. The header toggle forces a deck by setting
      data-theme, which pins color-scheme and resolves every light-dark(). */
-  color-scheme: light dark;
+        color-scheme: light dark;
 
-  /* ── Tokens: light-dark(light deck, dark deck) ──
+        /* ── Tokens: light-dark(light deck, dark deck) ──
      OKLCH-derived, hued toward the cyan accent (~h230).
      Dark deck is canonical; the light deck is co-equal, AA-verified. */
-  --bg: light-dark(#eef1f4, #0a0f16);
-  --surface-1: light-dark(#f9fafb, #101723);
-  --surface-2: light-dark(#ffffff, #161f2e);
-  --line: light-dark(#d4dce3, #243140);
-  --line-strong: light-dark(#aab8c4, #38485a);
-  --ink: light-dark(#16202b, #e6edf3);
-  --muted: light-dark(#46545f, #a2b2c2);
-  --faint: light-dark(#5b6b7a, #8295a8);
+        --bg: light-dark(#eef1f4, #0a0f16);
+        --surface-1: light-dark(#f9fafb, #101723);
+        --surface-2: light-dark(#ffffff, #161f2e);
+        --line: light-dark(#d4dce3, #243140);
+        --line-strong: light-dark(#aab8c4, #38485a);
+        --ink: light-dark(#16202b, #e6edf3);
+        --muted: light-dark(#46545f, #a2b2c2);
+        --faint: light-dark(#5b6b7a, #8295a8);
 
-  --accent: light-dark(#0a6d89, #56c8ea);
-  --accent-down: light-dark(#0a5e76, #3ba8c9);
-  --accent-tint: light-dark(#ddeef4, #11313f);
+        --accent: light-dark(#0a6d89, #56c8ea);
+        --accent-down: light-dark(#0a5e76, #3ba8c9);
+        --accent-tint: light-dark(#ddeef4, #11313f);
 
-  --go: light-dark(#137455, #46d49c);
-  --caution: light-dark(#8c6000, #e9b65a);
-  --danger: light-dark(#b62b50, #f5839b);
-  --go-tint: light-dark(#dff3ea, #0d2b21);
-  --caution-tint: light-dark(#f6ecd4, #2e2410);
-  --danger-tint: light-dark(#fae3e9, #331620);
+        --go: light-dark(#137455, #46d49c);
+        --caution: light-dark(#8c6000, #e9b65a);
+        --danger: light-dark(#b62b50, #f5839b);
+        --go-tint: light-dark(#dff3ea, #0d2b21);
+        --caution-tint: light-dark(#f6ecd4, #2e2410);
+        --danger-tint: light-dark(#fae3e9, #331620);
 
-  /* ── Type ──────────────────────────────────────
+        /* ── Type ──────────────────────────────────────
      Mono carries structure (headers, labels, data);
      sans carries prose. Fixed rem scale, product register. */
-  --font-mono:
-    'Berkeley Mono', 'SF Mono', 'Fira Code', 'Cascadia Code', Menlo, Consolas,
-    monospace;
-  --font-sans:
-    system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial,
-    sans-serif;
-  --text-label: 0.6875rem; /* 11px mono labels   */
-  --text-meta: 0.75rem; /*    12px mono metadata */
-  --text-data: 0.8125rem; /*  13px mono data     */
-  --text-body: 1rem; /*       16px sans prose    */
-  --text-title: 1.25rem; /*   20px panel moments */
-  --text-display: 2.5rem; /*  40px project name  */
+        --font-mono: 'Berkeley Mono', 'SF Mono', 'Fira Code', 'Cascadia Code', Menlo, Consolas, monospace;
+        --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+        --text-label: 0.6875rem; /* 11px mono labels   */
+        --text-meta: 0.75rem; /*    12px mono metadata */
+        --text-data: 0.8125rem; /*  13px mono data     */
+        --text-body: 1rem; /*       16px sans prose    */
+        --text-title: 1.25rem; /*   20px panel moments */
+        --text-display: 2.5rem; /*  40px project name  */
 
-  /* ── Space (4pt base) ─────────────────────────── */
-  --s1: 4px;
-  --s2: 8px;
-  --s3: 12px;
-  --s4: 16px;
-  --s5: 24px;
-  --s6: 32px;
-  --s7: 48px;
-  --s8: 64px;
+        /* ── Space (4pt base) ─────────────────────────── */
+        --s1: 4px;
+        --s2: 8px;
+        --s3: 12px;
+        --s4: 16px;
+        --s5: 24px;
+        --s6: 32px;
+        --s7: 48px;
+        --s8: 64px;
 
-  --radius: 6px;
-  --radius-lg: 10px;
-}
+        --radius: 6px;
+        --radius-lg: 10px;
+      }
 
-/* ── Forced themes (header toggle) ──────────────── */
+      /* ── Forced themes (header toggle) ──────────────── */
 
-:root[data-theme='light'] {
-  color-scheme: light;
-}
-:root[data-theme='dark'] {
-  color-scheme: dark;
-}
+      :root[data-theme='light'] {
+        color-scheme: light;
+      }
+      :root[data-theme='dark'] {
+        color-scheme: dark;
+      }
 
-/* ── Reset ──────────────────────────────────────── */
+      /* ── Reset ──────────────────────────────────────── */
 
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-}
-html,
-body {
-  margin: 0;
-  padding: 0;
-}
-body {
-  font-family: var(--font-sans);
-  font-size: var(--text-body);
-  line-height: 1.65;
-  /* light-on-dark compensation: +letter-spacing, raised line-height */
-  letter-spacing: 0.011em;
-  color: var(--ink);
-  background: var(--bg);
-  max-width: 1120px;
-  margin: 0 auto;
-  padding: var(--s6) var(--s6) var(--s8);
-  -webkit-font-smoothing: antialiased;
-  font-kerning: normal;
-}
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: var(--font-sans);
+        font-size: var(--text-body);
+        line-height: 1.65;
+        /* light-on-dark compensation: +letter-spacing, raised line-height */
+        letter-spacing: 0.011em;
+        color: var(--ink);
+        background: var(--bg);
+        max-width: 1120px;
+        margin: 0 auto;
+        padding: var(--s6) var(--s6) var(--s8);
+        -webkit-font-smoothing: antialiased;
+        font-kerning: normal;
+      }
 
-/* ── Shared voices ──────────────────────────────── */
+      /* ── Shared voices ──────────────────────────────── */
 
-.label {
-  font-family: var(--font-mono);
-  font-size: var(--text-label);
-  font-weight: 600;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--faint);
-}
-.label-accent {
-  color: var(--accent);
-}
-.label-danger {
-  color: var(--danger);
-}
-.mono-meta {
-  font-family: var(--font-mono);
-  font-size: var(--text-meta);
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
+      .label {
+        font-family: var(--font-mono);
+        font-size: var(--text-label);
+        font-weight: 600;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+        color: var(--faint);
+      }
+      .label-accent {
+        color: var(--accent);
+      }
+      .label-danger {
+        color: var(--danger);
+      }
+      .mono-meta {
+        font-family: var(--font-mono);
+        font-size: var(--text-meta);
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+      }
 
-/* Status indicator: glyph + color, never color alone */
-.status-ind {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--s2);
-  font-family: var(--font-mono);
-  font-size: var(--text-meta);
-  font-weight: 700;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-}
-.status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: currentColor;
-  flex: 0 0 auto;
-}
-.status-go {
-  color: var(--go);
-}
-.status-caution {
-  color: var(--caution);
-}
+      /* Status indicator: glyph + color, never color alone */
+      .status-ind {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--s2);
+        font-family: var(--font-mono);
+        font-size: var(--text-meta);
+        font-weight: 700;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+      }
+      .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: currentColor;
+        flex: 0 0 auto;
+      }
+      .status-go {
+        color: var(--go);
+      }
+      .status-caution {
+        color: var(--caution);
+      }
 
-/* ── Deck header ────────────────────────────────── */
+      /* ── Deck header ────────────────────────────────── */
 
-.deck-header {
-  padding-bottom: var(--s5);
-  border-bottom: 2px solid var(--line-strong);
-  margin-bottom: var(--s6);
-}
-.deck-id {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--s5);
-}
-.deck-slug {
-  margin-bottom: var(--s3);
-}
-.deck-title {
-  margin: 0;
-  font-family: var(--font-mono);
-  font-size: var(--text-display);
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  line-height: 1.05;
-  color: var(--ink);
-  text-wrap: balance;
-}
-.deck-meta {
-  text-align: right;
-  flex: 0 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: var(--s1);
-  align-items: flex-end;
-}
-.deck-meta .mono-meta {
-  line-height: 1.5;
-}
-.theme-toggle {
-  position: relative;
-  background: transparent;
-  color: var(--faint);
-  border: 1px solid var(--line);
-  padding: 3px 10px;
-  border-radius: 4px;
-  font-family: var(--font-mono);
-  font-size: var(--text-label);
-  font-weight: 600;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  cursor: pointer;
-  margin-top: var(--s1);
-}
-/* expand hit area to ~44px without growing the visual */
-.theme-toggle::after {
-  content: '';
-  position: absolute;
-  inset: -9px;
-}
-.theme-toggle:hover {
-  color: var(--accent);
-  border-color: var(--line-strong);
-}
-.theme-toggle:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
+      .deck-header {
+        padding-bottom: var(--s5);
+        border-bottom: 2px solid var(--line-strong);
+        margin-bottom: var(--s6);
+      }
+      .deck-id {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: var(--s5);
+      }
+      .deck-slug {
+        margin-bottom: var(--s3);
+      }
+      .deck-title {
+        margin: 0;
+        font-family: var(--font-mono);
+        font-size: var(--text-display);
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        line-height: 1.05;
+        color: var(--ink);
+        text-wrap: balance;
+      }
+      .deck-meta {
+        text-align: right;
+        flex: 0 0 auto;
+        display: flex;
+        flex-direction: column;
+        gap: var(--s1);
+        align-items: flex-end;
+      }
+      .deck-meta .mono-meta {
+        line-height: 1.5;
+      }
+      .theme-toggle {
+        position: relative;
+        background: transparent;
+        color: var(--faint);
+        border: 1px solid var(--line);
+        padding: 3px 10px;
+        border-radius: 4px;
+        font-family: var(--font-mono);
+        font-size: var(--text-label);
+        font-weight: 600;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        cursor: pointer;
+        margin-top: var(--s1);
+      }
+      /* expand hit area to ~44px without growing the visual */
+      .theme-toggle::after {
+        content: '';
+        position: absolute;
+        inset: -9px;
+      }
+      .theme-toggle:hover {
+        color: var(--accent);
+        border-color: var(--line-strong);
+      }
+      .theme-toggle:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
 
-/* Gate strip: go/no-go board */
-.gate-strip {
-  margin-top: var(--s5);
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  overflow: hidden;
-  background: var(--surface-1);
-}
-.gate-cell {
-  padding: var(--s3) var(--s4);
-  border-inline-start: 1px solid var(--line);
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: var(--s1) var(--s3);
-  align-items: baseline;
-}
-.gate-cell:first-child {
-  border-inline-start: 0;
-}
-.gate-mark {
-  font-family: var(--font-mono);
-  font-size: var(--text-data);
-  font-weight: 700;
-  grid-row: span 2;
-}
-.gate-name {
-  font-family: var(--font-mono);
-  font-size: var(--text-label);
-  font-weight: 600;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--ink);
-}
-.gate-evidence {
-  grid-column: 2;
-  font-size: var(--text-meta);
-  font-family: var(--font-sans);
-  letter-spacing: 0.011em;
-  color: var(--muted);
-  line-height: 1.45;
-}
-.gate-verdict {
-  display: flex;
-  align-items: center;
-  gap: var(--s3);
-  margin-top: var(--s3);
-}
+      /* Gate strip: go/no-go board */
+      .gate-strip {
+        margin-top: var(--s5);
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        overflow: hidden;
+        background: var(--surface-1);
+      }
+      .gate-cell {
+        padding: var(--s3) var(--s4);
+        border-inline-start: 1px solid var(--line);
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: var(--s1) var(--s3);
+        align-items: baseline;
+      }
+      .gate-cell:first-child {
+        border-inline-start: 0;
+      }
+      .gate-mark {
+        font-family: var(--font-mono);
+        font-size: var(--text-data);
+        font-weight: 700;
+        grid-row: span 2;
+      }
+      .gate-name {
+        font-family: var(--font-mono);
+        font-size: var(--text-label);
+        font-weight: 600;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+        color: var(--ink);
+      }
+      .gate-evidence {
+        grid-column: 2;
+        font-size: var(--text-meta);
+        font-family: var(--font-sans);
+        letter-spacing: 0.011em;
+        color: var(--muted);
+        line-height: 1.45;
+      }
+      .gate-verdict {
+        display: flex;
+        align-items: center;
+        gap: var(--s3);
+        margin-top: var(--s3);
+      }
 
-/* ── Panels & sections ──────────────────────────── */
+      /* ── Panels & sections ──────────────────────────── */
 
-.section {
-  margin-top: var(--s7);
-}
-.section-hdr {
-  display: flex;
-  align-items: baseline;
-  gap: var(--s4);
-  margin-bottom: var(--s4);
-}
-.section-hdr .label {
-  flex: 0 0 auto;
-}
-.section-hdr-rule {
-  flex: 1;
-  height: 1px;
-  background: var(--line);
-  align-self: center;
-}
-.section-count {
-  flex: 0 0 auto;
-  font-family: var(--font-mono);
-  font-size: var(--text-label);
-  letter-spacing: 0.05em;
-  color: var(--faint);
-}
-.panel {
-  background: var(--surface-1);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-}
-.two-col {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--s6);
-}
+      .section {
+        margin-top: var(--s7);
+      }
+      .section-hdr {
+        display: flex;
+        align-items: baseline;
+        gap: var(--s4);
+        margin-bottom: var(--s4);
+      }
+      .section-hdr .label {
+        flex: 0 0 auto;
+      }
+      .section-hdr-rule {
+        flex: 1;
+        height: 1px;
+        background: var(--line);
+        align-self: center;
+      }
+      .section-count {
+        flex: 0 0 auto;
+        font-family: var(--font-mono);
+        font-size: var(--text-label);
+        letter-spacing: 0.05em;
+        color: var(--faint);
+      }
+      .panel {
+        background: var(--surface-1);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+      }
+      .two-col {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: var(--s6);
+      }
 
-/* ── Prose (problem statement) ──────────────────── */
+      /* ── Prose (problem statement) ──────────────────── */
 
-.prose {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s4);
-  max-width: 68ch;
-}
-.prose p {
-  margin: 0;
-  font-size: var(--text-body);
-  line-height: 1.65;
-  color: var(--ink);
-}
-.line-num {
-  font-family: var(--font-mono);
-  font-size: var(--text-label);
-  color: var(--faint);
-  margin-right: var(--s2);
-  letter-spacing: 0.08em;
-  vertical-align: 0.12em;
-}
+      .prose {
+        display: flex;
+        flex-direction: column;
+        gap: var(--s4);
+        max-width: 68ch;
+      }
+      .prose p {
+        margin: 0;
+        font-size: var(--text-body);
+        line-height: 1.65;
+        color: var(--ink);
+      }
+      .line-num {
+        font-family: var(--font-mono);
+        font-size: var(--text-label);
+        color: var(--faint);
+        margin-right: var(--s2);
+        letter-spacing: 0.08em;
+        vertical-align: 0.12em;
+      }
 
-/* ── Goals ──────────────────────────────────────── */
+      /* ── Goals ──────────────────────────────────────── */
 
-.goal-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s2);
-}
-.goal-row {
-  display: grid;
-  grid-template-columns: 32px 1fr;
-  gap: var(--s3);
-  padding: var(--s3) var(--s4);
-  background: var(--surface-1);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  align-items: baseline;
-}
-.goal-num {
-  font-family: var(--font-mono);
-  font-size: var(--text-title);
-  font-weight: 700;
-  color: var(--accent);
-  font-variant-numeric: tabular-nums;
-  line-height: 1.2;
-}
-.goal-text {
-  font-size: 0.9375rem;
-  line-height: 1.55;
-  color: var(--ink);
-}
+      .goal-list {
+        display: flex;
+        flex-direction: column;
+        gap: var(--s2);
+      }
+      .goal-row {
+        display: grid;
+        grid-template-columns: 32px 1fr;
+        gap: var(--s3);
+        padding: var(--s3) var(--s4);
+        background: var(--surface-1);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        align-items: baseline;
+      }
+      .goal-num {
+        font-family: var(--font-mono);
+        font-size: var(--text-title);
+        font-weight: 700;
+        color: var(--accent);
+        font-variant-numeric: tabular-nums;
+        line-height: 1.2;
+      }
+      .goal-text {
+        font-size: 0.9375rem;
+        line-height: 1.55;
+        color: var(--ink);
+      }
 
-/* ── Success criteria ───────────────────────────── */
+      /* ── Success criteria ───────────────────────────── */
 
-.criteria-grid {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0 var(--s6);
-}
-.criteria-item {
-  display: grid;
-  grid-template-columns: 28px 1fr;
-  gap: var(--s3);
-  align-items: baseline;
-  padding: var(--s3) 0;
-  border-bottom: 1px solid var(--line);
-  font-size: 0.875rem;
-  line-height: 1.55;
-}
-.criteria-body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s2);
-}
-.criteria-check {
-  font-family: var(--font-mono);
-  font-size: var(--text-meta);
-  line-height: 1.5;
-  color: var(--accent);
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-  padding: var(--s1) var(--s2);
-  border-radius: 4px;
-  overflow-wrap: anywhere;
-  align-self: flex-start;
-}
-.criteria-judgment {
-  font-family: var(--font-mono);
-  font-size: var(--text-label);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--caution);
-  font-weight: 600;
-}
+      .criteria-grid {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0 var(--s6);
+      }
+      .criteria-item {
+        display: grid;
+        grid-template-columns: 28px 1fr;
+        gap: var(--s3);
+        align-items: baseline;
+        padding: var(--s3) 0;
+        border-bottom: 1px solid var(--line);
+        font-size: 0.875rem;
+        line-height: 1.55;
+      }
+      .criteria-body {
+        display: flex;
+        flex-direction: column;
+        gap: var(--s2);
+      }
+      .criteria-check {
+        font-family: var(--font-mono);
+        font-size: var(--text-meta);
+        line-height: 1.5;
+        color: var(--accent);
+        background: var(--surface-2);
+        border: 1px solid var(--line);
+        padding: var(--s1) var(--s2);
+        border-radius: 4px;
+        overflow-wrap: anywhere;
+        align-self: flex-start;
+      }
+      .criteria-judgment {
+        font-family: var(--font-mono);
+        font-size: var(--text-label);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--caution);
+        font-weight: 600;
+      }
 
-/* ── Scope ──────────────────────────────────────── */
+      /* ── Scope ──────────────────────────────────────── */
 
-.scope-layout {
-  display: grid;
-  grid-template-columns: 300px 1fr;
-  gap: var(--s6);
-}
-.nested-tiers {
-  position: relative;
-  width: 300px;
-  height: 300px;
-}
-.tier-box {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  border-radius: var(--radius);
-}
-.tier-box-stretch {
-  width: 300px;
-  height: 300px;
-  border: 1px dashed var(--line-strong);
-}
-.tier-box-full {
-  width: 218px;
-  height: 218px;
-  border: 1px solid var(--accent-down);
-}
-.tier-box-mvp {
-  width: 136px;
-  height: 136px;
-  background: var(--accent-tint);
-  border: 1px solid var(--accent);
-}
-.tier-box-label {
-  position: absolute;
-  top: var(--s2);
-  left: var(--s3);
-  font-family: var(--font-mono);
-  font-size: var(--text-label);
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  font-weight: 600;
-}
-.tier-box-stretch .tier-box-label {
-  color: var(--faint);
-}
-.tier-box-full .tier-box-label {
-  color: var(--accent);
-}
-.tier-box-mvp .tier-box-label {
-  color: var(--accent);
-}
-.tier-lists {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s5);
-}
-.tier-header {
-  display: flex;
-  align-items: center;
-  gap: var(--s2);
-  margin-bottom: var(--s2);
-}
-.tier-glyph {
-  font-family: var(--font-mono);
-  font-size: var(--text-data);
-  font-weight: 700;
-  color: var(--accent);
-}
-.tier-title {
-  font-family: var(--font-mono);
-  font-size: var(--text-meta);
-  font-weight: 600;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--ink);
-}
-.tier-rule {
-  flex: 1;
-  height: 1px;
-  background: var(--line);
-}
-.tier-count {
-  font-family: var(--font-mono);
-  font-size: var(--text-label);
-  color: var(--faint);
-}
-.tier-items {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: var(--s2);
-}
-.tier-items li {
-  font-size: 0.875rem;
-  line-height: 1.5;
-  color: var(--ink);
-}
-.tier-items strong {
-  font-weight: 500;
-}
-.tier-reason {
-  color: var(--muted);
-  margin-left: var(--s2);
-  font-size: 0.8125rem;
-}
-.scope-extras {
-  margin-top: var(--s5);
-}
-.scope-panel {
-  padding: var(--s4);
-  border-radius: var(--radius);
-  border: 1px solid var(--line);
-  background: var(--surface-1);
-}
-.scope-panel-out {
-  background: var(--danger-tint);
-}
-.scope-panel .label {
-  display: block;
-  margin-bottom: var(--s3);
-}
-.scope-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: var(--s2);
-}
-.scope-list li {
-  font-size: 0.8125rem;
-  line-height: 1.5;
-  color: var(--muted);
-}
-.scope-out-item {
-  color: var(--ink);
-  font-weight: 500;
-  text-decoration: line-through;
-  text-decoration-color: var(--danger);
-}
+      .scope-layout {
+        display: grid;
+        grid-template-columns: 300px 1fr;
+        gap: var(--s6);
+      }
+      .nested-tiers {
+        position: relative;
+        width: 300px;
+        height: 300px;
+      }
+      .tier-box {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        border-radius: var(--radius);
+      }
+      .tier-box-stretch {
+        width: 300px;
+        height: 300px;
+        border: 1px dashed var(--line-strong);
+      }
+      .tier-box-full {
+        width: 218px;
+        height: 218px;
+        border: 1px solid var(--accent-down);
+      }
+      .tier-box-mvp {
+        width: 136px;
+        height: 136px;
+        background: var(--accent-tint);
+        border: 1px solid var(--accent);
+      }
+      .tier-box-label {
+        position: absolute;
+        top: var(--s2);
+        left: var(--s3);
+        font-family: var(--font-mono);
+        font-size: var(--text-label);
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+        font-weight: 600;
+      }
+      .tier-box-stretch .tier-box-label {
+        color: var(--faint);
+      }
+      .tier-box-full .tier-box-label {
+        color: var(--accent);
+      }
+      .tier-box-mvp .tier-box-label {
+        color: var(--accent);
+      }
+      .tier-lists {
+        display: flex;
+        flex-direction: column;
+        gap: var(--s5);
+      }
+      .tier-header {
+        display: flex;
+        align-items: center;
+        gap: var(--s2);
+        margin-bottom: var(--s2);
+      }
+      .tier-glyph {
+        font-family: var(--font-mono);
+        font-size: var(--text-data);
+        font-weight: 700;
+        color: var(--accent);
+      }
+      .tier-title {
+        font-family: var(--font-mono);
+        font-size: var(--text-meta);
+        font-weight: 600;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        color: var(--ink);
+      }
+      .tier-rule {
+        flex: 1;
+        height: 1px;
+        background: var(--line);
+      }
+      .tier-count {
+        font-family: var(--font-mono);
+        font-size: var(--text-label);
+        color: var(--faint);
+      }
+      .tier-items {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: var(--s2);
+      }
+      .tier-items li {
+        font-size: 0.875rem;
+        line-height: 1.5;
+        color: var(--ink);
+      }
+      .tier-items strong {
+        font-weight: 500;
+      }
+      .tier-reason {
+        color: var(--muted);
+        margin-left: var(--s2);
+        font-size: 0.8125rem;
+      }
+      .scope-extras {
+        margin-top: var(--s5);
+      }
+      .scope-panel {
+        padding: var(--s4);
+        border-radius: var(--radius);
+        border: 1px solid var(--line);
+        background: var(--surface-1);
+      }
+      .scope-panel-out {
+        background: var(--danger-tint);
+      }
+      .scope-panel .label {
+        display: block;
+        margin-bottom: var(--s3);
+      }
+      .scope-list {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: var(--s2);
+      }
+      .scope-list li {
+        font-size: 0.8125rem;
+        line-height: 1.5;
+        color: var(--muted);
+      }
+      .scope-out-item {
+        color: var(--ink);
+        font-weight: 500;
+        text-decoration: line-through;
+        text-decoration-color: var(--danger);
+      }
 
-/* ── Pipeline (DAG) ─────────────────────────────── */
+      /* ── Pipeline (DAG) ─────────────────────────────── */
 
-.pipeline-wrap {
-  padding: var(--s5);
-  overflow-x: auto;
-}
-.pipeline {
-  display: block;
-  min-width: 560px;
-  max-width: 100%;
-  height: auto;
-}
-.pipeline .node-box {
-  fill: var(--surface-2);
-  stroke: var(--line-strong);
-  stroke-width: 1;
-}
-.pipeline .node-gate .node-box {
-  fill: var(--accent-tint);
-  stroke: var(--accent-down);
-}
-.pipeline .node-rail {
-  stroke-width: 3;
-}
-.pipeline .node-num {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 600;
-  fill: var(--faint);
-  letter-spacing: 0.08em;
-}
-.pipeline .node-title {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 600;
-  fill: var(--ink);
-}
-.pipeline .node-kind {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  fill: var(--faint);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-.pipeline .edge {
-  stroke: var(--line-strong);
-  stroke-width: 1.5;
-  fill: none;
-}
-.pipeline .edge-head {
-  fill: var(--line-strong);
-}
+      .pipeline-wrap {
+        padding: var(--s5);
+        overflow-x: auto;
+      }
+      .pipeline {
+        display: block;
+        min-width: 560px;
+        max-width: 100%;
+        height: auto;
+      }
+      .pipeline .node-box {
+        fill: var(--surface-2);
+        stroke: var(--line-strong);
+        stroke-width: 1;
+      }
+      .pipeline .node-gate .node-box {
+        fill: var(--accent-tint);
+        stroke: var(--accent-down);
+      }
+      .pipeline .node-rail {
+        stroke-width: 3;
+      }
+      .pipeline .node-num {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        font-weight: 600;
+        fill: var(--faint);
+        letter-spacing: 0.08em;
+      }
+      .pipeline .node-title {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        font-weight: 600;
+        fill: var(--ink);
+      }
+      .pipeline .node-kind {
+        font-family: var(--font-mono);
+        font-size: 10px;
+        fill: var(--faint);
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      .pipeline .edge {
+        stroke: var(--line-strong);
+        stroke-width: 1.5;
+        fill: none;
+      }
+      .pipeline .edge-head {
+        fill: var(--line-strong);
+      }
 
-/* ── Phase table ────────────────────────────────── */
+      /* ── Phase table ────────────────────────────────── */
 
-.phase-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: var(--text-data);
-}
-.phase-table th {
-  font-family: var(--font-mono);
-  font-size: var(--text-label);
-  font-weight: 600;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--faint);
-  text-align: left;
-  padding: var(--s2) var(--s4);
-  border-bottom: 1px solid var(--line-strong);
-}
-.phase-table td {
-  padding: var(--s3) var(--s4);
-  border-bottom: 1px solid var(--line);
-  vertical-align: baseline;
-}
-.phase-table tr:last-child td {
-  border-bottom: 0;
-}
-.phase-num {
-  font-family: var(--font-mono);
-  color: var(--faint);
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  white-space: nowrap;
-}
-.phase-title {
-  font-family: var(--font-mono);
-  font-weight: 600;
-  color: var(--ink);
-}
-.phase-kind {
-  font-family: var(--font-mono);
-  font-size: var(--text-label);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--muted);
-  white-space: nowrap;
-}
-.phase-risk {
-  font-family: var(--font-mono);
-  font-size: var(--text-label);
-  font-weight: 700;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-.phase-notes {
-  font-family: var(--font-sans);
-  font-size: 0.8125rem;
-  letter-spacing: 0.011em;
-  color: var(--muted);
-  line-height: 1.5;
-  max-width: 52ch;
-}
+      .phase-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: var(--text-data);
+      }
+      .phase-table th {
+        font-family: var(--font-mono);
+        font-size: var(--text-label);
+        font-weight: 600;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+        color: var(--faint);
+        text-align: left;
+        padding: var(--s2) var(--s4);
+        border-bottom: 1px solid var(--line-strong);
+      }
+      .phase-table td {
+        padding: var(--s3) var(--s4);
+        border-bottom: 1px solid var(--line);
+        vertical-align: baseline;
+      }
+      .phase-table tr:last-child td {
+        border-bottom: 0;
+      }
+      .phase-num {
+        font-family: var(--font-mono);
+        color: var(--faint);
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        white-space: nowrap;
+      }
+      .phase-title {
+        font-family: var(--font-mono);
+        font-weight: 600;
+        color: var(--ink);
+      }
+      .phase-kind {
+        font-family: var(--font-mono);
+        font-size: var(--text-label);
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--muted);
+        white-space: nowrap;
+      }
+      .phase-risk {
+        font-family: var(--font-mono);
+        font-size: var(--text-label);
+        font-weight: 700;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+      .phase-notes {
+        font-family: var(--font-sans);
+        font-size: 0.8125rem;
+        letter-spacing: 0.011em;
+        color: var(--muted);
+        line-height: 1.5;
+        max-width: 52ch;
+      }
 
-/* ── Commands ───────────────────────────────────── */
+      /* ── Commands ───────────────────────────────────── */
 
-.run-bar {
-  margin-top: var(--s5);
-  padding: var(--s5);
-  border: 1px solid var(--accent-down);
-  border-radius: var(--radius-lg);
-  background: var(--surface-1);
-  display: grid;
-  grid-template-columns: minmax(200px, 1fr) minmax(280px, 1.4fr);
-  gap: var(--s5);
-  align-items: center;
-}
-.run-bar-headline {
-  font-family: var(--font-mono);
-  font-size: var(--text-title);
-  font-weight: 700;
-  color: var(--ink);
-  letter-spacing: -0.01em;
-  margin: var(--s1) 0;
-}
-.run-bar-desc {
-  font-size: 0.8125rem;
-  letter-spacing: 0.011em;
-  color: var(--muted);
-  line-height: 1.5;
-  max-width: 52ch;
-}
-.cmd-field {
-  display: flex;
-  align-items: center;
-  gap: var(--s3);
-  padding: var(--s3) var(--s4);
-  background: var(--surface-2);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius);
-  font-family: var(--font-mono);
-  font-size: var(--text-data);
-  line-height: 1.4;
-  color: var(--ink);
-}
-.cmd-field-text {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  user-select: all;
-}
-.cmd-field-wide {
-  white-space: pre-wrap;
-}
-.cmd-field-wide .cmd-field-text {
-  white-space: pre-wrap;
-}
-.copy-btn {
-  position: relative;
-  flex: 0 0 auto;
-  background: transparent;
-  color: var(--accent);
-  border: 1px solid var(--line-strong);
-  padding: var(--s1) var(--s3);
-  border-radius: 4px;
-  font-size: var(--text-label);
-  font-weight: 600;
-  font-family: var(--font-mono);
-  cursor: pointer;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-}
-/* expand hit area to ~44px without growing the visual */
-.copy-btn::after {
-  content: '';
-  position: absolute;
-  inset: -9px;
-}
-.copy-btn:hover {
-  background: var(--accent-tint);
-  border-color: var(--accent-down);
-}
-.copy-btn:active {
-  color: var(--accent-down);
-}
-.copy-btn:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-.cmd-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s3);
-}
-.cmd-row {
-  display: grid;
-  grid-template-columns: 36px 220px 1fr;
-  gap: var(--s4);
-  align-items: center;
-}
-.cmd-row-num {
-  font-family: var(--font-mono);
-  font-size: var(--text-meta);
-  color: var(--faint);
-  letter-spacing: 0.06em;
-  font-weight: 600;
-}
-.cmd-row-title {
-  font-family: var(--font-mono);
-  font-size: var(--text-data);
-  font-weight: 600;
-  color: var(--ink);
-}
+      .run-bar {
+        margin-top: var(--s5);
+        padding: var(--s5);
+        border: 1px solid var(--accent-down);
+        border-radius: var(--radius-lg);
+        background: var(--surface-1);
+        display: grid;
+        grid-template-columns: minmax(200px, 1fr) minmax(280px, 1.4fr);
+        gap: var(--s5);
+        align-items: center;
+      }
+      .run-bar-headline {
+        font-family: var(--font-mono);
+        font-size: var(--text-title);
+        font-weight: 700;
+        color: var(--ink);
+        letter-spacing: -0.01em;
+        margin: var(--s1) 0;
+      }
+      .run-bar-desc {
+        font-size: 0.8125rem;
+        letter-spacing: 0.011em;
+        color: var(--muted);
+        line-height: 1.5;
+        max-width: 52ch;
+      }
+      .cmd-field {
+        display: flex;
+        align-items: center;
+        gap: var(--s3);
+        padding: var(--s3) var(--s4);
+        background: var(--surface-2);
+        border: 1px solid var(--line-strong);
+        border-radius: var(--radius);
+        font-family: var(--font-mono);
+        font-size: var(--text-data);
+        line-height: 1.4;
+        color: var(--ink);
+      }
+      .cmd-field-text {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        user-select: all;
+      }
+      .cmd-field-wide {
+        white-space: pre-wrap;
+      }
+      .cmd-field-wide .cmd-field-text {
+        white-space: pre-wrap;
+      }
+      .copy-btn {
+        position: relative;
+        flex: 0 0 auto;
+        background: transparent;
+        color: var(--accent);
+        border: 1px solid var(--line-strong);
+        padding: var(--s1) var(--s3);
+        border-radius: 4px;
+        font-size: var(--text-label);
+        font-weight: 600;
+        font-family: var(--font-mono);
+        cursor: pointer;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+      }
+      /* expand hit area to ~44px without growing the visual */
+      .copy-btn::after {
+        content: '';
+        position: absolute;
+        inset: -9px;
+      }
+      .copy-btn:hover {
+        background: var(--accent-tint);
+        border-color: var(--accent-down);
+      }
+      .copy-btn:active {
+        color: var(--accent-down);
+      }
+      .copy-btn:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+      .cmd-list {
+        display: flex;
+        flex-direction: column;
+        gap: var(--s3);
+      }
+      .cmd-row {
+        display: grid;
+        grid-template-columns: 36px 220px 1fr;
+        gap: var(--s4);
+        align-items: center;
+      }
+      .cmd-row-num {
+        font-family: var(--font-mono);
+        font-size: var(--text-meta);
+        color: var(--faint);
+        letter-spacing: 0.06em;
+        font-weight: 600;
+      }
+      .cmd-row-title {
+        font-family: var(--font-mono);
+        font-size: var(--text-data);
+        font-weight: 600;
+        color: var(--ink);
+      }
 
-/* ── Disclosure ─────────────────────────────────── */
+      /* ── Disclosure ─────────────────────────────────── */
 
-.disclosure {
-  margin-top: var(--s5);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  overflow: hidden;
-  background: var(--surface-1);
-}
-.disclosure summary {
-  list-style: none;
-  cursor: pointer;
-  padding: var(--s3) var(--s4);
-  font-family: var(--font-mono);
-  font-size: var(--text-data);
-  font-weight: 600;
-  color: var(--muted);
-  display: flex;
-  align-items: center;
-  gap: var(--s2);
-}
-.disclosure summary:hover {
-  color: var(--ink);
-}
-.disclosure summary::-webkit-details-marker {
-  display: none;
-}
-.disclosure summary::before {
-  content: '▸';
-  color: var(--faint);
-  transition: transform 0.15s ease;
-}
-.disclosure[open] summary::before {
-  transform: rotate(90deg);
-}
-.disclosure summary:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-}
-.disclosure-body {
-  padding: var(--s4);
-  border-top: 1px solid var(--line);
-}
+      .disclosure {
+        margin-top: var(--s5);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        overflow: hidden;
+        background: var(--surface-1);
+      }
+      .disclosure summary {
+        list-style: none;
+        cursor: pointer;
+        padding: var(--s3) var(--s4);
+        font-family: var(--font-mono);
+        font-size: var(--text-data);
+        font-weight: 600;
+        color: var(--muted);
+        display: flex;
+        align-items: center;
+        gap: var(--s2);
+      }
+      .disclosure summary:hover {
+        color: var(--ink);
+      }
+      .disclosure summary::-webkit-details-marker {
+        display: none;
+      }
+      .disclosure summary::before {
+        content: '▸';
+        color: var(--faint);
+        transition: transform 0.15s ease;
+      }
+      .disclosure[open] summary::before {
+        transform: rotate(90deg);
+      }
+      .disclosure summary:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: -2px;
+      }
+      .disclosure-body {
+        padding: var(--s4);
+        border-top: 1px solid var(--line);
+      }
 
-/* ── First move / approval / close bands ────────── */
+      /* ── First move / approval / close bands ────────── */
 
-.approval-bar {
-  margin-top: var(--s5);
-  padding: var(--s5);
-  border: 1px solid var(--caution);
-  border-radius: var(--radius-lg);
-  background: var(--surface-1);
-}
-.approval-desc {
-  font-size: 0.8125rem;
-  letter-spacing: 0.011em;
-  color: var(--muted);
-  line-height: 1.5;
-  margin-top: var(--s2);
-  max-width: 64ch;
-}
-.plan-placeholder {
-  color: var(--muted);
-  font-style: italic;
-}
-.contract-close {
-  margin-top: var(--s7);
-  padding: var(--s5);
-  border: 1px solid var(--line-strong);
-  border-top: 2px solid var(--go);
-  border-radius: var(--radius-lg);
-  background: var(--surface-1);
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: var(--s5);
-  align-items: center;
-}
-.close-headline {
-  font-family: var(--font-mono);
-  font-size: var(--text-title);
-  font-weight: 700;
-  color: var(--ink);
-  letter-spacing: -0.01em;
-  margin-top: var(--s2);
-}
-.close-desc {
-  font-size: 0.8125rem;
-  letter-spacing: 0.011em;
-  color: var(--muted);
-  line-height: 1.5;
-  margin-top: var(--s2);
-  max-width: 60ch;
-}
-.close-meta {
-  text-align: right;
-  display: flex;
-  flex-direction: column;
-  gap: var(--s1);
-  align-items: flex-end;
-}
+      .approval-bar {
+        margin-top: var(--s5);
+        padding: var(--s5);
+        border: 1px solid var(--caution);
+        border-radius: var(--radius-lg);
+        background: var(--surface-1);
+      }
+      .approval-desc {
+        font-size: 0.8125rem;
+        letter-spacing: 0.011em;
+        color: var(--muted);
+        line-height: 1.5;
+        margin-top: var(--s2);
+        max-width: 64ch;
+      }
+      .plan-placeholder {
+        color: var(--muted);
+        font-style: italic;
+      }
+      .contract-close {
+        margin-top: var(--s7);
+        padding: var(--s5);
+        border: 1px solid var(--line-strong);
+        border-top: 2px solid var(--go);
+        border-radius: var(--radius-lg);
+        background: var(--surface-1);
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: var(--s5);
+        align-items: center;
+      }
+      .close-headline {
+        font-family: var(--font-mono);
+        font-size: var(--text-title);
+        font-weight: 700;
+        color: var(--ink);
+        letter-spacing: -0.01em;
+        margin-top: var(--s2);
+      }
+      .close-desc {
+        font-size: 0.8125rem;
+        letter-spacing: 0.011em;
+        color: var(--muted);
+        line-height: 1.5;
+        margin-top: var(--s2);
+        max-width: 60ch;
+      }
+      .close-meta {
+        text-align: right;
+        display: flex;
+        flex-direction: column;
+        gap: var(--s1);
+        align-items: flex-end;
+      }
 
-/* ── Responsive ─────────────────────────────────── */
+      /* ── Responsive ─────────────────────────────────── */
 
-@media (max-width: 820px) {
-  body {
-    padding: var(--s4) var(--s4) var(--s7);
-  }
-  .deck-id {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-  .deck-meta {
-    text-align: left;
-    align-items: flex-start;
-  }
-  .deck-title {
-    font-size: 1.75rem;
-  }
-  .gate-cell {
-    border-inline-start: 0;
-    border-top: 1px solid var(--line);
-  }
-  .gate-cell:first-child {
-    border-top: 0;
-  }
-  .two-col,
-  .scope-layout,
-  .scope-extras,
-  .run-bar,
-  .contract-close {
-    grid-template-columns: 1fr;
-  }
-  .close-meta {
-    text-align: left;
-    align-items: flex-start;
-  }
-  .criteria-grid {
-    grid-template-columns: 1fr;
-  }
-  .nested-tiers {
-    display: none;
-  }
-  .cmd-row {
-    grid-template-columns: 36px 1fr;
-  }
-  .cmd-row .cmd-field {
-    grid-column: 1 / -1;
-  }
-  .phase-notes-col {
-    display: none;
-  }
-}
+      @media (max-width: 820px) {
+        body {
+          padding: var(--s4) var(--s4) var(--s7);
+        }
+        .deck-id {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+        .deck-meta {
+          text-align: left;
+          align-items: flex-start;
+        }
+        .deck-title {
+          font-size: 1.75rem;
+        }
+        .gate-cell {
+          border-inline-start: 0;
+          border-top: 1px solid var(--line);
+        }
+        .gate-cell:first-child {
+          border-top: 0;
+        }
+        .two-col,
+        .scope-layout,
+        .scope-extras,
+        .run-bar,
+        .contract-close {
+          grid-template-columns: 1fr;
+        }
+        .close-meta {
+          text-align: left;
+          align-items: flex-start;
+        }
+        .criteria-grid {
+          grid-template-columns: 1fr;
+        }
+        .nested-tiers {
+          display: none;
+        }
+        .cmd-row {
+          grid-template-columns: 36px 1fr;
+        }
+        .cmd-row .cmd-field {
+          grid-column: 1 / -1;
+        }
+        .phase-notes-col {
+          display: none;
+        }
+      }
 
-/* ── Reduced motion ─────────────────────────────── */
+      /* ── Reduced motion ─────────────────────────────── */
 
-@media (prefers-reduced-motion: reduce) {
-  .disclosure summary::before {
-    transition: none;
-  }
-}
+      @media (prefers-reduced-motion: reduce) {
+        .disclosure summary::before {
+          transition: none;
+        }
+      }
 
-/* ── Print: the deck renders as a paper document ── */
+      /* ── Print: the deck renders as a paper document ── */
 
-@media print {
-  /* Paper always wins, even when the toggle forced the dark deck */
-  :root,
-  :root[data-theme] {
-    color-scheme: light;
-  }
-  :root {
-    --bg: #ffffff;
-    --surface-1: #ffffff;
-    --surface-2: #f4f6f8;
-    --line: #c9d2da;
-    --line-strong: #8d9aa6;
-    --ink: #000000;
-    --muted: #333d46;
-    --faint: #4d5a66;
-    --accent: #0a5e76;
-    --accent-down: #0a5e76;
-    --accent-tint: #e8f2f6;
-    --go: #0d5c43;
-    --caution: #6e4b00;
-    --danger: #9c2547;
-  }
-  body {
-    font-size: 11pt;
-    max-width: none;
-    padding: 20px;
-  }
-  .copy-btn,
-  .theme-toggle {
-    display: none !important;
-  }
-  .pipeline-wrap {
-    overflow: visible;
-  }
-  .disclosure:not([open]) > *:not(summary) {
-    display: block !important;
-  }
-  .disclosure summary::before {
-    display: none;
-  }
-  .panel,
-  .goal-row,
-  .gate-strip,
-  .run-bar,
-  .contract-close {
-    page-break-inside: avoid;
-  }
-}
-
+      @media print {
+        /* Paper always wins, even when the toggle forced the dark deck */
+        :root,
+        :root[data-theme] {
+          color-scheme: light;
+        }
+        :root {
+          --bg: #ffffff;
+          --surface-1: #ffffff;
+          --surface-2: #f4f6f8;
+          --line: #c9d2da;
+          --line-strong: #8d9aa6;
+          --ink: #000000;
+          --muted: #333d46;
+          --faint: #4d5a66;
+          --accent: #0a5e76;
+          --accent-down: #0a5e76;
+          --accent-tint: #e8f2f6;
+          --go: #0d5c43;
+          --caution: #6e4b00;
+          --danger: #9c2547;
+        }
+        body {
+          font-size: 11pt;
+          max-width: none;
+          padding: 20px;
+        }
+        .copy-btn,
+        .theme-toggle {
+          display: none !important;
+        }
+        .pipeline-wrap {
+          overflow: visible;
+        }
+        .disclosure:not([open]) > *:not(summary) {
+          display: block !important;
+        }
+        .disclosure summary::before {
+          display: none;
+        }
+        .panel,
+        .goal-row,
+        .gate-strip,
+        .run-bar,
+        .contract-close {
+          page-break-inside: avoid;
+        }
+      }
     </style>
   </head>
   <body data-contract-status="Approved">
-
     <header class="deck-header">
       <div class="deck-id">
         <div>
@@ -1017,8 +1010,7 @@ body {
         <div class="deck-meta">
           <span class="status-ind status-go"><span class="status-dot" aria-hidden="true"></span>Approved</span>
           <span class="mono-meta">created 2026-06-15</span>
-          
-          
+
           <button type="button" class="theme-toggle" id="theme-toggle">theme · auto</button>
         </div>
       </div>
@@ -1031,306 +1023,473 @@ body {
         <div class="gate-cell">
           <span class="gate-mark" style="color: var(--go)">✓</span>
           <span class="gate-name">Problem Clarity</span>
-          <span class="gate-evidence">Concrete statement: while iterating locally with Claude Code in a sibling tmux pane, there is no channel to leave review comments that reach the agent — every dad comment goes to GitHub today, forcing manual copy-paste and an invisible loop.</span>
+          <span class="gate-evidence"
+            >Concrete statement: while iterating locally with Claude Code in a sibling tmux pane, there is no channel to
+            leave review comments that reach the agent — every dad comment goes to GitHub today, forcing manual
+            copy-paste and an invisible loop.</span
+          >
         </div>
         <div class="gate-cell">
           <span class="gate-mark" style="color: var(--go)">✓</span>
           <span class="gate-name">Goal Definition</span>
-          <span class="gate-evidence">Observable goals: `dad watch` reviews a local working-tree diff; comments reach the agent via MCP; each comment moves open→delivered→addressed with inline agent replies; a clipboard/stdout fallback works for any agent.</span>
+          <span class="gate-evidence"
+            >Observable goals: `dad watch` reviews a local working-tree diff; comments reach the agent via MCP; each
+            comment moves open→delivered→addressed with inline agent replies; a clipboard/stdout fallback works for any
+            agent.</span
+          >
         </div>
         <div class="gate-cell">
           <span class="gate-mark" style="color: var(--go)">✓</span>
           <span class="gate-name">Success Criteria</span>
-          <span class="gate-evidence">Mechanical criteria map to `vitest run` on new store/MCP/route tests plus `bun run lint`/`bun run build`; the live MCP handshake is an explicit one-time manual agent round-trip (judgment call).</span>
+          <span class="gate-evidence"
+            >Mechanical criteria map to `vitest run` on new store/MCP/route tests plus `bun run lint`/`bun run build`;
+            the live MCP handshake is an explicit one-time manual agent round-trip (judgment call).</span
+          >
         </div>
         <div class="gate-cell">
           <span class="gate-mark" style="color: var(--go)">✓</span>
           <span class="gate-name">Scope Boundaries</span>
-          <span class="gate-evidence">Single MVP phase — the pre-PR `dad watch` loop; PR-mode routing, promote, and the code-changed heuristic are explicitly deferred to Future Considerations, and any GitHub destination in watch mode is out of scope.</span>
+          <span class="gate-evidence"
+            >Single MVP phase — the pre-PR `dad watch` loop; PR-mode routing, promote, and the code-changed heuristic
+            are explicitly deferred to Future Considerations, and any GitHub destination in watch mode is out of
+            scope.</span
+          >
         </div>
         <div class="gate-cell">
           <span class="gate-mark" style="color: var(--go)">✓</span>
           <span class="gate-name">Consistency</span>
-          <span class="gate-evidence">`dad watch` entry point resolves the last UX ambiguity; codebase sweep confirmed diff-parser eats raw `git diff`, the cache `sha` slot accepts a content hash, and `/mcp` mounts before the static catch-all — no contradictions remain.</span>
+          <span class="gate-evidence"
+            >`dad watch` entry point resolves the last UX ambiguity; codebase sweep confirmed diff-parser eats raw `git
+            diff`, the cache `sha` slot accepts a content hash, and `/mcp` mounts before the static catch-all — no
+            contradictions remain.</span
+          >
         </div>
       </div>
     </header>
     <main>
-
-    <section class="run-bar">
-      <div>
-        <div class="label label-accent">First move</div>
-        <div class="run-bar-headline">Run this.</div>
-        <div class="run-bar-desc">Phase 01 of 01 — <strong>Local watch loop (MVP)</strong></div>
-      </div>
-      <div class="cmd-field">
-            <span class="cmd-field-text" id="cmd-first">/ideation:execute-spec docs/ideation/agent-comment-loop/spec.md</span>
-            <button type="button" class="copy-btn" data-copy="cmd-first">copy</button>
-          </div>
-    </section>
-
-    <div class="section two-col">
-      <section>
-      <div class="section-hdr">
-        <span class="label">The problem</span>
-        <span class="section-hdr-rule"></span>
-      </div>
-        <div class="prose">
-          <p><span class="line-num">01</span>Diff Dad turns a GitHub PR into a narrated, browsable diff and syncs comments bidirectionally with GitHub. But during local development — while an AI agent (typically Claude Code in a sibling tmux pane) iterates on a branch — there is no way to leave a review comment that feeds back to the agent. Every comment dad can post goes to GitHub.</p>
-          <p><span class="line-num">02</span>The result is a broken inner loop: the developer reviews the agent's work in dad, then has to manually retype or copy-paste feedback into the agent's pane, and has no visibility into whether the agent saw a comment or what it did about it. Inspired by hunk.dev's watch mode, we want a local review-while-the-agent-edits loop where comments are delivered to the agent over MCP and the loop visibly closes (each comment shows delivered → addressed, with the agent's reply inline).</p>
-        </div>
-      </section>
-      <section>
-      <div class="section-hdr">
-        <span class="label">Goals</span>
-        <span class="section-hdr-rule"></span>
-        <span class="section-count">×5</span>
-      </div>
-        <div class="goal-list">
-          <div class="goal-row">
-            <span class="goal-num">01</span>
-            <span class="goal-text">Run `dad watch [base]` inside a git repo to review the local working-tree diff (against the merge-base with the default branch by default) with the existing narrative UI — no PR or GitHub token required.</span>
-          </div>
-          <div class="goal-row">
-            <span class="goal-num">02</span>
-            <span class="goal-text">Leave comments in watch mode that reach a connected agent via an MCP server mounted on dad's existing Hono server (3 tools: list_review_comments, reply_to_comment, resolve_comment).</span>
-          </div>
-          <div class="goal-row">
-            <span class="goal-num">03</span>
-            <span class="goal-text">Make the loop visible: every agent comment moves open → delivered (auto, on MCP fetch) → addressed, the agent can reply inline, and replies/status update live in the UI via the existing SSE channel.</span>
-          </div>
-          <div class="goal-row">
-            <span class="goal-num">04</span>
-            <span class="goal-text">Provide a manual fallback (clipboard button in the UI, `dad comments` markdown to stdout) so any agent that can't speak MCP can still consume the comments.</span>
-          </div>
-          <div class="goal-row">
-            <span class="goal-num">05</span>
-            <span class="goal-text">Persist agent comments to the cache dir so they survive dad restarts and agent context resets.</span>
-          </div>
-        </div>
-      </section>
-    </div>
-
-    <section class="section">
-      <div class="section-hdr">
-        <span class="label">Done when</span>
-        <span class="section-hdr-rule"></span>
-        <span class="section-count">8 signals · 7 mechanically checked</span>
-      </div>
-      <ul class="criteria-grid">
-        <li class="criteria-item">
-          <span class="line-num">01</span>
-          <div class="criteria-body">
-            <span>The agent comment store enforces the open → delivered → addressed lifecycle and round-trips to disk (~/.cache/diffdad/agent-comments/&lt;key&gt;.json).</span>
-            <code class="criteria-check">vitest run packages/cli/src/__tests__/agent-comments.test.ts — exits 0</code>
-          </div>
-        </li>
-        <li class="criteria-item">
-          <span class="line-num">02</span>
-          <div class="criteria-body">
-            <span>list_review_comments returns open comments and flips them to delivered; reply_to_comment and resolve_comment mutate the store and broadcast; unknown ids return a structured MCP error.</span>
-            <code class="criteria-check">vitest run packages/cli/src/__tests__/mcp-tools.test.ts — exits 0</code>
-          </div>
-        </li>
-        <li class="criteria-item">
-          <span class="line-num">03</span>
-          <div class="criteria-body">
-            <span>GET /api/agent-comments and POST /api/agent-comments work end-to-end against an in-memory local-mode server context.</span>
-            <code class="criteria-check">vitest run packages/cli/src/__tests__/agent-comments-routes.test.ts — exits 0</code>
-          </div>
-        </li>
-        <li class="criteria-item">
-          <span class="line-num">04</span>
-          <div class="criteria-body">
-            <span>`git diff` output for the working tree parses into DiffFile[] identically to the GitHub path, and a clean working tree produces the friendly 'nothing to review' exit.</span>
-            <code class="criteria-check">vitest run packages/cli/src/__tests__/local-diff.test.ts — exits 0</code>
-          </div>
-        </li>
-        <li class="criteria-item">
-          <span class="line-num">05</span>
-          <div class="criteria-body">
-            <span>The clipboard/stdout fallback renders all open agent comments as a well-formed markdown block, and `dad watch` and `dad comments` resolve as recognized subcommands (not parsed as PR args).</span>
-            <code class="criteria-check">vitest run packages/cli/src/__tests__/agent-comments-markdown.test.ts packages/cli/src/__tests__/cli-parse.test.ts — exits 0</code>
-          </div>
-        </li>
-        <li class="criteria-item">
-          <span class="line-num">06</span>
-          <div class="criteria-body">
-            <span>Mutating an agent comment (via the store or an MCP tool) emits an `agent-comment` SSE event on /api/events, so the UI updates live.</span>
-            <code class="criteria-check">vitest run packages/cli/src/__tests__/agent-comments-sse.test.ts — exits 0</code>
-          </div>
-        </li>
-        <li class="criteria-item">
-          <span class="line-num">07</span>
-          <div class="criteria-body">
-            <span>Lint, type-check (both packages), and build pass with the new code.</span>
-            <code class="criteria-check">bun run lint &amp;&amp; bun run typecheck &amp;&amp; bun run build — all exit 0</code>
-          </div>
-        </li>
-        <li class="criteria-item">
-          <span class="line-num">08</span>
-          <div class="criteria-body">
-            <span>Live agent round-trip: Claude Code connects via `claude mcp add --transport http diffdad http://localhost:&lt;port&gt;/mcp`, reads a comment via list_review_comments, resolves it, and the comment visibly closes (reply + addressed) in the dad UI.</span>
-            <span class="criteria-judgment">judgment call — no mechanical check</span>
-          </div>
-        </li>
-      </ul>
-    </section>
-
-    <section class="section">
-      <div class="section-hdr">
-        <span class="label">Scope</span>
-        <span class="section-hdr-rule"></span>
-        <span class="section-count">MVP nests inside Full nests inside Stretch</span>
-      </div>
-      <div class="scope-layout">
-        <div class="nested-tiers" aria-hidden="true">
-          <div class="tier-box tier-box-stretch"><span class="tier-box-label">Stretch ×0</span></div>
-          <div class="tier-box tier-box-full"><span class="tier-box-label">Full ×0</span></div>
-          <div class="tier-box tier-box-mvp"><span class="tier-box-label">MVP ×6</span></div>
-        </div>
-        <div class="tier-lists">
-
-          <div class="tier-group">
-            <div class="tier-header">
-              <span class="tier-title">MVP — must ship</span>
-              <span class="tier-rule"></span>
-              <span class="tier-count">×6</span>
-            </div>
-            <ul class="tier-items">
-              <li><strong>`dad watch [base]` local mode: shell out to `git diff`, parse with existing diff-parser, synthesize PRMetadata, generate the narrative, serve the existing UI.</strong><span class="tier-reason">— The irreducible entry point — without a local diff source there is nothing to comment on.</span></li>
-              <li><strong>Agent comment store (packages/cli/src/agent-comments/) with open→delivered→addressed lifecycle, replies, and write-through persistence to the cache dir.</strong><span class="tier-reason">— Single source of truth shared by the UI and MCP; the durable core of the loop.</span></li>
-              <li><strong>MCP server at /mcp (new @modelcontextprotocol/sdk dep) exposing all 3 tools, registered before the static catch-all. GATED BY A SPIKE: first prove the SDK's Streamable-HTTP transport bridges to Hono's Request/Response (via c.req.raw) and survives `claude mcp add --transport http`; the rest of the MCP work proceeds only after the transport handshake is confirmed.</strong><span class="tier-reason">— The primary delivery channel; locked decision. No MCP SDK exists in the repo today and mounting an HTTP-transport MCP server inside Hono is unproven — the spike de-risks the single highest-uncertainty item before the tools are built.</span></li>
-              <li><strong>Compose UI for agent comments + inline agent replies/status, reusing CommentThread/Comment. Requires an ADDITIVE `source`/`status` field on PRComment (coexisting with — not replacing — the existing id&lt;0 draft heuristic), plus widening PRComment.id/inReplyToId and groupThreads from number to string|number (AgentComment.id is a string) with an audit of numeric-id call sites.</strong><span class="tier-reason">— Makes the loop visible — the core DX win. Reuse is real but not free: the thread renderer's numeric-id assumption and id-sign provenance are load-bearing and must be widened, not bypassed.</span></li>
-              <li><strong>Manual fallback: 'Copy for agent' button (navigator.clipboard) and `dad comments` stdout, both rendering open comments as markdown.</strong><span class="tier-reason">— Cheap, portable escape hatch for non-MCP agents; the locked secondary channel.</span></li>
-              <li><strong>Make ServerContext.github nullable and guard every GitHub-dependent path: /api/checks, /api/comments GET+POST, /api/review, and the recap path (startRecapGeneration + /api/recap), which crash the Recap tab in watch mode. The SSE poller body (server.ts:372-539, which calls ctx.github ~5x/tick) is REPLACED wholesale with a debounced working-tree watcher in watch mode, not merely flag-disabled. Keep the server alive while unresolved agent comments exist (drop the 'MCP client connected' condition — stateless HTTP tools have no liveness source of truth).</strong><span class="tier-reason">— Required plumbing — watch mode has no GitHub client, the recap/poller paths dereference it unconditionally, and the agent needs /mcp alive after the browser closes.</span></li>
-            </ul>
-          </div>
-
-
-        </div>
-      </div>
-
-      <div class="two-col scope-extras">
-        <div class="scope-panel scope-panel-out">
-          <span class="label label-danger">Out of scope — said no on purpose</span>
-          <ul class="scope-list">
-            <li><span class="scope-out-item">Auto-injecting comments into the agent via tmux send-keys.</span> — The agent pulls via MCP or the user pastes; no keystroke injection.</li>
-            <li><span class="scope-out-item">Rich thread management (assignees, labels, multiple custom states).</span> — B-lite lifecycle only — three states is deliberately the ceiling.</li>
-            <li><span class="scope-out-item">Any GitHub destination in watch mode (no GitHub-vs-Agent toggle, no Promote-to-GitHub).</span> — `dad watch` is a pre-PR tool — there is no PR to route or promote to; watch-mode comments are purely agent-directed.</li>
-          </ul>
-        </div>
-        <div class="scope-panel">
-          <span class="label">Future — someday, maybe</span>
-          <ul class="scope-list">
-            <li>PR-mode agent routing: a GitHub-vs-Agent destination toggle in the composer when reviewing an already-open PR (deferred — only useful once you want the loop on real PRs, which the pre-PR watch workflow does not need).</li>
-            <li>'Promote to GitHub' on a resolved agent thread, reusing the existing postComment path (deferred with PR-mode routing — requires an actual PR to exist).</li>
-            <li>'Code changed → likely addressed' heuristic: the watch loop flags a delivered comment whose underlying lines changed even if the agent never called resolve_comment.</li>
-            <li>Per-agent targeting when more than one agent/pane is connected to the MCP server.</li>
-            <li>Comment templates / canned review snippets for common feedback.</li>
-          </ul>
-        </div>
-      </div>
-    </section>
-
-    <section class="section">
-      <div class="section-hdr">
-        <span class="label">Execution</span>
-        <span class="section-hdr-rule"></span>
-        <span class="section-count">Sequential</span>
-      </div>
-      <div class="panel pipeline-wrap">
-        <svg class="pipeline" viewBox="0 0 212 76" role="img" aria-label="Phase pipeline: 01 Local watch loop (MVP) (wave 1) — sequential">
-          <defs>
-            <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
-              <path class="edge-head" d="M0,0 L10,5 L0,10 z" />
-            </marker>
-          </defs>
-
-      <g class="node">
-        <rect class="node-box" x="6" y="6" width="200" height="64" rx="5" />
-        <line class="node-rail" x1="7" y1="7.5" x2="205" y2="7.5" stroke="var(--caution)" />
-        <text class="node-num" x="18" y="28">01</text>
-        <text class="node-kind" x="194" y="28" text-anchor="end" fill="var(--caution)">med</text>
-        <text class="node-title" x="18" y="47">Local watch loop (MVP)</text>
-        <text class="node-kind" x="18" y="62">phase · blocking</text>
-      </g>
-        </svg>
-      </div>
-      <div class="panel">
-        <table class="phase-table">
-          <thead>
-            <tr>
-              <th scope="col">##</th>
-              <th scope="col">Phase</th>
-              <th scope="col">Kind</th>
-              <th scope="col">Risk</th>
-              <th scope="col" class="phase-notes-col">Notes</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td class="phase-num">01</td>
-              <td class="phase-title">Local watch loop (MVP)</td>
-              <td class="phase-kind">phase · blocking</td>
-              <td class="phase-risk" style="color: var(--caution)">med</td>
-              <td class="phase-notes phase-notes-col">Single phase. `dad watch` local diff source + nullable-github server refactor + agent comment store + MCP server (3 tools, gated by a transport spike) + compose/reply/resolve UI + clipboard/stdout fallback. Delivers the full visible pre-PR loop. PR-mode routing, promote, and the code-changed heuristic are deferred to Future Considerations.</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <div class="run-bar">
+      <section class="run-bar">
         <div>
-          <div class="label label-accent">Run all phases</div>
-          <div class="run-bar-headline">Autopilot.</div>
-          <div class="run-bar-desc">Reads the contract, walks the dependency graph, and dispatches phases automatically.</div>
+          <div class="label label-accent">First move</div>
+          <div class="run-bar-headline">Run this.</div>
+          <div class="run-bar-desc">Phase 01 of 01 — <strong>Local watch loop (MVP)</strong></div>
         </div>
         <div class="cmd-field">
+          <span class="cmd-field-text" id="cmd-first"
+            >/ideation:execute-spec docs/ideation/agent-comment-loop/spec.md</span
+          >
+          <button type="button" class="copy-btn" data-copy="cmd-first">copy</button>
+        </div>
+      </section>
+
+      <div class="section two-col">
+        <section>
+          <div class="section-hdr">
+            <span class="label">The problem</span>
+            <span class="section-hdr-rule"></span>
+          </div>
+          <div class="prose">
+            <p>
+              <span class="line-num">01</span>Diff Dad turns a GitHub PR into a narrated, browsable diff and syncs
+              comments bidirectionally with GitHub. But during local development — while an AI agent (typically Claude
+              Code in a sibling tmux pane) iterates on a branch — there is no way to leave a review comment that feeds
+              back to the agent. Every comment dad can post goes to GitHub.
+            </p>
+            <p>
+              <span class="line-num">02</span>The result is a broken inner loop: the developer reviews the agent's work
+              in dad, then has to manually retype or copy-paste feedback into the agent's pane, and has no visibility
+              into whether the agent saw a comment or what it did about it. Inspired by hunk.dev's watch mode, we want a
+              local review-while-the-agent-edits loop where comments are delivered to the agent over MCP and the loop
+              visibly closes (each comment shows delivered → addressed, with the agent's reply inline).
+            </p>
+          </div>
+        </section>
+        <section>
+          <div class="section-hdr">
+            <span class="label">Goals</span>
+            <span class="section-hdr-rule"></span>
+            <span class="section-count">×5</span>
+          </div>
+          <div class="goal-list">
+            <div class="goal-row">
+              <span class="goal-num">01</span>
+              <span class="goal-text"
+                >Run `dad watch [base]` inside a git repo to review the local working-tree diff (against the merge-base
+                with the default branch by default) with the existing narrative UI — no PR or GitHub token
+                required.</span
+              >
+            </div>
+            <div class="goal-row">
+              <span class="goal-num">02</span>
+              <span class="goal-text"
+                >Leave comments in watch mode that reach a connected agent via an MCP server mounted on dad's existing
+                Hono server (3 tools: list_review_comments, reply_to_comment, resolve_comment).</span
+              >
+            </div>
+            <div class="goal-row">
+              <span class="goal-num">03</span>
+              <span class="goal-text"
+                >Make the loop visible: every agent comment moves open → delivered (auto, on MCP fetch) → addressed, the
+                agent can reply inline, and replies/status update live in the UI via the existing SSE channel.</span
+              >
+            </div>
+            <div class="goal-row">
+              <span class="goal-num">04</span>
+              <span class="goal-text"
+                >Provide a manual fallback (clipboard button in the UI, `dad comments` markdown to stdout) so any agent
+                that can't speak MCP can still consume the comments.</span
+              >
+            </div>
+            <div class="goal-row">
+              <span class="goal-num">05</span>
+              <span class="goal-text"
+                >Persist agent comments to the cache dir so they survive dad restarts and agent context resets.</span
+              >
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <section class="section">
+        <div class="section-hdr">
+          <span class="label">Done when</span>
+          <span class="section-hdr-rule"></span>
+          <span class="section-count">8 signals · 7 mechanically checked</span>
+        </div>
+        <ul class="criteria-grid">
+          <li class="criteria-item">
+            <span class="line-num">01</span>
+            <div class="criteria-body">
+              <span
+                >The agent comment store enforces the open → delivered → addressed lifecycle and round-trips to disk
+                (~/.cache/diffdad/agent-comments/&lt;key&gt;.json).</span
+              >
+              <code class="criteria-check">vitest run packages/cli/src/__tests__/agent-comments.test.ts — exits 0</code>
+            </div>
+          </li>
+          <li class="criteria-item">
+            <span class="line-num">02</span>
+            <div class="criteria-body">
+              <span
+                >list_review_comments returns open comments and flips them to delivered; reply_to_comment and
+                resolve_comment mutate the store and broadcast; unknown ids return a structured MCP error.</span
+              >
+              <code class="criteria-check">vitest run packages/cli/src/__tests__/mcp-tools.test.ts — exits 0</code>
+            </div>
+          </li>
+          <li class="criteria-item">
+            <span class="line-num">03</span>
+            <div class="criteria-body">
+              <span
+                >GET /api/agent-comments and POST /api/agent-comments work end-to-end against an in-memory local-mode
+                server context.</span
+              >
+              <code class="criteria-check"
+                >vitest run packages/cli/src/__tests__/agent-comments-routes.test.ts — exits 0</code
+              >
+            </div>
+          </li>
+          <li class="criteria-item">
+            <span class="line-num">04</span>
+            <div class="criteria-body">
+              <span
+                >`git diff` output for the working tree parses into DiffFile[] identically to the GitHub path, and a
+                clean working tree produces the friendly 'nothing to review' exit.</span
+              >
+              <code class="criteria-check">vitest run packages/cli/src/__tests__/local-diff.test.ts — exits 0</code>
+            </div>
+          </li>
+          <li class="criteria-item">
+            <span class="line-num">05</span>
+            <div class="criteria-body">
+              <span
+                >The clipboard/stdout fallback renders all open agent comments as a well-formed markdown block, and `dad
+                watch` and `dad comments` resolve as recognized subcommands (not parsed as PR args).</span
+              >
+              <code class="criteria-check"
+                >vitest run packages/cli/src/__tests__/agent-comments-markdown.test.ts
+                packages/cli/src/__tests__/cli-parse.test.ts — exits 0</code
+              >
+            </div>
+          </li>
+          <li class="criteria-item">
+            <span class="line-num">06</span>
+            <div class="criteria-body">
+              <span
+                >Mutating an agent comment (via the store or an MCP tool) emits an `agent-comment` SSE event on
+                /api/events, so the UI updates live.</span
+              >
+              <code class="criteria-check"
+                >vitest run packages/cli/src/__tests__/agent-comments-sse.test.ts — exits 0</code
+              >
+            </div>
+          </li>
+          <li class="criteria-item">
+            <span class="line-num">07</span>
+            <div class="criteria-body">
+              <span>Lint, type-check (both packages), and build pass with the new code.</span>
+              <code class="criteria-check"
+                >bun run lint &amp;&amp; bun run typecheck &amp;&amp; bun run build — all exit 0</code
+              >
+            </div>
+          </li>
+          <li class="criteria-item">
+            <span class="line-num">08</span>
+            <div class="criteria-body">
+              <span
+                >Live agent round-trip: Claude Code connects via `claude mcp add --transport http diffdad
+                http://localhost:&lt;port&gt;/mcp`, reads a comment via list_review_comments, resolves it, and the
+                comment visibly closes (reply + addressed) in the dad UI.</span
+              >
+              <span class="criteria-judgment">judgment call — no mechanical check</span>
+            </div>
+          </li>
+        </ul>
+      </section>
+
+      <section class="section">
+        <div class="section-hdr">
+          <span class="label">Scope</span>
+          <span class="section-hdr-rule"></span>
+          <span class="section-count">MVP nests inside Full nests inside Stretch</span>
+        </div>
+        <div class="scope-layout">
+          <div class="nested-tiers" aria-hidden="true">
+            <div class="tier-box tier-box-stretch"><span class="tier-box-label">Stretch ×0</span></div>
+            <div class="tier-box tier-box-full"><span class="tier-box-label">Full ×0</span></div>
+            <div class="tier-box tier-box-mvp"><span class="tier-box-label">MVP ×6</span></div>
+          </div>
+          <div class="tier-lists">
+            <div class="tier-group">
+              <div class="tier-header">
+                <span class="tier-title">MVP — must ship</span>
+                <span class="tier-rule"></span>
+                <span class="tier-count">×6</span>
+              </div>
+              <ul class="tier-items">
+                <li>
+                  <strong
+                    >`dad watch [base]` local mode: shell out to `git diff`, parse with existing diff-parser, synthesize
+                    PRMetadata, generate the narrative, serve the existing UI.</strong
+                  ><span class="tier-reason"
+                    >— The irreducible entry point — without a local diff source there is nothing to comment on.</span
+                  >
+                </li>
+                <li>
+                  <strong
+                    >Agent comment store (packages/cli/src/agent-comments/) with open→delivered→addressed lifecycle,
+                    replies, and write-through persistence to the cache dir.</strong
+                  ><span class="tier-reason"
+                    >— Single source of truth shared by the UI and MCP; the durable core of the loop.</span
+                  >
+                </li>
+                <li>
+                  <strong
+                    >MCP server at /mcp (new @modelcontextprotocol/sdk dep) exposing all 3 tools, registered before the
+                    static catch-all. GATED BY A SPIKE: first prove the SDK's Streamable-HTTP transport bridges to
+                    Hono's Request/Response (via c.req.raw) and survives `claude mcp add --transport http`; the rest of
+                    the MCP work proceeds only after the transport handshake is confirmed.</strong
+                  ><span class="tier-reason"
+                    >— The primary delivery channel; locked decision. No MCP SDK exists in the repo today and mounting
+                    an HTTP-transport MCP server inside Hono is unproven — the spike de-risks the single
+                    highest-uncertainty item before the tools are built.</span
+                  >
+                </li>
+                <li>
+                  <strong
+                    >Compose UI for agent comments + inline agent replies/status, reusing CommentThread/Comment.
+                    Requires an ADDITIVE `source`/`status` field on PRComment (coexisting with — not replacing — the
+                    existing id&lt;0 draft heuristic), plus widening PRComment.id/inReplyToId and groupThreads from
+                    number to string|number (AgentComment.id is a string) with an audit of numeric-id call
+                    sites.</strong
+                  ><span class="tier-reason"
+                    >— Makes the loop visible — the core DX win. Reuse is real but not free: the thread renderer's
+                    numeric-id assumption and id-sign provenance are load-bearing and must be widened, not
+                    bypassed.</span
+                  >
+                </li>
+                <li>
+                  <strong
+                    >Manual fallback: 'Copy for agent' button (navigator.clipboard) and `dad comments` stdout, both
+                    rendering open comments as markdown.</strong
+                  ><span class="tier-reason"
+                    >— Cheap, portable escape hatch for non-MCP agents; the locked secondary channel.</span
+                  >
+                </li>
+                <li>
+                  <strong
+                    >Make ServerContext.github nullable and guard every GitHub-dependent path: /api/checks,
+                    /api/comments GET+POST, /api/review, and the recap path (startRecapGeneration + /api/recap), which
+                    crash the Recap tab in watch mode. The SSE poller body (server.ts:372-539, which calls ctx.github
+                    ~5x/tick) is REPLACED wholesale with a debounced working-tree watcher in watch mode, not merely
+                    flag-disabled. Keep the server alive while unresolved agent comments exist (drop the 'MCP client
+                    connected' condition — stateless HTTP tools have no liveness source of truth).</strong
+                  ><span class="tier-reason"
+                    >— Required plumbing — watch mode has no GitHub client, the recap/poller paths dereference it
+                    unconditionally, and the agent needs /mcp alive after the browser closes.</span
+                  >
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <div class="two-col scope-extras">
+          <div class="scope-panel scope-panel-out">
+            <span class="label label-danger">Out of scope — said no on purpose</span>
+            <ul class="scope-list">
+              <li>
+                <span class="scope-out-item">Auto-injecting comments into the agent via tmux send-keys.</span> — The
+                agent pulls via MCP or the user pastes; no keystroke injection.
+              </li>
+              <li>
+                <span class="scope-out-item">Rich thread management (assignees, labels, multiple custom states).</span>
+                — B-lite lifecycle only — three states is deliberately the ceiling.
+              </li>
+              <li>
+                <span class="scope-out-item"
+                  >Any GitHub destination in watch mode (no GitHub-vs-Agent toggle, no Promote-to-GitHub).</span
+                >
+                — `dad watch` is a pre-PR tool — there is no PR to route or promote to; watch-mode comments are purely
+                agent-directed.
+              </li>
+            </ul>
+          </div>
+          <div class="scope-panel">
+            <span class="label">Future — someday, maybe</span>
+            <ul class="scope-list">
+              <li>
+                PR-mode agent routing: a GitHub-vs-Agent destination toggle in the composer when reviewing an
+                already-open PR (deferred — only useful once you want the loop on real PRs, which the pre-PR watch
+                workflow does not need).
+              </li>
+              <li>
+                'Promote to GitHub' on a resolved agent thread, reusing the existing postComment path (deferred with
+                PR-mode routing — requires an actual PR to exist).
+              </li>
+              <li>
+                'Code changed → likely addressed' heuristic: the watch loop flags a delivered comment whose underlying
+                lines changed even if the agent never called resolve_comment.
+              </li>
+              <li>Per-agent targeting when more than one agent/pane is connected to the MCP server.</li>
+              <li>Comment templates / canned review snippets for common feedback.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-hdr">
+          <span class="label">Execution</span>
+          <span class="section-hdr-rule"></span>
+          <span class="section-count">Sequential</span>
+        </div>
+        <div class="panel pipeline-wrap">
+          <svg
+            class="pipeline"
+            viewBox="0 0 212 76"
+            role="img"
+            aria-label="Phase pipeline: 01 Local watch loop (MVP) (wave 1) — sequential"
+          >
+            <defs>
+              <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+                <path class="edge-head" d="M0,0 L10,5 L0,10 z" />
+              </marker>
+            </defs>
+
+            <g class="node">
+              <rect class="node-box" x="6" y="6" width="200" height="64" rx="5" />
+              <line class="node-rail" x1="7" y1="7.5" x2="205" y2="7.5" stroke="var(--caution)" />
+              <text class="node-num" x="18" y="28">01</text>
+              <text class="node-kind" x="194" y="28" text-anchor="end" fill="var(--caution)">med</text>
+              <text class="node-title" x="18" y="47">Local watch loop (MVP)</text>
+              <text class="node-kind" x="18" y="62">phase · blocking</text>
+            </g>
+          </svg>
+        </div>
+        <div class="panel">
+          <table class="phase-table">
+            <thead>
+              <tr>
+                <th scope="col">##</th>
+                <th scope="col">Phase</th>
+                <th scope="col">Kind</th>
+                <th scope="col">Risk</th>
+                <th scope="col" class="phase-notes-col">Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="phase-num">01</td>
+                <td class="phase-title">Local watch loop (MVP)</td>
+                <td class="phase-kind">phase · blocking</td>
+                <td class="phase-risk" style="color: var(--caution)">med</td>
+                <td class="phase-notes phase-notes-col">
+                  Single phase. `dad watch` local diff source + nullable-github server refactor + agent comment store +
+                  MCP server (3 tools, gated by a transport spike) + compose/reply/resolve UI + clipboard/stdout
+                  fallback. Delivers the full visible pre-PR loop. PR-mode routing, promote, and the code-changed
+                  heuristic are deferred to Future Considerations.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="run-bar">
+          <div>
+            <div class="label label-accent">Run all phases</div>
+            <div class="run-bar-headline">Autopilot.</div>
+            <div class="run-bar-desc">
+              Reads the contract, walks the dependency graph, and dispatches phases automatically.
+            </div>
+          </div>
+          <div class="cmd-field">
             <span class="cmd-field-text" id="cmd-autopilot">/ideation:autopilot</span>
             <button type="button" class="copy-btn" data-copy="cmd-autopilot">copy</button>
           </div>
-      </div>
+        </div>
 
-      <details class="disclosure">
-        <summary>Run phases individually (1)</summary>
-        <div class="disclosure-body">
-          <div class="cmd-list">
-            <div class="cmd-row">
-              <span class="cmd-row-num">01</span>
-              <span class="cmd-row-title">Local watch loop (MVP)</span>
-              <div class="cmd-field">
-            <span class="cmd-field-text" id="cmd-1">/ideation:execute-spec docs/ideation/agent-comment-loop/spec.md</span>
-            <button type="button" class="copy-btn" data-copy="cmd-1">copy</button>
-          </div>
+        <details class="disclosure">
+          <summary>Run phases individually (1)</summary>
+          <div class="disclosure-body">
+            <div class="cmd-list">
+              <div class="cmd-row">
+                <span class="cmd-row-num">01</span>
+                <span class="cmd-row-title">Local watch loop (MVP)</span>
+                <div class="cmd-field">
+                  <span class="cmd-field-text" id="cmd-1"
+                    >/ideation:execute-spec docs/ideation/agent-comment-loop/spec.md</span
+                  >
+                  <button type="button" class="copy-btn" data-copy="cmd-1">copy</button>
+                </div>
+              </div>
             </div>
           </div>
+        </details>
+      </section>
+
+      <section class="contract-close">
+        <div>
+          <div class="label label-accent">Contract approved</div>
+          <div class="close-headline">This plan is the commitment.</div>
+          <div class="close-desc">
+            1 phase · Sequential. Scope changes mean a new revision that supersedes this brief — not silent drift.
+          </div>
         </div>
-      </details>
-
-    </section>
-
-    <section class="contract-close">
-      <div>
-        <div class="label label-accent">Contract approved</div>
-        <div class="close-headline">This plan is the commitment.</div>
-        <div class="close-desc">1 phase · Sequential. Scope changes mean a new revision that supersedes this brief — not silent drift.</div>
-      </div>
-      <div class="close-meta">
-        <span class="status-ind status-go"><span class="status-dot" aria-hidden="true"></span>Approved</span>
-        <span class="mono-meta">2026-06-15</span>
-      </div>
-    </section>
+        <div class="close-meta">
+          <span class="status-ind status-go"><span class="status-dot" aria-hidden="true"></span>Approved</span>
+          <span class="mono-meta">2026-06-15</span>
+        </div>
+      </section>
     </main>
 
     <script>
-      document.querySelectorAll('.copy-btn').forEach(btn => {
+      document.querySelectorAll('.copy-btn').forEach((btn) => {
         // aria-live so the copied/failed text swap is announced
         btn.setAttribute('aria-live', 'polite');
         btn.addEventListener('click', () => {
           const target = document.getElementById(btn.dataset.copy);
           if (!target) return;
-          const flash = label => {
+          const flash = (label) => {
             btn.textContent = label;
             setTimeout(() => (btn.textContent = 'copy'), 2000);
           };
@@ -1348,7 +1507,7 @@ body {
       if (themeBtn) {
         const KEY = 'ideation-contract-theme';
         const root = document.documentElement;
-        const apply = mode => {
+        const apply = (mode) => {
           if (mode === 'auto') delete root.dataset.theme;
           else root.dataset.theme = mode;
           themeBtn.textContent = 'theme · ' + mode;

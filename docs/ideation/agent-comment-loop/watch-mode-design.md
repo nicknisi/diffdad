@@ -6,23 +6,23 @@
 
 ## Why this doc exists
 
-The approved contract assumed `dad watch` is `dad review` pointed at a local diff — same narrative UI, minus the GitHub destination. Building on that produced a watch mode that is *review-mode with GitHub bits subtracted*: Story/Recap tabs, a Submit-review bar, draft batching, approve/request-changes, a slow narrative generation — each one hidden or guarded reactively as it surfaced. That is why it kept feeling bolted on. The leak was never the guards; it was reusing review's shell.
+The approved contract assumed `dad watch` is `dad review` pointed at a local diff — same narrative UI, minus the GitHub destination. Building on that produced a watch mode that is _review-mode with GitHub bits subtracted_: Story/Recap tabs, a Submit-review bar, draft batching, approve/request-changes, a slow narrative generation — each one hidden or guarded reactively as it surfaced. That is why it kept feeling bolted on. The leak was never the guards; it was reusing review's shell.
 
 This doc corrects the root assumption: **watch and review are opposite information problems and need different experiences.**
 
 ## The thesis (researched)
 
-Grounded in Addy Osmani, *"Agentic Code Review"* and hunk.dev's watch mode.
+Grounded in Addy Osmani, _"Agentic Code Review"_ and hunk.dev's watch mode.
 
-- **`dad review`** is post-hoc. A finished change arrives, the agent's reasoning was *"discarded the moment the diff is produced,"* and the reviewer becomes *"the first human to ever lay eyes on this code"* — forced to **reconstruct intent that never got written down** (median review duration up 441% in the 2026 Faros data). In that world a narrative — chapters, reading plan, risk verdict — earns its cost: you are an outsider being onboarded to a frozen artifact.
+- **`dad review`** is post-hoc. A finished change arrives, the agent's reasoning was _"discarded the moment the diff is produced,"_ and the reviewer becomes _"the first human to ever lay eyes on this code"_ — forced to **reconstruct intent that never got written down** (median review duration up 441% in the 2026 Faros data). In that world a narrative — chapters, reading plan, risk verdict — earns its cost: you are an outsider being onboarded to a frozen artifact.
 
-- **`dad watch`** is the inverse. You are *"on the loop"* while the agent writes. You still **hold the intent — you gave it.** The "first human to lay eyes" problem does not exist, so reconstructing and narrating the change is redundant. The job is **verify-and-steer**, fast. Addy's prescription for this era is exactly the watch posture: *"human in the loop becomes human on the loop: sampling, spot-checking and auditing the system rather than reading every PR."*
+- **`dad watch`** is the inverse. You are _"on the loop"_ while the agent writes. You still **hold the intent — you gave it.** The "first human to lay eyes" problem does not exist, so reconstructing and narrating the change is redundant. The job is **verify-and-steer**, fast. Addy's prescription for this era is exactly the watch posture: _"human in the loop becomes human on the loop: sampling, spot-checking and auditing the system rather than reading every PR."_
 
 **Consequence:** the watch "story" is a live readout, not a narrative. Three properties:
 
 1. **Recency, not narrative** — the artifact is moving; the question is "what changed since I last looked."
-2. **Triage, not narration** — when output outruns reading speed, the tool's job is to *point attention* at the risky parts, not retell the change.
-3. **An intent loop, not a verdict** — no approve/request-changes; the spine is *your comment → agent addresses → closes.*
+2. **Triage, not narration** — when output outruns reading speed, the tool's job is to _point attention_ at the risky parts, not retell the change.
+3. **An intent loop, not a verdict** — no approve/request-changes; the spine is _your comment → agent addresses → closes._
 
 > `dad review` = compress an unknown. `dad watch` = sample a known. Opposite problems — they cannot share a spine.
 
@@ -40,7 +40,7 @@ In the diff: click a line, or click-drag to select a **range** → an inline com
 
 - **Keep:** the live diff, inline comment threads, freshest-first file order, the loop rail (`● open  ◐ delivered  ✓ addressed`), and the header `dad watch · {repo} @{branch} · ● agent connected`.
 - **Cut, by construction:** Story tab, Recap tab, Submit-review bar + dialog, approve/request-changes, "Add to review"/draft batching, the approval celebration, **and narrative generation entirely.** Watch never calls the LLM on the hot path, so the diff shows instantly.
-- **Composer:** one action — *Send to agent.*
+- **Composer:** one action — _Send to agent._
 
 ### 3. Freshest-first recency
 
@@ -50,7 +50,7 @@ Files order by working-tree mtime so the agent's most recent edits float to the 
 
 A risk-sorted "look here first" strip, the part that makes dad smarter than a diff viewer. It flags Addy's named agent-era failure modes against the working tree:
 
-- test assertions rewritten → *read these first*
+- test assertions rewritten → _read these first_
 - a helper that already exists elsewhere (duplication)
 - untrusted/user input flowing into an LLM prompt
 - sprawling diff (size/spread)
@@ -64,19 +64,19 @@ Send → store (open) → the agent's `list_review_comments` flips it **delivere
 
 ## Architecture
 
-The fix for "bolting on" is structural: a single top-level branch where `mode === 'watch'` renders a self-contained **`WatchView`** that composes only watch chrome and reuses the *leaf* components (`Hunk`, `CommentThread`, `Comment`, diff-line rendering). It never imports `SubmitBar`, the Story tabs, or Recap, so they physically cannot leak. One component owns the experience.
+The fix for "bolting on" is structural: a single top-level branch where `mode === 'watch'` renders a self-contained **`WatchView`** that composes only watch chrome and reuses the _leaf_ components (`Hunk`, `CommentThread`, `Comment`, diff-line rendering). It never imports `SubmitBar`, the Story tabs, or Recap, so they physically cannot leak. One component owns the experience.
 
-| Concern | Status | Notes |
-| --- | --- | --- |
-| Local diff source (`git diff` → `DiffFile[]`) | built | `src/local/diff-source.ts` |
-| Agent-comment store (open→delivered→addressed, replies, persistence) | built | `src/agent-comments/` |
-| MCP tools (list/reply/resolve) | built | `src/mcp/` |
-| `GET`/`POST /api/agent-comments` | built | server.ts |
-| Inline range-anchored comments | built | needs tests |
-| SSE live updates | built | `/api/events` |
-| `WatchView` self-contained shell | **new** | replaces "review-minus-narrative" composition |
-| Freshest-first ordering + "changed since last look" | **new** | mtime sort on reload |
-| Triage pass + strip | **new** | debounced, non-blocking `callAi()` → flags |
+| Concern                                                              | Status  | Notes                                         |
+| -------------------------------------------------------------------- | ------- | --------------------------------------------- |
+| Local diff source (`git diff` → `DiffFile[]`)                        | built   | `src/local/diff-source.ts`                    |
+| Agent-comment store (open→delivered→addressed, replies, persistence) | built   | `src/agent-comments/`                         |
+| MCP tools (list/reply/resolve)                                       | built   | `src/mcp/`                                    |
+| `GET`/`POST /api/agent-comments`                                     | built   | server.ts                                     |
+| Inline range-anchored comments                                       | built   | needs tests                                   |
+| SSE live updates                                                     | built   | `/api/events`                                 |
+| `WatchView` self-contained shell                                     | **new** | replaces "review-minus-narrative" composition |
+| Freshest-first ordering + "changed since last look"                  | **new** | mtime sort on reload                          |
+| Triage pass + strip                                                  | **new** | debounced, non-blocking `callAi()` → flags    |
 
 **Triage flag shape:** `{ file, hunkIndex?, severity: 'info'|'warn'|'risk', kind, message }`. Produced off the hot path; rendered as a strip above/beside the diff; absent or stale flags never block the diff.
 

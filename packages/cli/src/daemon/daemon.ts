@@ -208,7 +208,12 @@ function makeCommentPoster(
  */
 function makeReviewSubmitter(
   client: GitHubClient,
-): (unit: ReviewUnit, event: 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES', body: string | undefined, comments: ReviewInlineComment[]) => Promise<void> {
+): (
+  unit: ReviewUnit,
+  event: 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES',
+  body: string | undefined,
+  comments: ReviewInlineComment[],
+) => Promise<void> {
   return async (unit, event, body, comments) => {
     const { owner, name } = splitRepo(unit.repo);
     if (unit.prNumber === undefined) throw new Error(`unit ${unit.unitId} has no PR number`);

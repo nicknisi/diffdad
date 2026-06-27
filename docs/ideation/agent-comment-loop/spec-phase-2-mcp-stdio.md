@@ -22,30 +22,31 @@ Each agent tool call is routed to the `dad watch` session for the repo it's invo
 Add a stdio `dad mcp` command that **proxies** to a running `dad watch`'s HTTP API, discovered per-repo via a session file. `dad watch` keeps serving `/mcp` over HTTP (unchanged) — `dad mcp` is additive. Single writer is preserved: `dad watch` still owns the store and the SSE broadcast, so the live loop is unchanged.
 
 Key decisions (for review):
+
 1. **Session key granularity: repo-level** (`<owner>-<repo>`), not repo+base. Discovery only needs repo identity from cwd; the common case is one watch per repo. Two watches on the same repo → last writer wins the session file (documented limitation).
 2. **Proxy talks to dad watch over plain REST**, not a nested MCP client→server handshake. The MCP tool logic (deliver-on-list, reply, resolve, broadcast) is extracted into shared service functions called by BOTH the in-process MCP tools and new REST endpoints. `dad mcp`'s stdio tools call those REST endpoints. Avoids a double MCP initialize per call and keeps logic DRY.
 3. **Keep the HTTP `/mcp` connect command** as a documented alternative for non-Claude/direct users.
-4. **Lazy, per-call discovery**: `dad mcp` starts its stdio server immediately and resolves+validates the session on each tool call. So starting `dad watch` *after* the agent connected still works, with no re-registration.
+4. **Lazy, per-call discovery**: `dad mcp` starts its stdio server immediately and resolves+validates the session on each tool call. So starting `dad watch` _after_ the agent connected still works, with no re-registration.
 
 ## File Changes
 
 ### New Files
 
-| File Path | Purpose |
-| --------- | ------- |
-| `packages/cli/src/local/session.ts` | Read/write/remove the per-repo session discovery file; validate liveness. |
-| `packages/cli/src/agent-comments/service.ts` | Shared service fns: `listAndDeliver`, `addAgentReply`, `resolveAgentComment` (store mutation + broadcast), used by MCP tools and REST. |
-| `packages/cli/src/mcp/stdio.ts` | The `dad mcp` stdio server: 3 tools that proxy to the discovered `dad watch` REST API. |
-| `packages/cli/src/__tests__/session.test.ts` | Session file round-trip, staleness, key derivation. |
-| `packages/cli/src/__tests__/agent-comments-service.test.ts` | Shared service fns + REST endpoints (`app.request`). |
+| File Path                                                   | Purpose                                                                                                                                |
+| ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/cli/src/local/session.ts`                         | Read/write/remove the per-repo session discovery file; validate liveness.                                                              |
+| `packages/cli/src/agent-comments/service.ts`                | Shared service fns: `listAndDeliver`, `addAgentReply`, `resolveAgentComment` (store mutation + broadcast), used by MCP tools and REST. |
+| `packages/cli/src/mcp/stdio.ts`                             | The `dad mcp` stdio server: 3 tools that proxy to the discovered `dad watch` REST API.                                                 |
+| `packages/cli/src/__tests__/session.test.ts`                | Session file round-trip, staleness, key derivation.                                                                                    |
+| `packages/cli/src/__tests__/agent-comments-service.test.ts` | Shared service fns + REST endpoints (`app.request`).                                                                                   |
 
 ### Modified Files
 
-| File Path | Changes |
-| --------- | ------- |
-| `packages/cli/src/mcp/tools.ts` | Reimplement the 3 in-process tools on top of `agent-comments/service.ts` (no behavior change). |
-| `packages/cli/src/server.ts` | Add REST endpoints `GET /api/agent-comments?deliver=true`, `POST /api/agent-comments/:id/reply`, `POST /api/agent-comments/:id/resolve` (call the shared service). |
-| `packages/cli/src/cli.ts` | `watchCommand`: write the session file on boot, remove on exit; print the `dad mcp` registration hint. Add `case 'mcp':` → `mcpCommand()`. |
+| File Path                       | Changes                                                                                                                                                            |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `packages/cli/src/mcp/tools.ts` | Reimplement the 3 in-process tools on top of `agent-comments/service.ts` (no behavior change).                                                                     |
+| `packages/cli/src/server.ts`    | Add REST endpoints `GET /api/agent-comments?deliver=true`, `POST /api/agent-comments/:id/reply`, `POST /api/agent-comments/:id/resolve` (call the shared service). |
+| `packages/cli/src/cli.ts`       | `watchCommand`: write the session file on boot, remove on exit; print the `dad mcp` registration hint. Add `case 'mcp':` → `mcpCommand()`.                         |
 
 ## Implementation Details
 
@@ -84,6 +85,7 @@ resolveAgentComment(store, broadcast, id, note?): AgentComment
 ### 4. `dad mcp` stdio server (`mcp/stdio.ts` + cli dispatch)
 
 Uses the SDK's `StdioServerTransport`. Registers `list_review_comments`, `reply_to_comment`, `resolve_comment` with the same schemas. Each handler:
+
 1. Resolve `key` from cwd (`resolveLocalIdentity`).
 2. `readSession(key)`; if missing or `!isAlive` → return a structured error: "No active `dad watch` for <owner>/<repo> — run `dad watch` in that repo."
 3. Forward to the REST endpoint on `localhost:<port>`; return the response as the tool result.
@@ -101,21 +103,21 @@ Connect your agent (one-time):  claude mcp add diffdad -- dad mcp
 
 ## Error Handling
 
-| Scenario | Handling |
-| -------- | -------- |
-| `dad mcp` outside a git repo | Tool returns structured error; stderr hint. |
-| No `dad watch` running for the repo | Structured "no active session" error (not a crash). |
-| Stale session file (watch crashed) | `isAlive` fails → treated as no session; stale file overwritten on next `dad watch`. |
-| Two watches same repo | Last writer wins the session file; documented. |
-| Session file write fails | Log non-fatal; HTTP `/mcp` still works as fallback. |
+| Scenario                            | Handling                                                                             |
+| ----------------------------------- | ------------------------------------------------------------------------------------ |
+| `dad mcp` outside a git repo        | Tool returns structured error; stderr hint.                                          |
+| No `dad watch` running for the repo | Structured "no active session" error (not a crash).                                  |
+| Stale session file (watch crashed)  | `isAlive` fails → treated as no session; stale file overwritten on next `dad watch`. |
+| Two watches same repo               | Last writer wins the session file; documented.                                       |
+| Session file write fails            | Log non-fatal; HTTP `/mcp` still works as fallback.                                  |
 
 ## Failure Modes
 
-| Component | Failure | Trigger | Impact | Mitigation |
-| --------- | ------- | ------- | ------ | ---------- |
-| Session discovery | Routes to wrong/old port | `dad watch` restarted, stale file | Tool calls fail | Per-call `isAlive` check; re-read each call. |
-| stdio proxy | Hang | dad watch unresponsive | Agent waits | Short fetch timeout on proxy calls. |
-| Shared service extraction | Behavior drift | Refactor changes tool semantics | Loop breaks | Existing mcp-tools tests must still pass unchanged. |
+| Component                 | Failure                  | Trigger                           | Impact          | Mitigation                                          |
+| ------------------------- | ------------------------ | --------------------------------- | --------------- | --------------------------------------------------- |
+| Session discovery         | Routes to wrong/old port | `dad watch` restarted, stale file | Tool calls fail | Per-call `isAlive` check; re-read each call.        |
+| stdio proxy               | Hang                     | dad watch unresponsive            | Agent waits     | Short fetch timeout on proxy calls.                 |
+| Shared service extraction | Behavior drift           | Refactor changes tool semantics   | Loop breaks     | Existing mcp-tools tests must still pass unchanged. |
 
 ## Validation Commands
 

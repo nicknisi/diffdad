@@ -120,7 +120,11 @@ export async function install(): Promise<{ ok: boolean; path: string; message: s
     await mkdir(join(homedir(), 'Library', 'LaunchAgents'), { recursive: true });
     await writeFile(path, xml);
   } catch (err) {
-    return { ok: false, path, message: `could not write the LaunchAgent plist: ${err instanceof Error ? err.message : String(err)}` };
+    return {
+      ok: false,
+      path,
+      message: `could not write the LaunchAgent plist: ${err instanceof Error ? err.message : String(err)}`,
+    };
   }
 
   const domain = guiDomain();
@@ -150,7 +154,11 @@ export async function uninstall(): Promise<{ ok: boolean; path: string; message:
   try {
     await rm(path, { force: true });
   } catch (err) {
-    return { ok: false, path, message: `unloaded the agent but could not remove the plist: ${err instanceof Error ? err.message : String(err)}` };
+    return {
+      ok: false,
+      path,
+      message: `unloaded the agent but could not remove the plist: ${err instanceof Error ? err.message : String(err)}`,
+    };
   }
   return { ok: true, path, message: `unloaded and removed the LaunchAgent (${LAUNCH_AGENT_LABEL}).` };
 }

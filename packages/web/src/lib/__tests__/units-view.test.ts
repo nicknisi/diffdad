@@ -190,7 +190,9 @@ describe('reviewEndpoint / aiEndpoint', () => {
 
 describe('agentCommentsEndpoint', () => {
   it('targets the unit-scoped endpoint in a command-center drill-in', () => {
-    expect(agentCommentsEndpoint('command-center', { name: 'unit', unitId: 'u_1' })).toBe('/api/units/u_1/agent-comments');
+    expect(agentCommentsEndpoint('command-center', { name: 'unit', unitId: 'u_1' })).toBe(
+      '/api/units/u_1/agent-comments',
+    );
   });
   it('falls back to the single-mailbox endpoint in watch mode and at the center root', () => {
     expect(agentCommentsEndpoint('watch', { name: 'center' })).toBe('/api/agent-comments');
@@ -233,7 +235,13 @@ function mkCheck(over: Partial<CheckRun>): CheckRun {
   };
 }
 function mkReview(over: Partial<PRReview>): PRReview {
-  return { id: over.id ?? 1, user: over.user ?? 'a', avatarUrl: '', state: over.state ?? 'COMMENTED', submittedAt: over.submittedAt ?? '1' };
+  return {
+    id: over.id ?? 1,
+    user: over.user ?? 'a',
+    avatarUrl: '',
+    state: over.state ?? 'COMMENTED',
+    submittedAt: over.submittedAt ?? '1',
+  };
 }
 
 describe('summarizeChecks', () => {

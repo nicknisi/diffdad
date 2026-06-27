@@ -41,7 +41,10 @@ export function project(c: AgentComment) {
 export const text = (value: unknown): ToolResult => ({
   content: [{ type: 'text', text: JSON.stringify(value, null, 2) }],
 });
-export const errorText = (message: string): ToolResult => ({ content: [{ type: 'text', text: message }], isError: true });
+export const errorText = (message: string): ToolResult => ({
+  content: [{ type: 'text', text: message }],
+  isError: true,
+});
 
 /**
  * Register the three agent-comment tools on an MCP server. Every mutation broadcasts

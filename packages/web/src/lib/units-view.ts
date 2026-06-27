@@ -163,7 +163,14 @@ export function commentGoesToAgent(mode: 'pr' | 'watch' | 'command-center', rout
 
 // --- CI checks + reviews rollups (the drill-in's merge-readiness strip) ------------------------
 
-const FAILED_CONCLUSIONS = new Set(['failure', 'timed_out', 'cancelled', 'action_required', 'startup_failure', 'stale']);
+const FAILED_CONCLUSIONS = new Set([
+  'failure',
+  'timed_out',
+  'cancelled',
+  'action_required',
+  'startup_failure',
+  'stale',
+]);
 
 /** Roll up CI check runs into passed / failed / running counts. Neutral & skipped count as neither. */
 export function summarizeChecks(checks: CheckRun[]): { passed: number; failed: number; running: number } {

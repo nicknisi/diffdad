@@ -69,7 +69,14 @@ afterEach(async () => {
 });
 
 function setup() {
-  const store = new UnitStore([], { dir, genId: (() => { let n = 0; return () => `unit-${++n}`; })(), now: () => '2026-06-26T00:00:00.000Z' });
+  const store = new UnitStore([], {
+    dir,
+    genId: (() => {
+      let n = 0;
+      return () => `unit-${++n}`;
+    })(),
+    now: () => '2026-06-26T00:00:00.000Z',
+  });
   const decision = new DecisionChannel();
   const hub = new SseHub();
   const messages: Array<{ event: string; data: unknown }> = [];
@@ -118,7 +125,11 @@ async function connect(app: Hono): Promise<string> {
 }
 let callId = 100;
 async function callTool(app: Hono, sid: string, name: string, args: Record<string, unknown>) {
-  const res = await rpc(app, { jsonrpc: '2.0', id: ++callId, method: 'tools/call', params: { name, arguments: args } }, sid);
+  const res = await rpc(
+    app,
+    { jsonrpc: '2.0', id: ++callId, method: 'tools/call', params: { name, arguments: args } },
+    sid,
+  );
   const json = (await res.json()) as { result?: { content?: { text?: string }[]; isError?: boolean } };
   const raw = json.result?.content?.[0]?.text ?? '';
   let parsed: unknown;
@@ -246,7 +257,7 @@ describe('per-unit agent-comment replies (threading)', () => {
 });
 
 describe('per-unit agent-comment MCP tools', () => {
-  it('list_review_comments returns a unit\'s open comments and flips them delivered', async () => {
+  it("list_review_comments returns a unit's open comments and flips them delivered", async () => {
     const { store, app, messages } = setup();
     const a = await addUnit(store, 'owner/a');
     // Seed via the HTTP route so it lands in the app's shared per-unit store.
@@ -259,9 +270,9 @@ describe('per-unit agent-comment MCP tools', () => {
     const sid = await connect(app);
     const { parsed } = await callTool(app, sid, 'list_review_comments', { unitId: a.unitId, status: 'open' });
     expect((parsed as { body: string }[]).map((x) => x.body)).toEqual(['one']);
-    expect(messages.some((m) => m.event === 'agent-comment' && (m.data as { unitId: string }).unitId === a.unitId)).toBe(
-      true,
-    );
+    expect(
+      messages.some((m) => m.event === 'agent-comment' && (m.data as { unitId: string }).unitId === a.unitId),
+    ).toBe(true);
 
     // A second open-list is now empty (the first flipped them to delivered).
     const again = await callTool(app, sid, 'list_review_comments', { unitId: a.unitId, status: 'open' });

@@ -18,9 +18,7 @@ export type ResolveItem = {
   status: 'open' | 'resolved';
 };
 
-export type BeatSection =
-  | { kind: 'prose'; text: string }
-  | { kind: 'diff'; file: string; hunkIndex: number };
+export type BeatSection = { kind: 'prose'; text: string } | { kind: 'diff'; file: string; hunkIndex: number };
 
 export type Beat = {
   id: string;

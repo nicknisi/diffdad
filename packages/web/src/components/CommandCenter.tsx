@@ -97,7 +97,9 @@ export function CommandCenter() {
     try {
       const r = await retryUnit(unit.unitId);
       if (r.ok === false) {
-        setError(r.reason === 'clean-tree' ? 'Nothing to re-review — that working tree is clean now.' : 'Could not retry.');
+        setError(
+          r.reason === 'clean-tree' ? 'Nothing to re-review — that working tree is clean now.' : 'Could not retry.',
+        );
       }
       // else: the unit flips back to reviewing via SSE and the worker picks it up again
     } catch (e) {
@@ -173,7 +175,10 @@ export function CommandCenter() {
                   <span
                     key={d}
                     className="h-1.5 w-1.5 rounded-full"
-                    style={{ background: 'var(--purple-9)', animation: `generating-dot 1.4s ease-in-out ${d}s infinite` }}
+                    style={{
+                      background: 'var(--purple-9)',
+                      animation: `generating-dot 1.4s ease-in-out ${d}s infinite`,
+                    }}
                   />
                 ))}
               </div>

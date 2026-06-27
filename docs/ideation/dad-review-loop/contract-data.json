@@ -110,13 +110,24 @@
       }
     ],
     "stretch": [
-      { "item": "Per-repo auto-merge opt-in (widen the auto-clear terminal action from open-PR to merge as trust grows)" },
+      {
+        "item": "Per-repo auto-merge opt-in (widen the auto-clear terminal action from open-PR to merge as trust grows)"
+      },
       { "item": "On-demand 'Ask dad' Q&A inside the walkthrough (interrogate the diff conversationally)" }
     ],
     "outOfScope": [
-      { "item": "Multi-machine queue sync", "reason": "Per-machine daemon only; cross-machine sync is a future sibling workflow" },
-      { "item": "Human-reviewer routing/assignment beyond opening a PR", "reason": "The brief makes the ask cheap; explicit reviewer selection is a separate workflow" },
-      { "item": "Non-Claude authors", "reason": "Author assumed = Claude; the cross-model skeptic provides the independence" }
+      {
+        "item": "Multi-machine queue sync",
+        "reason": "Per-machine daemon only; cross-machine sync is a future sibling workflow"
+      },
+      {
+        "item": "Human-reviewer routing/assignment beyond opening a PR",
+        "reason": "The brief makes the ask cheap; explicit reviewer selection is a separate workflow"
+      },
+      {
+        "item": "Non-Claude authors",
+        "reason": "Author assumed = Claude; the cross-model skeptic provides the independence"
+      }
     ],
     "future": [
       "Widen auto-merge as empirical trust in the gate grows",

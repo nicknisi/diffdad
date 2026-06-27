@@ -9,9 +9,7 @@ export type ChapterAiInput = {
   lens?: string;
 };
 
-export type ChapterAiPrompt =
-  | { ok: true; systemPrompt: string; userPrompt: string }
-  | { ok: false; error: string };
+export type ChapterAiPrompt = { ok: true; systemPrompt: string; userPrompt: string } | { ok: false; error: string };
 
 /**
  * Build the prompts for a per-chapter "ask Dad" / "re-narrate" request from a narrative + its diff.
@@ -39,9 +37,7 @@ export function buildChapterAiPrompt(
       if (!hunk) return '';
       return (
         `--- ${diffFile.file} ---\n` +
-        hunk.lines
-          .map((l) => (l.type === 'add' ? '+' : l.type === 'remove' ? '-' : ' ') + l.content)
-          .join('\n')
+        hunk.lines.map((l) => (l.type === 'add' ? '+' : l.type === 'remove' ? '-' : ' ') + l.content).join('\n')
       );
     })
     .join('\n\n');
@@ -50,8 +46,7 @@ export function buildChapterAiPrompt(
     if (!question || typeof question !== 'string') return { ok: false, error: 'missing question' };
     return {
       ok: true,
-      systemPrompt:
-        'You are a code review assistant. Answer questions about the code changes concisely. Use markdown.',
+      systemPrompt: 'You are a code review assistant. Answer questions about the code changes concisely. Use markdown.',
       userPrompt: `Chapter: ${chapter.title}\n\nNarration: ${chapter.summary}\n\nDiff:\n${chapterDiff}\n\nQuestion: ${question}`,
     };
   }
@@ -61,7 +56,11 @@ export function buildChapterAiPrompt(
     const densityLenses = ['terse', 'normal', 'verbose'];
     const systemPrompt = densityLenses.includes(lens)
       ? `You are a code review narrator. Rewrite this chapter narration in a ${lens} style. ${
-          lens === 'terse' ? 'One sentence max.' : lens === 'verbose' ? 'One detailed paragraph.' : 'Two to three sentences.'
+          lens === 'terse'
+            ? 'One sentence max.'
+            : lens === 'verbose'
+              ? 'One detailed paragraph.'
+              : 'Two to three sentences.'
         } Use markdown.`
       : `You are a code review narrator. Re-narrate through a ${lens} lens. Focus on what matters from that perspective. 2-3 sentences, markdown.`;
     return {

@@ -6,7 +6,7 @@
 ## Problem
 
 Diff Dad turns a GitHub PR into a narrated, browsable diff and syncs comments
-bidirectionally with GitHub. During *development* — while an AI agent (typically
+bidirectionally with GitHub. During _development_ — while an AI agent (typically
 Claude Code in a sibling tmux pane) iterates on a branch — there is no way to
 leave a comment that feeds back to the agent. Today every comment goes to
 GitHub. We want a local review-while-the-agent-edits loop, inspired by
@@ -21,7 +21,7 @@ visibly closes (you can see what the agent did with each comment).
 - Comments reach the agent primarily via an **MCP server**, with a **manual
   clipboard/markdown fallback** for any agent.
 - The loop is **visible**: each agent comment moves `open → delivered →
-  addressed`, the agent can reply inline, and code changes under a comment are
+addressed`, the agent can reply inline, and code changes under a comment are
   surfaced as "likely addressed".
 
 ## Non-Goals
@@ -33,7 +33,7 @@ visibly closes (you can see what the agent did with each comment).
 
 ## Design Decisions (locked)
 
-1. **Modes:** new local working-tree mode *and* existing PR mode both gain the
+1. **Modes:** new local working-tree mode _and_ existing PR mode both gain the
    send-to-agent capability.
 2. **Delivery:** MCP server (primary) + manual clipboard/markdown (fallback).
 3. **Lifecycle:** "B-lite" — three states (`open → delivered → addressed`),
@@ -84,27 +84,27 @@ code is three focused, independently testable units plus integration points.
 - **Persistence:** `~/.cache/diffdad/agent-comments/<key>.json`.
   - `key` = `${owner}-${repo}-local-${baseRef}` for local mode (stable across
     working-tree edits so a comment thread survives regeneration),
-    `${owner}-${repo}-${number}` for PR mode. (Note: the *store* key is stable
-    per base/PR; the *narrative cache* key uses the diff content hash — they are
+    `${owner}-${repo}-${number}` for PR mode. (Note: the _store_ key is stable
+    per base/PR; the _narrative cache_ key uses the diff content hash — they are
     deliberately different so comments persist while narratives refresh.)
 - **Comment shape:**
   ```ts
   type AgentComment = {
-    id: string;                 // locally generated, stable
+    id: string; // locally generated, stable
     path: string;
     line: number;
     side: 'LEFT' | 'RIGHT';
     body: string;
     status: 'open' | 'delivered' | 'addressed';
     author: 'user' | 'agent';
-    replies: AgentReply[];      // { id, author, body, createdAt }
-    hunkContext: string;        // the diff hunk text, captured at compose time
-    chapterTitle?: string;      // narrative context for the agent
+    replies: AgentReply[]; // { id, author, body, createdAt }
+    hunkContext: string; // the diff hunk text, captured at compose time
+    chapterTitle?: string; // narrative context for the agent
     createdAt: string;
     deliveredAt?: string;
     addressedAt?: string;
-    addressedNote?: string;     // the agent's "what I did" note
-    promotedTo?: number;        // GitHub comment id, if promoted
+    addressedNote?: string; // the agent's "what I did" note
+    promotedTo?: number; // GitHub comment id, if promoted
     codeChangedSinceDelivery?: boolean; // set by the watch loop
   };
   ```
@@ -165,6 +165,7 @@ code is three focused, independently testable units plus integration points.
 ## Data Flow
 
 ### Local mode
+
 1. `dad` (no PR arg) → Unit A builds `DiffFile[]` + synthetic metadata from the
    working tree.
 2. Narrative generated as today; server starts; browser opens; MCP connect
@@ -178,6 +179,7 @@ code is three focused, independently testable units plus integration points.
    UI shows reply + `addressed`.
 
 ### PR mode
+
 - As today, except the composer can target **Agent**, in which case the comment
   flows through Unit B instead of GitHub. GitHub-targeted comments are unchanged.
 - "Promote to GitHub" on an agent comment posts it via the existing path.

@@ -139,7 +139,11 @@ describe('buildWalkthrough', () => {
           mkChapter({ risk: 'low', sections: [diff('src/a.ts', 0)] }),
           mkChapter({ risk: 'low', sections: [diff('src/b.ts', 0)] }),
         ],
-        [mkConcern({ file: 'src/a.ts', line: 2 }), mkConcern({ file: 'src/b.ts', line: 4 }), mkConcern({ file: 'src/b.ts', line: 6 })],
+        [
+          mkConcern({ file: 'src/a.ts', line: 2 }),
+          mkConcern({ file: 'src/b.ts', line: 4 }),
+          mkConcern({ file: 'src/b.ts', line: 6 }),
+        ],
       );
       const model = buildWalkthrough(narrative, files);
       expect(model.toResolve).toBe(3);
