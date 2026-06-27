@@ -666,7 +666,15 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
   // the same per-unit stores the HTTP routes use). Must be registered BEFORE the static catch-all or
   // `/mcp` is swallowed by serveStatic.
   mountMcp(app, (server) => {
-    registerSubmitTools(server, { store, decision, broadcast, computeSlice, onSubmitted, awaitTimeoutMs });
+    registerSubmitTools(server, {
+      store,
+      decision,
+      broadcast,
+      computeSlice,
+      onSubmitted,
+      awaitTimeoutMs,
+      getCommentStore,
+    });
     registerUnitCommentTools(server, { getStore: getCommentStore, broadcast });
   });
 
