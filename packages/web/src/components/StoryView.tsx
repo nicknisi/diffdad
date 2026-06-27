@@ -11,7 +11,6 @@ import { Chapter } from './Chapter';
 import { Comment } from './Comment';
 import { Hunk } from './Hunk';
 import { MissingItems } from './MissingItems';
-import { ReadingPlan } from './ReadingPlan';
 import { ResolveStrip } from './ResolveStrip';
 import { VerdictBanner } from './VerdictBanner';
 import { IconChat } from './Icons';
@@ -244,6 +243,8 @@ export function StoryView() {
   const files = useReviewStore((s) => s.files);
   const layoutMode = useReviewStore((s) => s.layoutMode);
   const displayDensity = useReviewStore((s) => s.displayDensity);
+  const railCollapsed = useReviewStore((s) => s.railCollapsed);
+  const setRailCollapsed = useReviewStore((s) => s.setRailCollapsed);
 
   const walkthrough = useMemo(() => (narrative ? buildWalkthrough(narrative, files) : null), [narrative, files]);
   const resolveByChapter = useMemo(() => {
@@ -266,7 +267,6 @@ export function StoryView() {
         <main>
           <RegeneratingBanner />
           <VerdictBanner />
-          <ReadingPlan />
           {narrative.chapters.map((ch, idx) => (
             <Chapter key={`ch-${idx}`} index={idx} chapter={ch} resolve={resolveByChapter[idx]} />
           ))}
@@ -279,13 +279,28 @@ export function StoryView() {
     );
   }
 
+  const gridCols = railCollapsed ? 'grid-cols-[28px_minmax(0,1fr)]' : 'grid-cols-[220px_minmax(0,1fr)]';
   return (
-    <div className={`mx-auto grid max-w-[1100px] grid-cols-[220px_minmax(0,1fr)] gap-7 px-6 ${padY}`}>
-      <BeatRail />
+    <div className={`mx-auto grid max-w-[1100px] ${gridCols} gap-7 px-6 ${padY}`}>
+      {railCollapsed ? (
+        <div className="sticky top-[160px] self-start">
+          <button
+            type="button"
+            onClick={() => setRailCollapsed(false)}
+            title="Show walkthrough"
+            aria-label="Show walkthrough"
+            className="flex h-7 w-7 items-center justify-center rounded-md text-[14px] leading-none text-[var(--fg-3)] transition-colors hover:bg-[var(--gray-a3)] hover:text-[var(--fg-1)]"
+            style={{ boxShadow: 'inset 0 0 0 1px var(--gray-a4)' }}
+          >
+            »
+          </button>
+        </div>
+      ) : (
+        <BeatRail />
+      )}
       <main className="min-w-0">
         <RegeneratingBanner />
         <VerdictBanner />
-        <ReadingPlan />
         {narrative.chapters.map((ch, idx) => (
           <Chapter key={`ch-${idx}`} index={idx} chapter={ch} resolve={resolveByChapter[idx]} />
         ))}

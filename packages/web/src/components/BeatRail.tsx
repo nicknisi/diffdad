@@ -16,6 +16,7 @@ export function BeatRail() {
   const activeChapterId = useReviewStore((s) => s.activeChapterId);
   const chapterStates = useReviewStore((s) => s.chapterStates);
   const setActiveChapter = useReviewStore((s) => s.setActiveChapter);
+  const setRailCollapsed = useReviewStore((s) => s.setRailCollapsed);
 
   const walkthrough = useMemo(() => (narrative ? buildWalkthrough(narrative, files) : null), [narrative, files]);
 
@@ -39,8 +40,17 @@ export function BeatRail() {
 
   return (
     <aside className="sticky top-[160px] self-start text-[13px] text-[var(--fg-2)]">
-      <div className="px-2.5 pb-[3px] text-[11px] font-bold uppercase tracking-[0.06em] text-[var(--fg-3)]">
-        Walkthrough
+      <div className="flex items-center justify-between gap-2 px-2.5 pb-[3px]">
+        <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-[var(--fg-3)]">Walkthrough</span>
+        <button
+          type="button"
+          onClick={() => setRailCollapsed(true)}
+          title="Collapse walkthrough"
+          aria-label="Collapse walkthrough"
+          className="-mr-1 flex h-6 w-6 items-center justify-center rounded-md text-[13px] leading-none text-[var(--fg-3)] transition-colors hover:bg-[var(--gray-a3)] hover:text-[var(--fg-1)]"
+        >
+          «
+        </button>
       </div>
       <div className="px-2.5 pb-2 text-[11.5px] text-[var(--fg-3)]">
         {beats.length} {beats.length === 1 ? 'beat' : 'beats'}

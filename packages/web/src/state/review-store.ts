@@ -89,6 +89,8 @@ type ReviewState = {
   visualStyle: VisualStyle;
   layoutMode: LayoutMode;
   displayDensity: DisplayDensity;
+  /** Walkthrough rail (BeatRail) collapsed to a thin strip. Per-browser UI pref, persisted. */
+  railCollapsed: boolean;
   collapseNarration: boolean;
   clusterBots: boolean;
   regenerating: boolean;
@@ -165,6 +167,7 @@ type ReviewState = {
   setVisualStyle: (s: VisualStyle) => void;
   setLayoutMode: (m: LayoutMode) => void;
   setDisplayDensity: (d: DisplayDensity) => void;
+  setRailCollapsed: (v: boolean) => void;
   setCollapseNarration: (v: boolean) => void;
   setClusterBots: (v: boolean) => void;
   setRegenerating: (v: boolean) => void;
@@ -323,6 +326,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
   visualStyle: 'stripe',
   layoutMode: 'toc',
   displayDensity: 'comfortable',
+  railCollapsed: safeStorage.getItem('diffdad.railCollapsed') === '1',
   collapseNarration: false,
   clusterBots: true,
   regenerating: false,
@@ -512,6 +516,10 @@ export const useReviewStore = create<ReviewState>((set) => ({
   setVisualStyle: (visualStyle) => set({ visualStyle }),
   setLayoutMode: (layoutMode) => set({ layoutMode }),
   setDisplayDensity: (displayDensity) => set({ displayDensity }),
+  setRailCollapsed: (railCollapsed) => {
+    safeStorage.setItem('diffdad.railCollapsed', railCollapsed ? '1' : '0');
+    set({ railCollapsed });
+  },
   setCollapseNarration: (collapseNarration) => set({ collapseNarration }),
   setClusterBots: (clusterBots) => set({ clusterBots }),
   setRegenerating: (regenerating) => set({ regenerating }),

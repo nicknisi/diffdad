@@ -21,25 +21,33 @@ export function ReviewProgress({ label }: { label?: string }) {
   }, [label]);
 
   return (
-    <div className="mx-auto flex max-w-[1100px] items-center gap-3 px-6 pt-6">
-      <div style={{ animation: 'generating-bob 2s ease-in-out infinite' }}>
-        <DadMark size={30} bg={markBg} shape="circle" showBadge={false} showWink />
-      </div>
-      <div className="flex gap-1">
-        {[0, 0.2, 0.4].map((d) => (
-          <span
-            key={d}
-            className="h-1.5 w-1.5 rounded-full"
-            style={{ background: 'var(--purple-9)', animation: `generating-dot 1.4s ease-in-out ${d}s infinite` }}
-          />
-        ))}
-      </div>
-      <p
-        className="text-[13.5px] italic text-[var(--fg-2)]"
-        style={{ animation: 'generating-fade 2.5s ease-in-out infinite' }}
+    <div className="mx-auto max-w-[1100px] px-6 pt-4">
+      <div
+        className="flex items-center gap-3 rounded-[10px] px-4 py-3"
+        style={{
+          background: 'linear-gradient(180deg, var(--purple-2), var(--purple-3))',
+          boxShadow: 'inset 0 0 0 1px var(--purple-a5)',
+        }}
       >
-        {label ?? copy.loadingMessages[i]}
-      </p>
+        <div style={{ animation: 'generating-bob 2s ease-in-out infinite' }}>
+          <DadMark size={30} bg={markBg} shape="circle" showBadge={false} showWink />
+        </div>
+        <div className="flex gap-1">
+          {[0, 0.2, 0.4].map((d) => (
+            <span
+              key={d}
+              className="h-1.5 w-1.5 rounded-full"
+              style={{ background: 'var(--purple-9)', animation: `generating-dot 1.4s ease-in-out ${d}s infinite` }}
+            />
+          ))}
+        </div>
+        <p
+          className="text-[13.5px] font-medium"
+          style={{ color: 'var(--purple-12)', animation: 'generating-fade 2.5s ease-in-out infinite' }}
+        >
+          {label ?? copy.loadingMessages[i]}
+        </p>
+      </div>
     </div>
   );
 }

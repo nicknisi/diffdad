@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getAccentMeta } from '../lib/accents';
+import { copy } from '../lib/microcopy';
 import { useReviewStore } from '../state/review-store';
 import { postDecision, removeUnit, retryUnit, useUnits } from '../hooks/useUnits';
 import { AccentPicker } from './AccentPicker';
@@ -45,7 +46,7 @@ function Panel({ children }: { children: React.ReactNode[] }) {
  * Live via the shared SSE stream; a row click drills into that unit's review.
  */
 export function CommandCenter() {
-  const { groups, repos, repoFilter, setRepoFilter, total } = useUnits();
+  const { groups, repos, repoFilter, setRepoFilter, total, loaded } = useUnits();
   const navigate = useReviewStore((s) => s.navigate);
   const liveStatus = useReviewStore((s) => s.liveStatus);
   const accent = useReviewStore((s) => s.accent);
@@ -161,7 +162,30 @@ export function CommandCenter() {
           </div>
         )}
 
-        {total === 0 ? (
+        {!loaded && total === 0 ? (
+          <div className="pt-24 text-center">
+            <div className="mx-auto mb-4 w-fit" style={{ animation: 'generating-bob 2s ease-in-out infinite' }}>
+              <DadMark size={64} bg={markBg} shape="circle" showBadge={false} showWink />
+            </div>
+            <div className="flex items-center justify-center gap-3">
+              <div className="flex gap-1">
+                {[0, 0.2, 0.4].map((d) => (
+                  <span
+                    key={d}
+                    className="h-1.5 w-1.5 rounded-full"
+                    style={{ background: 'var(--purple-9)', animation: `generating-dot 1.4s ease-in-out ${d}s infinite` }}
+                  />
+                ))}
+              </div>
+              <p
+                className="text-[14px] italic text-[var(--fg-2)]"
+                style={{ animation: 'generating-fade 2.5s ease-in-out infinite' }}
+              >
+                {copy.queueLoading}
+              </p>
+            </div>
+          </div>
+        ) : total === 0 ? (
           <div className="pt-24 text-center">
             <DadMark size={64} bg={markBg} shape="circle" showBadge className="mx-auto mb-4 opacity-90" />
             <p className="text-[15px] font-medium text-[var(--fg-2)]">All clear, champ. Nothing in the queue.</p>

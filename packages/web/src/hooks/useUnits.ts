@@ -20,17 +20,24 @@ export function useUnits() {
   const units = useReviewStore((s) => s.units);
   const setUnits = useReviewStore((s) => s.setUnits);
   const [repoFilter, setRepoFilter] = useState<string | null>(null);
+  // Distinguish "still fetching the first snapshot" from "fetched, genuinely empty" so the command
+  // center can show a loader instead of flashing the all-clear empty state on every cold load.
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       try {
         const res = await fetch('/api/units');
-        if (!res.ok || cancelled) return;
-        const data = (await res.json()) as { units: Unit[] };
-        if (!cancelled) setUnits(data.units ?? []);
+        if (cancelled) return;
+        if (res.ok) {
+          const data = (await res.json()) as { units: Unit[] };
+          if (!cancelled) setUnits(data.units ?? []);
+        }
       } catch {
         // ignore — the SSE stream backfills the queue
+      } finally {
+        if (!cancelled) setLoaded(true);
       }
     })();
     return () => {
@@ -48,7 +55,7 @@ export function useUnits() {
   const visible = useMemo(() => (repoFilter ? units.filter((u) => u.repo === repoFilter) : units), [units, repoFilter]);
   const groups: GroupedUnits = useMemo(() => groupUnits(visible), [visible]);
 
-  return { groups, repos, repoFilter, setRepoFilter, total: units.length };
+  return { groups, repos, repoFilter, setRepoFilter, total: units.length, loaded };
 }
 
 /** POST a verdict to the daemon → persisted on the unit + delivered to the parked agent. */
