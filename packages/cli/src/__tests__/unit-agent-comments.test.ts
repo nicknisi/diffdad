@@ -1,10 +1,11 @@
 import { readdir, rm } from 'fs/promises';
 import { Hono } from 'hono';
 import { mkdtemp } from 'fs/promises';
-import { homedir, tmpdir } from 'os';
+import { tmpdir } from 'os';
 import { join } from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AgentCommentStore } from '../agent-comments/store';
+import { dataDir } from '../paths';
 import { createDaemonApp, SseHub } from '../daemon/app';
 import type { ComputeSlice } from '../mcp/submit';
 import type { LocalReview } from '../local/diff-source';
@@ -12,7 +13,7 @@ import type { PRMetadata } from '../github/types';
 import { UnitStore } from '../units/store';
 import { DecisionChannel } from '../units/decision-channel';
 
-const STORE_DIR = join(homedir(), '.cache', 'diffdad', 'agent-comments');
+const STORE_DIR = join(dataDir(), 'agent-comments');
 const HEADERS = { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' };
 
 function mkMetadata(): PRMetadata {

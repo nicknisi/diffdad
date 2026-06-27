@@ -1,11 +1,11 @@
 import { readdir, rm } from 'fs/promises';
-import { homedir } from 'os';
 import { join } from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { AgentCommentStore } from '../agent-comments/store';
 import { UnknownCommentError } from '../agent-comments/types';
+import { dataDir } from '../paths';
 
-const STORE_DIR = join(homedir(), '.cache', 'diffdad', 'agent-comments');
+const STORE_DIR = join(dataDir(), 'agent-comments');
 const FIXTURE_KEY = '__diffdad_test__store';
 
 function deterministic() {

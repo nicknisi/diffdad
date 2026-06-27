@@ -1,6 +1,6 @@
 import { mkdir, readdir, readFile, unlink, writeFile } from 'fs/promises';
-import { homedir } from 'os';
 import { join } from 'path';
+import { dataDir } from '../paths';
 import type { DiffFile, PRMetadata } from '../github/types';
 import type { NarrativeResponse } from '../narrative/types';
 import {
@@ -12,7 +12,7 @@ import {
   UnknownUnitError,
 } from './types';
 
-const DEFAULT_DIR = join(homedir(), '.cache', 'diffdad', 'units');
+const DEFAULT_DIR = join(dataDir(), 'units');
 
 /** Permitted state-machine edges (spec-phase-2 Data Model). An unlisted edge throws. */
 const TRANSITIONS: Record<UnitStatus, UnitStatus[]> = {
@@ -53,7 +53,7 @@ export type ResubmitInput = {
 /**
  * The cross-repo review-unit store — the spine of the daemon, shared by the MCP tools and the
  * HTTP routes. In-memory (keyed by globally-unique `unitId`) with best-effort write-through to
- * one JSON file per unit under ~/.cache/diffdad/units/. Single-process synchronous mutations +
+ * one JSON file per unit under <dataDir>/units/ (see paths.ts). Single-process synchronous mutations +
  * `save()` after each — no real concurrency in Bun's loop (same reasoning as agent-comments).
  * Mutations validate against the state machine; an illegal jump throws a typed error the MCP
  * layer maps to a tool error.

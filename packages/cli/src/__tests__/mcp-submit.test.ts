@@ -1,9 +1,10 @@
 import { mkdtemp, readdir, rm } from 'fs/promises';
-import { homedir, tmpdir } from 'os';
+import { tmpdir } from 'os';
 import { join } from 'path';
 import { Hono } from 'hono';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AgentCommentStore } from '../agent-comments/store';
+import { dataDir } from '../paths';
 import { UnitStore } from '../units/store';
 import { DecisionChannel } from '../units/decision-channel';
 import { type ComputeSlice, registerSubmitTools } from '../mcp/submit';
@@ -90,7 +91,7 @@ async function callTool(app: Hono, sessionId: string, name: string, args: Record
   return { parsed, isError: json.result?.isError ?? false };
 }
 
-const COMMENT_DIR = join(homedir(), '.cache', 'diffdad', 'agent-comments');
+const COMMENT_DIR = join(dataDir(), 'agent-comments');
 async function cleanCommentFixture() {
   try {
     for (const e of await readdir(COMMENT_DIR)) {
