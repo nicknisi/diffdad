@@ -121,7 +121,8 @@ export function PRHeader() {
 
   if (!pr) return null;
 
-  const prUrl = repoUrl ? `${repoUrl}/pull/${pr.number}` : null;
+  // pr.number is 0 in watch mode (local working tree) — no GitHub PR to link to.
+  const prUrl = repoUrl && pr.number > 0 ? `${repoUrl}/pull/${pr.number}` : null;
 
   const baseBtn =
     'h-[26px] inline-flex items-center gap-1 px-2.5 text-[12.5px] font-medium rounded-[5px] transition-colors';
@@ -200,9 +201,9 @@ export function PRHeader() {
             >
               #{pr.number}
             </a>
-          ) : (
+          ) : pr.number > 0 ? (
             <span className="mr-2 font-normal text-[var(--fg-3)]">#{pr.number}</span>
-          )}
+          ) : null}
           {pr.title}
         </h1>
         <div className="flex shrink-0 items-center gap-2">

@@ -8,11 +8,19 @@ import { mapCommentsToChapters } from './github/comments';
 import type { CheckRun, DiffFile, PRComment, PRMetadata, PRReview } from './github/types';
 import { cacheNarrative, computePromptMetaHash, getCachedNarrative } from './narrative/cache';
 import { callAi, generateNarrative, resolveAiPath, resolveProviderKey } from './narrative/engine';
+import { buildChapterAiPrompt } from './narrative/chapter-ai';
+import { buildReviewSummaryPrompt } from './narrative/review-summary';
 import type { NarrativeResponse } from './narrative/types';
 import { cacheRecap } from './recap/cache';
 import { generateRecap } from './recap/engine';
 import { gatherRecapSources } from './recap/sources';
 import type { RecapResponse } from './recap/types';
+import type { AgentCommentStore } from './agent-comments/store';
+import { UnknownCommentError } from './agent-comments/types';
+import { buildLocalReview } from './local/diff-source';
+import { runTriage, type TriageFlag } from './triage/triage';
+import { mountMcp } from './mcp/server';
+import { registerAgentCommentTools } from './mcp/tools';
 
 export type ServerContext = {
   narrative: NarrativeResponse | null;
@@ -21,10 +29,20 @@ export type ServerContext = {
   comments: PRComment[];
   checkRuns: CheckRun[];
   reviews: PRReview[];
-  github: GitHubClient;
+  /** Null in watch mode (local working tree — no PR, no GitHub token). */
+  github: GitHubClient | null;
   owner: string;
   repo: string;
   headSha: string;
+  /** Agent-comment store: the single source of truth shared by the HTTP routes and MCP tools. */
+  store: AgentCommentStore;
+  /** 'pr' = GitHub PR review (default); 'watch' = local `dad watch` working-tree mode. */
+  mode: 'pr' | 'watch';
+  /** Watch mode only: resolved base ref (store key) and current diff content hash (cache key). */
+  baseRef?: string;
+  contentKey?: string;
+  /** Watch mode: latest non-blocking triage flags + the contentKey they were computed for. */
+  triage?: { flags: TriageFlag[]; contentKey?: string };
   /** Populated lazily when the user opens the Recap tab (or hydrated from cache at startup). */
   recap?: RecapResponse | null;
   /** Set while a recap is being generated; cleared on success or failure. */
@@ -64,9 +82,101 @@ export function createServer(ctx: ServerContext) {
     }
   }
 
+  /** Watch mode: the agent may still be working after the browser closes — stay alive. */
+  function hasUnresolvedAgentComments(): boolean {
+    return ctx.mode === 'watch' && ctx.store.list().some((c) => c.status !== 'addressed');
+  }
+
+  // Watch mode: the diff IS the view — no narrative. When the working tree changes,
+  // rebuild DiffFile[] and push it to the browser. No LLM on this path by design:
+  // narrating a moving working tree is slow, goes stale immediately, and is redundant
+  // (you wrote the change — you don't need it reconstructed). Separate from the PR
+  // poller so it never touches ctx.github (which is null here).
+  let watchUpdating = false;
+  async function watchTick(): Promise<void> {
+    if (watchUpdating || ctx.mode !== 'watch' || !ctx.baseRef) return;
+    let review;
+    try {
+      review = await buildLocalReview(ctx.baseRef);
+    } catch {
+      // clean tree or transient git error — nothing to push this tick
+      return;
+    }
+    if (review.contentKey === ctx.contentKey) return; // no working-tree change
+
+    watchUpdating = true;
+    try {
+      ctx.files = review.files;
+      ctx.pr = review.metadata;
+      ctx.headSha = review.metadata.headSha;
+      ctx.contentKey = review.contentKey;
+      broadcast('watch-update', { pr: ctx.pr, files: ctx.files });
+      scheduleTriage();
+    } catch (err) {
+      console.error(`  watch update failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      watchUpdating = false;
+    }
+  }
+
+  // Minimal triage: a cheap, NON-blocking pass that points attention at agent-era failure modes
+  // (rewritten tests, duplication, untrusted input, weakened CI, sprawl). Debounced so rapid agent
+  // edits don't spam it; watch mode only; the diff never waits on it.
+  let triageTimer: ReturnType<typeof setTimeout> | null = null;
+  let triageRunning = false;
+  async function runTriageNow(): Promise<void> {
+    if (ctx.mode !== 'watch' || triageRunning || ctx.files.length === 0) return;
+    triageRunning = true;
+    const forKey = ctx.contentKey;
+    try {
+      const config = await readConfig();
+      const flags = await runTriage(ctx.files, config);
+      ctx.triage = { flags, contentKey: forKey };
+      broadcast('triage', { flags, status: 'ready' });
+    } catch (err) {
+      console.error(`  triage failed: ${err instanceof Error ? err.message : String(err)}`);
+      broadcast('triage', { flags: ctx.triage?.flags ?? [], status: 'error' });
+    } finally {
+      triageRunning = false;
+      if (ctx.contentKey !== forKey) scheduleTriage(); // tree moved while we ran — refresh
+    }
+  }
+  function scheduleTriage(delay = 1500): void {
+    if (ctx.mode !== 'watch') return;
+    if (triageTimer) clearTimeout(triageTimer);
+    triageTimer = setTimeout(() => {
+      triageTimer = null;
+      void runTriageNow();
+    }, delay);
+    broadcast('triage', { flags: ctx.triage?.flags ?? [], status: 'running' });
+  }
+  if (ctx.mode === 'watch') scheduleTriage(800);
+
   app.get('/api/narrative', async (c) => {
     const config = await readConfig();
     const { path: aiPath } = resolveAiPath(config);
+    if (ctx.mode === 'watch') {
+      // Watch mode is diff-first: no narrative, ever. Serve the working-tree files directly
+      // so the browser renders the diff instantly with no generating screen.
+      return c.json({
+        pr: ctx.pr,
+        files: ctx.files,
+        comments: [],
+        mode: 'watch',
+        repoUrl: `https://github.com/${ctx.owner}/${ctx.repo}`,
+        aiPath,
+        triage: ctx.triage?.flags ?? [],
+        config: {
+          theme: config.theme ?? 'auto',
+          storyStructure: config.storyStructure ?? 'chapters',
+          layoutMode: config.layoutMode ?? 'toc',
+          displayDensity: config.displayDensity ?? 'comfortable',
+          defaultNarrationDensity: config.defaultNarrationDensity ?? 'normal',
+          clusterBots: config.clusterBots ?? true,
+          accent: config.accent ?? 'classic',
+        },
+      });
+    }
     if (!ctx.narrative) {
       return c.json({
         generating: true,
@@ -76,6 +186,7 @@ export function createServer(ctx: ServerContext) {
         checkRuns: ctx.checkRuns,
         reviews: ctx.reviews,
         repoUrl: `https://github.com/${ctx.owner}/${ctx.repo}`,
+        mode: ctx.mode,
         aiPath,
         config: {
           theme: config.theme ?? 'auto',
@@ -105,6 +216,7 @@ export function createServer(ctx: ServerContext) {
       checkRuns: ctx.checkRuns,
       reviews: ctx.reviews,
       repoUrl: `https://github.com/${ctx.owner}/${ctx.repo}`,
+      mode: ctx.mode,
       aiPath,
       config: {
         theme: config.theme ?? 'auto',
@@ -148,6 +260,7 @@ export function createServer(ctx: ServerContext) {
   // Kick off a recap generation in the background. Idempotent: subsequent calls
   // while one is in flight or already completed are no-ops.
   async function startRecapGeneration() {
+    if (!ctx.github) return; // recap requires GitHub data; unavailable in watch mode
     if (ctx.recap || ctx.recapGenerating) return;
     ctx.recapGenerating = true;
     ctx.recapError = null;
@@ -205,56 +318,12 @@ export function createServer(ctx: ServerContext) {
 
     if (action === 'summarize') {
       if (!ctx.narrative) return c.json({ error: 'narrative still generating' }, 503);
-      const resolution = body.resolution ?? 'comment';
-      const reviewed = Array.isArray(body.reviewedChapters)
-        ? body.reviewedChapters.filter((i): i is number => typeof i === 'number')
-        : [];
-      const drafts = Array.isArray(body.pendingComments) ? body.pendingComments : [];
-
-      const reviewedSection =
-        reviewed.length > 0
-          ? reviewed
-              .map((idx) => {
-                const ch = ctx.narrative!.chapters[idx];
-                if (!ch) return '';
-                return `- Chapter ${idx + 1} — ${ch.title}: ${ch.summary}`;
-              })
-              .filter(Boolean)
-              .join('\n')
-          : '(no chapters explicitly marked reviewed)';
-
-      const draftSection =
-        drafts.length > 0
-          ? drafts
-              .filter((d) => d.body)
-              .map((d) => `- ${d.path ?? 'general'}${d.line ? `:L${d.line}` : ''} — ${(d.body ?? '').slice(0, 240)}`)
-              .join('\n')
-          : '(no inline comments drafted)';
-
-      const tldr = ctx.narrative.tldr ?? '';
-      const concerns = (ctx.narrative.concerns ?? [])
-        .map((cn) => `- ${cn.category}: ${cn.question} (${cn.file}:${cn.line})`)
-        .join('\n');
-
-      const stance =
-        resolution === 'approve'
-          ? 'You are approving this PR. Open with confident endorsement, then briefly highlight the strengths the reviewer noted. If there are any minor comments, frame them as nits, not blockers.'
-          : resolution === 'request_changes'
-            ? 'You are requesting changes. Lead with the specific blockers the reviewer raised (drawn from inline comments). Be direct but constructive.'
-            : 'You are leaving general feedback without a verdict. Summarize what was reviewed and the open questions the reviewer raised.';
-
-      const userDraft = typeof body.userDraft === 'string' ? body.userDraft.trim() : '';
-      const polishing = userDraft.length > 0;
-
-      // When the reviewer has already typed something, preserve their voice
-      // and points; we polish their draft. Otherwise, generate from scratch.
-      const systemPrompt = polishing
-        ? `You are polishing a reviewer's draft of a GitHub PR review summary. ${stance} Keep the reviewer's voice, structure, and any specific points they made. Tighten prose, fix grammar, and fold in 1–2 supporting details from the review context only if they directly reinforce what the reviewer wrote — do not introduce unrelated topics. Return only the polished text. 2–4 sentences. First-person ("I"). Plain markdown. No headings. No bullet lists. No greetings or sign-offs.`
-        : `You are drafting the summary comment for a GitHub PR review. ${stance} Write 2–4 sentences. First-person ("I"). Plain markdown. No headings. No bullet lists. No greetings or sign-offs.`;
-      const userPrompt = polishing
-        ? `Reviewer's draft (polish this — preserve their voice and points):\n"""\n${userDraft}\n"""\n\nReview context (use only for grammar/wording cues; do not introduce new topics):\n\nPR TLDR:\n${tldr}\n\nReviewed chapters:\n${reviewedSection}\n\nDrafted inline comments:\n${draftSection}\n\nConcerns the narrative raised:\n${concerns || '(none)'}`
-        : `PR TLDR:\n${tldr}\n\nReviewed chapters:\n${reviewedSection}\n\nDrafted inline comments:\n${draftSection}\n\nConcerns the narrative raised:\n${concerns || '(none)'}`;
-
+      const { systemPrompt, userPrompt } = buildReviewSummaryPrompt(ctx.narrative, {
+        resolution: body.resolution,
+        reviewedChapters: body.reviewedChapters,
+        pendingComments: body.pendingComments,
+        userDraft: body.userDraft,
+      });
       try {
         const result = await callAi(config, systemPrompt, userPrompt);
         return c.json({ text: result.text.trim() });
@@ -263,72 +332,17 @@ export function createServer(ctx: ServerContext) {
       }
     }
 
-    const { chapterIndex, question, lens } = body;
-
-    if (typeof chapterIndex !== 'number') {
-      return c.json({ error: 'missing chapterIndex' }, 400);
-    }
-
     if (!ctx.narrative) return c.json({ error: 'narrative still generating' }, 503);
-    const chapter = ctx.narrative.chapters[chapterIndex];
-    if (!chapter) return c.json({ error: 'invalid chapter' }, 400);
-
-    // hunkIndex is per-file (index into DiffFile.hunks), not a flat index
-    // across all files. Look up by file + index.
-    const filesByPath = new Map(ctx.files.map((f) => [f.file, f]));
-    const chapterDiff = chapter.sections
-      .filter((s): s is Extract<typeof s, { type: 'diff' }> => s.type === 'diff')
-      .map((s) => {
-        const diffFile = filesByPath.get(s.file);
-        if (!diffFile) return '';
-        const hunk = diffFile.hunks[s.hunkIndex];
-        if (!hunk) return '';
-        return (
-          `--- ${diffFile.file} ---\n` +
-          hunk.lines
-            .map((l) => {
-              const prefix = l.type === 'add' ? '+' : l.type === 'remove' ? '-' : ' ';
-              return prefix + l.content;
-            })
-            .join('\n')
-        );
-      })
-      .join('\n\n');
-
-    let systemPrompt: string;
-    let userPrompt: string;
-
-    if (action === 'ask') {
-      if (!question || typeof question !== 'string') {
-        return c.json({ error: 'missing question' }, 400);
-      }
-      systemPrompt =
-        'You are a code review assistant. Answer questions about the code changes concisely. Use markdown.';
-      userPrompt = `Chapter: ${chapter.title}\n\nNarration: ${chapter.summary}\n\nDiff:\n${chapterDiff}\n\nQuestion: ${question}`;
-    } else if (action === 'renarrate') {
-      if (!lens || typeof lens !== 'string') {
-        return c.json({ error: 'missing lens' }, 400);
-      }
-      const densityLenses = ['terse', 'normal', 'verbose'];
-      const isDensity = densityLenses.includes(lens);
-      if (isDensity) {
-        const sizing =
-          lens === 'terse'
-            ? 'One sentence max.'
-            : lens === 'verbose'
-              ? 'One detailed paragraph.'
-              : 'Two to three sentences.';
-        systemPrompt = `You are a code review narrator. Rewrite this chapter narration in a ${lens} style. ${sizing} Use markdown.`;
-      } else {
-        systemPrompt = `You are a code review narrator. Re-narrate through a ${lens} lens. Focus on what matters from that perspective. 2-3 sentences, markdown.`;
-      }
-      userPrompt = `Chapter: ${chapter.title}\n\nOriginal: ${chapter.summary}\n\nDiff:\n${chapterDiff}`;
-    } else {
-      return c.json({ error: 'unknown action' }, 400);
-    }
+    const built = buildChapterAiPrompt(ctx.narrative, ctx.files, {
+      action,
+      chapterIndex: body.chapterIndex,
+      question: body.question,
+      lens: body.lens,
+    });
+    if (!built.ok) return c.json({ error: built.error }, 400);
 
     try {
-      const result = await callAi(config, systemPrompt, userPrompt);
+      const result = await callAi(config, built.systemPrompt, built.userPrompt);
       return c.json({ text: result.text });
     } catch (err) {
       return c.json({ error: `AI request failed: ${(err as Error).message}` }, 500);
@@ -336,15 +350,69 @@ export function createServer(ctx: ServerContext) {
   });
 
   app.get('/api/checks', async (c) => {
+    if (!ctx.github) return c.json([]);
     const fresh = await ctx.github.getCheckRuns(ctx.owner, ctx.repo, ctx.headSha);
     ctx.checkRuns = fresh;
     return c.json(fresh);
   });
 
   app.get('/api/comments', async (c) => {
+    if (!ctx.github) return c.json([]);
     const fresh = await ctx.github.getComments(ctx.owner, ctx.repo, ctx.pr.number);
     ctx.comments = fresh;
     return c.json(ctx.narrative ? mapCommentsToChapters(fresh, ctx.narrative) : fresh);
+  });
+
+  // --- Agent comments (the local review loop; works in both modes) -----------
+  app.get('/api/agent-comments', (c) => c.json(ctx.store.list()));
+
+  app.post('/api/agent-comments', async (c) => {
+    let body: {
+      path?: string;
+      line?: number;
+      side?: 'LEFT' | 'RIGHT';
+      startLine?: number;
+      startSide?: 'LEFT' | 'RIGHT';
+      body?: string;
+      hunkContext?: string;
+      chapterTitle?: string;
+      inReplyToId?: string;
+    };
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: 'invalid JSON body' }, 400);
+    }
+    if (!body.body || typeof body.body !== 'string') return c.json({ error: "missing 'body'" }, 400);
+
+    // Reply: thread under an existing comment (inherits its path/line) rather than spawning a sibling.
+    if (body.inReplyToId) {
+      let updated;
+      try {
+        updated = await ctx.store.addReply(body.inReplyToId, { author: 'user', body: body.body });
+      } catch (err) {
+        if (err instanceof UnknownCommentError) return c.json({ error: err.message }, 404);
+        throw err;
+      }
+      broadcast('agent-comment', { comments: ctx.store.list() });
+      return c.json(updated, 201);
+    }
+
+    if (!body.path || typeof body.path !== 'string' || typeof body.line !== 'number') {
+      return c.json({ error: "missing 'path'/'line'" }, 400);
+    }
+    const comment = await ctx.store.add({
+      path: body.path,
+      line: body.line,
+      side: body.side,
+      startLine: body.startLine,
+      startSide: body.startSide,
+      body: body.body,
+      hunkContext: body.hunkContext,
+      chapterTitle: body.chapterTitle,
+    });
+    broadcast('agent-comment', { comments: ctx.store.list() });
+    return c.json(comment, 201);
   });
 
   app.get('/api/events', (c) => {
@@ -369,174 +437,184 @@ export function createServer(ctx: ServerContext) {
         }
 
         let regenerating = false;
-        const interval = setInterval(async () => {
-          try {
-            const freshPr = await ctx.github.getPR(ctx.owner, ctx.repo, ctx.pr.number);
-            const shaChanged = freshPr.headSha !== ctx.headSha;
-
-            // These fields feed into the narrative prompt — changes here mean
-            // the cached narrative is stale and we need to regenerate.
-            const promptMetaChanged =
-              freshPr.title !== ctx.pr.title ||
-              freshPr.body !== ctx.pr.body ||
-              freshPr.labels.join(',') !== ctx.pr.labels.join(',');
-            const otherMetaChanged = freshPr.draft !== ctx.pr.draft || freshPr.state !== ctx.pr.state;
-            // If the regen branch below will fire, it'll broadcast the fresh PR
-            // alongside the new narrative — skip the standalone 'pr' event then.
-            const willRegenerate = (shaChanged || promptMetaChanged) && !regenerating;
-            if ((promptMetaChanged || otherMetaChanged) && !shaChanged && !willRegenerate) {
-              ctx.pr = freshPr;
-              send('pr', ctx.pr);
-            }
-
-            const fresh = await ctx.github.getComments(ctx.owner, ctx.repo, ctx.pr.number);
-            const prevIds = new Set(ctx.comments.map((cm) => cm.id));
-            const freshIds = new Set(fresh.map((cm) => cm.id));
-            const hasNew = fresh.some((cm) => !prevIds.has(cm.id));
-            const hasDeleted = ctx.comments.some((cm) => !freshIds.has(cm.id));
-            if (hasNew || hasDeleted) {
-              send('comments', fresh);
-            }
-            ctx.comments = fresh;
-
-            const freshChecks = await ctx.github.getCheckRuns(ctx.owner, ctx.repo, ctx.headSha);
-            ctx.checkRuns = freshChecks;
-            send('checks', freshChecks);
-
-            const freshReviews = await ctx.github.getReviews(ctx.owner, ctx.repo, ctx.pr.number);
-            ctx.reviews = freshReviews;
-            send('reviews', freshReviews);
-
-            if ((shaChanged || promptMetaChanged) && !regenerating) {
-              regenerating = true;
-              const prevSha = ctx.headSha.slice(0, 7);
-              const newSha = freshPr.headSha.slice(0, 7);
-              if (shaChanged) {
-                console.log(`\n  \x1b[38;5;221m↻\x1b[0m New commits detected \x1b[2m(${prevSha} → ${newSha})\x1b[0m`);
-              } else {
-                console.log(`\n  \x1b[38;5;221m↻\x1b[0m PR title/description/labels changed`);
+        const interval = setInterval(
+          async () => {
+            try {
+              // Watch mode has no GitHub PR to poll — re-narrate on working-tree change instead.
+              if (ctx.mode === 'watch') {
+                await watchTick();
+                return;
               }
-              console.log(`  \x1b[2mRegenerating narrative...\x1b[0m`);
-              broadcast('regenerating', { previousSha: prevSha, newSha });
+              const gh = ctx.github;
+              if (!gh) return;
+              const freshPr = await gh.getPR(ctx.owner, ctx.repo, ctx.pr.number);
+              const shaChanged = freshPr.headSha !== ctx.headSha;
 
-              try {
-                const prevTldr = ctx.narrative?.tldr;
-                const prevChapterTitles = ctx.narrative?.chapters.map((ch) => ch.title) ?? [];
-
+              // These fields feed into the narrative prompt — changes here mean
+              // the cached narrative is stale and we need to regenerate.
+              const promptMetaChanged =
+                freshPr.title !== ctx.pr.title ||
+                freshPr.body !== ctx.pr.body ||
+                freshPr.labels.join(',') !== ctx.pr.labels.join(',');
+              const otherMetaChanged = freshPr.draft !== ctx.pr.draft || freshPr.state !== ctx.pr.state;
+              // If the regen branch below will fire, it'll broadcast the fresh PR
+              // alongside the new narrative — skip the standalone 'pr' event then.
+              const willRegenerate = (shaChanged || promptMetaChanged) && !regenerating;
+              if ((promptMetaChanged || otherMetaChanged) && !shaChanged && !willRegenerate) {
                 ctx.pr = freshPr;
-                let freshFiles = ctx.files;
-                if (shaChanged) {
-                  ctx.headSha = freshPr.headSha;
-                  freshFiles = await ctx.github.getDiff(ctx.owner, ctx.repo, ctx.pr.number);
-                  ctx.files = freshFiles;
-                }
+                send('pr', ctx.pr);
+              }
 
-                const config = await readConfig();
-                const metaHash = computePromptMetaHash(ctx.pr);
-                const providerKey = await resolveProviderKey(config);
-                const cached = await getCachedNarrative(
-                  ctx.owner,
-                  ctx.repo,
-                  ctx.pr.number,
-                  ctx.headSha,
-                  metaHash,
-                  providerKey,
-                );
-                if (cached) {
-                  ctx.narrative = cached;
-                  console.log(`  \x1b[38;5;78m✓\x1b[0m Using cached narrative \x1b[2m(${newSha})\x1b[0m`);
+              const fresh = await gh.getComments(ctx.owner, ctx.repo, ctx.pr.number);
+              const prevIds = new Set(ctx.comments.map((cm) => cm.id));
+              const freshIds = new Set(fresh.map((cm) => cm.id));
+              const hasNew = fresh.some((cm) => !prevIds.has(cm.id));
+              const hasDeleted = ctx.comments.some((cm) => !freshIds.has(cm.id));
+              if (hasNew || hasDeleted) {
+                send('comments', fresh);
+              }
+              ctx.comments = fresh;
+
+              const freshChecks = await gh.getCheckRuns(ctx.owner, ctx.repo, ctx.headSha);
+              ctx.checkRuns = freshChecks;
+              send('checks', freshChecks);
+
+              const freshReviews = await gh.getReviews(ctx.owner, ctx.repo, ctx.pr.number);
+              ctx.reviews = freshReviews;
+              send('reviews', freshReviews);
+
+              if ((shaChanged || promptMetaChanged) && !regenerating) {
+                regenerating = true;
+                const prevSha = ctx.headSha.slice(0, 7);
+                const newSha = freshPr.headSha.slice(0, 7);
+                if (shaChanged) {
+                  console.log(`\n  \x1b[38;5;221m↻\x1b[0m New commits detected \x1b[2m(${prevSha} → ${newSha})\x1b[0m`);
                 } else {
-                  const regenStartedAt = Date.now();
-                  const isTty = Boolean(process.stdout.isTTY);
-                  const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-                  let spinnerFrame = 0;
-                  let totalChars = 0;
-                  const fmtRegenElapsed = () => {
-                    const s = Math.floor((Date.now() - regenStartedAt) / 1000);
-                    const m = Math.floor(s / 60);
-                    return m > 0 ? `${m}m${String(s % 60).padStart(2, '0')}s` : `${s}s`;
-                  };
-                  const renderRegen = () => {
-                    if (!isTty) return;
-                    const frame = spinnerFrames[spinnerFrame++ % spinnerFrames.length];
-                    const chars = totalChars > 0 ? `\x1b[2m — ${totalChars.toLocaleString()} chars\x1b[0m` : '';
-                    process.stdout.write(`\r  \x1b[2m${frame} ${fmtRegenElapsed()} elapsed\x1b[0m${chars}`);
-                  };
-                  renderRegen();
-                  const heartbeat = setInterval(renderRegen, 250);
-                  let generated;
-                  let provider: string;
-                  try {
-                    const result = await generateNarrative(
-                      ctx.pr,
-                      freshFiles,
-                      [],
-                      config,
-                      {
-                        previousTldr: prevTldr,
-                        previousChapterTitles: prevChapterTitles,
-                      },
-                      {
-                        cacheKey: { owner: ctx.owner, repo: ctx.repo, number: ctx.pr.number, sha: ctx.headSha },
-                        comments: ctx.comments,
-                        onProgress: ({ chars }) => {
-                          totalChars = chars;
-                          broadcast('narrative-progress', { chars });
-                        },
-                        onPartial: (partial) => {
-                          broadcast('narrative.partial', {
-                            narrative: partial,
-                            pr: ctx.pr,
-                            files: freshFiles,
-                            comments: ctx.comments,
-                          });
-                        },
-                        onPlan: (plan) => {
-                          broadcast('plan-ready', { plan });
-                        },
-                        onChapter: ({ themeId, index, chapter }) => {
-                          broadcast('chapter-ready', { themeId, index, chapter });
-                        },
-                      },
-                    );
-                    generated = result.narrative;
-                    provider = result.provider;
-                  } finally {
-                    clearInterval(heartbeat);
-                    if (isTty) process.stdout.write('\r\x1b[2K');
+                  console.log(`\n  \x1b[38;5;221m↻\x1b[0m PR title/description/labels changed`);
+                }
+                console.log(`  \x1b[2mRegenerating narrative...\x1b[0m`);
+                broadcast('regenerating', { previousSha: prevSha, newSha });
+
+                try {
+                  const prevTldr = ctx.narrative?.tldr;
+                  const prevChapterTitles = ctx.narrative?.chapters.map((ch) => ch.title) ?? [];
+
+                  ctx.pr = freshPr;
+                  let freshFiles = ctx.files;
+                  if (shaChanged) {
+                    ctx.headSha = freshPr.headSha;
+                    freshFiles = await gh.getDiff(ctx.owner, ctx.repo, ctx.pr.number);
+                    ctx.files = freshFiles;
                   }
-                  ctx.narrative = generated;
-                  await cacheNarrative(
+
+                  const config = await readConfig();
+                  const metaHash = computePromptMetaHash(ctx.pr);
+                  const providerKey = await resolveProviderKey(config);
+                  const cached = await getCachedNarrative(
                     ctx.owner,
                     ctx.repo,
                     ctx.pr.number,
                     ctx.headSha,
                     metaHash,
                     providerKey,
-                    generated,
                   );
-                  console.log(
-                    `  \x1b[38;5;78m✓\x1b[0m ${generated.chapters.length} chapters regenerated \x1b[2mvia ${provider} in ${fmtRegenElapsed()}\x1b[0m`,
-                  );
-                }
+                  if (cached) {
+                    ctx.narrative = cached;
+                    console.log(`  \x1b[38;5;78m✓\x1b[0m Using cached narrative \x1b[2m(${newSha})\x1b[0m`);
+                  } else {
+                    const regenStartedAt = Date.now();
+                    const isTty = Boolean(process.stdout.isTTY);
+                    const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+                    let spinnerFrame = 0;
+                    let totalChars = 0;
+                    const fmtRegenElapsed = () => {
+                      const s = Math.floor((Date.now() - regenStartedAt) / 1000);
+                      const m = Math.floor(s / 60);
+                      return m > 0 ? `${m}m${String(s % 60).padStart(2, '0')}s` : `${s}s`;
+                    };
+                    const renderRegen = () => {
+                      if (!isTty) return;
+                      const frame = spinnerFrames[spinnerFrame++ % spinnerFrames.length];
+                      const chars = totalChars > 0 ? `\x1b[2m — ${totalChars.toLocaleString()} chars\x1b[0m` : '';
+                      process.stdout.write(`\r  \x1b[2m${frame} ${fmtRegenElapsed()} elapsed\x1b[0m${chars}`);
+                    };
+                    renderRegen();
+                    const heartbeat = setInterval(renderRegen, 250);
+                    let generated;
+                    let provider: string;
+                    try {
+                      const result = await generateNarrative(
+                        ctx.pr,
+                        freshFiles,
+                        [],
+                        config,
+                        {
+                          previousTldr: prevTldr,
+                          previousChapterTitles: prevChapterTitles,
+                        },
+                        {
+                          cacheKey: { owner: ctx.owner, repo: ctx.repo, number: ctx.pr.number, sha: ctx.headSha },
+                          comments: ctx.comments,
+                          onProgress: ({ chars }) => {
+                            totalChars = chars;
+                            broadcast('narrative-progress', { chars });
+                          },
+                          onPartial: (partial) => {
+                            broadcast('narrative.partial', {
+                              narrative: partial,
+                              pr: ctx.pr,
+                              files: freshFiles,
+                              comments: ctx.comments,
+                            });
+                          },
+                          onPlan: (plan) => {
+                            broadcast('plan-ready', { plan });
+                          },
+                          onChapter: ({ themeId, index, chapter }) => {
+                            broadcast('chapter-ready', { themeId, index, chapter });
+                          },
+                        },
+                      );
+                      generated = result.narrative;
+                      provider = result.provider;
+                    } finally {
+                      clearInterval(heartbeat);
+                      if (isTty) process.stdout.write('\r\x1b[2K');
+                    }
+                    ctx.narrative = generated;
+                    await cacheNarrative(
+                      ctx.owner,
+                      ctx.repo,
+                      ctx.pr.number,
+                      ctx.headSha,
+                      metaHash,
+                      providerKey,
+                      generated,
+                    );
+                    console.log(
+                      `  \x1b[38;5;78m✓\x1b[0m ${generated.chapters.length} chapters regenerated \x1b[2mvia ${provider} in ${fmtRegenElapsed()}\x1b[0m`,
+                    );
+                  }
 
-                broadcast('narrative', {
-                  narrative: ctx.narrative,
-                  pr: ctx.pr,
-                  files: ctx.files,
-                  comments: mapCommentsToChapters(ctx.comments, ctx.narrative),
-                });
-              } catch (err) {
-                const msg = err instanceof Error ? err.message : String(err);
-                console.error(`  \x1b[38;5;204m✗\x1b[0m Regeneration failed: ${msg}`);
-              } finally {
-                regenerating = false;
+                  broadcast('narrative', {
+                    narrative: ctx.narrative,
+                    pr: ctx.pr,
+                    files: ctx.files,
+                    comments: mapCommentsToChapters(ctx.comments, ctx.narrative),
+                  });
+                } catch (err) {
+                  const msg = err instanceof Error ? err.message : String(err);
+                  console.error(`  \x1b[38;5;204m✗\x1b[0m Regeneration failed: ${msg}`);
+                } finally {
+                  regenerating = false;
+                }
               }
+            } catch {
+              // swallow polling errors
             }
-          } catch {
-            // swallow polling errors
-          }
-        }, 10000);
+          },
+          ctx.mode === 'watch' ? 2000 : 10000,
+        );
 
         c.req.raw.signal.addEventListener('abort', () => {
           clearInterval(interval);
@@ -546,9 +624,9 @@ export function createServer(ctx: ServerContext) {
           } catch {
             // already closed
           }
-          if (hadClients && sseClients.size === 0 && ctx.narrative) {
+          if (hadClients && sseClients.size === 0 && ctx.narrative && !hasUnresolvedAgentComments()) {
             exitTimer = setTimeout(() => {
-              if (sseClients.size > 0 || !ctx.narrative) return;
+              if (sseClients.size > 0 || !ctx.narrative || hasUnresolvedAgentComments()) return;
               const jokes = [
                 "I'm not angry, just diff-appointed.",
                 "That's a wrap — like my git commits.",
@@ -578,6 +656,7 @@ export function createServer(ctx: ServerContext) {
   });
 
   app.post('/api/comments', async (c) => {
+    if (!ctx.github) return c.json({ error: 'GitHub is unavailable in watch mode' }, 409);
     let payload: PostCommentBody;
     try {
       payload = (await c.req.json()) as PostCommentBody;
@@ -611,6 +690,7 @@ export function createServer(ctx: ServerContext) {
   });
 
   app.post('/api/review', async (c) => {
+    if (!ctx.github) return c.json({ error: 'GitHub is unavailable in watch mode' }, 409);
     let payload: {
       event?: string;
       body?: string;
@@ -652,6 +732,10 @@ export function createServer(ctx: ServerContext) {
     broadcast('review', { event: ghEvent, body: payload.body });
     return c.json({ ok: true });
   });
+
+  // MCP server for the agent loop — MUST be registered before the static catch-all below,
+  // or `/mcp` is swallowed by serveStatic.
+  mountMcp(app, (server) => registerAgentCommentTools(server, { store: ctx.store, broadcast }));
 
   const candidates = [
     resolve(import.meta.dir, '../../web/dist'),

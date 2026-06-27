@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach } from 'vitest';
-import { handleNarrativePartialEvent } from '../useLiveStream';
+import { handleAgentCommentEvent, handleNarrativePartialEvent, handleUnitCommentEvent } from '../useLiveStream';
 import { useReviewStore } from '../../state/review-store';
-import type { NarrativeResponse, PRData } from '../../state/types';
+import type { AgentComment, NarrativeResponse, PRComment, PRData } from '../../state/types';
 
 function mkPr(): PRData {
   return {
@@ -74,5 +74,84 @@ describe('handleNarrativePartialEvent', () => {
     handleNarrativePartialEvent(mkMessageEvent({ pr: mkPr(), narrative: mkNarrative('updated') }));
     expect(useReviewStore.getState().chapterStates['ch-0']).toBe('reviewed');
     expect(useReviewStore.getState().narrative?.title).toBe('updated');
+  });
+});
+
+function mkComment(id: number): PRComment {
+  return { id, author: 'octocat', body: 'live comment', createdAt: 'now', updatedAt: 'now' };
+}
+
+describe('handleUnitCommentEvent', () => {
+  beforeEach(() => {
+    useReviewStore.setState({ mode: 'command-center', route: { name: 'unit', unitId: 'u_1' }, comments: [] });
+  });
+
+  it('appends a comment to the store when it targets the open unit', () => {
+    handleUnitCommentEvent(mkMessageEvent({ unitId: 'u_1', comment: mkComment(7) }));
+    expect(useReviewStore.getState().comments.map((c) => c.id)).toEqual([7]);
+  });
+
+  it('ignores a comment for a different unit (no cross-unit leak)', () => {
+    handleUnitCommentEvent(mkMessageEvent({ unitId: 'u_2', comment: mkComment(9) }));
+    expect(useReviewStore.getState().comments).toEqual([]);
+  });
+
+  it('ignores comments when not drilled into a unit', () => {
+    useReviewStore.setState({ route: { name: 'center' } });
+    handleUnitCommentEvent(mkMessageEvent({ unitId: 'u_1', comment: mkComment(7) }));
+    expect(useReviewStore.getState().comments).toEqual([]);
+  });
+
+  it('dedupes by id', () => {
+    useReviewStore.setState({ comments: [mkComment(7)] });
+    handleUnitCommentEvent(mkMessageEvent({ unitId: 'u_1', comment: mkComment(7) }));
+    expect(useReviewStore.getState().comments).toHaveLength(1);
+  });
+
+  it('ignores malformed JSON without throwing', () => {
+    expect(() => handleUnitCommentEvent({ data: '{ not json' } as MessageEvent)).not.toThrow();
+    expect(useReviewStore.getState().comments).toEqual([]);
+  });
+});
+
+function mkAgentComment(id: string): AgentComment {
+  return {
+    id,
+    path: 'a.ts',
+    line: 1,
+    side: 'RIGHT',
+    body: 'beat',
+    status: 'open',
+    author: 'user',
+    replies: [],
+    hunkContext: '',
+    createdAt: 'now',
+  };
+}
+
+describe('handleAgentCommentEvent', () => {
+  beforeEach(() => {
+    useReviewStore.setState({ mode: 'command-center', route: { name: 'unit', unitId: 'u_1' }, agentComments: [] });
+  });
+
+  it('applies a unit-scoped payload to the open unit', () => {
+    handleAgentCommentEvent(mkMessageEvent({ unitId: 'u_1', comments: [mkAgentComment('c1')] }));
+    expect(useReviewStore.getState().agentComments.map((c) => c.id)).toEqual(['c1']);
+  });
+
+  it('ignores a unit-scoped payload for a different unit (no cross-unit leak)', () => {
+    handleAgentCommentEvent(mkMessageEvent({ unitId: 'u_2', comments: [mkAgentComment('c2')] }));
+    expect(useReviewStore.getState().agentComments).toEqual([]);
+  });
+
+  it('applies an unscoped (watch) payload regardless of route', () => {
+    useReviewStore.setState({ mode: 'watch', route: { name: 'center' } });
+    handleAgentCommentEvent(mkMessageEvent({ comments: [mkAgentComment('c3')] }));
+    expect(useReviewStore.getState().agentComments.map((c) => c.id)).toEqual(['c3']);
+  });
+
+  it('ignores malformed JSON without throwing', () => {
+    expect(() => handleAgentCommentEvent({ data: '{ not json' } as MessageEvent)).not.toThrow();
+    expect(useReviewStore.getState().agentComments).toEqual([]);
   });
 });

@@ -7,6 +7,7 @@ import { copy } from '../lib/microcopy';
 
 export function SubmitBar() {
   const narrative = useReviewStore((s) => s.narrative);
+  const mode = useReviewStore((s) => s.mode);
   const chapterStates = useReviewStore((s) => s.chapterStates);
   const drafts = useReviewStore((s) => s.drafts);
   const clearDrafts = useReviewStore((s) => s.clearDrafts);
@@ -19,7 +20,8 @@ export function SubmitBar() {
   const open = submitOpen;
   const setOpen = setSubmitOpen;
 
-  if (!narrative) return null;
+  // No GitHub review to submit in watch mode — comments go to the agent individually.
+  if (!narrative || mode === 'watch') return null;
 
   const total = narrative.chapters.length;
   const reviewedCount = Object.values(chapterStates).filter((s) => s === 'reviewed').length;

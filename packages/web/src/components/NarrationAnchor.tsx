@@ -1,5 +1,6 @@
 import { useState, type KeyboardEvent } from 'react';
 import { useComments } from '../hooks/useComments';
+import { aiEndpoint } from '../lib/units-view';
 import { copy } from '../lib/microcopy';
 import { useReviewStore } from '../state/review-store';
 import { IconChat, IconRefresh, IconSpark, IconX } from './Icons';
@@ -21,7 +22,8 @@ async function callAi(payload: {
   question?: string;
   lens?: string;
 }): Promise<string> {
-  const res = await fetch('/api/ai', {
+  const { mode, route } = useReviewStore.getState();
+  const res = await fetch(aiEndpoint(mode, route), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),

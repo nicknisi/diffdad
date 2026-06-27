@@ -430,6 +430,13 @@ body {
   font-feature-settings: 'ss01', 'cv11';
 }
 
+/* Tailwind v4's preflight no longer sets a pointer cursor on buttons, so clickable controls
+   (command-center rows, pills, toggles) read as non-interactive. Restore it for enabled controls. */
+button:not(:disabled),
+[role='button']:not([aria-disabled='true']) {
+  cursor: pointer;
+}
+
 .font-mono,
 pre,
 code {

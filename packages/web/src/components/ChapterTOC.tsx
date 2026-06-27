@@ -1,10 +1,11 @@
 import { useMemo } from 'react';
 import { normalizePath } from '../lib/paths';
 import { useReviewStore } from '../state/review-store';
+import { useInlineComments } from '../hooks/useInlineComments';
 
 export function ChapterTOC() {
   const narrative = useReviewStore((s) => s.narrative);
-  const comments = useReviewStore((s) => s.comments);
+  const comments = useInlineComments();
   const files = useReviewStore((s) => s.files);
   const activeChapterId = useReviewStore((s) => s.activeChapterId);
   const chapterStates = useReviewStore((s) => s.chapterStates);

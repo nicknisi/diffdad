@@ -2,19 +2,21 @@ import { useEffect, useMemo, useState } from 'react';
 import { useScrollTracker } from '../hooks/useScrollTracker';
 import { normalizePath } from '../lib/paths';
 import { useReviewStore } from '../state/review-store';
-import type { DiffFile } from '../state/types';
+import { useInlineComments } from '../hooks/useInlineComments';
+import type { CommentId, DiffFile } from '../state/types';
+import { BeatRail } from './BeatRail';
+import { buildWalkthrough } from '../lib/walkthrough';
+import type { ResolveItem } from '../lib/walkthrough';
 import { Chapter } from './Chapter';
-import { ChapterTOC } from './ChapterTOC';
 import { Comment } from './Comment';
-import { ConcernsList } from './ConcernsList';
 import { Hunk } from './Hunk';
 import { MissingItems } from './MissingItems';
-import { ReadingPlan } from './ReadingPlan';
+import { ResolveStrip } from './ResolveStrip';
 import { VerdictBanner } from './VerdictBanner';
 import { IconChat } from './Icons';
 
 function OrphanedInlineComments() {
-  const comments = useReviewStore((s) => s.comments);
+  const comments = useInlineComments();
   const narrative = useReviewStore((s) => s.narrative);
   const files = useReviewStore((s) => s.files);
 
@@ -100,7 +102,7 @@ function OrphanedInlineComments() {
 }
 
 function Discussion() {
-  const comments = useReviewStore((s) => s.comments);
+  const comments = useInlineComments();
   const narrative = useReviewStore((s) => s.narrative);
 
   const unmatched = useMemo(() => {
@@ -122,7 +124,7 @@ function Discussion() {
   if (unmatched.length === 0) return null;
 
   const byId = new Map(unmatched.map((c) => [c.id, c]));
-  const repliesByParent = new Map<number, typeof unmatched>();
+  const repliesByParent = new Map<CommentId, typeof unmatched>();
   const roots: typeof unmatched = [];
   for (const c of unmatched) {
     if (c.inReplyToId !== undefined && byId.has(c.inReplyToId)) {
@@ -210,11 +212,50 @@ function RegeneratingBanner() {
   );
 }
 
+function OtherConcerns({ items }: { items: ResolveItem[] }) {
+  if (items.length === 0) return null;
+  return (
+    <section data-chid="other" className="scroll-mt-[168px] mb-[28px]">
+      <div className="mb-[14px] flex items-start gap-2.5">
+        <div
+          className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-[7px] text-[var(--fg-3)]"
+          style={{ background: 'var(--gray-3)' }}
+        >
+          <IconChat className="h-[12px] w-[12px]" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <h2 className="m-0 text-[18px] font-bold leading-6 tracking-[-0.01em] text-[var(--fg-1)]">Other</h2>
+          <p className="mt-[2px] text-[12.5px] text-[var(--fg-3)]">Concerns not tied to a chapter in the walkthrough</p>
+        </div>
+      </div>
+      <div className="space-y-2">
+        {items.map((item) => (
+          <ResolveStrip key={item.id} item={item} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export function StoryView() {
   useScrollTracker();
   const narrative = useReviewStore((s) => s.narrative);
+  const files = useReviewStore((s) => s.files);
   const layoutMode = useReviewStore((s) => s.layoutMode);
   const displayDensity = useReviewStore((s) => s.displayDensity);
+  const railCollapsed = useReviewStore((s) => s.railCollapsed);
+  const setRailCollapsed = useReviewStore((s) => s.setRailCollapsed);
+
+  const walkthrough = useMemo(() => (narrative ? buildWalkthrough(narrative, files) : null), [narrative, files]);
+  const resolveByChapter = useMemo(() => {
+    const map: Record<number, ResolveItem[]> = {};
+    walkthrough?.beats.forEach((b) => {
+      if (b.chapterIndex >= 0 && b.resolve.length > 0) map[b.chapterIndex] = b.resolve;
+    });
+    return map;
+  }, [walkthrough]);
+  const orphanItems = useMemo(() => walkthrough?.beats.find((b) => b.id === 'other')?.resolve ?? [], [walkthrough]);
+
   if (!narrative) return null;
 
   const compact = displayDensity === 'compact';
@@ -226,11 +267,10 @@ export function StoryView() {
         <main>
           <RegeneratingBanner />
           <VerdictBanner />
-          <ReadingPlan />
-          <ConcernsList />
           {narrative.chapters.map((ch, idx) => (
-            <Chapter key={`ch-${idx}`} index={idx} chapter={ch} />
+            <Chapter key={`ch-${idx}`} index={idx} chapter={ch} resolve={resolveByChapter[idx]} />
           ))}
+          <OtherConcerns items={orphanItems} />
           <MissingItems />
           <OrphanedInlineComments />
           <Discussion />
@@ -239,17 +279,32 @@ export function StoryView() {
     );
   }
 
+  const gridCols = railCollapsed ? 'grid-cols-[28px_minmax(0,1fr)]' : 'grid-cols-[220px_minmax(0,1fr)]';
   return (
-    <div className={`mx-auto grid max-w-[1100px] grid-cols-[220px_minmax(0,1fr)] gap-7 px-6 ${padY}`}>
-      <ChapterTOC />
+    <div className={`mx-auto grid max-w-[1100px] ${gridCols} gap-7 px-6 ${padY}`}>
+      {railCollapsed ? (
+        <div className="sticky top-[160px] self-start">
+          <button
+            type="button"
+            onClick={() => setRailCollapsed(false)}
+            title="Show walkthrough"
+            aria-label="Show walkthrough"
+            className="flex h-7 w-7 items-center justify-center rounded-md text-[14px] leading-none text-[var(--fg-3)] transition-colors hover:bg-[var(--gray-a3)] hover:text-[var(--fg-1)]"
+            style={{ boxShadow: 'inset 0 0 0 1px var(--gray-a4)' }}
+          >
+            »
+          </button>
+        </div>
+      ) : (
+        <BeatRail />
+      )}
       <main className="min-w-0">
         <RegeneratingBanner />
         <VerdictBanner />
-        <ReadingPlan />
-        <ConcernsList />
         {narrative.chapters.map((ch, idx) => (
-          <Chapter key={`ch-${idx}`} index={idx} chapter={ch} />
+          <Chapter key={`ch-${idx}`} index={idx} chapter={ch} resolve={resolveByChapter[idx]} />
         ))}
+        <OtherConcerns items={orphanItems} />
         <MissingItems />
         <Discussion />
       </main>

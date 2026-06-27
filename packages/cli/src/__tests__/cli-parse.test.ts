@@ -1,5 +1,25 @@
 import { describe, expect, it } from 'vitest';
-import { parsePrArg } from '../cli';
+import { classifyCommand, parsePrArg } from '../cli';
+
+describe('classifyCommand', () => {
+  it('recognizes watch and comments as subcommands (not PR args)', () => {
+    expect(classifyCommand('watch')).toBe('watch');
+    expect(classifyCommand('comments')).toBe('comments');
+  });
+
+  it('recognizes daemon as a subcommand', () => {
+    expect(classifyCommand('daemon')).toBe('daemon');
+  });
+
+  it('keeps existing subcommands and treats unknown tokens as PR shorthands', () => {
+    expect(classifyCommand('review')).toBe('review');
+    expect(classifyCommand('config')).toBe('config');
+    expect(classifyCommand('cache')).toBe('cache');
+    expect(classifyCommand('owner/repo#1')).toBe('pr-shorthand');
+    expect(classifyCommand('139')).toBe('pr-shorthand');
+    expect(classifyCommand(undefined)).toBe('pr-shorthand');
+  });
+});
 
 describe('parsePrArg', () => {
   describe('full GitHub URLs', () => {

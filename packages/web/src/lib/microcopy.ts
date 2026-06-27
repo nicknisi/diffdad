@@ -13,6 +13,7 @@ export const copy = {
     'Measure twice, merge once...',
   ],
 
+  queueLoading: 'Rounding up your reviews…',
   emptyState: 'Go make a diff-erence.',
   inlineHint: 'Use your comment sense.',
   commentPlaceholder: 'Use your comment sense... (Cmd/Ctrl+Enter to submit)',

@@ -2,7 +2,7 @@ import type { DiffDadConfig } from '../config';
 import type { DiffFile, PRMetadata } from '../github/types';
 import { callAi, type AiUsage } from './ai-runtime';
 import type { HunkHint } from './hints';
-import { extractJson } from './json-parse';
+import { parseLooseJson } from './json-parse';
 import { buildPlannerPrompt, type PreviousNarrativeContext } from './prompt';
 import type { Plan, PlanTheme } from './plan-types';
 
@@ -24,7 +24,12 @@ export type PlannerResult = {
   usage?: AiUsage;
 };
 
-const PLANNER_MAX_TOKENS = 6_000;
+// Ceiling for the plan response. Only enforced on the API path (the local-CLI path ignores it); the
+// Anthropic API requires a max_tokens, so this can't be dropped — only sized. 6k truncated real plans
+// on large PRs ("Expected ']'"), so we give generous headroom and let parsePlanResponse salvage the
+// rare overflow. A higher ceiling is free unless the model actually emits more — it's a runaway guard,
+// not a target (the prompt asks for brevity).
+const PLANNER_MAX_TOKENS = 16_000;
 
 function normalizePath(p: string): string {
   return p
@@ -50,15 +55,25 @@ export async function runPlanner(input: PlannerInput): Promise<PlannerResult> {
     : prompt.user;
 
   const result = await callAi(config, prompt.system, user, PLANNER_MAX_TOKENS);
-  const json = extractJson(result.text);
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(json);
-  } catch (err) {
-    throw new Error(`Planner returned non-JSON: ${(err as Error).message}`);
-  }
+  const parsed = parsePlanResponse(result.text);
   const plan = normalizePlan(parsed, files);
   return { plan, provider: result.provider, usage: result.usage };
+}
+
+/**
+ * Parse the planner's raw LLM response into a plan object.
+ *
+ * Large diffs routinely make the model hit `PLANNER_MAX_TOKENS` mid-`themes`, truncating the JSON —
+ * a strict `JSON.parse` then dies with "Expected ']'" and the whole review fails ("decide manually").
+ * Instead we fall back to the same partial parser streaming uses, which closes the open string/stack
+ * and recovers the themes that DID complete. `normalizePlan` backfills the missing tail, and the
+ * caller's validate-then-retry loop catches any resulting orphan hunks. We only throw when there's no
+ * recoverable object at all (e.g. the model refused and returned prose).
+ */
+export function parsePlanResponse(text: string): unknown {
+  const parsed = parseLooseJson(text);
+  if (parsed == null) throw new Error('Planner returned non-JSON (no recoverable object in response)');
+  return parsed;
 }
 
 /**

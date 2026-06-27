@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { pendingReviewComments, useReviewStore } from '../state/review-store';
+import { aiEndpoint } from '../lib/units-view';
 import { IconSpark } from './Icons';
 
 type Resolution = 'comment' | 'approve' | 'request_changes';
@@ -37,6 +38,8 @@ export function SubmitDialog({ open, onClose, onSubmit }: Props) {
   const drafts = useReviewStore((s) => s.drafts);
   const chapterStates = useReviewStore((s) => s.chapterStates);
   const narrative = useReviewStore((s) => s.narrative);
+  const mode = useReviewStore((s) => s.mode);
+  const route = useReviewStore((s) => s.route);
 
   if (!open) return null;
 
@@ -50,7 +53,7 @@ export function SubmitDialog({ open, onClose, onSubmit }: Props) {
         : [];
       const pendingComments = drafts.map((d) => ({ path: d.path, line: d.line, body: d.body }));
       const trimmedDraft = summary.trim();
-      const res = await fetch('/api/ai', {
+      const res = await fetch(aiEndpoint(mode, route), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

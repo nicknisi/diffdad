@@ -1,7 +1,9 @@
 import type { DiffFile, DiffHunk, DiffLine } from './types';
 
 const HUNK_HEADER_RE = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
-const FILE_HEADER_RE = /^diff --git a\/(.+) b\/(.+)$/;
+// Accept any git prefix, not just a/ b/ — `diff.mnemonicPrefix` emits c/ w/ i/ o/, and merge
+// diffs use 1/ 2/. GitHub diffs are always a/ b/, but local `git diff` honors user config.
+const FILE_HEADER_RE = /^diff --git [a-z12]\/(.+) [a-z12]\/(.+)$/;
 
 export function parseDiff(raw: string): DiffFile[] {
   if (!raw || raw.trim().length === 0) {
@@ -132,9 +134,11 @@ function extractFilePath(header: string): string {
   if (match) {
     return match[2]!;
   }
+  // Fallback for odd headers: the last `<x>/path` token is the new-side path.
   const parts = header.split(' ');
-  for (const part of parts) {
-    if (part.startsWith('b/')) {
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const part = parts[i]!;
+    if (/^[a-z12]\//.test(part)) {
       return part.slice(2);
     }
   }

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type {
+  AgentComment,
   Chapter,
   ChapterState,
   CheckRun,
@@ -12,11 +13,15 @@ import type {
   PRComment,
   PRData,
   PRReview,
+  TriageFlag,
+  TriageStatus,
+  Unit,
 } from './types';
 import type { RecapResponse } from './recap-types';
 import type { AccentId } from '../lib/accents';
+import { parseRoute, routePath, type Route } from '../lib/units-view';
+import type { Theme } from '../lib/theme';
 
-type Theme = 'light' | 'dark' | 'auto';
 type Density = 'terse' | 'normal' | 'verbose';
 type View = 'story' | 'files' | 'recap';
 type StoryStructure = 'chapters' | 'linear' | 'outline';
@@ -40,6 +45,19 @@ type ReviewState = {
   narrative: NarrativeResponse | null;
   files: DiffFile[];
   comments: PRComment[];
+  agentComments: AgentComment[];
+  /** Watch mode: non-blocking triage flags ("look here first") and the pass's lifecycle status. */
+  triageFlags: TriageFlag[];
+  triageStatus: TriageStatus;
+  /**
+   * 'watch' = local working-tree mode (comments go to the agent, not GitHub).
+   * 'command-center' = the daemon's cross-repo dashboard (many units behind one app).
+   */
+  mode: 'pr' | 'watch' | 'command-center';
+  /** Command-center: the daemon's review-unit queue, kept live via the `units` SSE event. */
+  units: Unit[];
+  /** Command-center client-side route (center vs. a drill-in `/units/:id`). */
+  route: Route;
   checkRuns: CheckRun[];
   reviews: PRReview[];
   repoUrl: string | null;
@@ -71,11 +89,15 @@ type ReviewState = {
   visualStyle: VisualStyle;
   layoutMode: LayoutMode;
   displayDensity: DisplayDensity;
+  /** Walkthrough rail (BeatRail) collapsed to a thin strip. Per-browser UI pref, persisted. */
+  railCollapsed: boolean;
   collapseNarration: boolean;
   clusterBots: boolean;
   regenerating: boolean;
   narrativeProgressChars: number;
   narrationOverrides: Record<string, string>;
+  /** Resolve-item ids the reviewer has marked done (walkthrough resolve strips). */
+  resolved: Record<string, boolean>;
   aiPath: 'api' | 'local-cli' | null;
 
   /** Most recent plan from the planner pass; arrives via the `plan-ready` SSE event before any chapter prose lands. */
@@ -118,6 +140,14 @@ type ReviewState = {
   cancelCommentDrag: () => void;
   addComment: (comment: PRComment) => void;
   setComments: (comments: PRComment[]) => void;
+  setAgentComments: (comments: AgentComment[]) => void;
+  setTriage: (flags: TriageFlag[], status: TriageStatus) => void;
+  setMode: (mode: 'pr' | 'watch' | 'command-center') => void;
+  setUnits: (units: Unit[]) => void;
+  /** Navigate the command center, pushing browser history (deep-linkable `/units/:id`). */
+  navigate: (route: Route) => void;
+  /** Sync the route from the address bar without pushing history (popstate / initial load). */
+  setRoute: (route: Route) => void;
   addDraft: (draft: DraftComment) => void;
   removeDraft: (id: string) => void;
   clearDrafts: () => void;
@@ -137,6 +167,7 @@ type ReviewState = {
   setVisualStyle: (s: VisualStyle) => void;
   setLayoutMode: (m: LayoutMode) => void;
   setDisplayDensity: (d: DisplayDensity) => void;
+  setRailCollapsed: (v: boolean) => void;
   setCollapseNarration: (v: boolean) => void;
   setClusterBots: (v: boolean) => void;
   setRegenerating: (v: boolean) => void;
@@ -145,6 +176,8 @@ type ReviewState = {
   setPr: (pr: PRData) => void;
   setNarrationOverride: (chapterKey: string, text: string) => void;
   clearNarrationOverride: (chapterKey: string) => void;
+  /** Mark a walkthrough resolve item done (or undone). */
+  setResolved: (id: string, value: boolean) => void;
   /** Update narrative incrementally as it streams in. Preserves chapter states and drafts. */
   applyPartialNarrative: (pr: PRData, narrative: NarrativeResponse, files?: DiffFile[], comments?: PRComment[]) => void;
   /** Apply a planner-pass result: synthesize a placeholder narrative so the outline renders before any prose lands. */
@@ -156,6 +189,31 @@ type ReviewState = {
   setRecapError: (error: string | null) => void;
 };
 
+/**
+ * `localStorage` is undefined outside a browser — Vitest's node worker, `bun test`, SSR.
+ * Referencing it at module-eval time (store init) or in an action would throw and crash the
+ * import. Guard every access so the store loads anywhere and persistence simply no-ops when
+ * there's no backing storage. Uses the bare `localStorage` identifier (never `safeStorage.`)
+ * so call sites elsewhere can be rewritten to `safeStorage.` without touching this wrapper.
+ */
+function storageBackend(): Storage | null {
+  try {
+    return typeof localStorage !== 'undefined' ? localStorage : null;
+  } catch {
+    return null;
+  }
+}
+
+const safeStorage = {
+  getItem: (key: string): string | null => storageBackend()?.getItem(key) ?? null,
+  setItem: (key: string, value: string): void => {
+    storageBackend()?.setItem(key, value);
+  },
+  removeItem: (key: string): void => {
+    storageBackend()?.removeItem(key);
+  },
+};
+
 function draftStorageKey(prNumber: number): string {
   return `diffdad.drafts.${prNumber}`;
 }
@@ -163,7 +221,7 @@ function draftStorageKey(prNumber: number): string {
 function persistDrafts(state: ReviewState) {
   if (!state.pr) return;
   try {
-    localStorage.setItem(draftStorageKey(state.pr.number), JSON.stringify(state.drafts));
+    safeStorage.setItem(draftStorageKey(state.pr.number), JSON.stringify(state.drafts));
   } catch {}
 }
 
@@ -173,9 +231,9 @@ function isValidDraft(d: unknown): d is DraftComment {
   return typeof obj.id === 'string' && typeof obj.body === 'string';
 }
 
-function loadDrafts(prNumber: number): DraftComment[] {
+export function loadDrafts(prNumber: number): DraftComment[] {
   try {
-    const raw = localStorage.getItem(draftStorageKey(prNumber));
+    const raw = safeStorage.getItem(draftStorageKey(prNumber));
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) return parsed.filter(isValidDraft);
@@ -239,6 +297,12 @@ export const useReviewStore = create<ReviewState>((set) => ({
   narrative: null,
   files: [],
   comments: [],
+  agentComments: [],
+  triageFlags: [],
+  triageStatus: 'idle',
+  mode: 'pr',
+  units: [],
+  route: typeof window !== 'undefined' ? parseRoute(window.location.pathname) : { name: 'center' },
   checkRuns: [],
   reviews: [],
   repoUrl: null,
@@ -248,8 +312,8 @@ export const useReviewStore = create<ReviewState>((set) => ({
   openLine: null,
   commentRangeStart: null,
   commentDrag: null,
-  theme: (localStorage.getItem('diffdad.theme') as Theme) || 'auto',
-  accent: (localStorage.getItem('diffdad.accent') as AccentId) || 'classic',
+  theme: (safeStorage.getItem('diffdad.theme') as Theme) || 'auto',
+  accent: (safeStorage.getItem('diffdad.accent') as AccentId) || 'classic',
   density: 'normal',
   chapterDensity: {},
   view: 'story',
@@ -262,12 +326,14 @@ export const useReviewStore = create<ReviewState>((set) => ({
   visualStyle: 'stripe',
   layoutMode: 'toc',
   displayDensity: 'comfortable',
+  railCollapsed: safeStorage.getItem('diffdad.railCollapsed') === '1',
   collapseNarration: false,
   clusterBots: true,
   regenerating: false,
   narrativeProgressChars: 0,
   aiPath: null,
   narrationOverrides: {} as Record<string, string>,
+  resolved: {},
 
   recap: null,
   recapStatus: 'idle',
@@ -281,7 +347,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
     const storageKey = `diffdad.reviewed.${pr.number}`;
     let saved: Record<string, ChapterState> = {};
     try {
-      const raw = localStorage.getItem(storageKey);
+      const raw = safeStorage.getItem(storageKey);
       if (raw) saved = JSON.parse(raw);
     } catch {}
     const chapterStates: Record<string, ChapterState> = {};
@@ -303,8 +369,8 @@ export const useReviewStore = create<ReviewState>((set) => ({
       chapterDensity: {},
     };
     if (config) {
-      if (config.theme && !localStorage.getItem('diffdad.theme')) next.theme = config.theme;
-      if (config.accent && !localStorage.getItem('diffdad.accent')) next.accent = config.accent;
+      if (config.theme && !safeStorage.getItem('diffdad.theme')) next.theme = config.theme;
+      if (config.accent && !safeStorage.getItem('diffdad.accent')) next.accent = config.accent;
       if (config.storyStructure) next.storyStructure = config.storyStructure;
       if (config.layoutMode) next.layoutMode = config.layoutMode;
       if (config.displayDensity) next.displayDensity = config.displayDensity;
@@ -324,7 +390,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
       const updated = { ...state.chapterStates, [key]: next };
       if (state.pr) {
         try {
-          localStorage.setItem(`diffdad.reviewed.${state.pr.number}`, JSON.stringify(updated));
+          safeStorage.setItem(`diffdad.reviewed.${state.pr.number}`, JSON.stringify(updated));
         } catch {}
       }
       return { chapterStates: updated };
@@ -377,6 +443,16 @@ export const useReviewStore = create<ReviewState>((set) => ({
     }),
 
   setComments: (comments) => set({ comments }),
+  setAgentComments: (agentComments) => set({ agentComments }),
+  setTriage: (triageFlags, triageStatus) => set({ triageFlags, triageStatus }),
+  setMode: (mode) => set({ mode }),
+  setUnits: (units) => set({ units }),
+
+  navigate: (route) => {
+    if (typeof window !== 'undefined') window.history.pushState(null, '', routePath(route));
+    set({ route });
+  },
+  setRoute: (route) => set({ route }),
 
   addDraft: (draft) =>
     set((state) => {
@@ -396,19 +472,19 @@ export const useReviewStore = create<ReviewState>((set) => ({
     set((state) => {
       if (state.pr) {
         try {
-          localStorage.removeItem(draftStorageKey(state.pr.number));
+          safeStorage.removeItem(draftStorageKey(state.pr.number));
         } catch {}
       }
       return { drafts: [] };
     }),
 
   setTheme: (theme) => {
-    localStorage.setItem('diffdad.theme', theme);
+    safeStorage.setItem('diffdad.theme', theme);
     set({ theme });
   },
 
   setAccent: (accent) => {
-    localStorage.setItem('diffdad.accent', accent);
+    safeStorage.setItem('diffdad.accent', accent);
     set({ accent });
   },
 
@@ -440,6 +516,10 @@ export const useReviewStore = create<ReviewState>((set) => ({
   setVisualStyle: (visualStyle) => set({ visualStyle }),
   setLayoutMode: (layoutMode) => set({ layoutMode }),
   setDisplayDensity: (displayDensity) => set({ displayDensity }),
+  setRailCollapsed: (railCollapsed) => {
+    safeStorage.setItem('diffdad.railCollapsed', railCollapsed ? '1' : '0');
+    set({ railCollapsed });
+  },
   setCollapseNarration: (collapseNarration) => set({ collapseNarration }),
   setClusterBots: (clusterBots) => set({ clusterBots }),
   setRegenerating: (regenerating) => set({ regenerating }),
@@ -527,6 +607,8 @@ export const useReviewStore = create<ReviewState>((set) => ({
       const { [chapterKey]: _, ...rest } = s.narrationOverrides;
       return { narrationOverrides: rest };
     }),
+
+  setResolved: (id, value) => set((s) => ({ resolved: { ...s.resolved, [id]: value } })),
 
   setRecap: (recap) => set({ recap, recapStatus: recap ? 'ready' : 'idle', recapError: null }),
   setRecapStatus: (recapStatus) => set({ recapStatus }),

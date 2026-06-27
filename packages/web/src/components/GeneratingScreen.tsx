@@ -38,7 +38,7 @@ export function GeneratingScreen({ message }: Props) {
         {pr && (
           <div className="space-y-1">
             <h1 className="m-0 text-[22px] font-bold tracking-tight text-[var(--fg-1)]">
-              <span className="font-normal text-[var(--fg-3)]">#{pr.number}</span> {pr.title}
+              {pr.number > 0 ? <span className="font-normal text-[var(--fg-3)]">#{pr.number}</span> : null} {pr.title}
             </h1>
             <div className="text-[13px] text-[var(--fg-3)]">
               <span style={{ color: 'var(--green-11)' }}>+{pr.additions}</span>{' '}

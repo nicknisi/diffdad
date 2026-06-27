@@ -53,6 +53,8 @@ export type DiffFile = {
   isNewFile: boolean;
   isDeleted: boolean;
   hunks: DiffHunk[];
+  /** Working-tree mtime (ms) in watch mode — drives freshest-first ordering. Absent in PR mode. */
+  mtime?: number;
 };
 
 export type PRReview = {
