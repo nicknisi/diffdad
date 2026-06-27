@@ -125,7 +125,6 @@ function buildContext(overrides: Partial<ServerContext> = {}): ServerContext {
     repo: 'test',
     headSha: 'abc123',
     store: new AgentCommentStore('__diffdad_test__server'),
-    mode: 'pr',
     ...overrides,
   };
 }

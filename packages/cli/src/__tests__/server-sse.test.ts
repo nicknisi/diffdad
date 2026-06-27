@@ -143,7 +143,6 @@ function mkContext(over: Partial<ServerContext> = {}): ServerContext {
     repo: 'r',
     headSha: 'sha-A',
     store: new AgentCommentStore('__diffdad_test__sse'),
-    mode: 'pr',
     ...over,
   };
 }

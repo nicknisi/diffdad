@@ -79,9 +79,6 @@ describe('agent-comment SSE', () => {
       repo: 'repo',
       headSha: 'x',
       store,
-      mode: 'watch',
-      baseRef: 'main',
-      contentKey: 'k',
     };
     const { app } = createServer(ctx);
 

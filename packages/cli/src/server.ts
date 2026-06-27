@@ -17,8 +17,6 @@ import { gatherRecapSources } from './recap/sources';
 import type { RecapResponse } from './recap/types';
 import type { AgentCommentStore } from './agent-comments/store';
 import { UnknownCommentError } from './agent-comments/types';
-import { buildLocalReview } from './local/diff-source';
-import { runTriage, type TriageFlag } from './triage/triage';
 import { mountMcp } from './mcp/server';
 import { registerAgentCommentTools } from './mcp/tools';
 
@@ -29,20 +27,13 @@ export type ServerContext = {
   comments: PRComment[];
   checkRuns: CheckRun[];
   reviews: PRReview[];
-  /** Null in watch mode (local working tree — no PR, no GitHub token). */
+  /** GitHub client for the PR under review; nullable only so the few routes that call it can guard defensively. */
   github: GitHubClient | null;
   owner: string;
   repo: string;
   headSha: string;
   /** Agent-comment store: the single source of truth shared by the HTTP routes and MCP tools. */
   store: AgentCommentStore;
-  /** 'pr' = GitHub PR review (default); 'watch' = local `dad watch` working-tree mode. */
-  mode: 'pr' | 'watch';
-  /** Watch mode only: resolved base ref (store key) and current diff content hash (cache key). */
-  baseRef?: string;
-  contentKey?: string;
-  /** Watch mode: latest non-blocking triage flags + the contentKey they were computed for. */
-  triage?: { flags: TriageFlag[]; contentKey?: string };
   /** Populated lazily when the user opens the Recap tab (or hydrated from cache at startup). */
   recap?: RecapResponse | null;
   /** Set while a recap is being generated; cleared on success or failure. */
@@ -82,101 +73,14 @@ export function createServer(ctx: ServerContext) {
     }
   }
 
-  /** Watch mode: the agent may still be working after the browser closes — stay alive. */
+  /** The agent may still be working after the browser closes — stay alive while comments are unresolved. */
   function hasUnresolvedAgentComments(): boolean {
-    return ctx.mode === 'watch' && ctx.store.list().some((c) => c.status !== 'addressed');
+    return ctx.store.list().some((c) => c.status !== 'addressed');
   }
-
-  // Watch mode: the diff IS the view — no narrative. When the working tree changes,
-  // rebuild DiffFile[] and push it to the browser. No LLM on this path by design:
-  // narrating a moving working tree is slow, goes stale immediately, and is redundant
-  // (you wrote the change — you don't need it reconstructed). Separate from the PR
-  // poller so it never touches ctx.github (which is null here).
-  let watchUpdating = false;
-  async function watchTick(): Promise<void> {
-    if (watchUpdating || ctx.mode !== 'watch' || !ctx.baseRef) return;
-    let review;
-    try {
-      review = await buildLocalReview(ctx.baseRef);
-    } catch {
-      // clean tree or transient git error — nothing to push this tick
-      return;
-    }
-    if (review.contentKey === ctx.contentKey) return; // no working-tree change
-
-    watchUpdating = true;
-    try {
-      ctx.files = review.files;
-      ctx.pr = review.metadata;
-      ctx.headSha = review.metadata.headSha;
-      ctx.contentKey = review.contentKey;
-      broadcast('watch-update', { pr: ctx.pr, files: ctx.files });
-      scheduleTriage();
-    } catch (err) {
-      console.error(`  watch update failed: ${err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      watchUpdating = false;
-    }
-  }
-
-  // Minimal triage: a cheap, NON-blocking pass that points attention at agent-era failure modes
-  // (rewritten tests, duplication, untrusted input, weakened CI, sprawl). Debounced so rapid agent
-  // edits don't spam it; watch mode only; the diff never waits on it.
-  let triageTimer: ReturnType<typeof setTimeout> | null = null;
-  let triageRunning = false;
-  async function runTriageNow(): Promise<void> {
-    if (ctx.mode !== 'watch' || triageRunning || ctx.files.length === 0) return;
-    triageRunning = true;
-    const forKey = ctx.contentKey;
-    try {
-      const config = await readConfig();
-      const flags = await runTriage(ctx.files, config);
-      ctx.triage = { flags, contentKey: forKey };
-      broadcast('triage', { flags, status: 'ready' });
-    } catch (err) {
-      console.error(`  triage failed: ${err instanceof Error ? err.message : String(err)}`);
-      broadcast('triage', { flags: ctx.triage?.flags ?? [], status: 'error' });
-    } finally {
-      triageRunning = false;
-      if (ctx.contentKey !== forKey) scheduleTriage(); // tree moved while we ran — refresh
-    }
-  }
-  function scheduleTriage(delay = 1500): void {
-    if (ctx.mode !== 'watch') return;
-    if (triageTimer) clearTimeout(triageTimer);
-    triageTimer = setTimeout(() => {
-      triageTimer = null;
-      void runTriageNow();
-    }, delay);
-    broadcast('triage', { flags: ctx.triage?.flags ?? [], status: 'running' });
-  }
-  if (ctx.mode === 'watch') scheduleTriage(800);
 
   app.get('/api/narrative', async (c) => {
     const config = await readConfig();
     const { path: aiPath } = resolveAiPath(config);
-    if (ctx.mode === 'watch') {
-      // Watch mode is diff-first: no narrative, ever. Serve the working-tree files directly
-      // so the browser renders the diff instantly with no generating screen.
-      return c.json({
-        pr: ctx.pr,
-        files: ctx.files,
-        comments: [],
-        mode: 'watch',
-        repoUrl: `https://github.com/${ctx.owner}/${ctx.repo}`,
-        aiPath,
-        triage: ctx.triage?.flags ?? [],
-        config: {
-          theme: config.theme ?? 'auto',
-          storyStructure: config.storyStructure ?? 'chapters',
-          layoutMode: config.layoutMode ?? 'toc',
-          displayDensity: config.displayDensity ?? 'comfortable',
-          defaultNarrationDensity: config.defaultNarrationDensity ?? 'normal',
-          clusterBots: config.clusterBots ?? true,
-          accent: config.accent ?? 'classic',
-        },
-      });
-    }
     if (!ctx.narrative) {
       return c.json({
         generating: true,
@@ -186,7 +90,7 @@ export function createServer(ctx: ServerContext) {
         checkRuns: ctx.checkRuns,
         reviews: ctx.reviews,
         repoUrl: `https://github.com/${ctx.owner}/${ctx.repo}`,
-        mode: ctx.mode,
+        mode: 'pr',
         aiPath,
         config: {
           theme: config.theme ?? 'auto',
@@ -216,7 +120,7 @@ export function createServer(ctx: ServerContext) {
       checkRuns: ctx.checkRuns,
       reviews: ctx.reviews,
       repoUrl: `https://github.com/${ctx.owner}/${ctx.repo}`,
-      mode: ctx.mode,
+      mode: 'pr',
       aiPath,
       config: {
         theme: config.theme ?? 'auto',
@@ -260,7 +164,7 @@ export function createServer(ctx: ServerContext) {
   // Kick off a recap generation in the background. Idempotent: subsequent calls
   // while one is in flight or already completed are no-ops.
   async function startRecapGeneration() {
-    if (!ctx.github) return; // recap requires GitHub data; unavailable in watch mode
+    if (!ctx.github) return; // recap requires GitHub data
     if (ctx.recap || ctx.recapGenerating) return;
     ctx.recapGenerating = true;
     ctx.recapError = null;
@@ -437,184 +341,176 @@ export function createServer(ctx: ServerContext) {
         }
 
         let regenerating = false;
-        const interval = setInterval(
-          async () => {
-            try {
-              // Watch mode has no GitHub PR to poll — re-narrate on working-tree change instead.
-              if (ctx.mode === 'watch') {
-                await watchTick();
-                return;
-              }
-              const gh = ctx.github;
-              if (!gh) return;
-              const freshPr = await gh.getPR(ctx.owner, ctx.repo, ctx.pr.number);
-              const shaChanged = freshPr.headSha !== ctx.headSha;
+        const interval = setInterval(async () => {
+          try {
+            const gh = ctx.github;
+            if (!gh) return;
+            const freshPr = await gh.getPR(ctx.owner, ctx.repo, ctx.pr.number);
+            const shaChanged = freshPr.headSha !== ctx.headSha;
 
-              // These fields feed into the narrative prompt — changes here mean
-              // the cached narrative is stale and we need to regenerate.
-              const promptMetaChanged =
-                freshPr.title !== ctx.pr.title ||
-                freshPr.body !== ctx.pr.body ||
-                freshPr.labels.join(',') !== ctx.pr.labels.join(',');
-              const otherMetaChanged = freshPr.draft !== ctx.pr.draft || freshPr.state !== ctx.pr.state;
-              // If the regen branch below will fire, it'll broadcast the fresh PR
-              // alongside the new narrative — skip the standalone 'pr' event then.
-              const willRegenerate = (shaChanged || promptMetaChanged) && !regenerating;
-              if ((promptMetaChanged || otherMetaChanged) && !shaChanged && !willRegenerate) {
+            // These fields feed into the narrative prompt — changes here mean
+            // the cached narrative is stale and we need to regenerate.
+            const promptMetaChanged =
+              freshPr.title !== ctx.pr.title ||
+              freshPr.body !== ctx.pr.body ||
+              freshPr.labels.join(',') !== ctx.pr.labels.join(',');
+            const otherMetaChanged = freshPr.draft !== ctx.pr.draft || freshPr.state !== ctx.pr.state;
+            // If the regen branch below will fire, it'll broadcast the fresh PR
+            // alongside the new narrative — skip the standalone 'pr' event then.
+            const willRegenerate = (shaChanged || promptMetaChanged) && !regenerating;
+            if ((promptMetaChanged || otherMetaChanged) && !shaChanged && !willRegenerate) {
+              ctx.pr = freshPr;
+              send('pr', ctx.pr);
+            }
+
+            const fresh = await gh.getComments(ctx.owner, ctx.repo, ctx.pr.number);
+            const prevIds = new Set(ctx.comments.map((cm) => cm.id));
+            const freshIds = new Set(fresh.map((cm) => cm.id));
+            const hasNew = fresh.some((cm) => !prevIds.has(cm.id));
+            const hasDeleted = ctx.comments.some((cm) => !freshIds.has(cm.id));
+            if (hasNew || hasDeleted) {
+              send('comments', fresh);
+            }
+            ctx.comments = fresh;
+
+            const freshChecks = await gh.getCheckRuns(ctx.owner, ctx.repo, ctx.headSha);
+            ctx.checkRuns = freshChecks;
+            send('checks', freshChecks);
+
+            const freshReviews = await gh.getReviews(ctx.owner, ctx.repo, ctx.pr.number);
+            ctx.reviews = freshReviews;
+            send('reviews', freshReviews);
+
+            if ((shaChanged || promptMetaChanged) && !regenerating) {
+              regenerating = true;
+              const prevSha = ctx.headSha.slice(0, 7);
+              const newSha = freshPr.headSha.slice(0, 7);
+              if (shaChanged) {
+                console.log(`\n  \x1b[38;5;221m↻\x1b[0m New commits detected \x1b[2m(${prevSha} → ${newSha})\x1b[0m`);
+              } else {
+                console.log(`\n  \x1b[38;5;221m↻\x1b[0m PR title/description/labels changed`);
+              }
+              console.log(`  \x1b[2mRegenerating narrative...\x1b[0m`);
+              broadcast('regenerating', { previousSha: prevSha, newSha });
+
+              try {
+                const prevTldr = ctx.narrative?.tldr;
+                const prevChapterTitles = ctx.narrative?.chapters.map((ch) => ch.title) ?? [];
+
                 ctx.pr = freshPr;
-                send('pr', ctx.pr);
-              }
-
-              const fresh = await gh.getComments(ctx.owner, ctx.repo, ctx.pr.number);
-              const prevIds = new Set(ctx.comments.map((cm) => cm.id));
-              const freshIds = new Set(fresh.map((cm) => cm.id));
-              const hasNew = fresh.some((cm) => !prevIds.has(cm.id));
-              const hasDeleted = ctx.comments.some((cm) => !freshIds.has(cm.id));
-              if (hasNew || hasDeleted) {
-                send('comments', fresh);
-              }
-              ctx.comments = fresh;
-
-              const freshChecks = await gh.getCheckRuns(ctx.owner, ctx.repo, ctx.headSha);
-              ctx.checkRuns = freshChecks;
-              send('checks', freshChecks);
-
-              const freshReviews = await gh.getReviews(ctx.owner, ctx.repo, ctx.pr.number);
-              ctx.reviews = freshReviews;
-              send('reviews', freshReviews);
-
-              if ((shaChanged || promptMetaChanged) && !regenerating) {
-                regenerating = true;
-                const prevSha = ctx.headSha.slice(0, 7);
-                const newSha = freshPr.headSha.slice(0, 7);
+                let freshFiles = ctx.files;
                 if (shaChanged) {
-                  console.log(`\n  \x1b[38;5;221m↻\x1b[0m New commits detected \x1b[2m(${prevSha} → ${newSha})\x1b[0m`);
-                } else {
-                  console.log(`\n  \x1b[38;5;221m↻\x1b[0m PR title/description/labels changed`);
+                  ctx.headSha = freshPr.headSha;
+                  freshFiles = await gh.getDiff(ctx.owner, ctx.repo, ctx.pr.number);
+                  ctx.files = freshFiles;
                 }
-                console.log(`  \x1b[2mRegenerating narrative...\x1b[0m`);
-                broadcast('regenerating', { previousSha: prevSha, newSha });
 
-                try {
-                  const prevTldr = ctx.narrative?.tldr;
-                  const prevChapterTitles = ctx.narrative?.chapters.map((ch) => ch.title) ?? [];
-
-                  ctx.pr = freshPr;
-                  let freshFiles = ctx.files;
-                  if (shaChanged) {
-                    ctx.headSha = freshPr.headSha;
-                    freshFiles = await gh.getDiff(ctx.owner, ctx.repo, ctx.pr.number);
-                    ctx.files = freshFiles;
+                const config = await readConfig();
+                const metaHash = computePromptMetaHash(ctx.pr);
+                const providerKey = await resolveProviderKey(config);
+                const cached = await getCachedNarrative(
+                  ctx.owner,
+                  ctx.repo,
+                  ctx.pr.number,
+                  ctx.headSha,
+                  metaHash,
+                  providerKey,
+                );
+                if (cached) {
+                  ctx.narrative = cached;
+                  console.log(`  \x1b[38;5;78m✓\x1b[0m Using cached narrative \x1b[2m(${newSha})\x1b[0m`);
+                } else {
+                  const regenStartedAt = Date.now();
+                  const isTty = Boolean(process.stdout.isTTY);
+                  const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+                  let spinnerFrame = 0;
+                  let totalChars = 0;
+                  const fmtRegenElapsed = () => {
+                    const s = Math.floor((Date.now() - regenStartedAt) / 1000);
+                    const m = Math.floor(s / 60);
+                    return m > 0 ? `${m}m${String(s % 60).padStart(2, '0')}s` : `${s}s`;
+                  };
+                  const renderRegen = () => {
+                    if (!isTty) return;
+                    const frame = spinnerFrames[spinnerFrame++ % spinnerFrames.length];
+                    const chars = totalChars > 0 ? `\x1b[2m — ${totalChars.toLocaleString()} chars\x1b[0m` : '';
+                    process.stdout.write(`\r  \x1b[2m${frame} ${fmtRegenElapsed()} elapsed\x1b[0m${chars}`);
+                  };
+                  renderRegen();
+                  const heartbeat = setInterval(renderRegen, 250);
+                  let generated;
+                  let provider: string;
+                  try {
+                    const result = await generateNarrative(
+                      ctx.pr,
+                      freshFiles,
+                      [],
+                      config,
+                      {
+                        previousTldr: prevTldr,
+                        previousChapterTitles: prevChapterTitles,
+                      },
+                      {
+                        cacheKey: { owner: ctx.owner, repo: ctx.repo, number: ctx.pr.number, sha: ctx.headSha },
+                        comments: ctx.comments,
+                        onProgress: ({ chars }) => {
+                          totalChars = chars;
+                          broadcast('narrative-progress', { chars });
+                        },
+                        onPartial: (partial) => {
+                          broadcast('narrative.partial', {
+                            narrative: partial,
+                            pr: ctx.pr,
+                            files: freshFiles,
+                            comments: ctx.comments,
+                          });
+                        },
+                        onPlan: (plan) => {
+                          broadcast('plan-ready', { plan });
+                        },
+                        onChapter: ({ themeId, index, chapter }) => {
+                          broadcast('chapter-ready', { themeId, index, chapter });
+                        },
+                      },
+                    );
+                    generated = result.narrative;
+                    provider = result.provider;
+                  } finally {
+                    clearInterval(heartbeat);
+                    if (isTty) process.stdout.write('\r\x1b[2K');
                   }
-
-                  const config = await readConfig();
-                  const metaHash = computePromptMetaHash(ctx.pr);
-                  const providerKey = await resolveProviderKey(config);
-                  const cached = await getCachedNarrative(
+                  ctx.narrative = generated;
+                  await cacheNarrative(
                     ctx.owner,
                     ctx.repo,
                     ctx.pr.number,
                     ctx.headSha,
                     metaHash,
                     providerKey,
+                    generated,
                   );
-                  if (cached) {
-                    ctx.narrative = cached;
-                    console.log(`  \x1b[38;5;78m✓\x1b[0m Using cached narrative \x1b[2m(${newSha})\x1b[0m`);
-                  } else {
-                    const regenStartedAt = Date.now();
-                    const isTty = Boolean(process.stdout.isTTY);
-                    const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-                    let spinnerFrame = 0;
-                    let totalChars = 0;
-                    const fmtRegenElapsed = () => {
-                      const s = Math.floor((Date.now() - regenStartedAt) / 1000);
-                      const m = Math.floor(s / 60);
-                      return m > 0 ? `${m}m${String(s % 60).padStart(2, '0')}s` : `${s}s`;
-                    };
-                    const renderRegen = () => {
-                      if (!isTty) return;
-                      const frame = spinnerFrames[spinnerFrame++ % spinnerFrames.length];
-                      const chars = totalChars > 0 ? `\x1b[2m — ${totalChars.toLocaleString()} chars\x1b[0m` : '';
-                      process.stdout.write(`\r  \x1b[2m${frame} ${fmtRegenElapsed()} elapsed\x1b[0m${chars}`);
-                    };
-                    renderRegen();
-                    const heartbeat = setInterval(renderRegen, 250);
-                    let generated;
-                    let provider: string;
-                    try {
-                      const result = await generateNarrative(
-                        ctx.pr,
-                        freshFiles,
-                        [],
-                        config,
-                        {
-                          previousTldr: prevTldr,
-                          previousChapterTitles: prevChapterTitles,
-                        },
-                        {
-                          cacheKey: { owner: ctx.owner, repo: ctx.repo, number: ctx.pr.number, sha: ctx.headSha },
-                          comments: ctx.comments,
-                          onProgress: ({ chars }) => {
-                            totalChars = chars;
-                            broadcast('narrative-progress', { chars });
-                          },
-                          onPartial: (partial) => {
-                            broadcast('narrative.partial', {
-                              narrative: partial,
-                              pr: ctx.pr,
-                              files: freshFiles,
-                              comments: ctx.comments,
-                            });
-                          },
-                          onPlan: (plan) => {
-                            broadcast('plan-ready', { plan });
-                          },
-                          onChapter: ({ themeId, index, chapter }) => {
-                            broadcast('chapter-ready', { themeId, index, chapter });
-                          },
-                        },
-                      );
-                      generated = result.narrative;
-                      provider = result.provider;
-                    } finally {
-                      clearInterval(heartbeat);
-                      if (isTty) process.stdout.write('\r\x1b[2K');
-                    }
-                    ctx.narrative = generated;
-                    await cacheNarrative(
-                      ctx.owner,
-                      ctx.repo,
-                      ctx.pr.number,
-                      ctx.headSha,
-                      metaHash,
-                      providerKey,
-                      generated,
-                    );
-                    console.log(
-                      `  \x1b[38;5;78m✓\x1b[0m ${generated.chapters.length} chapters regenerated \x1b[2mvia ${provider} in ${fmtRegenElapsed()}\x1b[0m`,
-                    );
-                  }
-
-                  broadcast('narrative', {
-                    narrative: ctx.narrative,
-                    pr: ctx.pr,
-                    files: ctx.files,
-                    comments: mapCommentsToChapters(ctx.comments, ctx.narrative),
-                  });
-                } catch (err) {
-                  const msg = err instanceof Error ? err.message : String(err);
-                  console.error(`  \x1b[38;5;204m✗\x1b[0m Regeneration failed: ${msg}`);
-                } finally {
-                  regenerating = false;
+                  console.log(
+                    `  \x1b[38;5;78m✓\x1b[0m ${generated.chapters.length} chapters regenerated \x1b[2mvia ${provider} in ${fmtRegenElapsed()}\x1b[0m`,
+                  );
                 }
+
+                broadcast('narrative', {
+                  narrative: ctx.narrative,
+                  pr: ctx.pr,
+                  files: ctx.files,
+                  comments: mapCommentsToChapters(ctx.comments, ctx.narrative),
+                });
+              } catch (err) {
+                const msg = err instanceof Error ? err.message : String(err);
+                console.error(`  \x1b[38;5;204m✗\x1b[0m Regeneration failed: ${msg}`);
+              } finally {
+                regenerating = false;
               }
-            } catch {
-              // swallow polling errors
             }
-          },
-          ctx.mode === 'watch' ? 2000 : 10000,
-        );
+          } catch {
+            // swallow polling errors
+          }
+        }, 10000);
 
         c.req.raw.signal.addEventListener('abort', () => {
           clearInterval(interval);
@@ -656,7 +552,7 @@ export function createServer(ctx: ServerContext) {
   });
 
   app.post('/api/comments', async (c) => {
-    if (!ctx.github) return c.json({ error: 'GitHub is unavailable in watch mode' }, 409);
+    if (!ctx.github) return c.json({ error: 'GitHub is unavailable' }, 409);
     let payload: PostCommentBody;
     try {
       payload = (await c.req.json()) as PostCommentBody;
@@ -690,7 +586,7 @@ export function createServer(ctx: ServerContext) {
   });
 
   app.post('/api/review', async (c) => {
-    if (!ctx.github) return c.json({ error: 'GitHub is unavailable in watch mode' }, 409);
+    if (!ctx.github) return c.json({ error: 'GitHub is unavailable' }, 409);
     let payload: {
       event?: string;
       body?: string;

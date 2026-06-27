@@ -33,9 +33,6 @@ function watchContext(): ServerContext {
     repo: 'repo',
     headSha: 'x',
     store: new AgentCommentStore('__diffdad_test__routes'),
-    mode: 'watch',
-    baseRef: 'main',
-    contentKey: 'deadbeef',
   };
 }
 
