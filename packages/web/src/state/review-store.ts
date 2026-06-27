@@ -56,6 +56,8 @@ type ReviewState = {
   mode: 'pr' | 'watch' | 'command-center';
   /** Command-center: the daemon's review-unit queue, kept live via the `units` SSE event. */
   units: Unit[];
+  /** Per-unit agent last-seen (epoch-ms, or null if never) behind the drill-in's presence cue. */
+  presence: Record<string, number | null>;
   /** Command-center client-side route (center vs. a drill-in `/units/:id`). */
   route: Route;
   checkRuns: CheckRun[];
@@ -144,6 +146,8 @@ type ReviewState = {
   setTriage: (flags: TriageFlag[], status: TriageStatus) => void;
   setMode: (mode: 'pr' | 'watch' | 'command-center') => void;
   setUnits: (units: Unit[]) => void;
+  /** Record a unit's agent last-seen (from the `presence` SSE event or the drill-in's open fetch). */
+  setPresence: (unitId: string, lastSeenAt: number | null) => void;
   /** Navigate the command center, pushing browser history (deep-linkable `/units/:id`). */
   navigate: (route: Route) => void;
   /** Sync the route from the address bar without pushing history (popstate / initial load). */
@@ -302,6 +306,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
   triageStatus: 'idle',
   mode: 'pr',
   units: [],
+  presence: {},
   route: typeof window !== 'undefined' ? parseRoute(window.location.pathname) : { name: 'center' },
   checkRuns: [],
   reviews: [],
@@ -447,6 +452,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
   setTriage: (triageFlags, triageStatus) => set({ triageFlags, triageStatus }),
   setMode: (mode) => set({ mode }),
   setUnits: (units) => set({ units }),
+  setPresence: (unitId, lastSeenAt) => set((s) => ({ presence: { ...s.presence, [unitId]: lastSeenAt } })),
 
   navigate: (route) => {
     if (typeof window !== 'undefined') window.history.pushState(null, '', routePath(route));

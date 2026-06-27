@@ -256,6 +256,33 @@ describe('per-unit agent-comment replies (threading)', () => {
   });
 });
 
+describe('per-unit agent presence', () => {
+  it('404s presence for an unknown unit', async () => {
+    const { app } = setup();
+    expect((await app.request('/api/units/nope/presence')).status).toBe(404);
+  });
+
+  it('reports no last-seen until an agent interacts, then records + broadcasts it', async () => {
+    const { store, app, messages } = setup();
+    const a = await addUnit(store, 'owner/a');
+
+    const before = await app.request(`/api/units/${a.unitId}/presence`);
+    expect(before.status).toBe(200);
+    expect(await before.json()).toEqual({ lastSeenAt: null });
+
+    // An agent listing the unit's comments counts as "seen".
+    const sid = await connect(app);
+    await callTool(app, sid, 'list_review_comments', { unitId: a.unitId });
+
+    const after = await app.request(`/api/units/${a.unitId}/presence`);
+    const body = (await after.json()) as { lastSeenAt: number | null };
+    expect(typeof body.lastSeenAt).toBe('number');
+    expect(messages.some((m) => m.event === 'presence' && (m.data as { unitId: string }).unitId === a.unitId)).toBe(
+      true,
+    );
+  });
+});
+
 describe('per-unit agent-comment MCP tools', () => {
   it("list_review_comments returns a unit's open comments and flips them delivered", async () => {
     const { store, app, messages } = setup();

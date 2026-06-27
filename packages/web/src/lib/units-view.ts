@@ -124,6 +124,27 @@ export function relativeTime(iso: string, nowMs: number): string {
   return `${Math.floor(hours / 24)}d`;
 }
 
+/**
+ * An agent counts as "connected" to a unit if it checked in (parked on the verdict, or worked the
+ * unit's comments) within this window. The daemon's `await_decision` poll ceiling is ~4 min, so an
+ * active agent always refreshes inside 5 min — and the cue won't false-flip to "disconnected" while
+ * the agent is merely working between polls.
+ */
+export const AGENT_PRESENCE_WINDOW_MS = 5 * 60_000;
+
+/**
+ * Turn a unit's `lastSeenAt` (epoch-ms of the agent's most recent interaction, or null/undefined if
+ * never) into the drill-in's honest presence cue. Pure, so it's unit-tested; the component supplies
+ * `nowMs` from a ticking clock so a fresh stamp naturally goes stale without another event.
+ */
+export function agentPresence(
+  lastSeenAt: number | null | undefined,
+  nowMs: number,
+): { connected: boolean; label: string } {
+  const connected = lastSeenAt != null && nowMs - lastSeenAt < AGENT_PRESENCE_WINDOW_MS;
+  return { connected, label: connected ? 'agent connected' : 'no agent connected' };
+}
+
 // --- Client-side routing (the daemon serves index.html for any path, so deep links work) ------
 
 export type Route = { name: 'center' } | { name: 'unit'; unitId: string };

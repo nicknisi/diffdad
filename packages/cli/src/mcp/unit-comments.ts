@@ -14,6 +14,8 @@ export type ResolveCommentStore = (unitId: string) => Promise<AgentCommentStore 
 export type UnitCommentToolDeps = {
   getStore: ResolveCommentStore;
   broadcast: Broadcast;
+  /** Mark the unit's agent as seen on any comment interaction — drives the drill-in's presence cue. */
+  onAgentSeen?: (unitId: string) => void;
 };
 
 /**
@@ -23,7 +25,10 @@ export type UnitCommentToolDeps = {
  * each mutation to that unit's own store and broadcast a unit-scoped `agent-comment` snapshot, which
  * the dad UI applies only to the open unit's tab.
  */
-export function registerUnitCommentTools(server: McpServer, { getStore, broadcast }: UnitCommentToolDeps): void {
+export function registerUnitCommentTools(
+  server: McpServer,
+  { getStore, broadcast, onAgentSeen }: UnitCommentToolDeps,
+): void {
   const host = server as unknown as ToolHost;
   const notify = (unitId: string, store: AgentCommentStore) =>
     broadcast('agent-comment', { unitId, comments: store.list() });
@@ -40,6 +45,7 @@ export function registerUnitCommentTools(server: McpServer, { getStore, broadcas
     async (args) => {
       const store = await getStore(args.unitId as string);
       if (!store) return errorText(`unknown unit: ${args.unitId as string}`);
+      onAgentSeen?.(args.unitId as string);
       const filter = (args.status as 'open' | 'delivered' | 'all' | undefined) ?? 'open';
       // Capture the matching set BEFORE flipping — markDelivered mutates these objects in place, so
       // projecting `requested` afterward reflects the new delivered status without re-filtering.
@@ -64,6 +70,7 @@ export function registerUnitCommentTools(server: McpServer, { getStore, broadcas
     async (args) => {
       const store = await getStore(args.unitId as string);
       if (!store) return errorText(`unknown unit: ${args.unitId as string}`);
+      onAgentSeen?.(args.unitId as string);
       try {
         const comment = await store.addReply(args.id as string, { author: 'agent', body: args.body as string });
         notify(args.unitId as string, store);
@@ -84,6 +91,7 @@ export function registerUnitCommentTools(server: McpServer, { getStore, broadcas
     async (args) => {
       const store = await getStore(args.unitId as string);
       if (!store) return errorText(`unknown unit: ${args.unitId as string}`);
+      onAgentSeen?.(args.unitId as string);
       try {
         const comment = await store.resolve(args.id as string, args.note as string | undefined);
         notify(args.unitId as string, store);

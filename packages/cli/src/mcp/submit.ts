@@ -27,6 +27,8 @@ export type SubmitToolDeps = {
    * to remember a separate `list_review_comments` call to catch a hand-typed beat.
    */
   getCommentStore?: (unitId: string) => Promise<AgentCommentStore | undefined>;
+  /** Mark the unit's agent as seen (parked on the verdict) — drives the drill-in's presence cue. */
+  onAgentSeen?: (unitId: string) => void;
 };
 
 // Under Bun's `idleTimeout: 255`, a single held request must resolve well before the socket
@@ -39,7 +41,7 @@ const DEFAULT_AWAIT_MS = 240_000;
  * verdict. Both close over the shared `UnitStore` + `DecisionChannel`, mirroring `registerAgentCommentTools`.
  */
 export function registerSubmitTools(server: McpServer, deps: SubmitToolDeps): void {
-  const { store, broadcast, computeSlice, decision, onSubmitted, getCommentStore } = deps;
+  const { store, broadcast, computeSlice, decision, onSubmitted, getCommentStore, onAgentSeen } = deps;
   const awaitTimeoutMs = deps.awaitTimeoutMs ?? DEFAULT_AWAIT_MS;
   const host = server as unknown as ToolHost;
   const notify = () => broadcast('units', { units: store.list() });
@@ -127,6 +129,7 @@ export function registerSubmitTools(server: McpServer, deps: SubmitToolDeps): vo
       const unitId = args.unitId as string;
       const unit = store.get(unitId);
       if (!unit) return errorText(new UnknownUnitError(unitId).message);
+      onAgentSeen?.(unitId); // parking on the verdict means the agent is here right now
       if (unit.decision) {
         const comments = await bundleComments(unitId);
         return text(comments ? { decision: unit.decision, comments } : { decision: unit.decision });

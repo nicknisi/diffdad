@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   agentCommentsEndpoint,
+  agentPresence,
   aiEndpoint,
   commentGoesToAgent,
   commentsEndpoint,
@@ -254,6 +255,20 @@ describe('sourceBadge', () => {
   it('carries a human title explaining where the unit came from', () => {
     expect(sourceBadge('github').title).toMatch(/github/i);
     expect(sourceBadge('cli').title).toMatch(/dad add/i);
+  });
+});
+
+describe('agentPresence', () => {
+  const now = Date.parse('2026-06-26T12:00:00.000Z');
+  it('reads as disconnected when an agent has never been seen', () => {
+    expect(agentPresence(null, now)).toEqual({ connected: false, label: 'no agent connected' });
+    expect(agentPresence(undefined, now)).toEqual({ connected: false, label: 'no agent connected' });
+  });
+  it('reads as connected when the agent checked in within the freshness window', () => {
+    expect(agentPresence(now - 60_000, now)).toEqual({ connected: true, label: 'agent connected' });
+  });
+  it('goes stale (disconnected) once the last check-in is past the window', () => {
+    expect(agentPresence(now - 10 * 60_000, now)).toEqual({ connected: false, label: 'no agent connected' });
   });
 });
 
