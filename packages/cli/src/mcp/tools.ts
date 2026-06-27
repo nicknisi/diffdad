@@ -24,7 +24,7 @@ export type ToolHost = {
 };
 
 /** Projection sent to the agent — the fields it needs to act, without internal churn. */
-function project(c: AgentComment) {
+export function project(c: AgentComment) {
   return {
     id: c.id,
     path: c.path,

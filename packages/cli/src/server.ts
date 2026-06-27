@@ -16,6 +16,7 @@ import { generateRecap } from './recap/engine';
 import { gatherRecapSources } from './recap/sources';
 import type { RecapResponse } from './recap/types';
 import type { AgentCommentStore } from './agent-comments/store';
+import { UnknownCommentError } from './agent-comments/types';
 import { buildLocalReview } from './local/diff-source';
 import { runTriage, type TriageFlag } from './triage/triage';
 import { mountMcp } from './mcp/server';
@@ -375,6 +376,7 @@ export function createServer(ctx: ServerContext) {
       body?: string;
       hunkContext?: string;
       chapterTitle?: string;
+      inReplyToId?: string;
     };
     try {
       body = await c.req.json();
@@ -382,6 +384,20 @@ export function createServer(ctx: ServerContext) {
       return c.json({ error: 'invalid JSON body' }, 400);
     }
     if (!body.body || typeof body.body !== 'string') return c.json({ error: "missing 'body'" }, 400);
+
+    // Reply: thread under an existing comment (inherits its path/line) rather than spawning a sibling.
+    if (body.inReplyToId) {
+      let updated;
+      try {
+        updated = await ctx.store.addReply(body.inReplyToId, { author: 'user', body: body.body });
+      } catch (err) {
+        if (err instanceof UnknownCommentError) return c.json({ error: err.message }, 404);
+        throw err;
+      }
+      broadcast('agent-comment', { comments: ctx.store.list() });
+      return c.json(updated, 201);
+    }
+
     if (!body.path || typeof body.path !== 'string' || typeof body.line !== 'number') {
       return c.json({ error: "missing 'path'/'line'" }, 400);
     }

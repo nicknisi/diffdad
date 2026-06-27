@@ -13,6 +13,9 @@ import type { Concern } from '../narrative/types';
 import { mountMcp } from '../mcp/server';
 import { type ComputeSlice, registerSubmitTools } from '../mcp/submit';
 import type { Broadcast } from '../mcp/tools';
+import { AgentCommentStore } from '../agent-comments/store';
+import { UnknownCommentError } from '../agent-comments/types';
+import { registerUnitCommentTools } from '../mcp/unit-comments';
 import type { DecisionChannel } from '../units/decision-channel';
 import { decisionTarget } from '../units/decision-target';
 import type { UnitStore } from '../units/store';
@@ -106,6 +109,14 @@ export type DaemonAppDeps = {
   statusFetcher?: (unit: ReviewUnit) => Promise<{ checks: CheckRun[]; reviews: PRReview[] }>;
   /** Long-poll ceiling for `await_decision`; tests shrink it. */
   awaitTimeoutMs?: number;
+  /**
+   * Loads (or creates) the per-unit `AgentCommentStore` — the "send to agent" mailbox the ResolveStrip
+   * posts to and the agent reads over MCP. Injected so tests use in-memory stores; the daemon defaults
+   * to a disk-backed store keyed by unitId. The app caches the result per unit so the HTTP routes and
+   * MCP tools share ONE instance (a UI-posted comment must be visible to `list_review_comments`, and an
+   * agent's reply visible to the UI).
+   */
+  loadCommentStore?: (unitId: string) => Promise<AgentCommentStore>;
   /** Override the command-center static root (defaults to the same fallbacks as `server.ts`). */
   webDist?: string;
 };
@@ -133,6 +144,22 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
   const { commentFetcher, commentPoster, reviewSubmitter, ai, statusFetcher } = deps;
   const app = new Hono();
   const broadcast = hub.broadcast;
+
+  // Per-unit agent-comment stores, created lazily and shared by the HTTP routes + MCP tools. We cache
+  // the PROMISE (not the resolved store) so two concurrent first-touches for the same unit can't each
+  // build a separate instance and diverge. Resolves to `undefined` for an unknown unit, so the routes
+  // 404 and the MCP tools error cleanly instead of writing to a phantom store.
+  const loadCommentStore = deps.loadCommentStore ?? ((unitId: string) => AgentCommentStore.load(`unit-${unitId}`));
+  const commentStores = new Map<string, Promise<AgentCommentStore>>();
+  const getCommentStore = (unitId: string): Promise<AgentCommentStore | undefined> => {
+    if (!store.get(unitId)) return Promise.resolve(undefined);
+    let pending = commentStores.get(unitId);
+    if (!pending) {
+      pending = loadCommentStore(unitId);
+      commentStores.set(unitId, pending);
+    }
+    return pending;
+  };
 
   // --- Command-center bootstrap ---------------------------------------------
   // The web SPA's single bootstrap is `GET /api/narrative`; it multiplexes on `mode`
@@ -401,6 +428,72 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
     return c.json(created, 201);
   });
 
+  // --- Agent comments (local units' "send to agent" loop) -------------------
+  // The daemon mirror of server.ts's /api/agent-comments, but PER-UNIT: the walkthrough's "Send to
+  // agent" posts a beat here, the agent reads/answers it over MCP (list/reply/resolve_comment), and
+  // both sides share the same per-unit store. Unknown unit → 404. The broadcast is unit-scoped so a
+  // comment on unit A never repaints a tab open on unit B. Must precede the static catch-all.
+  app.get('/api/units/:id/agent-comments', async (c) => {
+    const id = c.req.param('id');
+    const cs = await getCommentStore(id);
+    if (!cs) return c.json({ error: new UnknownUnitError(id).message }, 404);
+    return c.json(cs.list());
+  });
+
+  app.post('/api/units/:id/agent-comments', async (c) => {
+    const id = c.req.param('id');
+    const cs = await getCommentStore(id);
+    if (!cs) return c.json({ error: new UnknownUnitError(id).message }, 404);
+    let body: {
+      path?: string;
+      line?: number;
+      side?: 'LEFT' | 'RIGHT';
+      startLine?: number;
+      startSide?: 'LEFT' | 'RIGHT';
+      body?: string;
+      hunkContext?: string;
+      chapterTitle?: string;
+      inReplyToId?: string;
+    };
+    try {
+      body = (await c.req.json()) as typeof body;
+    } catch {
+      return c.json({ error: 'invalid JSON body' }, 400);
+    }
+    if (!body.body || typeof body.body !== 'string') return c.json({ error: "missing 'body'" }, 400);
+
+    // Reply: thread under an existing comment (it inherits the parent's path/line) rather than spawning
+    // a sibling at the same location. This is what the UI's in-thread composer expects.
+    if (body.inReplyToId) {
+      let updated;
+      try {
+        updated = await cs.addReply(body.inReplyToId, { author: 'user', body: body.body });
+      } catch (err) {
+        if (err instanceof UnknownCommentError) return c.json({ error: err.message }, 404);
+        throw err;
+      }
+      broadcast('agent-comment', { unitId: id, comments: cs.list() });
+      return c.json(updated, 201);
+    }
+
+    // New top-level comment needs an anchor.
+    if (!body.path || typeof body.path !== 'string' || typeof body.line !== 'number') {
+      return c.json({ error: "missing 'path'/'line'" }, 400);
+    }
+    const comment = await cs.add({
+      path: body.path,
+      line: body.line,
+      side: body.side,
+      startLine: body.startLine,
+      startSide: body.startSide,
+      body: body.body,
+      hunkContext: body.hunkContext,
+      chapterTitle: body.chapterTitle,
+    });
+    broadcast('agent-comment', { unitId: id, comments: cs.list() });
+    return c.json(comment, 201);
+  });
+
   // --- Review submission (github units) -------------------------------------
   // The drill-in's full submit: COMMENT/APPROVE/REQUEST_CHANGES + batched inline draft comments, in
   // one GitHub review (mirrors the PR server's /api/review). Unlike that route, a verdict (approve /
@@ -568,13 +661,14 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
   });
 
   // --- MCP endpoint ---------------------------------------------------------
-  // submit_for_review + await_decision, sharing the store + decision channel. Must be registered
-  // BEFORE the static catch-all or `/mcp` is swallowed by serveStatic.
-  // (The three per-concern comment tools land with the per-unit review view in #22 — they need a
-  //  per-unit AgentCommentStore + an agent↔unit association that only that view establishes.)
-  mountMcp(app, (server) =>
-    registerSubmitTools(server, { store, decision, broadcast, computeSlice, onSubmitted, awaitTimeoutMs }),
-  );
+  // submit_for_review + await_decision (sharing the store + decision channel) plus the per-unit
+  // comment loop (list/reply/resolve_comment, scoped by the unitId submit_for_review returned, sharing
+  // the same per-unit stores the HTTP routes use). Must be registered BEFORE the static catch-all or
+  // `/mcp` is swallowed by serveStatic.
+  mountMcp(app, (server) => {
+    registerSubmitTools(server, { store, decision, broadcast, computeSlice, onSubmitted, awaitTimeoutMs });
+    registerUnitCommentTools(server, { getStore: getCommentStore, broadcast });
+  });
 
   // --- Command-center SPA ---------------------------------------------------
   const webDist = resolveWebDist(deps.webDist);

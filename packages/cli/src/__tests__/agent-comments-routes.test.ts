@@ -63,6 +63,40 @@ describe('agent-comment routes', () => {
     expect(all[0]!.id).toBe(comment.id);
   });
 
+  it('threads a reply under the parent when inReplyToId is given', async () => {
+    const { app } = createServer(watchContext());
+    const created = await app.request('/api/agent-comments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: 'a.ts', line: 1, body: 'parent' }),
+    });
+    const id = ((await created.json()) as { id: string }).id;
+
+    const reply = await app.request('/api/agent-comments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ inReplyToId: id, body: 'child' }),
+    });
+    expect(reply.status).toBe(201);
+
+    const list = (await (await app.request('/api/agent-comments')).json()) as {
+      replies: { author: string; body: string }[];
+    }[];
+    expect(list).toHaveLength(1); // one top-level comment, not two
+    expect(list[0]!.replies).toHaveLength(1);
+    expect(list[0]!.replies[0]).toMatchObject({ author: 'user', body: 'child' });
+  });
+
+  it('404s a reply to an unknown comment id', async () => {
+    const { app } = createServer(watchContext());
+    const res = await app.request('/api/agent-comments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ inReplyToId: 'nope', body: 'x' }),
+    });
+    expect(res.status).toBe(404);
+  });
+
   it('rejects a comment missing body or path/line', async () => {
     const { app } = createServer(watchContext());
     const noBody = await app.request('/api/agent-comments', {
