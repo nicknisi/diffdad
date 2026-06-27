@@ -11,7 +11,7 @@ import { ReviewProgress } from './ReviewProgress';
 import { StoryView } from './StoryView';
 import { SubmitDialog } from './SubmitDialog';
 import { ThemeToggle } from './ThemeToggle';
-import type { ChapterState, CheckRun, PRReview, Unit } from '../state/types';
+import type { AgentComment, ChapterState, CheckRun, PRReview, Unit } from '../state/types';
 
 /**
  * Feed a unit's diff slice + brief into the review store so the existing review surface
@@ -69,6 +69,7 @@ export function UnitReview() {
   const narrative = useReviewStore((s) => s.narrative);
   const mode = useReviewStore((s) => s.mode);
   const setComments = useReviewStore((s) => s.setComments);
+  const setAgentComments = useReviewStore((s) => s.setAgentComments);
   const draftCount = useReviewStore((s) => pendingReviewComments(s.drafts).length);
   const clearDrafts = useReviewStore((s) => s.clearDrafts);
   const setCheckRuns = useReviewStore((s) => s.setCheckRuns);
@@ -132,6 +133,28 @@ export function UnitReview() {
     setComments([]);
     void refreshComments();
   }, [unitId, hasNarrative, setComments, refreshComments]);
+
+  // Load this unit's agent comments (the "send to agent" loop) so they render inline through the same
+  // pipeline as GitHub comments. Clear first so switching units never flashes the prior unit's thread;
+  // the unit-scoped `agent-comment` SSE event keeps it live as the parked agent replies/resolves.
+  useEffect(() => {
+    if (!unitId) return;
+    let cancelled = false;
+    setAgentComments([]);
+    void (async () => {
+      try {
+        const res = await fetch(`/api/units/${encodeURIComponent(unitId)}/agent-comments`);
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as AgentComment[];
+        if (!cancelled && Array.isArray(data)) setAgentComments(data);
+      } catch {
+        // ignore — the SSE stream backfills
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [unitId, setAgentComments]);
 
   // Load this github unit's CI checks + reviews. Keyed on the head SHA too, so a new push (the SSE
   // `units` event updates the unit's metadata) re-fetches the status — modest liveness without a poll.

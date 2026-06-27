@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useComments } from '../hooks/useComments';
+import { commentGoesToAgent } from '../lib/units-view';
 import { copy } from '../lib/microcopy';
 import { useReviewStore } from '../state/review-store';
 import type { CommentId, PRComment } from '../state/types';
@@ -77,7 +78,9 @@ export function CommentThread({
   const drafts = useReviewStore((s) => s.drafts);
   const addDraft = useReviewStore((s) => s.addDraft);
   const removeDraft = useReviewStore((s) => s.removeDraft);
-  const isWatch = useReviewStore((s) => s.mode === 'watch');
+  // Agent target = watch mode, or a local (agent/cli) unit in the daemon — both send to the agent
+  // loop rather than GitHub, so the composer drops the "Add to review" affordance and relabels.
+  const isAgentTarget = useReviewStore((s) => commentGoesToAgent(s.mode, s.route, s.units));
 
   const draftKey = useMemo(() => draftKeyFor(path, line, chapterIndex), [path, line, chapterIndex]);
 
@@ -237,7 +240,7 @@ export function CommentThread({
           value={body}
           onChange={(e) => setBody(e.target.value)}
           onKeyDown={onKeyDown}
-          placeholder={isWatch ? 'Leave a note for the agent…' : copy.commentPlaceholder}
+          placeholder={isAgentTarget ? 'Leave a note for the agent…' : copy.commentPlaceholder}
           className="block w-full resize-y rounded-md border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--fg-1)] outline-none focus:border-[var(--brand)]"
           rows={3}
         />
@@ -256,7 +259,7 @@ export function CommentThread({
               Cancel
             </button>
           )}
-          {!isWatch && (
+          {!isAgentTarget && (
             <button
               type="button"
               disabled={!body.trim() || !draftKey}
@@ -272,7 +275,7 @@ export function CommentThread({
             onClick={() => void submit()}
             className="rounded-md bg-[var(--brand)] px-3 py-1 text-sm font-semibold text-white shadow-sm hover:bg-[var(--brand-hover)] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {submitting ? (isWatch ? 'Sending…' : 'Posting...') : isWatch ? 'Send to agent' : 'Comment'}
+            {submitting ? (isAgentTarget ? 'Sending…' : 'Posting...') : isAgentTarget ? 'Send to agent' : 'Comment'}
           </button>
         </div>
       </div>

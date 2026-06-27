@@ -73,6 +73,28 @@ export function handleUnitCommentEvent(e: MessageEvent): void {
   }
 }
 
+/**
+ * Apply an `agent-comment` event. Watch/PR payloads carry the full mailbox (`{ comments }`) and apply
+ * globally. The daemon is multi-unit, so its payloads are unit-scoped (`{ unitId, comments }`) — apply
+ * them ONLY when that unit is the open drill-in, mirroring `handleUnitCommentEvent`, so a comment on
+ * unit B can't repaint a tab open on unit A. Exported for direct unit testing; ignores malformed data.
+ */
+export function handleAgentCommentEvent(e: MessageEvent): void {
+  try {
+    const data = JSON.parse(e.data) as { unitId?: string; comments: AgentComment[] };
+    const state = useReviewStore.getState();
+    if (data.unitId !== undefined) {
+      const open = state.mode === 'command-center' && state.route.name === 'unit' && state.route.unitId === data.unitId;
+      if (!open) return;
+    }
+    state.setAgentComments(data.comments ?? []);
+    state.setLastEventAt(Date.now());
+    state.addLiveEvent(makeEvent('comment', 'Agent comments updated', data.comments));
+  } catch {
+    // ignore malformed event
+  }
+}
+
 export function useLiveStream() {
   useEffect(() => {
     const setLiveStatus = (status: 'connected' | 'connecting' | 'disconnected') =>
@@ -110,17 +132,6 @@ export function useLiveStream() {
         setLastEventAt(Date.now());
       } catch {
         // ignore
-      }
-    };
-
-    const onAgentComment = (e: MessageEvent) => {
-      try {
-        const data = JSON.parse(e.data) as { comments: AgentComment[] };
-        useReviewStore.getState().setAgentComments(data.comments);
-        setLastEventAt(Date.now());
-        addLiveEvent(makeEvent('comment', 'Agent comments updated', data.comments));
-      } catch {
-        // ignore malformed event
       }
     };
 
@@ -290,7 +301,7 @@ export function useLiveStream() {
     es.addEventListener('comment', onComment as EventListener);
     es.addEventListener('unit-comment', handleUnitCommentEvent as EventListener);
     es.addEventListener('comments', onComments as EventListener);
-    es.addEventListener('agent-comment', onAgentComment as EventListener);
+    es.addEventListener('agent-comment', handleAgentCommentEvent as EventListener);
     es.addEventListener('checks', onChecks as EventListener);
     es.addEventListener('reviews', onReviews as EventListener);
     es.addEventListener('pr', onPr as EventListener);
@@ -320,7 +331,7 @@ export function useLiveStream() {
       es.removeEventListener('comment', onComment as EventListener);
       es.removeEventListener('unit-comment', handleUnitCommentEvent as EventListener);
       es.removeEventListener('comments', onComments as EventListener);
-      es.removeEventListener('agent-comment', onAgentComment as EventListener);
+      es.removeEventListener('agent-comment', handleAgentCommentEvent as EventListener);
       es.removeEventListener('checks', onChecks as EventListener);
       es.removeEventListener('reviews', onReviews as EventListener);
       es.removeEventListener('pr', onPr as EventListener);

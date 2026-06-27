@@ -140,6 +140,27 @@ export const reviewEndpoint = (mode: 'pr' | 'watch' | 'command-center', route: R
 export const aiEndpoint = (mode: 'pr' | 'watch' | 'command-center', route: Route): string =>
   resourceEndpoint(mode, route, 'ai');
 
+/**
+ * Agent-comment ("send to agent") endpoint. Per-unit in a command-center drill-in (each unit has its
+ * own parked agent + mailbox); the single global mailbox in watch mode and at the center root.
+ */
+export const agentCommentsEndpoint = (mode: 'pr' | 'watch' | 'command-center', route: Route): string =>
+  resourceEndpoint(mode, route, 'agent-comments');
+
+/**
+ * Does an inline comment on the current surface go to the agent loop (vs a GitHub PR comment)? Watch
+ * mode always does. In the daemon, a LOCAL unit (agent/cli — it has no PR) does; a github unit gets a
+ * real PR comment instead. Pure, so the routing is unit-tested without rendering a hook.
+ */
+export function commentGoesToAgent(mode: 'pr' | 'watch' | 'command-center', route: Route, units: Unit[]): boolean {
+  if (mode === 'watch') return true;
+  if (mode === 'command-center' && route.name === 'unit') {
+    const unit = units.find((u) => u.unitId === route.unitId);
+    return !!unit && unit.source !== 'github';
+  }
+  return false;
+}
+
 // --- CI checks + reviews rollups (the drill-in's merge-readiness strip) ------------------------
 
 const FAILED_CONCLUSIONS = new Set(['failure', 'timed_out', 'cancelled', 'action_required', 'startup_failure', 'stale']);

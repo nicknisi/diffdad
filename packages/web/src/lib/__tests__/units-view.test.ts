@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  agentCommentsEndpoint,
   aiEndpoint,
+  commentGoesToAgent,
   commentsEndpoint,
   groupOf,
   groupUnits,
@@ -183,6 +185,38 @@ describe('reviewEndpoint / aiEndpoint', () => {
     expect(reviewEndpoint('pr', { name: 'center' })).toBe('/api/review');
     expect(aiEndpoint('pr', { name: 'center' })).toBe('/api/ai');
     expect(reviewEndpoint('command-center', { name: 'center' })).toBe('/api/review');
+  });
+});
+
+describe('agentCommentsEndpoint', () => {
+  it('targets the unit-scoped endpoint in a command-center drill-in', () => {
+    expect(agentCommentsEndpoint('command-center', { name: 'unit', unitId: 'u_1' })).toBe('/api/units/u_1/agent-comments');
+  });
+  it('falls back to the single-mailbox endpoint in watch mode and at the center root', () => {
+    expect(agentCommentsEndpoint('watch', { name: 'center' })).toBe('/api/agent-comments');
+    expect(agentCommentsEndpoint('command-center', { name: 'center' })).toBe('/api/agent-comments');
+  });
+});
+
+describe('commentGoesToAgent', () => {
+  it('always routes to the agent loop in watch mode', () => {
+    expect(commentGoesToAgent('watch', { name: 'center' }, [])).toBe(true);
+  });
+  it('routes to GitHub in pr mode', () => {
+    expect(commentGoesToAgent('pr', { name: 'center' }, [])).toBe(false);
+  });
+  it('routes a LOCAL daemon unit (agent/cli) to the agent loop', () => {
+    const units = [mkUnit({ unitId: 'u1', source: 'cli' }), mkUnit({ unitId: 'u2', source: 'agent' })];
+    expect(commentGoesToAgent('command-center', { name: 'unit', unitId: 'u1' }, units)).toBe(true);
+    expect(commentGoesToAgent('command-center', { name: 'unit', unitId: 'u2' }, units)).toBe(true);
+  });
+  it('routes a GITHUB daemon unit to GitHub (it has a real PR)', () => {
+    const units = [mkUnit({ unitId: 'g1', source: 'github' })];
+    expect(commentGoesToAgent('command-center', { name: 'unit', unitId: 'g1' }, units)).toBe(false);
+  });
+  it('routes to GitHub at the center root or for an unknown unit', () => {
+    expect(commentGoesToAgent('command-center', { name: 'center' }, [])).toBe(false);
+    expect(commentGoesToAgent('command-center', { name: 'unit', unitId: 'missing' }, [])).toBe(false);
   });
 });
 

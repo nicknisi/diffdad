@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { aiEndpoint } from '../lib/units-view';
+import { agentCommentsEndpoint, aiEndpoint } from '../lib/units-view';
 import { useReviewStore } from '../state/review-store';
 import { Markdown } from './markdown/Markdown';
 import type { ResolveItem, ResolveSeverity } from '../lib/walkthrough';
@@ -33,9 +33,11 @@ async function askDad(chapterIndex: number, question: string): Promise<string> {
 }
 
 async function sendToAgent(item: ResolveItem): Promise<void> {
-  // Post directly to the agent-comment loop — NOT via useComments.postComment, which routes
-  // to GitHub in review mode. The beat's file/line is exactly what an agent comment needs.
-  const res = await fetch('/api/agent-comments', {
+  // Post to the agent-comment loop — NOT via useComments.postComment, which routes to GitHub in
+  // review mode. Mode-aware: the per-unit endpoint in a daemon drill-in (each unit has its own parked
+  // agent), the single mailbox in watch. The beat's file/line is exactly what an agent comment needs.
+  const { mode, route } = useReviewStore.getState();
+  const res = await fetch(agentCommentsEndpoint(mode, route), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ path: item.file, line: item.line, side: 'RIGHT', body: item.question }),
