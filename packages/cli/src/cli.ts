@@ -1,5 +1,4 @@
 #!/usr/bin/env bun
-import { AgentCommentStore } from './agent-comments/store';
 import { resolveGitHubToken } from './auth';
 import { LOCAL_CLIS, readConfig, resetConfig, runConfig, showConfig } from './config';
 import { GitHubClient } from './github/client';
@@ -267,8 +266,6 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
     owner: parsed.owner,
     repo: parsed.repo,
     headSha: metadata.headSha,
-    store: await AgentCommentStore.load(`${parsed.owner}-${parsed.repo}-${parsed.number}`),
-    mode: 'pr' as const,
     recap: cachedRecap,
     recapGenerating: false,
     recapError: null,

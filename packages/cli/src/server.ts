@@ -15,10 +15,6 @@ import { cacheRecap } from './recap/cache';
 import { generateRecap } from './recap/engine';
 import { gatherRecapSources } from './recap/sources';
 import type { RecapResponse } from './recap/types';
-import type { AgentCommentStore } from './agent-comments/store';
-import { UnknownCommentError } from './agent-comments/types';
-import { mountMcp } from './mcp/server';
-import { registerAgentCommentTools } from './mcp/tools';
 
 export type ServerContext = {
   narrative: NarrativeResponse | null;
@@ -32,8 +28,6 @@ export type ServerContext = {
   owner: string;
   repo: string;
   headSha: string;
-  /** Agent-comment store: the single source of truth shared by the HTTP routes and MCP tools. */
-  store: AgentCommentStore;
   /** Populated lazily when the user opens the Recap tab (or hydrated from cache at startup). */
   recap?: RecapResponse | null;
   /** Set while a recap is being generated; cleared on success or failure. */
@@ -71,11 +65,6 @@ export function createServer(ctx: ServerContext) {
     for (const send of sseClients) {
       send(event, data);
     }
-  }
-
-  /** The agent may still be working after the browser closes — stay alive while comments are unresolved. */
-  function hasUnresolvedAgentComments(): boolean {
-    return ctx.store.list().some((c) => c.status !== 'addressed');
   }
 
   app.get('/api/narrative', async (c) => {
@@ -265,58 +254,6 @@ export function createServer(ctx: ServerContext) {
     const fresh = await ctx.github.getComments(ctx.owner, ctx.repo, ctx.pr.number);
     ctx.comments = fresh;
     return c.json(ctx.narrative ? mapCommentsToChapters(fresh, ctx.narrative) : fresh);
-  });
-
-  // --- Agent comments (the local review loop; works in both modes) -----------
-  app.get('/api/agent-comments', (c) => c.json(ctx.store.list()));
-
-  app.post('/api/agent-comments', async (c) => {
-    let body: {
-      path?: string;
-      line?: number;
-      side?: 'LEFT' | 'RIGHT';
-      startLine?: number;
-      startSide?: 'LEFT' | 'RIGHT';
-      body?: string;
-      hunkContext?: string;
-      chapterTitle?: string;
-      inReplyToId?: string;
-    };
-    try {
-      body = await c.req.json();
-    } catch {
-      return c.json({ error: 'invalid JSON body' }, 400);
-    }
-    if (!body.body || typeof body.body !== 'string') return c.json({ error: "missing 'body'" }, 400);
-
-    // Reply: thread under an existing comment (inherits its path/line) rather than spawning a sibling.
-    if (body.inReplyToId) {
-      let updated;
-      try {
-        updated = await ctx.store.addReply(body.inReplyToId, { author: 'user', body: body.body });
-      } catch (err) {
-        if (err instanceof UnknownCommentError) return c.json({ error: err.message }, 404);
-        throw err;
-      }
-      broadcast('agent-comment', { comments: ctx.store.list() });
-      return c.json(updated, 201);
-    }
-
-    if (!body.path || typeof body.path !== 'string' || typeof body.line !== 'number') {
-      return c.json({ error: "missing 'path'/'line'" }, 400);
-    }
-    const comment = await ctx.store.add({
-      path: body.path,
-      line: body.line,
-      side: body.side,
-      startLine: body.startLine,
-      startSide: body.startSide,
-      body: body.body,
-      hunkContext: body.hunkContext,
-      chapterTitle: body.chapterTitle,
-    });
-    broadcast('agent-comment', { comments: ctx.store.list() });
-    return c.json(comment, 201);
   });
 
   app.get('/api/events', (c) => {
@@ -520,9 +457,9 @@ export function createServer(ctx: ServerContext) {
           } catch {
             // already closed
           }
-          if (hadClients && sseClients.size === 0 && ctx.narrative && !hasUnresolvedAgentComments()) {
+          if (hadClients && sseClients.size === 0 && ctx.narrative) {
             exitTimer = setTimeout(() => {
-              if (sseClients.size > 0 || !ctx.narrative || hasUnresolvedAgentComments()) return;
+              if (sseClients.size > 0 || !ctx.narrative) return;
               const jokes = [
                 "I'm not angry, just diff-appointed.",
                 "That's a wrap — like my git commits.",
@@ -628,10 +565,6 @@ export function createServer(ctx: ServerContext) {
     broadcast('review', { event: ghEvent, body: payload.body });
     return c.json({ ok: true });
   });
-
-  // MCP server for the agent loop — MUST be registered before the static catch-all below,
-  // or `/mcp` is swallowed by serveStatic.
-  mountMcp(app, (server) => registerAgentCommentTools(server, { store: ctx.store, broadcast }));
 
   const candidates = [
     resolve(import.meta.dir, '../../web/dist'),
