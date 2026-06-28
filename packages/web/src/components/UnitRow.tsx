@@ -125,7 +125,7 @@ export function UnitRow({ unit, now, onOpen, onApprove, onRequestChanges, onRetr
             >
               {badge.label}
             </span>
-            {unit.source === 'github' && unit.prAuthor && (
+            {unit.prAuthor && (
               <span className="text-[12px] text-[var(--fg-3)]" title={`PR by @${unit.prAuthor}`}>
                 @{unit.prAuthor}
               </span>

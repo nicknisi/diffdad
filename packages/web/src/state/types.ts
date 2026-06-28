@@ -143,12 +143,10 @@ export type TriageFlag = {
   message: string;
 };
 
-/** Numeric for GitHub comments, string (UUID) for agent comments. */
+/** GitHub comment id (numeric). Kept as an alias for the inline-comment pipeline. */
 export type CommentId = number | string;
 
 export type PRComment = {
-  // string ids carry agent comments (UUIDs) through the same inline pipeline as GitHub
-  // comments (numeric ids); placement is by path+line, threading by id/inReplyToId.
   id: CommentId;
   author: string;
   avatarUrl?: string;
@@ -162,38 +160,6 @@ export type PRComment = {
   startSide?: string;
   inReplyToId?: number | string;
   diffHunk?: string;
-  /** Agent-loop fields (watch mode). Absent for GitHub comments. */
-  source?: 'agent' | 'github';
-  status?: 'open' | 'delivered' | 'addressed';
-  addressedNote?: string;
-};
-
-// Agent-loop comments (watch mode). Kept distinct from PRComment — string ids and a
-// status lifecycle — so they never flow through the numeric-id GitHub comment pipeline.
-export type AgentReply = {
-  id: string;
-  author: 'user' | 'agent';
-  body: string;
-  createdAt: string;
-};
-
-export type AgentComment = {
-  id: string;
-  path: string;
-  line: number;
-  side: 'LEFT' | 'RIGHT';
-  startLine?: number;
-  startSide?: 'LEFT' | 'RIGHT';
-  body: string;
-  status: 'open' | 'delivered' | 'addressed';
-  author: 'user' | 'agent';
-  replies: AgentReply[];
-  hunkContext: string;
-  chapterTitle?: string;
-  createdAt: string;
-  deliveredAt?: string;
-  addressedAt?: string;
-  addressedNote?: string;
 };
 
 export type ChapterState = 'reading' | 'reviewing' | 'replied' | 'reviewed';

@@ -63,25 +63,6 @@ export type ReviewUnit = {
   updatedAt: string;
 };
 
-/** Input to `UnitStore.add` — identity, status, and timestamps are assigned by the store. */
-export type NewReviewUnit = {
-  repo: string;
-  /** Defaults to `'agent'` when omitted (set by the store). */
-  source?: UnitSource;
-  worktreePath: string;
-  taskLabel: string;
-  intent: string;
-  uncertainties?: string[];
-  baseRef: string;
-  diffContentKey: string;
-  files: DiffFile[];
-  metadata: PRMetadata;
-  /** Optional PR linkage, carried through when a unit is born already tied to a PR. */
-  prNumber?: number;
-  prUrl?: string;
-  prAuthor?: string;
-};
-
 /**
  * A PR returned by the background review-request poller — only the cheap metadata needed to mint or
  * link a `github` unit (the diff/narrative are fetched lazily on open, not here).

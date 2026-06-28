@@ -9,8 +9,7 @@ import { buildChapterAiPrompt } from '../narrative/chapter-ai';
 import { buildReviewSummaryPrompt } from '../narrative/review-summary';
 import type { CheckRun, PRReview } from '../github/types';
 import type { Concern } from '../narrative/types';
-import type { Broadcast } from '../mcp/tools';
-import { decisionTarget } from '../units/decision-target';
+import type { Broadcast } from '../mcp/broadcast';
 import type { UnitStore } from '../units/store';
 import { type Decision, IllegalTransitionError, type ReviewUnit, UnknownUnitError } from '../units/types';
 
@@ -163,40 +162,35 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
     const existing = store.get(id);
     if (!existing) return c.json({ error: new UnknownUnitError(id).message }, 404);
 
-    // --- github units: the verdict becomes a real GitHub review --------------
-    // Post to GitHub FIRST; only record locally if that succeeds, so dad and GitHub never disagree.
-    if (decisionTarget(existing) === 'github') {
-      // Validate the transition BEFORE the network call: a github verdict is only valid on a unit
-      // awaiting review. A repeat decision (double-click / second tab) must not post a second real
-      // review to GitHub and then fail locally — the exact dad⇄GitHub divergence we forbid.
-      if (existing.status !== 'queued') {
-        return c.json({ error: `unit is ${existing.status}, not awaiting a decision` }, 409);
-      }
-      if (existing.prNumber === undefined) return c.json({ error: 'unit has no PR' }, 400);
-      // A github verdict is meaningless without a way to post it — refuse rather than record a local
-      // "approved" that never reaches GitHub.
-      if (!reviewPoster) {
-        return c.json({ error: 'GitHub is not configured — cannot post a review for this unit' }, 503);
-      }
-      try {
-        await reviewPoster(existing, decisionValue);
-      } catch (err) {
-        return c.json({ error: err instanceof Error ? err.message : String(err) }, 502);
-      }
-      let unit: ReviewUnit;
-      try {
-        await store.setDecision(id, decisionValue);
-        unit = store.setReviewedSha(id, existing.metadata.headSha);
-      } catch (err) {
-        if (err instanceof IllegalTransitionError) return c.json({ error: err.message }, 409);
-        throw err;
-      }
-      broadcast('units', { units: store.list() });
-      return c.json({ ok: true, unit });
+    // The verdict becomes a real GitHub review (every unit tracks an open PR). Post to GitHub FIRST;
+    // only record locally if that succeeds, so dad and GitHub never disagree.
+    // Validate the transition BEFORE the network call: a verdict is only valid on a unit awaiting
+    // review. A repeat decision (double-click / second tab) must not post a second real review to
+    // GitHub and then fail locally — the exact dad⇄GitHub divergence we forbid.
+    if (existing.status !== 'queued') {
+      return c.json({ error: `unit is ${existing.status}, not awaiting a decision` }, 409);
     }
-
-    // Every unit is a github unit now — a non-github unit can no longer exist.
-    return c.json({ error: 'only github units can receive a decision' }, 400);
+    if (existing.prNumber === undefined) return c.json({ error: 'unit has no PR' }, 400);
+    // A verdict is meaningless without a way to post it — refuse rather than record a local
+    // "approved" that never reaches GitHub.
+    if (!reviewPoster) {
+      return c.json({ error: 'GitHub is not configured — cannot post a review for this unit' }, 503);
+    }
+    try {
+      await reviewPoster(existing, decisionValue);
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 502);
+    }
+    let unit: ReviewUnit;
+    try {
+      await store.setDecision(id, decisionValue);
+      unit = store.setReviewedSha(id, existing.metadata.headSha);
+    } catch (err) {
+      if (err instanceof IllegalTransitionError) return c.json({ error: err.message }, 409);
+      throw err;
+    }
+    broadcast('units', { units: store.list() });
+    return c.json({ ok: true, unit });
   });
 
   // Remove a unit from the queue (the reviewer's manual cleanup of failed / stale / abandoned units).
@@ -210,16 +204,16 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
     return c.json({ ok: true });
   });
 
-  // Lazy narrative for `github` units — generated on open, not on poll, so dad never burns tokens
-  // narrating PRs you never click. The web drill-in POSTs this once when it opens a github unit with
-  // no narrative; the `hydrate` dep fetches the PR diff + generates the walkthrough and stores it
-  // (without a status transition). No-op for non-github units, already-hydrated units, or when no
-  // hydrate dep is wired. Must precede the static catch-all or serveStatic swallows it.
+  // Lazy narrative — generated on open, not on poll, so dad never burns tokens narrating PRs you
+  // never click. The web drill-in POSTs this once when it opens a unit with no narrative; the
+  // `hydrate` dep fetches the PR diff + generates the walkthrough and stores it (without a status
+  // transition). No-op for already-hydrated units or when no hydrate dep is wired. Must precede the
+  // static catch-all or serveStatic swallows it.
   app.post('/api/units/:id/hydrate', async (c) => {
     const id = c.req.param('id');
     const unit = store.get(id);
     if (!unit) return c.json({ error: new UnknownUnitError(id).message }, 404);
-    if (unit.source !== 'github' || unit.narrative || !hydrate) return c.json({ unit });
+    if (unit.narrative || !hydrate) return c.json({ unit });
     let updated: ReviewUnit;
     try {
       updated = await hydrate(unit);
@@ -232,16 +226,15 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
     return c.json({ unit: updated });
   });
 
-  // --- Comments (github units) ----------------------------------------------
-  // Two-way with GitHub, mirroring the PR server's /api/comments: a github unit's comments are
-  // fetched and posted LIVE from GitHub (never stored on the unit), so dad and the PR can't drift —
-  // the same reason the decision route posts to GitHub first. Non-github units (agent/cli) have no PR
-  // to comment on, so GET returns [] and POST 400s. Both routes must precede the static catch-all.
+  // --- Comments -------------------------------------------------------------
+  // Two-way with GitHub, mirroring the PR server's /api/comments: a unit's comments are fetched and
+  // posted LIVE from GitHub (never stored on the unit), so dad and the PR can't drift — the same
+  // reason the decision route posts to GitHub first. Both routes must precede the static catch-all.
   app.get('/api/units/:id/comments', async (c) => {
     const id = c.req.param('id');
     const unit = store.get(id);
     if (!unit) return c.json({ error: new UnknownUnitError(id).message }, 404);
-    if (unit.source !== 'github' || !commentFetcher) return c.json([] as PRComment[]);
+    if (!commentFetcher) return c.json([] as PRComment[]);
     const raw = await commentFetcher(unit);
     // Map to chapters once the walkthrough exists (the drill-in hydrates on open); before that, the
     // raw comments are still returned so they're never invisible — they just carry no chapterIndices.
@@ -252,7 +245,6 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
     const id = c.req.param('id');
     const unit = store.get(id);
     if (!unit) return c.json({ error: new UnknownUnitError(id).message }, 404);
-    if (unit.source !== 'github') return c.json({ error: 'only github units have a PR to comment on' }, 400);
     // A comment we can't post is worse than no comment — refuse rather than show a local ghost.
     if (!commentPoster) return c.json({ error: 'GitHub is not configured — cannot post a comment' }, 503);
 
@@ -306,7 +298,6 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
     const id = c.req.param('id');
     const unit = store.get(id);
     if (!unit) return c.json({ error: new UnknownUnitError(id).message }, 404);
-    if (unit.source !== 'github') return c.json({ error: 'only github units submit a GitHub review' }, 400);
     if (!reviewSubmitter) return c.json({ error: 'GitHub is not configured — cannot submit a review' }, 503);
 
     let body: { event?: string; body?: string; comments?: ReviewInlineComment[] };
@@ -418,14 +409,14 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
     }
   });
 
-  // --- Status (github units): CI checks + reviews ---------------------------
+  // --- Status: CI checks + reviews ------------------------------------------
   // The PR's merge-readiness context for the drill-in (is CI green, who's approved). Read live from
-  // GitHub, never stored. Non-github units / no fetcher → empties (they have no PR).
+  // GitHub, never stored. No fetcher → empties.
   app.get('/api/units/:id/status', async (c) => {
     const id = c.req.param('id');
     const unit = store.get(id);
     if (!unit) return c.json({ error: new UnknownUnitError(id).message }, 404);
-    if (unit.source !== 'github' || !statusFetcher) {
+    if (!statusFetcher) {
       return c.json({ checks: [] as CheckRun[], reviews: [] as PRReview[] });
     }
     return c.json(await statusFetcher(unit));

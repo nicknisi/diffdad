@@ -31,12 +31,11 @@ export type StoreOptions = {
 export type UnitFilter = { status?: UnitStatus; repo?: string };
 
 /**
- * The cross-repo review-unit store — the spine of the daemon, shared by the MCP tools and the
- * HTTP routes. In-memory (keyed by globally-unique `unitId`) with best-effort write-through to
- * one JSON file per unit under <dataDir>/units/ (see paths.ts). Single-process synchronous mutations +
- * `save()` after each — no real concurrency in Bun's loop (same reasoning as agent-comments).
- * Mutations validate against the state machine; an illegal jump throws a typed error the MCP
- * layer maps to a tool error.
+ * The cross-repo review-unit store — the spine of the daemon, backing its HTTP routes. In-memory
+ * (keyed by globally-unique `unitId`) with best-effort write-through to one JSON file per unit under
+ * <dataDir>/units/ (see paths.ts). Single-process synchronous mutations + `save()` after each — no
+ * real concurrency in Bun's loop. Mutations validate against the state machine; an illegal jump
+ * throws a typed error the route maps to a 409.
  */
 export class UnitStore {
   private units = new Map<string, ReviewUnit>();
@@ -166,17 +165,13 @@ export class UnitStore {
   }
 
   /**
-   * Re-open a reviewed `github` unit when the author pushes again: back to `queued`, decision cleared,
-   * `metadata.headSha` advanced. This is the one source-gated reverse edge (`approved|changes_requested
-   * → queued`); it lives here rather than in the shared `TRANSITIONS` table so the strict forward-only
-   * machine the agent loop relies on stays intact. Throws if the unit isn't a github unit in a reviewed
-   * state. Synchronous.
+   * Re-open a reviewed unit when the author pushes again: back to `queued`, decision cleared,
+   * `metadata.headSha` advanced. This is the one reverse edge (`approved|changes_requested →
+   * queued`); it lives here rather than in the shared `TRANSITIONS` table so the strict forward-only
+   * machine stays intact. Throws if the unit isn't in a reviewed state. Synchronous.
    */
   resurfaceForNewPush(unitId: string, headSha: string): ReviewUnit {
     const unit = this.require(unitId);
-    if (unit.source !== 'github') {
-      throw new IllegalTransitionError(unit.status, 'queued', unitId);
-    }
     if (unit.status !== 'approved' && unit.status !== 'changes_requested') {
       throw new IllegalTransitionError(unit.status, 'queued', unitId);
     }

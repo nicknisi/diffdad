@@ -3,9 +3,9 @@ import { homedir } from 'os';
 import { join } from 'path';
 
 /**
- * Durable application data — the review queue and agent-comment threads. This is state the user would
- * be upset to lose, so it belongs in a real app-data location, NOT a cache dir that tools (or the OS)
- * may clear: `~/Library/Application Support/diffdad` on macOS, else `$XDG_DATA_HOME/diffdad` or
+ * Durable application data — the review queue. This is state the user would be upset to lose, so it
+ * belongs in a real app-data location, NOT a cache dir that tools (or the OS) may clear:
+ * `~/Library/Application Support/diffdad` on macOS, else `$XDG_DATA_HOME/diffdad` or
  * `~/.local/share/diffdad`. (Pre-1.0 this all lived under `~/.cache/diffdad`; see {@link legacyDir}.)
  */
 export function dataDir(): string {
@@ -24,7 +24,7 @@ export function legacyDir(): string {
 }
 
 /** The subdirs under the legacy dir that hold durable (non-regenerable) data. */
-const DURABLE_SUBDIRS = ['units', 'agent-comments'] as const;
+const DURABLE_SUBDIRS = ['units'] as const;
 
 /**
  * One-time move of durable data from the legacy `~/.cache/diffdad` location into {@link dataDir}.

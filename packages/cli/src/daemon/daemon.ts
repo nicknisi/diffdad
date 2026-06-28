@@ -93,7 +93,7 @@ const a = {
   white: '\x1b[97m',
 };
 
-export type DaemonOptions = { port?: number; concurrency?: number; open?: boolean; pollMs?: number };
+export type DaemonOptions = { port?: number; open?: boolean; pollMs?: number };
 
 /**
  * Start the GitHub review-request poller on an interval. Runs one pass at startup, then every

@@ -124,29 +124,6 @@ async function addUnit(store: UnitStore, repo = 'owner/a') {
   });
 }
 
-/**
- * A unit whose source is forced non-github at runtime. The store can only mint github units now, but the
- * routes still guard on `source === 'github'` — this exercises those guards (a non-github unit is no
- * longer representable through the store's public API).
- */
-function nonGithubUnit(store: UnitStore, repo = 'owner/a') {
-  const u = store.addGithubUnit({
-    owner: repo.split('/')[0]!,
-    repo: repo.split('/')[1]!,
-    number: 1,
-    title: 't',
-    headBranch: 'feat/x',
-    headSha: 'abc',
-    author: 'octocat',
-    url: `https://github.com/${repo}/pull/1`,
-    metadata: mkMetadata(),
-  });
-  const raw = store.get(u.unitId) as { source: string; prNumber?: number };
-  raw.source = 'agent';
-  raw.prNumber = undefined;
-  return u;
-}
-
 describe('GET /api/narrative (command-center bootstrap)', () => {
   it('declares command-center mode and seeds the current queue', async () => {
     const { store, app } = setup();
@@ -388,23 +365,6 @@ describe('POST /api/units/:id/hydrate (lazy narrative on open)', () => {
     expect(events).not.toContain('units'); // no broadcast for a no-op
   });
 
-  it('is a no-op (no hydrate call) on a non-github unit', async () => {
-    let called = false;
-    const { store, app } = setup({
-      hydrate: async (unit) => {
-        called = true;
-        return unit;
-      },
-    });
-    const u = nonGithubUnit(store);
-
-    const res = await post(app, u.unitId);
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { unit: ReviewUnit };
-    expect(called).toBe(false);
-    expect(body.unit.unitId).toBe(u.unitId);
-  });
-
   it('returns the unit unchanged when no hydrate dep is wired', async () => {
     const { store, app } = setup(); // no hydrate injected
     const gh = seedGithubUnit(store);
@@ -508,21 +468,6 @@ describe('GET /api/units/:id/comments', () => {
     expect(body.map((c) => c.id)).toEqual([5]);
   });
 
-  it('returns [] for a non-github unit without calling the fetcher', async () => {
-    let called = false;
-    const { store, app } = setup({
-      commentFetcher: async () => {
-        called = true;
-        return [mkComment()];
-      },
-    });
-    const u = nonGithubUnit(store);
-    const res = await app.request(`/api/units/${u.unitId}/comments`);
-    expect(res.status).toBe(200);
-    expect((await res.json()) as PRComment[]).toEqual([]);
-    expect(called).toBe(false);
-  });
-
   it('returns [] for a github unit when no fetcher is wired', async () => {
     const { store, app } = setup(); // no commentFetcher
     const gh = seedGithubUnit(store);
@@ -580,19 +525,6 @@ describe('POST /api/units/:id/comments', () => {
     const gh = seedGithubUnit(store, { headSha: 'sha-1' });
     await post(app, gh.unitId, { body: 'x', path: 'a.ts', line: 1, commitId: 'sha-override' });
     expect(calls[0]!.commitId).toBe('sha-override');
-  });
-
-  it('400s a non-github unit (no PR to comment on)', async () => {
-    let called = false;
-    const { store, app } = setup({
-      commentPoster: async () => {
-        called = true;
-        return mkComment();
-      },
-    });
-    const u = nonGithubUnit(store);
-    expect((await post(app, u.unitId, { body: 'hi' })).status).toBe(400);
-    expect(called).toBe(false);
   });
 
   it('503s a github unit when GitHub is not configured (no poster)', async () => {
@@ -714,14 +646,6 @@ describe('POST /api/units/:id/review (submit a GitHub review)', () => {
     const { store, app } = setup({ reviewSubmitter: rec.fn });
     const gh = seedGithubUnit(store);
     expect((await post(app, gh.unitId, { event: 'merge' })).status).toBe(400);
-    expect(rec.calls).toHaveLength(0);
-  });
-
-  it('400s a non-github unit', async () => {
-    const rec = recorder();
-    const { store, app } = setup({ reviewSubmitter: rec.fn });
-    const u = nonGithubUnit(store);
-    expect((await post(app, u.unitId, { event: 'approve' })).status).toBe(400);
     expect(rec.calls).toHaveLength(0);
   });
 
@@ -879,21 +803,6 @@ describe('GET /api/units/:id/status (checks + reviews)', () => {
     expect(seen[0]!.unitId).toBe(gh.unitId);
     expect(body.checks[0]!.conclusion).toBe('failure');
     expect(body.reviews[0]!.state).toBe('APPROVED');
-  });
-
-  it('returns empty for a non-github unit without calling the fetcher', async () => {
-    let called = false;
-    const { store, app } = setup({
-      statusFetcher: async () => {
-        called = true;
-        return { checks: [mkCheck()], reviews: [] };
-      },
-    });
-    const u = nonGithubUnit(store);
-    const res = await app.request(`/api/units/${u.unitId}/status`);
-    expect(res.status).toBe(200);
-    expect((await res.json()) as unknown).toEqual({ checks: [], reviews: [] });
-    expect(called).toBe(false);
   });
 
   it('returns empty when no fetcher is wired', async () => {

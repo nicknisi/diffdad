@@ -93,16 +93,14 @@ export function repoOptions(units: Unit[]): string[] {
  */
 export type SourceBadge = { label: string; title: string; tone: 'github' };
 
-export function sourceBadge(source: Unit['source']): SourceBadge {
-  switch (source) {
-    case 'github':
-    default:
-      return {
-        label: 'GitHub',
-        title: 'Pulled from a GitHub review request — comments post to the PR',
-        tone: 'github',
-      };
-  }
+export function sourceBadge(_source: Unit['source']): SourceBadge {
+  // github-only: every unit mirrors a real PR, so the badge is constant. The param is retained so
+  // callers keep passing `unit.source` and the badge stays a pure function of the unit.
+  return {
+    label: 'GitHub',
+    title: 'Pulled from a GitHub review request — comments post to the PR',
+    tone: 'github',
+  };
 }
 
 /** Compact elapsed label ("just now" / "5m" / "3h" / "2d"). Empty string for an unparseable date. */

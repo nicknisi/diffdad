@@ -1,4 +1,4 @@
-import type { Broadcast } from '../mcp/tools';
+import type { Broadcast } from '../mcp/broadcast';
 import { classify, shouldResurface } from '../units/linking';
 import type { UnitStore } from '../units/store';
 import type { PolledPr } from '../units/types';

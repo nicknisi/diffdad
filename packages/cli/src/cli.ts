@@ -372,13 +372,11 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
 async function daemonCommand(sub?: string): Promise<number> {
   const portFlag = Bun.argv.find((f) => f.startsWith('--port='));
   const port = portFlag ? parseInt(portFlag.split('=')[1] ?? '0', 10) || undefined : undefined;
-  const concFlag = Bun.argv.find((f) => f.startsWith('--concurrency='));
-  const concurrency = concFlag ? parseInt(concFlag.split('=')[1] ?? '0', 10) || undefined : undefined;
 
   switch (sub) {
     case undefined:
     case 'start':
-      return await startDaemon({ port, concurrency, open: !Bun.argv.includes('--no-open') });
+      return await startDaemon({ port, open: !Bun.argv.includes('--no-open') });
     case 'status':
       return await daemonStatus(port);
     case 'install': {
