@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { getAccentMeta } from '../lib/accents';
 import { copy } from '../lib/microcopy';
 import { useReviewStore } from '../state/review-store';
-import { postDecision, removeUnit, retryUnit, useUnits } from '../hooks/useUnits';
+import { postDecision, removeUnit, useUnits } from '../hooks/useUnits';
 import { AccentPicker } from './AccentPicker';
 import { DadMark } from './DadMark';
 import { ThemeToggle } from './ThemeToggle';
@@ -86,24 +86,6 @@ export function CommandCenter() {
       await removeUnit(unit.unitId); // SSE `units` repaints the queue without it
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Remove failed');
-    } finally {
-      setBusyId(null);
-    }
-  }
-
-  async function retry(unit: Unit) {
-    setBusyId(unit.unitId);
-    setError(null);
-    try {
-      const r = await retryUnit(unit.unitId);
-      if (r.ok === false) {
-        setError(
-          r.reason === 'clean-tree' ? 'Nothing to re-review — that working tree is clean now.' : 'Could not retry.',
-        );
-      }
-      // else: the unit flips back to reviewing via SSE and the worker picks it up again
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Retry failed');
     } finally {
       setBusyId(null);
     }
@@ -212,7 +194,6 @@ export function CommandCenter() {
                     onOpen={open}
                     onApprove={(unit) => decide(unit, 'approved')}
                     onRequestChanges={(unit) => decide(unit, 'changes_requested')}
-                    onRetry={retry}
                     onRemove={remove}
                   />
                 ))}

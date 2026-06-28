@@ -92,13 +92,6 @@ describe('verdictTone', () => {
 });
 
 describe('recommendedAction', () => {
-  it('flags a failed review for attention regardless of verdict', () => {
-    const a = recommendedAction(mkUnit({ error: 'pipeline blew up', verdict: 'safe' }));
-    expect(a.primary).toBe('review');
-    expect(a.tone).toBe('risk');
-    expect(a.label.toLowerCase()).toContain('fail');
-  });
-
   it('recommends resolving when there are open concerns, surfacing the count', () => {
     const a = recommendedAction(mkUnit({ toResolve: 3, verdict: 'caution' }));
     expect(a.primary).toBe('review');

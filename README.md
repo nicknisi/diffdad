@@ -44,7 +44,6 @@ dad config show              # Print current config with secrets redacted
 dad config reset [--yes]     # Delete saved config
 dad cache clear              # Clear cached narratives
 dad daemon                   # Start the per-machine review command center
-dad add                      # Add the current working tree to the daemon's queue
 dad --version                # Print version
 ```
 
@@ -76,26 +75,9 @@ dad daemon                       # Start the command center
 dad daemon status                # Is it running?
 dad daemon install               # Run it under launchd — survives terminal close, restarts at login
 dad daemon uninstall             # Remove the launchd agent
-dad add [--task=…] [--base=…]    # Drop the current working tree into the queue
 ```
 
-Three doors feed the queue:
-
-- **Agents** call `submit_for_review` over MCP when they finish, then park on `await_decision` for your verdict. Register the endpoint once: `claude mcp add --transport http diffdad http://localhost:4319/mcp`.
-- **`dad add`** drops the current worktree in by hand (or from a script/alias). It infers the repo from the git remote and the task label from the branch (or `--task=`), and posts to the running daemon — so it needs `dad daemon` up.
-- **GitHub** review requests appear automatically when a token is configured (see [GitHub Token](#github-token)) — every open PR where you're a requested reviewer or assignee. Opening one generates its walkthrough lazily (PRs you never click cost nothing); approving or requesting changes posts a **real GitHub review**.
-
-Your verdict flows back to whoever submitted the work — to the agent over `await_decision`, or to GitHub as a review. A PR you've reviewed stays out of the queue until its author pushes again.
-
-### Auto-submit from agents
-
-So work registers itself instead of relying on you to remember, wire `dad add` into your agent's finish hook (Claude Code's `Stop` hook, a git `post-commit` hook, a shell alias, or the agent's own instructions):
-
-```sh
-dad add || true    # '|| true' so a missing daemon never blocks the agent
-```
-
-`dad add` is the primitive; you choose the trigger.
+The queue is fed by GitHub: open a review request on GitHub and it shows up here. With a token configured (see [GitHub Token](#github-token)), the daemon polls for every open PR where you're a requested reviewer or assignee and mints a unit for it. Opening one generates its walkthrough lazily (PRs you never click cost nothing); approving or requesting changes posts a **real GitHub review**. A PR you've reviewed stays out of the queue until its author pushes again.
 
 ## How It Works
 

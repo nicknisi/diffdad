@@ -36,8 +36,6 @@ type Props = {
   onOpen: (unit: Unit) => void;
   onApprove?: (unit: Unit) => void;
   onRequestChanges?: (unit: Unit) => void;
-  /** Re-run a failed review (local units). Shown on rows whose review errored. */
-  onRetry?: (unit: Unit) => void;
   /** Remove the unit from the queue (manual cleanup). Shown on every row when provided. */
   onRemove?: (unit: Unit) => void;
   /** A decision for this unit is in flight — disables its buttons. */
@@ -78,7 +76,7 @@ function PillButton({
  * target that opens the unit's review) so we never nest the decision buttons inside it. Needs-you
  * rows carry the recommended action + Approve / Request-changes; other groups are read-only digest.
  */
-export function UnitRow({ unit, now, onOpen, onApprove, onRequestChanges, onRetry, onRemove, busy }: Props) {
+export function UnitRow({ unit, now, onOpen, onApprove, onRequestChanges, onRemove, busy }: Props) {
   const group = groupOf(unit.status);
   const isNeedsYou = group === 'needs-you';
   const tone = TONE[verdictTone(unit.verdict)];
@@ -145,9 +143,6 @@ export function UnitRow({ unit, now, onOpen, onApprove, onRequestChanges, onRetr
             <span className="mr-0.5 hidden text-[12px] font-medium sm:inline" style={{ color: tone.fg }}>
               {action?.label}
             </span>
-          )}
-          {unit.error && onRetry && (
-            <PillButton label="Retry" tone="neutral" disabled={busy} onClick={() => onRetry(unit)} />
           )}
           {onApprove && <PillButton label="Approve" tone="approve" disabled={busy} onClick={() => onApprove(unit)} />}
           {onRequestChanges && (

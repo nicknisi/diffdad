@@ -155,11 +155,9 @@ export function useLiveStream() {
     const onRegenerating = (e: MessageEvent) => {
       try {
         const data = JSON.parse(e.data) as { previousSha: string; newSha: string };
-        // Watch mode broadcasts empty SHAs (no commits — the working tree changed).
-        const summary = data.newSha
-          ? `New commits detected (${data.previousSha} → ${data.newSha}). Regenerating narrative...`
-          : 'Working tree changed. Regenerating narrative...';
-        addLiveEvent(makeEvent('system', summary));
+        addLiveEvent(
+          makeEvent('system', `New commits detected (${data.previousSha} → ${data.newSha}). Regenerating narrative...`),
+        );
         useReviewStore.getState().setRegenerating(true);
         useReviewStore.getState().setNarrativeProgressChars(0);
       } catch {

@@ -1,15 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useReviewStore, type BackendConfig } from '../state/review-store';
-import type {
-  CheckRun,
-  DiffFile,
-  NarrativeResponse,
-  PRComment,
-  PRData,
-  PRReview,
-  TriageFlag,
-  Unit,
-} from '../state/types';
+import type { CheckRun, DiffFile, NarrativeResponse, PRComment, PRData, PRReview, Unit } from '../state/types';
 
 type NarrativeApiResponse = {
   generating?: boolean;
@@ -22,7 +13,6 @@ type NarrativeApiResponse = {
   repoUrl?: string;
   mode?: 'pr' | 'command-center';
   aiPath?: 'api' | 'local-cli';
-  triage?: TriageFlag[];
   config?: BackendConfig;
   /** Command-center bootstrap: the daemon seeds the initial queue so the dashboard paints at once. */
   units?: Unit[];

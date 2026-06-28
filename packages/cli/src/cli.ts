@@ -57,10 +57,10 @@ Usage:
                                      goal, decisions, blockers, mental model
                                      — when you first click it.
   dad daemon                         Start the per-machine review daemon: a
-                                     long-lived process that owns a cross-repo
-                                     review queue and serves the command center
-                                     + MCP endpoint. Agents submit_for_review
-                                     and park on await_decision.
+                                     long-lived process that polls GitHub for
+                                     review requests and serves the command
+                                     center — a cross-repo queue of every PR
+                                     waiting on you.
   dad daemon status                  Report whether the daemon is running.
   dad daemon install                 Install a launchd agent so the daemon
                                      survives terminal close and starts at login

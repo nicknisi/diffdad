@@ -130,18 +130,8 @@ export type DiffLine = {
   lineNumber: { old?: number; new?: number };
 };
 
+/** Shared severity vocabulary for the beat rail + walkthrough resolve strips (see `lib/severity.ts`). */
 export type TriageSeverity = 'risk' | 'warn' | 'info';
-
-export type TriageStatus = 'idle' | 'running' | 'ready' | 'error';
-
-/** A single watch-mode triage flag: "look here first" for an agent-era failure mode. */
-export type TriageFlag = {
-  file: string;
-  line?: number;
-  severity: TriageSeverity;
-  kind: string;
-  message: string;
-};
 
 /** GitHub comment id (numeric). Kept as an alias for the inline-comment pipeline. */
 export type CommentId = number | string;

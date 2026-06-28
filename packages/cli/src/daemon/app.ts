@@ -125,9 +125,9 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
 
   // --- Command-center bootstrap ---------------------------------------------
   // The web SPA's single bootstrap is `GET /api/narrative`; it multiplexes on `mode`
-  // ('pr' | 'watch' | 'command-center'). The daemon has no single PR/narrative, so it declares
-  // 'command-center' and seeds the queue — the same seam watch mode uses. Must precede the static
-  // catch-all, or serveStatic answers with index.html and the SPA can't tell it's on a daemon.
+  // ('pr' | 'command-center'). The daemon has no single PR/narrative, so it declares
+  // 'command-center' and seeds the queue. Must precede the static catch-all, or serveStatic
+  // answers with index.html and the SPA can't tell it's on a daemon.
   app.get('/api/narrative', (c) => c.json({ mode: 'command-center', units: store.list() }));
 
   // --- Units API ------------------------------------------------------------

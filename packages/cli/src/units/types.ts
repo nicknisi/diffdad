@@ -6,24 +6,24 @@ import type { Concern, NarrativeResponse } from '../narrative/types';
  * advances to the reviewer's verdict, and `approved → done`.
  *   queued → { approved | changes_requested }
  *   approved → done
- * (A new push re-opens a reviewed unit back to `queued` via `resurfaceForNewPush` — a source-gated
- * reverse edge kept outside the forward-only `TRANSITIONS` table.)
+ * (A new push re-opens a reviewed unit back to `queued` via `resurfaceForNewPush` — the one reverse
+ * edge, kept outside the forward-only `TRANSITIONS` table.)
  */
 export type UnitStatus = 'queued' | 'approved' | 'changes_requested' | 'done';
 
 /** Which door a unit entered through. Collapsed to github-only — every unit is minted from a PR. */
 export type UnitSource = 'github';
 
-/** The reviewer's verdict on a unit, delivered back to the agent over `await_decision`. */
+/** The reviewer's verdict on a unit, recorded locally and posted to GitHub as a review. */
 export type Decision = {
   kind: 'approved' | 'changes_requested';
-  /** Curated concerns the agent should address (changes_requested). CLI-native shape. */
+  /** Curated concerns to surface on changes_requested. CLI-native shape. */
   concerns?: Concern[];
   note?: string;
 };
 
 /**
- * A unit of agent work submitted for review. Owns its diff slice (`files`/`metadata`), the
+ * A unit of review work, minted from an open GitHub PR. Owns its diff slice (`files`/`metadata`), the
  * Phase-1 review output (`narrative` — the brief is derived in the UI via `buildWalkthrough`,
  * since `WalkthroughModel` is a web type the CLI can't produce), a state-machine `status`, and
  * a `toResolve` count. Persisted one-file-per-unit under <dataDir>/units/ (see paths.ts).

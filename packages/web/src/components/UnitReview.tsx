@@ -3,7 +3,6 @@ import { getAccentMeta } from '../lib/accents';
 import { loadDrafts, pendingReviewComments, useReviewStore } from '../state/review-store';
 import { reviewEndpoint, summarizeChecks, summarizeReviews } from '../lib/units-view';
 import { useComments } from '../hooks/useComments';
-import { removeUnit, retryUnit } from '../hooks/useUnits';
 import { AccentPicker } from './AccentPicker';
 import { ClassicView } from './ClassicView';
 import { DadMark } from './DadMark';
@@ -203,36 +202,6 @@ export function UnitReview() {
   const rv = summarizeReviews(reviews);
   const showStatus = checkRuns.length > 0 || reviews.length > 0;
 
-  async function retry() {
-    if (!unitId) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const r = await retryUnit(unitId);
-      if (r.ok === false) {
-        setError(r.reason === 'clean-tree' ? 'Nothing to re-review — the working tree is clean.' : 'Could not retry.');
-      }
-      // else: the unit flips back to reviewing via SSE and the live effect repaints with the loader
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Retry failed');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function remove() {
-    if (!unitId) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await removeUnit(unitId);
-      navigate({ name: 'center' });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Remove failed');
-      setBusy(false);
-    }
-  }
-
   // Submit a GitHub review for a github unit (COMMENT / APPROVE / REQUEST_CHANGES) with any batched
   // draft comments — the full PR-mode submit, scoped to this unit's PR via `reviewEndpoint`. A verdict
   // records locally and the unit leaves the queue, so we head back to the center; a plain COMMENT
@@ -335,35 +304,6 @@ export function UnitReview() {
 
       {narrative ? (
         <StoryView />
-      ) : unit?.error ? (
-        <div className="mx-auto max-w-[1100px] px-6 pt-10 text-[14px] text-[var(--fg-2)]">
-          <p className="font-medium text-[var(--red-11)]">Dad couldn't get through this one.</p>
-          <p className="mt-1 font-mono text-[12.5px] text-[var(--fg-3)]">{unit.error}</p>
-          <p className="mt-3">Retry the review, decide from the diff below, or clear it from the queue.</p>
-          <div className="mt-4 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={retry}
-              disabled={busy}
-              className="rounded-md px-3 py-1.5 text-[13px] font-semibold text-white disabled:opacity-50"
-              style={{ background: 'var(--blue-9)' }}
-            >
-              Retry review
-            </button>
-            <button
-              type="button"
-              onClick={remove}
-              disabled={busy}
-              className="rounded-md px-3 py-1.5 text-[13px] font-medium text-[var(--fg-2)] disabled:opacity-50"
-              style={{ boxShadow: 'inset 0 0 0 1px var(--gray-a5)' }}
-            >
-              Remove from queue
-            </button>
-          </div>
-          <div className="mt-4">
-            <ClassicView />
-          </div>
-        </div>
       ) : (
         <>
           <ReviewProgress />

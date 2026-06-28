@@ -69,7 +69,6 @@ export type RecommendedAction = {
 };
 
 export function recommendedAction(unit: Unit): RecommendedAction {
-  if (unit.error) return { primary: 'review', label: 'Review (failed)', tone: 'risk' };
   const tone = verdictTone(unit.verdict);
   if (unit.toResolve > 0) {
     return {
