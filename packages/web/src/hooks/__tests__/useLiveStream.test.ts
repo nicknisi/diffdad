@@ -144,12 +144,6 @@ describe('handleAgentCommentEvent', () => {
     expect(useReviewStore.getState().agentComments).toEqual([]);
   });
 
-  it('applies an unscoped (watch) payload regardless of route', () => {
-    useReviewStore.setState({ mode: 'watch', route: { name: 'center' } });
-    handleAgentCommentEvent(mkMessageEvent({ comments: [mkAgentComment('c3')] }));
-    expect(useReviewStore.getState().agentComments.map((c) => c.id)).toEqual(['c3']);
-  });
-
   it('ignores malformed JSON without throwing', () => {
     expect(() => handleAgentCommentEvent({ data: '{ not json' } as MessageEvent)).not.toThrow();
     expect(useReviewStore.getState().agentComments).toEqual([]);

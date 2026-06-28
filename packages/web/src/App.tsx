@@ -14,7 +14,6 @@ import { ShortcutsHelp } from './components/ShortcutsHelp';
 import { StoryView } from './components/StoryView';
 import { SubmitBar } from './components/SubmitBar';
 import { UnitReview } from './components/UnitReview';
-import { WatchView } from './components/WatchView';
 import { selectReviewReady } from './state/selectors';
 import { parseRoute } from './lib/units-view';
 import { copy } from './lib/microcopy';
@@ -138,12 +137,6 @@ export default function App() {
   // Its own self-contained shells — no single-PR chrome — routed by the client-side path.
   if (mode === 'command-center') {
     return route.name === 'unit' ? <UnitReview /> : <CommandCenter />;
-  }
-
-  // Watch mode is its own self-contained experience — diff-first, agent-comment loop,
-  // none of the PR-review chrome. Branch here so review components can't leak into it.
-  if (mode === 'watch') {
-    return <WatchView />;
   }
 
   // Diff-first gate: block on the brief pre-files instant only. The moment there's a diff

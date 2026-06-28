@@ -20,7 +20,7 @@ type NarrativeApiResponse = {
   checkRuns?: CheckRun[];
   reviews?: PRReview[];
   repoUrl?: string;
-  mode?: 'pr' | 'watch' | 'command-center';
+  mode?: 'pr' | 'command-center';
   aiPath?: 'api' | 'local-cli';
   triage?: TriageFlag[];
   config?: BackendConfig;
@@ -57,29 +57,7 @@ export function useNarrative() {
           return;
         }
 
-        if (data.mode === 'watch') {
-          // Watch mode has no narrative — the diff is the view. Populate the working-tree
-          // data directly so WatchView renders immediately, with no generating screen.
-          setGenerating(false);
-          useReviewStore.setState({
-            pr: data.pr,
-            files: data.files,
-            comments: data.comments,
-            repoUrl: data.repoUrl ?? null,
-            aiPath: data.aiPath ?? null,
-            narrative: null,
-          });
-          if (data.config) {
-            if (data.config.theme && !localStorage.getItem('diffdad.theme'))
-              useReviewStore.setState({ theme: data.config.theme });
-            if (data.config.accent && !localStorage.getItem('diffdad.accent'))
-              useReviewStore.setState({ accent: data.config.accent });
-            if (data.config.displayDensity) useReviewStore.setState({ displayDensity: data.config.displayDensity });
-          }
-          useReviewStore
-            .getState()
-            .setTriage(data.triage ?? [], data.triage && data.triage.length ? 'ready' : 'running');
-        } else if (data.generating && !data.narrative) {
+        if (data.generating && !data.narrative) {
           setGenerating(true);
           useReviewStore.setState({
             pr: data.pr,
@@ -115,20 +93,7 @@ export function useNarrative() {
           useReviewStore.getState().setAiPath(data.aiPath ?? null);
         }
 
-        // Watch mode: load existing agent comments (live updates arrive via the
-        // `agent-comment` SSE event in useLiveStream).
         useReviewStore.getState().setMode(data.mode ?? 'pr');
-        if (data.mode === 'watch') {
-          try {
-            const acRes = await fetch('/api/agent-comments');
-            if (acRes.ok && !cancelled) {
-              const ac = await acRes.json();
-              if (Array.isArray(ac)) useReviewStore.getState().setAgentComments(ac);
-            }
-          } catch {
-            // ignore — SSE will backfill
-          }
-        }
       } catch (err) {
         if (cancelled) return;
         setError(err instanceof Error ? err.message : 'Unknown error');

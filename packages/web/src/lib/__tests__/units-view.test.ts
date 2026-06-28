@@ -172,9 +172,8 @@ describe('commentsEndpoint', () => {
   it('falls back to the PR endpoint at the command center root (no open unit)', () => {
     expect(commentsEndpoint('command-center', { name: 'center' })).toBe('/api/comments');
   });
-  it('uses the PR endpoint in pr and watch modes', () => {
+  it('uses the PR endpoint in pr mode', () => {
     expect(commentsEndpoint('pr', { name: 'center' })).toBe('/api/comments');
-    expect(commentsEndpoint('watch', { name: 'unit', unitId: 'u_1' })).toBe('/api/comments');
   });
 });
 
@@ -197,15 +196,13 @@ describe('agentCommentsEndpoint', () => {
       '/api/units/u_1/agent-comments',
     );
   });
-  it('falls back to the single-mailbox endpoint in watch mode and at the center root', () => {
-    expect(agentCommentsEndpoint('watch', { name: 'center' })).toBe('/api/agent-comments');
+  it('falls back to the single-mailbox endpoint at the center root', () => {
     expect(agentCommentsEndpoint('command-center', { name: 'center' })).toBe('/api/agent-comments');
   });
 });
 
 describe('commentTarget', () => {
-  it('sends to the agent loop in watch mode and on local daemon units', () => {
-    expect(commentTarget('watch', { name: 'center' }, [])).toBe('agent');
+  it('sends to the agent loop on local daemon units', () => {
     const units = [mkUnit({ unitId: 'u1', source: 'cli' }), mkUnit({ unitId: 'u2', source: 'agent' })];
     expect(commentTarget('command-center', { name: 'unit', unitId: 'u1' }, units)).toBe('agent');
     expect(commentTarget('command-center', { name: 'unit', unitId: 'u2' }, units)).toBe('agent');
@@ -222,9 +219,6 @@ describe('commentTarget', () => {
 });
 
 describe('commentGoesToAgent', () => {
-  it('always routes to the agent loop in watch mode', () => {
-    expect(commentGoesToAgent('watch', { name: 'center' }, [])).toBe(true);
-  });
   it('routes to GitHub in pr mode', () => {
     expect(commentGoesToAgent('pr', { name: 'center' }, [])).toBe(false);
   });

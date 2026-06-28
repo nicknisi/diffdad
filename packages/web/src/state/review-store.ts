@@ -50,10 +50,9 @@ type ReviewState = {
   triageFlags: TriageFlag[];
   triageStatus: TriageStatus;
   /**
-   * 'watch' = local working-tree mode (comments go to the agent, not GitHub).
    * 'command-center' = the daemon's cross-repo dashboard (many units behind one app).
    */
-  mode: 'pr' | 'watch' | 'command-center';
+  mode: 'pr' | 'command-center';
   /** Command-center: the daemon's review-unit queue, kept live via the `units` SSE event. */
   units: Unit[];
   /** Per-unit agent last-seen (epoch-ms, or null if never) behind the drill-in's presence cue. */
@@ -144,7 +143,7 @@ type ReviewState = {
   setComments: (comments: PRComment[]) => void;
   setAgentComments: (comments: AgentComment[]) => void;
   setTriage: (flags: TriageFlag[], status: TriageStatus) => void;
-  setMode: (mode: 'pr' | 'watch' | 'command-center') => void;
+  setMode: (mode: 'pr' | 'command-center') => void;
   setUnits: (units: Unit[]) => void;
   /** Record a unit's agent last-seen (from the `presence` SSE event or the drill-in's open fetch). */
   setPresence: (unitId: string, lastSeenAt: number | null) => void;

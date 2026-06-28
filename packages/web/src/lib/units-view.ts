@@ -166,7 +166,7 @@ export function routePath(route: Route): string {
  * watch mode, the center root) it's the single-PR `/api/<resource>`. Pure so the surface routing is
  * unit-tested without rendering a hook.
  */
-function resourceEndpoint(mode: 'pr' | 'watch' | 'command-center', route: Route, resource: string): string {
+function resourceEndpoint(mode: 'pr' | 'command-center', route: Route, resource: string): string {
   if (mode === 'command-center' && route.name === 'unit') {
     return `/api/units/${encodeURIComponent(route.unitId)}/${resource}`;
   }
@@ -174,22 +174,21 @@ function resourceEndpoint(mode: 'pr' | 'watch' | 'command-center', route: Route,
 }
 
 /** Comments endpoint for `useComments`. (Watch mode's agent-comment path is handled in the hook.) */
-export const commentsEndpoint = (mode: 'pr' | 'watch' | 'command-center', route: Route): string =>
+export const commentsEndpoint = (mode: 'pr' | 'command-center', route: Route): string =>
   resourceEndpoint(mode, route, 'comments');
 
 /** Review-submission endpoint for the submit bar/dialog. */
-export const reviewEndpoint = (mode: 'pr' | 'watch' | 'command-center', route: Route): string =>
+export const reviewEndpoint = (mode: 'pr' | 'command-center', route: Route): string =>
   resourceEndpoint(mode, route, 'review');
 
 /** AI endpoint (summary draft, ask) for the submit dialog and ask-Dad features. */
-export const aiEndpoint = (mode: 'pr' | 'watch' | 'command-center', route: Route): string =>
-  resourceEndpoint(mode, route, 'ai');
+export const aiEndpoint = (mode: 'pr' | 'command-center', route: Route): string => resourceEndpoint(mode, route, 'ai');
 
 /**
  * Agent-comment ("send to agent") endpoint. Per-unit in a command-center drill-in (each unit has its
  * own parked agent + mailbox); the single global mailbox in watch mode and at the center root.
  */
-export const agentCommentsEndpoint = (mode: 'pr' | 'watch' | 'command-center', route: Route): string =>
+export const agentCommentsEndpoint = (mode: 'pr' | 'command-center', route: Route): string =>
   resourceEndpoint(mode, route, 'agent-comments');
 
 /**
@@ -202,8 +201,7 @@ export const agentCommentsEndpoint = (mode: 'pr' | 'watch' | 'command-center', r
  */
 export type CommentTarget = 'agent' | 'github' | 'review';
 
-export function commentTarget(mode: 'pr' | 'watch' | 'command-center', route: Route, units: Unit[]): CommentTarget {
-  if (mode === 'watch') return 'agent';
+export function commentTarget(mode: 'pr' | 'command-center', route: Route, units: Unit[]): CommentTarget {
   if (mode === 'command-center' && route.name === 'unit') {
     const unit = units.find((u) => u.unitId === route.unitId);
     if (!unit) return 'review';
@@ -216,7 +214,7 @@ export function commentTarget(mode: 'pr' | 'watch' | 'command-center', route: Ro
  * Does an inline comment on the current surface go to the agent loop (vs a GitHub PR comment)? Thin
  * wrapper over {@link commentTarget} so callers that only need the agent/not-agent split stay simple.
  */
-export function commentGoesToAgent(mode: 'pr' | 'watch' | 'command-center', route: Route, units: Unit[]): boolean {
+export function commentGoesToAgent(mode: 'pr' | 'command-center', route: Route, units: Unit[]): boolean {
   return commentTarget(mode, route, units) === 'agent';
 }
 
