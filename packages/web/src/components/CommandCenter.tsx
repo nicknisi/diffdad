@@ -195,9 +195,7 @@ export function CommandCenter() {
             <DadMark size={64} bg={markBg} shape="circle" showBadge className="mx-auto mb-4 opacity-90" />
             <p className="text-[15px] font-medium text-[var(--fg-2)]">All clear, champ. Nothing in the queue.</p>
             <p className="mt-1.5 text-[13px] text-[var(--fg-3)]">
-              Point an agent at this daemon and have it call{' '}
-              <code className="font-mono text-[12px] text-[var(--fg-2)]">submit_for_review</code> — finished work shows
-              up here, grouped by what needs you.
+              Open a review request on GitHub and it shows up here, grouped by what needs you.
             </p>
           </div>
         ) : (

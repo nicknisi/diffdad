@@ -247,14 +247,7 @@ export type CheckRun = {
  * into `setData` as the unit's PR. `narrative`/`files` are absent until the review worker queues
  * the unit; the diff (`files`) is present from submit time so the drill-in renders diff-first.
  */
-export type UnitStatus =
-  | 'submitted'
-  | 'reviewing'
-  | 'queued'
-  | 'approved'
-  | 'changes_requested'
-  | 'addressing'
-  | 'done';
+export type UnitStatus = 'queued' | 'approved' | 'changes_requested' | 'done';
 
 export type UnitDecisionKind = 'approved' | 'changes_requested';
 
@@ -264,8 +257,8 @@ export type Unit = {
   taskLabel: string;
   intent: string;
   status: UnitStatus;
-  /** Ingestion door (CLI mirror of `UnitSource`). Defaults to `'agent'` server-side for back-compat. */
-  source?: 'agent' | 'cli' | 'github';
+  /** Ingestion door — github-only now (every unit mirrors a real GitHub PR). */
+  source?: 'github';
   /** github-only: the PR this unit mirrors. Drives the author cue + "View on GitHub" link + lazy hydrate. */
   prNumber?: number;
   prUrl?: string;

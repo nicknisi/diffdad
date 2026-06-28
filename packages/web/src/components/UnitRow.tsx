@@ -9,11 +9,9 @@ import {
 } from '../lib/units-view';
 import type { Unit, UnitStatus } from '../state/types';
 
-/** Source-badge palette — agent (has a parked agent) reads purple like the bot cue; github blue; local neutral. */
+/** Source-badge palette — github reads blue (comments post to the PR). */
 const SOURCE_TONE: Record<SourceBadge['tone'], React.CSSProperties> = {
-  agent: { background: 'var(--purple-3)', color: 'var(--purple-11)' },
   github: { background: 'var(--blue-3)', color: 'var(--blue-11)' },
-  local: { background: 'var(--gray-3)', color: 'var(--fg-3)' },
 };
 
 const TONE: Record<VerdictTone, { fg: string; glyph: string }> = {
@@ -25,10 +23,7 @@ const TONE: Record<VerdictTone, { fg: string; glyph: string }> = {
 
 /** In-flight / cleared rows lead with a status glyph rather than a verdict. */
 const STATUS_META: Record<UnitStatus, { glyph: string; label: string; color: string }> = {
-  submitted: { glyph: '◌', label: 'submitted', color: 'var(--fg-3)' },
-  reviewing: { glyph: '◐', label: 'reviewing', color: 'var(--blue-11)' },
   queued: { glyph: '▸', label: 'needs you', color: 'var(--fg-2)' },
-  addressing: { glyph: '↻', label: 'addressing', color: 'var(--amber-11)' },
   changes_requested: { glyph: '↩', label: 'changes requested', color: 'var(--amber-11)' },
   approved: { glyph: '✓', label: 'approved', color: 'var(--green-11)' },
   done: { glyph: '✓', label: 'done', color: 'var(--green-11)' },
@@ -89,8 +84,6 @@ export function UnitRow({ unit, now, onOpen, onApprove, onRequestChanges, onRetr
   const tone = TONE[verdictTone(unit.verdict)];
   const status = STATUS_META[unit.status];
   const lead = isNeedsYou ? tone : { fg: status.color, glyph: status.glyph };
-  // A unit the worker is actively chewing on — pulse its glyph so the row reads as "working".
-  const working = unit.status === 'submitted' || unit.status === 'reviewing';
   const branch = unit.metadata?.branch;
   const elapsed = relativeTime(unit.updatedAt, now);
   const action = isNeedsYou ? recommendedAction(unit) : null;
@@ -111,11 +104,7 @@ export function UnitRow({ unit, now, onOpen, onApprove, onRequestChanges, onRetr
         className="flex min-w-0 flex-1 items-start gap-2.5 text-left"
         aria-label={`Open ${unit.taskLabel}`}
       >
-        <span
-          className={`mt-[2px] shrink-0 text-[13px] leading-none ${working ? 'animate-pulse' : ''}`}
-          style={{ color: lead.fg }}
-          aria-hidden
-        >
+        <span className="mt-[2px] shrink-0 text-[13px] leading-none" style={{ color: lead.fg }} aria-hidden>
           {lead.glyph}
         </span>
         <span className="min-w-0 flex-1">

@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  agentCommentsEndpoint,
-  agentPresence,
   aiEndpoint,
-  commentGoesToAgent,
   commentsEndpoint,
   groupOf,
   groupUnits,
@@ -42,8 +39,8 @@ describe('groupOf', () => {
     expect(groupOf('queued')).toBe('needs-you');
   });
 
-  it('routes work-in-motion statuses to in-flight', () => {
-    const inflight: UnitStatus[] = ['submitted', 'reviewing', 'addressing', 'changes_requested'];
+  it('routes changes_requested to in-flight (the ball is back with the author)', () => {
+    const inflight: UnitStatus[] = ['changes_requested'];
     for (const s of inflight) expect(groupOf(s)).toBe('in-flight');
   });
 
@@ -57,9 +54,9 @@ describe('groupUnits', () => {
   it('partitions units into the three command-center groups', () => {
     const units = [
       mkUnit({ unitId: 'a', status: 'queued' }),
-      mkUnit({ unitId: 'b', status: 'reviewing' }),
+      mkUnit({ unitId: 'b', status: 'changes_requested' }),
       mkUnit({ unitId: 'c', status: 'approved' }),
-      mkUnit({ unitId: 'd', status: 'submitted' }),
+      mkUnit({ unitId: 'd', status: 'changes_requested' }),
     ];
     const g = groupUnits(units);
     expect(g.needsYou.map((u) => u.unitId)).toEqual(['a']);
@@ -78,8 +75,8 @@ describe('groupUnits', () => {
 
   it('orders in-flight and cleared by most-recent activity first', () => {
     const units = [
-      mkUnit({ unitId: 'old', status: 'reviewing', updatedAt: '2026-06-26T00:01:00.000Z' }),
-      mkUnit({ unitId: 'new', status: 'reviewing', updatedAt: '2026-06-26T00:09:00.000Z' }),
+      mkUnit({ unitId: 'old', status: 'changes_requested', updatedAt: '2026-06-26T00:01:00.000Z' }),
+      mkUnit({ unitId: 'new', status: 'changes_requested', updatedAt: '2026-06-26T00:09:00.000Z' }),
     ];
     expect(groupUnits(units).inFlight.map((u) => u.unitId)).toEqual(['new', 'old']);
   });
@@ -190,24 +187,8 @@ describe('reviewEndpoint / aiEndpoint', () => {
   });
 });
 
-describe('agentCommentsEndpoint', () => {
-  it('targets the unit-scoped endpoint in a command-center drill-in', () => {
-    expect(agentCommentsEndpoint('command-center', { name: 'unit', unitId: 'u_1' })).toBe(
-      '/api/units/u_1/agent-comments',
-    );
-  });
-  it('falls back to the single-mailbox endpoint at the center root', () => {
-    expect(agentCommentsEndpoint('command-center', { name: 'center' })).toBe('/api/agent-comments');
-  });
-});
-
 describe('commentTarget', () => {
-  it('sends to the agent loop on local daemon units', () => {
-    const units = [mkUnit({ unitId: 'u1', source: 'cli' }), mkUnit({ unitId: 'u2', source: 'agent' })];
-    expect(commentTarget('command-center', { name: 'unit', unitId: 'u1' }, units)).toBe('agent');
-    expect(commentTarget('command-center', { name: 'unit', unitId: 'u2' }, units)).toBe('agent');
-  });
-  it('targets the GitHub PR on a github daemon unit (the relabel case)', () => {
+  it('targets the GitHub PR on a github daemon unit', () => {
     const units = [mkUnit({ unitId: 'g1', source: 'github' })];
     expect(commentTarget('command-center', { name: 'unit', unitId: 'g1' }, units)).toBe('github');
   });
@@ -218,51 +199,15 @@ describe('commentTarget', () => {
   });
 });
 
-describe('commentGoesToAgent', () => {
-  it('routes to GitHub in pr mode', () => {
-    expect(commentGoesToAgent('pr', { name: 'center' }, [])).toBe(false);
-  });
-  it('routes a LOCAL daemon unit (agent/cli) to the agent loop', () => {
-    const units = [mkUnit({ unitId: 'u1', source: 'cli' }), mkUnit({ unitId: 'u2', source: 'agent' })];
-    expect(commentGoesToAgent('command-center', { name: 'unit', unitId: 'u1' }, units)).toBe(true);
-    expect(commentGoesToAgent('command-center', { name: 'unit', unitId: 'u2' }, units)).toBe(true);
-  });
-  it('routes a GITHUB daemon unit to GitHub (it has a real PR)', () => {
-    const units = [mkUnit({ unitId: 'g1', source: 'github' })];
-    expect(commentGoesToAgent('command-center', { name: 'unit', unitId: 'g1' }, units)).toBe(false);
-  });
-  it('routes to GitHub at the center root or for an unknown unit', () => {
-    expect(commentGoesToAgent('command-center', { name: 'center' }, [])).toBe(false);
-    expect(commentGoesToAgent('command-center', { name: 'unit', unitId: 'missing' }, [])).toBe(false);
-  });
-});
-
 describe('sourceBadge', () => {
-  it('labels each ingestion door distinctly so the queue is legible', () => {
-    expect(sourceBadge('agent')).toMatchObject({ label: 'agent', tone: 'agent' });
-    expect(sourceBadge('cli')).toMatchObject({ label: 'local', tone: 'local' });
+  it('labels the github door so the queue is legible', () => {
     expect(sourceBadge('github')).toMatchObject({ label: 'GitHub', tone: 'github' });
   });
-  it('defaults an unset source to the agent door (matches server back-compat)', () => {
-    expect(sourceBadge(undefined)).toMatchObject({ label: 'agent', tone: 'agent' });
+  it('defaults an unset source to the github door', () => {
+    expect(sourceBadge(undefined)).toMatchObject({ label: 'GitHub', tone: 'github' });
   });
   it('carries a human title explaining where the unit came from', () => {
     expect(sourceBadge('github').title).toMatch(/github/i);
-    expect(sourceBadge('cli').title).toMatch(/dad add/i);
-  });
-});
-
-describe('agentPresence', () => {
-  const now = Date.parse('2026-06-26T12:00:00.000Z');
-  it('reads as disconnected when an agent has never been seen', () => {
-    expect(agentPresence(null, now)).toEqual({ connected: false, label: 'no agent connected' });
-    expect(agentPresence(undefined, now)).toEqual({ connected: false, label: 'no agent connected' });
-  });
-  it('reads as connected when the agent checked in within the freshness window', () => {
-    expect(agentPresence(now - 60_000, now)).toEqual({ connected: true, label: 'agent connected' });
-  });
-  it('goes stale (disconnected) once the last check-in is past the window', () => {
-    expect(agentPresence(now - 10 * 60_000, now)).toEqual({ connected: false, label: 'no agent connected' });
   });
 });
 
