@@ -6,19 +6,14 @@ import { readConfig } from '../config';
 import { GitHubClient, type PostCommentOptions } from '../github/client';
 import { parseDiff } from '../github/diff-parser';
 import type { CheckRun, PRComment, PRReview } from '../github/types';
-import { buildLocalReview } from '../local/diff-source';
 import { callAi, generateNarrative } from '../narrative/engine';
-import type { ComputeSlice } from '../mcp/submit';
-import { DecisionChannel } from '../units/decision-channel';
 import { UnitStore } from '../units/store';
 import type { Decision, ReviewUnit } from '../units/types';
 import { createDaemonApp, type ReviewInlineComment, SseHub } from './app';
 import { pollOnce } from './poller';
-import { ReviewWorkerPool, type ReviewResult } from './pool';
 
 /** Stable default port so launchd (Phase #23) and manual launches agree. Override with `--port=`. */
 export const DEFAULT_DAEMON_PORT = 4319;
-const DEFAULT_CONCURRENCY = 3;
 /** Cadence for the GitHub review-request poller. One search per tick — well within auth'd rate limits. */
 const DEFAULT_POLL_MS = 60_000;
 
@@ -245,26 +240,13 @@ function splitRepo(repo: string): { owner: string; name: string } {
   return slash === -1 ? { owner: 'local', name: repo } : { owner: repo.slice(0, slash), name: repo.slice(slash + 1) };
 }
 
-/** Run Phase 1's narrative pipeline for one unit. `toResolve` = the count of concerns to address. */
-async function reviewUnit(unit: ReviewUnit): Promise<ReviewResult> {
-  const config = await readConfig();
-  const { owner, name } = splitRepo(unit.repo);
-  const { narrative } = await generateNarrative(unit.metadata, unit.files, [], config, undefined, {
-    // contentKey (not headSha) keys the cache — it moves with uncommitted edits, headSha doesn't.
-    cacheKey: { owner, repo: name, number: 0, sha: unit.diffContentKey },
-    comments: [],
-  });
-  return { narrative, toResolve: narrative.concerns?.length ?? 0 };
-}
-
 /**
  * Start the per-machine daemon: one long-lived process owning the cross-repo `UnitStore`, serving
- * the command center + units API + MCP endpoint, and draining the review queue through a bounded
- * worker pool. Unlike `dad review`/`dad watch`, it never exits on browser disconnect.
+ * the command center + units API for GitHub PR review, and polling GitHub for review requests.
+ * Unlike `dad review`, it never exits on browser disconnect.
  */
 export async function startDaemon(opts: DaemonOptions = {}): Promise<number> {
   const port = opts.port ?? DEFAULT_DAEMON_PORT;
-  const concurrency = opts.concurrency ?? DEFAULT_CONCURRENCY;
   const pollFlag = Bun.argv.find((f) => f.startsWith('--poll='));
   const pollMs =
     opts.pollMs ?? (pollFlag ? parseInt(pollFlag.split('=')[1] ?? '0', 10) || undefined : undefined) ?? DEFAULT_POLL_MS;
@@ -290,23 +272,16 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<number> {
   process.once('SIGTERM', () => process.exit(143));
 
   const store = await UnitStore.load();
-  const decision = new DecisionChannel();
   const hub = new SseHub();
 
-  const pool = new ReviewWorkerPool({ store, review: reviewUnit, broadcast: hub.broadcast, concurrency });
-  const computeSlice: ComputeSlice = (worktreePath, baseRef) => buildLocalReview(baseRef, { cwd: worktreePath });
-
   // Resolve GitHub auth once: the same client drives the poller AND the github decision/hydrate deps.
-  // No token → all three are skipped/undefined and the routes no-op gracefully (local units still work).
+  // No token → the deps are undefined and the routes no-op gracefully.
   const githubToken = await resolveGitHubToken();
   const githubClient = githubToken ? new GitHubClient(githubToken) : null;
 
   const { app } = createDaemonApp({
     store,
-    decision,
     hub,
-    computeSlice,
-    onSubmitted: () => pool.kick(),
     reviewPoster: githubClient ? makeReviewPoster(githubClient) : undefined,
     hydrate: githubClient ? makeHydrate(githubClient, store) : undefined,
     commentFetcher: githubClient ? makeCommentFetcher(githubClient) : undefined,
@@ -331,22 +306,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<number> {
   }
 
   const url = `http://localhost:${server.port}`;
-  const pending = store.list({ status: 'submitted' }).length + store.list({ status: 'reviewing' }).length;
 
   console.log(`\n  ${a.purple}${a.bold}Diff Dad${a.reset}  ${a.dim}—${a.reset}  ${a.white}daemon${a.reset}`);
-  console.log(
-    `  ${a.dim}${store.list().length} unit${store.list().length === 1 ? '' : 's'} loaded` +
-      `${pending > 0 ? `, ${pending} resuming review` : ''}${a.reset}`,
-  );
+  console.log(`  ${a.dim}${store.list().length} unit${store.list().length === 1 ? '' : 's'} loaded${a.reset}`);
   console.log(`\n  ${a.purple}${a.bold}${url}${a.reset}`);
-  console.log(`\n  ${a.dim}Point an agent at the review loop:${a.reset}`);
-  console.log(`  ${a.cyan}claude mcp add --transport http diffdad ${url}/mcp${a.reset}`);
-  console.log(
-    `  ${a.dim}Then have it call ${a.reset}${a.cyan}submit_for_review${a.reset}${a.dim} and park on ${a.reset}${a.cyan}await_decision${a.reset}${a.dim}.${a.reset}\n`,
-  );
-
-  // Resume any work persisted across a restart (submitted never started; reviewing crashed mid-flight).
-  pool.kick();
+  console.log(`\n  ${a.dim}Watching GitHub for review requests.${a.reset}`);
 
   // Open the GitHub "reviews requested of me" door: poll on an interval, mint/link/resurface units.
   // Awaited only through the initial pass; the interval then runs detached. With no token the whole

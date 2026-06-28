@@ -3,10 +3,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { UnitStore } from '../units/store';
-import { DecisionChannel } from '../units/decision-channel';
 import { createDaemonApp, SseHub } from '../daemon/app';
-import type { ComputeSlice } from '../mcp/submit';
-import { CleanTreeError, type LocalReview } from '../local/diff-source';
 import type { CheckRun, PRComment, PRMetadata, PRReview } from '../github/types';
 import type { PostCommentOptions } from '../github/client';
 import type { Decision, ReviewUnit } from '../units/types';
@@ -42,13 +39,6 @@ function mkMetadata(): PRMetadata {
   };
 }
 
-const fakeSlice: ComputeSlice = async (): Promise<LocalReview> => ({
-  files: [],
-  metadata: mkMetadata(),
-  contentKey: 'abc',
-  baseRef: 'main',
-});
-
 function deterministic() {
   let id = 0;
   return { genId: () => `unit-${++id}`, now: () => '2026-06-26T00:00:00.000Z' };
@@ -66,7 +56,6 @@ type ReviewEvent = 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES';
 type SubmitInlineComment = { path: string; line: number; body: string; side?: 'LEFT' | 'RIGHT' };
 
 type SetupOpts = {
-  computeSlice?: ComputeSlice;
   reviewPoster?: (unit: ReviewUnit, decision: Decision) => Promise<void>;
   hydrate?: (unit: ReviewUnit) => Promise<ReviewUnit>;
   commentFetcher?: (unit: ReviewUnit) => Promise<PRComment[]>;
@@ -82,10 +71,9 @@ type SetupOpts = {
 };
 
 function setup(opts: SetupOpts = {}) {
-  const { computeSlice = fakeSlice, reviewPoster, hydrate, commentFetcher, commentPoster, reviewSubmitter, ai } = opts;
+  const { reviewPoster, hydrate, commentFetcher, commentPoster, reviewSubmitter, ai } = opts;
   const { statusFetcher } = opts;
   const store = new UnitStore([], { dir, ...deterministic() });
-  const decision = new DecisionChannel();
   const hub = new SseHub();
   const events: string[] = [];
   const messages: Array<{ event: string; data: unknown }> = [];
@@ -93,13 +81,9 @@ function setup(opts: SetupOpts = {}) {
     events.push(event);
     messages.push({ event, data });
   });
-  const submitted: ReviewUnit[] = [];
   const { app } = createDaemonApp({
     store,
-    decision,
     hub,
-    computeSlice,
-    onSubmitted: (unit) => submitted.push(unit),
     reviewPoster,
     hydrate,
     commentFetcher,
@@ -108,7 +92,7 @@ function setup(opts: SetupOpts = {}) {
     ai,
     statusFetcher,
   });
-  return { store, decision, hub, events, messages, submitted, app };
+  return { store, hub, events, messages, app };
 }
 
 function seedGithubUnit(store: UnitStore, over: { number?: number; headSha?: string } = {}) {
@@ -153,64 +137,6 @@ describe('GET /api/narrative (command-center bootstrap)', () => {
     const body = (await res.json()) as { mode: string; units: { repo: string }[] };
     expect(body.mode).toBe('command-center');
     expect(body.units.map((u) => u.repo).sort()).toEqual(['owner/a', 'owner/b']);
-  });
-});
-
-describe('POST /api/units (dad add ingest)', () => {
-  const post = (app: ReturnType<typeof setup>['app'], body: unknown) =>
-    app.request('/api/units', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-
-  it('creates a source:cli unit from the computed slice and broadcasts + onSubmitted', async () => {
-    const { store, events, submitted, app } = setup();
-    const res = await post(app, {
-      taskLabel: 'fix the thing',
-      intent: 'because',
-      repo: 'owner/a',
-      worktreePath: '/wt',
-    });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { unitId: string };
-    expect(body.unitId).toBe('unit-1');
-
-    const unit = store.get(body.unitId)!;
-    expect(unit.source).toBe('cli');
-    expect(unit.status).toBe('submitted');
-    expect(unit.taskLabel).toBe('fix the thing');
-    expect(unit.intent).toBe('because');
-    expect(events).toContain('units');
-    expect(submitted.map((u) => u.unitId)).toEqual(['unit-1']);
-  });
-
-  it('defaults intent to empty string when omitted', async () => {
-    const { store, app } = setup();
-    const res = await post(app, { taskLabel: 't', repo: 'owner/a', worktreePath: '/wt' });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { unitId: string };
-    expect(store.get(body.unitId)!.intent).toBe('');
-  });
-
-  it('400s when a required field is missing', async () => {
-    const { app } = setup();
-    expect((await post(app, { intent: 'x', repo: 'owner/a', worktreePath: '/wt' })).status).toBe(400); // no taskLabel
-    expect((await post(app, { taskLabel: 't', worktreePath: '/wt' })).status).toBe(400); // no repo
-    expect((await post(app, { taskLabel: 't', repo: 'owner/a' })).status).toBe(400); // no worktreePath
-  });
-
-  it('returns { ok: false, reason: clean-tree } (200) when the tree is clean', async () => {
-    const cleanSlice: ComputeSlice = async () => {
-      throw new CleanTreeError('main');
-    };
-    const { store, app } = setup({ computeSlice: cleanSlice });
-    const res = await post(app, { taskLabel: 't', repo: 'owner/a', worktreePath: '/wt' });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { ok: boolean; reason?: string };
-    expect(body.ok).toBe(false);
-    expect(body.reason).toBe('clean-tree');
-    expect(store.list()).toHaveLength(0);
   });
 });
 
@@ -259,24 +185,6 @@ describe('GET /api/units/:id', () => {
 });
 
 describe('POST /api/units/:id/decision', () => {
-  it('records the decision, delivers it to a parked agent, and broadcasts', async () => {
-    const { store, decision, events, app } = setup();
-    const u = await addUnit(store);
-    await toQueued(store, u.unitId);
-
-    const parked = decision.wait(u.unitId, 1000);
-    const res = await app.request(`/api/units/${u.unitId}/decision`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind: 'approved', note: 'ship it' }),
-    });
-    expect(res.status).toBe(200);
-    expect(store.get(u.unitId)!.status).toBe('approved');
-    expect(store.get(u.unitId)!.decision).toMatchObject({ kind: 'approved', note: 'ship it' });
-    expect(await parked).toMatchObject({ kind: 'approved', note: 'ship it' });
-    expect(events).toContain('units');
-  });
-
   it('404s for an unknown unit', async () => {
     const { app } = setup();
     const res = await app.request('/api/units/nope/decision', {
@@ -289,62 +197,25 @@ describe('POST /api/units/:id/decision', () => {
 
   it('400s for an invalid decision kind', async () => {
     const { store, app } = setup();
-    const u = await addUnit(store);
-    await toQueued(store, u.unitId);
-    const res = await app.request(`/api/units/${u.unitId}/decision`, {
+    const gh = seedGithubUnit(store);
+    const res = await app.request(`/api/units/${gh.unitId}/decision`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ kind: 'merge_it' }),
     });
     expect(res.status).toBe(400);
   });
-
-  it('409s when deciding a unit that is not awaiting a decision', async () => {
-    const { store, app } = setup();
-    const u = await addUnit(store); // still 'submitted' — not yet 'queued'
-    const res = await app.request(`/api/units/${u.unitId}/decision`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind: 'approved' }),
-    });
-    expect(res.status).toBe(409);
-  });
-
-  it('uses the channel path (decision.deliver) for a non-github unit, never the review poster', async () => {
-    const calls: Array<[ReviewUnit, Decision]> = [];
-    const { store, decision, app } = setup({
-      reviewPoster: async (unit, d) => {
-        calls.push([unit, d]);
-      },
-    });
-    const u = await addUnit(store); // source defaults to 'agent'
-    await toQueued(store, u.unitId);
-
-    const parked = decision.wait(u.unitId, 1000);
-    const res = await app.request(`/api/units/${u.unitId}/decision`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind: 'approved', note: 'ship it' }),
-    });
-    expect(res.status).toBe(200);
-    expect(await parked).toMatchObject({ kind: 'approved', note: 'ship it' });
-    expect(store.get(u.unitId)!.status).toBe('approved');
-    expect(calls).toHaveLength(0); // the review poster is never called for agent/cli units
-  });
 });
 
 describe('POST /api/units/:id/decision (github dispatch)', () => {
   it('posts the verdict to GitHub, records the decision + reviewed SHA, and broadcasts', async () => {
     const calls: Array<[ReviewUnit, Decision]> = [];
-    const { store, decision, events, app } = setup({
+    const { store, events, app } = setup({
       reviewPoster: async (unit, d) => {
         calls.push([unit, d]);
       },
     });
     const gh = seedGithubUnit(store, { headSha: 'sha-1' });
-
-    // A github decision must NOT touch the agent decision channel.
-    const parked = decision.wait(gh.unitId, 200);
 
     const res = await app.request(`/api/units/${gh.unitId}/decision`, {
       method: 'POST',
@@ -367,7 +238,6 @@ describe('POST /api/units/:id/decision (github dispatch)', () => {
     expect(after.lastReviewedSha).toBe('sha-1');
 
     expect(events).toContain('units');
-    expect(await parked).toBeNull(); // the channel was never delivered to
   });
 
   it('502s and does NOT record the decision when the review poster throws', async () => {
@@ -544,83 +414,6 @@ describe('POST /api/units/:id/hydrate (lazy narrative on open)', () => {
     expect(after.narrative).toBeUndefined(); // unchanged
     expect(after.status).toBe('queued');
     expect(events).not.toContain('units'); // no broadcast on failure
-  });
-});
-
-describe('POST /api/units (re-add dedup)', () => {
-  const post = (app: ReturnType<typeof setup>['app'], body: unknown) =>
-    app.request('/api/units', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-
-  it('updates the existing local unit in place rather than minting a duplicate', async () => {
-    const { store, submitted, app } = setup();
-    const r1 = await post(app, { taskLabel: 'v1', repo: 'owner/a', worktreePath: '/wt' });
-    const id1 = ((await r1.json()) as { unitId: string }).unitId;
-    const r2 = await post(app, { taskLabel: 'v2', repo: 'owner/a', worktreePath: '/wt' });
-    const id2 = ((await r2.json()) as { unitId: string }).unitId;
-
-    expect(id2).toBe(id1); // same unit
-    expect(store.list()).toHaveLength(1);
-    expect(store.get(id1)!.taskLabel).toBe('v2');
-    expect(store.get(id1)!.status).toBe('submitted');
-    expect(submitted).toHaveLength(2); // worker re-kicked each time
-  });
-
-  it('re-adding a failed unit clears its error and re-queues it', async () => {
-    const { store, app } = setup();
-    const r = await post(app, { taskLabel: 't', repo: 'owner/a', worktreePath: '/wt' });
-    const id = ((await r.json()) as { unitId: string }).unitId;
-    await store.setReviewing(id);
-    await store.setReviewFailed(id, 'Planner returned non-JSON');
-
-    await post(app, { taskLabel: 't', repo: 'owner/a', worktreePath: '/wt' });
-    expect(store.get(id)!.error).toBeUndefined();
-    expect(store.get(id)!.status).toBe('submitted');
-  });
-});
-
-describe('POST /api/units/:id/retry', () => {
-  it('recomputes the slice, resubmits the unit, and re-kicks the worker', async () => {
-    const { store, submitted, events, app } = setup();
-    const u = await addUnit(store);
-    await store.setReviewing(u.unitId);
-    await store.setReviewFailed(u.unitId, 'boom');
-
-    const res = await app.request(`/api/units/${u.unitId}/retry`, { method: 'POST' });
-    expect(res.status).toBe(200);
-    expect(store.get(u.unitId)!.status).toBe('submitted');
-    expect(store.get(u.unitId)!.error).toBeUndefined();
-    expect(submitted.map((s) => s.unitId)).toContain(u.unitId);
-    expect(events).toContain('units');
-  });
-
-  it('404s for an unknown unit', async () => {
-    const { app } = setup();
-    expect((await app.request('/api/units/nope/retry', { method: 'POST' })).status).toBe(404);
-  });
-
-  it('400s for a github unit — retry is for local work', async () => {
-    const { store, app } = setup();
-    const gh = seedGithubUnit(store);
-    expect((await app.request(`/api/units/${gh.unitId}/retry`, { method: 'POST' })).status).toBe(400);
-  });
-
-  it('returns { ok:false, reason:clean-tree } when the worktree is now clean', async () => {
-    const cleanSlice: ComputeSlice = async () => {
-      throw new CleanTreeError('main');
-    };
-    const { store, app } = setup({ computeSlice: cleanSlice });
-    const u = await addUnit(store);
-    await store.setReviewing(u.unitId);
-    await store.setReviewFailed(u.unitId, 'boom');
-    const res = await app.request(`/api/units/${u.unitId}/retry`, { method: 'POST' });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { ok: boolean; reason?: string };
-    expect(body.ok).toBe(false);
-    expect(body.reason).toBe('clean-tree');
   });
 });
 
