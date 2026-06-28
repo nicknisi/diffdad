@@ -78,7 +78,7 @@ describe('pollOnce', () => {
 
     const result = await pollOnce({ search: search([mkPr()]), store, broadcast });
 
-    expect(result).toEqual({ minted: 1, linked: 0, resurfaced: 0 });
+    expect(result).toEqual({ minted: 1, resurfaced: 0 });
     const units = store.list();
     expect(units.length).toBe(1);
     const u = units[0]!;
@@ -112,41 +112,12 @@ describe('pollOnce', () => {
   it('is idempotent: re-polling the SAME unchanged PR mints/links/resurfaces nothing', async () => {
     const store = new UnitStore([], det());
     const first = await pollOnce({ search: search([mkPr()]), store, broadcast: () => {} });
-    expect(first).toEqual({ minted: 1, linked: 0, resurfaced: 0 });
+    expect(first).toEqual({ minted: 1, resurfaced: 0 });
     expect(store.list().length).toBe(1);
 
     const second = await pollOnce({ search: search([mkPr()]), store, broadcast: () => {} });
-    expect(second).toEqual({ minted: 0, linked: 0, resurfaced: 0 });
+    expect(second).toEqual({ minted: 0, resurfaced: 0 });
     expect(store.list().length).toBe(1); // no duplicate minted
-  });
-
-  it('links a PR to a pre-seeded agent unit by repo + head branch (no new unit)', async () => {
-    const store = new UnitStore([], det());
-    const seeded = await store.add({
-      repo: 'octo/demo',
-      source: 'agent',
-      worktreePath: '/wt',
-      taskLabel: 'agent work',
-      intent: 'x',
-      baseRef: 'main',
-      diffContentKey: 'k',
-      files: [],
-      metadata: mkMetadata('feat/widgets'),
-    });
-    const events: string[] = [];
-    const broadcast = (event: string) => events.push(event);
-
-    const result = await pollOnce({ search: search([mkPr()]), store, broadcast });
-
-    expect(result).toEqual({ minted: 0, linked: 1, resurfaced: 0 });
-    expect(store.list().length).toBe(1); // no new unit
-    const u = store.get(seeded.unitId)!;
-    expect(u.source).toBe('agent'); // source unchanged
-    expect(u.status).toBe('submitted'); // status unchanged
-    expect(u.prNumber).toBe(42);
-    expect(u.prUrl).toBe('https://github.com/octo/demo/pull/42');
-    expect(u.prAuthor).toBe('octocat');
-    expect(u.metadata.headSha).toBe('sha-1'); // linkPr advances the head sha
   });
 
   it('resurfaces a previously-reviewed github unit when the head sha moved', async () => {
@@ -172,7 +143,7 @@ describe('pollOnce', () => {
 
     const result = await pollOnce({ search: search([mkPr({ headSha: 'new-sha' })]), store, broadcast });
 
-    expect(result).toEqual({ minted: 0, linked: 0, resurfaced: 1 });
+    expect(result).toEqual({ minted: 0, resurfaced: 1 });
     const after = store.get(u.unitId)!;
     expect(after.status).toBe('queued');
     expect(after.decision).toBeUndefined();
@@ -200,7 +171,7 @@ describe('pollOnce', () => {
 
     const result = await pollOnce({ search: search([mkPr({ headSha: 'sha-1' })]), store, broadcast: () => {} });
 
-    expect(result).toEqual({ minted: 0, linked: 0, resurfaced: 0 });
+    expect(result).toEqual({ minted: 0, resurfaced: 0 });
     const after = store.get(u.unitId)!;
     expect(after.status).toBe('approved'); // untouched — already reviewed at this head
     expect(after.metadata.headSha).toBe('sha-1'); // metadata not advanced (no-op)

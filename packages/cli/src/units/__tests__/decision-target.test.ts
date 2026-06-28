@@ -29,7 +29,7 @@ function mkUnit(source: UnitSource): ReviewUnit {
     unitId: 'u1',
     repo: 'octo/demo',
     source,
-    worktreePath: '/tmp/wt',
+    worktreePath: '',
     taskLabel: 'task',
     intent: '',
     uncertainties: [],
@@ -45,12 +45,8 @@ function mkUnit(source: UnitSource): ReviewUnit {
 }
 
 describe('decisionTarget', () => {
+  // github-only: every unit tracks an open PR, so the verdict always becomes a real GitHub review.
   it("routes a github unit's verdict to GitHub", () => {
     expect(decisionTarget(mkUnit('github'))).toBe('github');
-  });
-
-  it('routes agent and cli verdicts to the decision channel', () => {
-    expect(decisionTarget(mkUnit('agent'))).toBe('channel');
-    expect(decisionTarget(mkUnit('cli'))).toBe('channel');
   });
 });

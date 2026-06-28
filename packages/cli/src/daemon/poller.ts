@@ -32,11 +32,11 @@ function metadataFromPr(pr: PolledPr): PRMetadata {
 
 /**
  * One pass of the GitHub review-request poller: for each PR the (injected) search returns, classify it
- * against the current units and route it — mint a fresh `github` unit, best-effort link it onto a
- * matching agent/cli unit, or re-surface a reviewed `github` unit whose head moved. A thin reducer over
- * `classify` / `shouldResurface` (both pure) + the store's synchronous mutators, so it's testable with a
- * fake search and a real store. After the pass it broadcasts a `units` snapshot over the daemon's SSE
- * spine so the command center reflects the new inbox immediately.
+ * against the current units and route it — mint a fresh `github` unit, or re-surface a reviewed
+ * `github` unit whose head moved. A thin reducer over `classify` / `shouldResurface` (both pure) + the
+ * store's synchronous mutators, so it's testable with a fake search and a real store. After the pass it
+ * broadcasts a `units` snapshot over the daemon's SSE spine so the command center reflects the new inbox
+ * immediately.
  *
  * Returns counts for the caller's one-line log. The search/broadcast are injected (no network here).
  */
@@ -44,12 +44,11 @@ export async function pollOnce(deps: {
   search: () => Promise<PolledPr[]>;
   store: UnitStore;
   broadcast: Broadcast;
-}): Promise<{ minted: number; linked: number; resurfaced: number }> {
+}): Promise<{ minted: number; resurfaced: number }> {
   const { search, store, broadcast } = deps;
   const prs = await search();
 
   let minted = 0;
-  let linked = 0;
   let resurfaced = 0;
 
   for (const pr of prs) {
@@ -68,14 +67,6 @@ export async function pollOnce(deps: {
         metadata: metadataFromPr(pr),
       });
       minted++;
-    } else if (c.kind === 'link') {
-      store.linkPr(c.unitId, {
-        prNumber: pr.number,
-        prUrl: pr.url,
-        prAuthor: pr.author,
-        headSha: pr.headSha,
-      });
-      linked++;
     } else {
       // existing-github: only re-open if the author pushed past the reviewed head.
       const unit = store.get(c.unitId);
@@ -87,5 +78,5 @@ export async function pollOnce(deps: {
   }
 
   broadcast('units', { units: store.list() });
-  return { minted, linked, resurfaced };
+  return { minted, resurfaced };
 }

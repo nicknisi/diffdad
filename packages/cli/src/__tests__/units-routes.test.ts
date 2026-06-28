@@ -110,21 +110,41 @@ function seedGithubUnit(store: UnitStore, over: { number?: number; headSha?: str
 }
 
 async function addUnit(store: UnitStore, repo = 'owner/a') {
-  return store.add({
-    repo,
-    worktreePath: '/wt',
-    taskLabel: 't',
-    intent: 'x',
-    baseRef: 'main',
-    diffContentKey: 'k',
-    files: [],
+  const [owner, name] = repo.split('/');
+  return store.addGithubUnit({
+    owner: owner!,
+    repo: name!,
+    number: 1,
+    title: 't',
+    headBranch: 'feat/x',
+    headSha: 'abc',
+    author: 'octocat',
+    url: `https://github.com/${repo}/pull/1`,
     metadata: mkMetadata(),
   });
 }
 
-async function toQueued(store: UnitStore, id: string) {
-  await store.setReviewing(id);
-  await store.setQueued(id, NARRATIVE, 2);
+/**
+ * A unit whose source is forced non-github at runtime. The store can only mint github units now, but the
+ * routes still guard on `source === 'github'` — this exercises those guards (a non-github unit is no
+ * longer representable through the store's public API).
+ */
+function nonGithubUnit(store: UnitStore, repo = 'owner/a') {
+  const u = store.addGithubUnit({
+    owner: repo.split('/')[0]!,
+    repo: repo.split('/')[1]!,
+    number: 1,
+    title: 't',
+    headBranch: 'feat/x',
+    headSha: 'abc',
+    author: 'octocat',
+    url: `https://github.com/${repo}/pull/1`,
+    metadata: mkMetadata(),
+  });
+  const raw = store.get(u.unitId) as { source: string; prNumber?: number };
+  raw.source = 'agent';
+  raw.prNumber = undefined;
+  return u;
 }
 
 describe('GET /api/narrative (command-center bootstrap)', () => {
@@ -153,11 +173,13 @@ describe('GET /api/units', () => {
 
   it('filters by status and repo', async () => {
     const { store, app } = setup();
-    await addUnit(store, 'owner/a'); // unit-1, submitted
-    const u2 = await addUnit(store, 'owner/b'); // unit-2
-    await toQueued(store, u2.unitId);
+    await addUnit(store, 'owner/a'); // unit-1, queued
+    const u2 = await addUnit(store, 'owner/b'); // unit-2, queued
+    await store.setDecision(u2.unitId, { kind: 'approved' }); // unit-2 → approved
 
-    const byStatus = (await (await app.request('/api/units?status=queued')).json()) as { units: { unitId: string }[] };
+    const byStatus = (await (await app.request('/api/units?status=approved')).json()) as {
+      units: { unitId: string }[];
+    };
     expect(byStatus.units.map((u) => u.unitId)).toEqual(['unit-2']);
 
     const byRepo = (await (await app.request('/api/units?repo=owner/a')).json()) as { units: { unitId: string }[] };
@@ -169,7 +191,7 @@ describe('GET /api/units/:id', () => {
   it('returns one unit with its narrative', async () => {
     const { store, app } = setup();
     const u = await addUnit(store);
-    await toQueued(store, u.unitId);
+    store.attachReview(u.unitId, [], NARRATIVE, 2);
     const res = await app.request(`/api/units/${u.unitId}`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as { unit: { unitId: string; narrative: { verdict: string } } };
@@ -374,7 +396,7 @@ describe('POST /api/units/:id/hydrate (lazy narrative on open)', () => {
         return unit;
       },
     });
-    const u = await addUnit(store); // source defaults to 'agent'
+    const u = nonGithubUnit(store);
 
     const res = await post(app, u.unitId);
     expect(res.status).toBe(200);
@@ -494,7 +516,7 @@ describe('GET /api/units/:id/comments', () => {
         return [mkComment()];
       },
     });
-    const u = await addUnit(store); // source defaults to 'agent'
+    const u = nonGithubUnit(store);
     const res = await app.request(`/api/units/${u.unitId}/comments`);
     expect(res.status).toBe(200);
     expect((await res.json()) as PRComment[]).toEqual([]);
@@ -568,7 +590,7 @@ describe('POST /api/units/:id/comments', () => {
         return mkComment();
       },
     });
-    const u = await addUnit(store);
+    const u = nonGithubUnit(store);
     expect((await post(app, u.unitId, { body: 'hi' })).status).toBe(400);
     expect(called).toBe(false);
   });
@@ -698,7 +720,7 @@ describe('POST /api/units/:id/review (submit a GitHub review)', () => {
   it('400s a non-github unit', async () => {
     const rec = recorder();
     const { store, app } = setup({ reviewSubmitter: rec.fn });
-    const u = await addUnit(store);
+    const u = nonGithubUnit(store);
     expect((await post(app, u.unitId, { event: 'approve' })).status).toBe(400);
     expect(rec.calls).toHaveLength(0);
   });
@@ -867,7 +889,7 @@ describe('GET /api/units/:id/status (checks + reviews)', () => {
         return { checks: [mkCheck()], reviews: [] };
       },
     });
-    const u = await addUnit(store);
+    const u = nonGithubUnit(store);
     const res = await app.request(`/api/units/${u.unitId}/status`);
     expect(res.status).toBe(200);
     expect((await res.json()) as unknown).toEqual({ checks: [], reviews: [] });

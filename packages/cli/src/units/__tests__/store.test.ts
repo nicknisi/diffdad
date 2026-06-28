@@ -4,7 +4,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { UnitStore } from '../store';
 import { IllegalTransitionError, UnknownUnitError } from '../types';
-import type { NewReviewUnit, ReviewUnit } from '../types';
+import type { ReviewUnit } from '../types';
 import type { NarrativeResponse } from '../../narrative/types';
 import type { PRMetadata } from '../../github/types';
 
@@ -39,19 +39,22 @@ function mkMetadata(branch = 'feat/x'): PRMetadata {
   };
 }
 
-function mkInput(o: Partial<NewReviewUnit> = {}): NewReviewUnit {
-  return {
-    repo: 'owner/repo',
-    worktreePath: '/tmp/wt',
-    taskLabel: 'task',
-    intent: 'do a thing',
-    uncertainties: [],
-    baseRef: 'main',
-    diffContentKey: 'key123',
-    files: [],
-    metadata: mkMetadata(),
-    ...o,
-  };
+/** Mint a github unit with sensible defaults — the only ingestion path now (born `queued`). */
+function mkGithub(store: UnitStore, over: { owner?: string; repo?: string; number?: number; headSha?: string } = {}) {
+  const owner = over.owner ?? 'octo';
+  const repo = over.repo ?? 'demo';
+  const number = over.number ?? 1;
+  return store.addGithubUnit({
+    owner,
+    repo,
+    number,
+    title: 'Add widgets',
+    headBranch: 'feat/widgets',
+    headSha: over.headSha ?? 'sha-1',
+    author: 'octocat',
+    url: `https://github.com/${owner}/${repo}/pull/${number}`,
+    metadata: mkMetadata('feat/widgets'),
+  });
 }
 
 const NARRATIVE: NarrativeResponse = {
@@ -67,7 +70,7 @@ beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'diffdad-units-'));
 });
 afterEach(async () => {
-  // The synchronous github mutations (addGithubUnit/linkPr/…) fire their best-effort save() without
+  // The synchronous github mutations (addGithubUnit/setReviewedSha/…) fire their best-effort save() without
   // awaiting; let any in-flight write settle before we rm the temp dir, else it logs teardown noise.
   await new Promise((r) => setTimeout(r, 25));
   await rm(dir, { recursive: true, force: true });
@@ -76,116 +79,70 @@ afterEach(async () => {
 // --- tests ----------------------------------------------------------------
 
 describe('UnitStore', () => {
-  it('add() creates a submitted unit with a generated id and timestamps', async () => {
+  it('decides a queued github unit approved (queued → approved)', async () => {
     const store = new UnitStore([], det());
-    const u = await store.add(mkInput());
-    expect(u.unitId).toBe('unit-1');
-    expect(u.status).toBe('submitted');
-    expect(u.toResolve).toBe(0);
-    expect(u.createdAt).toBe('2026-01-01T00:00:00.000Z');
-    expect(u.updatedAt).toBe('2026-01-01T00:00:00.000Z');
-  });
-
-  it('walks the happy path submitted → reviewing → queued → approved', async () => {
-    const store = new UnitStore([], det());
-    const { unitId } = await store.add(mkInput());
-    await store.setReviewing(unitId);
-    expect(store.get(unitId)!.status).toBe('reviewing');
-    await store.setQueued(unitId, NARRATIVE, 3);
-    const q = store.get(unitId)!;
-    expect(q.status).toBe('queued');
-    expect(q.toResolve).toBe(3);
-    expect(q.verdict).toBe('caution');
-    expect(q.narrative).toEqual(NARRATIVE);
-    await store.setDecision(unitId, { kind: 'approved' });
-    expect(store.get(unitId)!.status).toBe('approved');
+    const u = mkGithub(store);
+    expect(u.status).toBe('queued');
+    await store.setDecision(u.unitId, { kind: 'approved' });
+    expect(store.get(u.unitId)!.status).toBe('approved');
   });
 
   it('records a changes_requested decision with curated concerns', async () => {
     const store = new UnitStore([], det());
-    const { unitId } = await store.add(mkInput());
-    await store.setReviewing(unitId);
-    await store.setQueued(unitId, NARRATIVE, 1);
+    const u = mkGithub(store);
     const decision = {
       kind: 'changes_requested' as const,
       concerns: [{ question: 'null here?', file: 'a.ts', line: 2, category: 'logic' as const, why: 'x' }],
       note: 'fix it',
     };
-    await store.setDecision(unitId, decision);
-    const u = store.get(unitId)!;
-    expect(u.status).toBe('changes_requested');
-    expect(u.decision).toEqual(decision);
+    await store.setDecision(u.unitId, decision);
+    const after = store.get(u.unitId)!;
+    expect(after.status).toBe('changes_requested');
+    expect(after.decision).toEqual(decision);
   });
 
-  it('rejects an illegal transition (submitted → queued) with IllegalTransitionError', async () => {
+  it('rejects a second decision on an already-decided unit with IllegalTransitionError', async () => {
     const store = new UnitStore([], det());
-    const { unitId } = await store.add(mkInput());
-    await expect(store.setQueued(unitId, NARRATIVE, 0)).rejects.toBeInstanceOf(IllegalTransitionError);
-  });
-
-  it('rejects deciding a unit that is not queued', async () => {
-    const store = new UnitStore([], det());
-    const { unitId } = await store.add(mkInput());
-    await store.setReviewing(unitId);
-    await expect(store.setDecision(unitId, { kind: 'approved' })).rejects.toBeInstanceOf(IllegalTransitionError);
-  });
-
-  it('setReviewFailed queues the unit with an error so it still reaches the reviewer', async () => {
-    const store = new UnitStore([], det());
-    const { unitId } = await store.add(mkInput());
-    await store.setReviewing(unitId);
-    await store.setReviewFailed(unitId, 'pipeline blew up');
-    const u = store.get(unitId)!;
-    expect(u.status).toBe('queued');
-    expect(u.error).toBe('pipeline blew up');
+    const u = mkGithub(store);
+    await store.setDecision(u.unitId, { kind: 'approved' });
+    // approved only advances to done — a second verdict is an illegal transition
+    await expect(store.setDecision(u.unitId, { kind: 'approved' })).rejects.toBeInstanceOf(IllegalTransitionError);
   });
 
   it('throws UnknownUnitError for an unknown id', async () => {
     const store = new UnitStore([], det());
-    await expect(store.setReviewing('nope')).rejects.toBeInstanceOf(UnknownUnitError);
+    await expect(store.setDecision('nope', { kind: 'approved' })).rejects.toBeInstanceOf(UnknownUnitError);
   });
 
   it('lists cross-repo and filters by repo and status', async () => {
     const store = new UnitStore([], det());
-    await store.add(mkInput({ repo: 'owner/a' }));
-    const b = await store.add(mkInput({ repo: 'owner/b' }));
-    await store.setReviewing(b.unitId);
+    mkGithub(store, { owner: 'owner', repo: 'a', number: 1 });
+    const b = mkGithub(store, { owner: 'owner', repo: 'b', number: 2 });
+    await store.setDecision(b.unitId, { kind: 'approved' });
     expect(store.list().length).toBe(2);
     expect(store.list({ repo: 'owner/a' }).length).toBe(1);
-    expect(store.list({ status: 'reviewing' }).map((u) => u.repo)).toEqual(['owner/b']);
+    expect(store.list({ status: 'approved' }).map((u) => u.repo)).toEqual(['owner/b']);
   });
 
-  it('persists per-unit and reloads equal (round-trip), sanitizing the repo slash in the filename', async () => {
+  it('persists a decided unit and reloads equal (round-trip), sanitizing the repo slash in the filename', async () => {
     const opts = det();
     const store = new UnitStore([], opts);
-    const { unitId } = await store.add(mkInput({ repo: 'owner/repo' }));
-    await store.setReviewing(unitId);
-    await store.setQueued(unitId, NARRATIVE, 2);
+    const u = mkGithub(store, { owner: 'owner', repo: 'repo' });
+    // addGithubUnit's save() is fire-and-forget; let it land before the awaited decision write, so disk
+    // ends in the decided state rather than racing back to 'queued'.
+    await new Promise((r) => setTimeout(r, 25));
+    await store.setDecision(u.unitId, { kind: 'approved' });
     const reloaded = await UnitStore.load(opts);
-    expect(reloaded.get(unitId)).toEqual(store.get(unitId));
+    expect(reloaded.get(u.unitId)).toEqual(store.get(u.unitId));
     expect(reloaded.list().length).toBe(1);
   });
 
-  it('add() with source:cli persists and round-trips through a reload', async () => {
+  it('load() drops a persisted unit whose source is not github (no longer representable)', async () => {
     const opts = det();
-    const store = new UnitStore([], opts);
-    const { unitId } = await store.add(mkInput({ source: 'cli' }));
-    expect(store.get(unitId)!.source).toBe('cli');
-    const reloaded = await UnitStore.load(opts);
-    expect(reloaded.get(unitId)!.source).toBe('cli');
-  });
-
-  it('add() without source defaults to agent', async () => {
-    const store = new UnitStore([], det());
-    const u = await store.add(mkInput());
-    expect(u.source).toBe('agent');
-  });
-
-  it('loads a persisted unit file missing source as agent (back-compat)', async () => {
-    const opts = det();
-    const persisted = {
+    const legacy = {
       unitId: 'unit-legacy',
       repo: 'owner/repo',
+      source: 'agent', // written by the old local path, before the github-only collapse
       worktreePath: '/tmp/wt',
       taskLabel: 'task',
       intent: 'do a thing',
@@ -198,14 +155,14 @@ describe('UnitStore', () => {
       metadata: mkMetadata(),
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-01T00:00:00.000Z',
-      // note: no `source` field — written before the discriminator existed
     };
-    await writeFile(join(dir, 'owner-repo-unit-legacy.json'), JSON.stringify(persisted, null, 2));
+    await writeFile(join(dir, 'owner-repo-unit-legacy.json'), JSON.stringify(legacy, null, 2));
     const store = await UnitStore.load(opts);
-    expect(store.get('unit-legacy')!.source).toBe('agent');
+    expect(store.get('unit-legacy')).toBeUndefined();
+    expect(store.list().length).toBe(0);
   });
 
-  // --- multi-source: github ingestion -------------------------------------
+  // --- github ingestion ---------------------------------------------------
 
   describe('addGithubUnit', () => {
     it('mints a github unit as queued (NOT submitted — never enters the worker pool)', async () => {
@@ -223,7 +180,7 @@ describe('UnitStore', () => {
       });
       expect(u.unitId).toBe('unit-1');
       expect(u.source).toBe('github');
-      expect(u.status).toBe('queued'); // critical: not 'submitted' — kick() must never pick it
+      expect(u.status).toBe('queued'); // critical: born queued, walkthrough generated lazily on open
       expect(u.repo).toBe('octo/demo');
       expect(u.taskLabel).toBe('Add widgets');
       expect(u.prNumber).toBe(42);
@@ -347,33 +304,6 @@ describe('UnitStore', () => {
     });
   });
 
-  describe('linkPr', () => {
-    it('attaches pr fields to an existing agent unit without changing status', async () => {
-      const store = new UnitStore([], det());
-      const { unitId } = await store.add(mkInput({ source: 'agent' }));
-      await store.setReviewing(unitId);
-      const linked = store.linkPr(unitId, {
-        prNumber: 99,
-        prUrl: 'https://github.com/owner/repo/pull/99',
-        prAuthor: 'dev',
-        headSha: 'newhead',
-      });
-      expect(linked.status).toBe('reviewing'); // unchanged
-      expect(linked.prNumber).toBe(99);
-      expect(linked.prUrl).toBe('https://github.com/owner/repo/pull/99');
-      expect(linked.prAuthor).toBe('dev');
-      expect(linked.metadata.headSha).toBe('newhead');
-      expect(linked.source).toBe('agent'); // source is not rewritten
-    });
-
-    it('throws UnknownUnitError for an unknown id', () => {
-      const store = new UnitStore([], det());
-      expect(() => store.linkPr('nope', { prNumber: 1, prUrl: 'u', prAuthor: 'a', headSha: 's' })).toThrow(
-        UnknownUnitError,
-      );
-    });
-  });
-
   describe('setReviewedSha', () => {
     it('records lastReviewedSha on the unit', async () => {
       const store = new UnitStore([], det());
@@ -460,15 +390,6 @@ describe('UnitStore', () => {
       expect(after.metadata.headSha).toBe('fresh2');
     });
 
-    it('throws for a non-github unit', async () => {
-      const store = new UnitStore([], det());
-      const { unitId } = await store.add(mkInput({ source: 'agent' }));
-      await store.setReviewing(unitId);
-      await store.setQueued(unitId, NARRATIVE, 0);
-      await store.setDecision(unitId, { kind: 'approved' });
-      expect(() => store.resurfaceForNewPush(unitId, 's')).toThrow();
-    });
-
     it('throws for a github unit that is not in a reviewed state (still queued)', async () => {
       const store = new UnitStore([], det());
       const u = store.addGithubUnit({
@@ -495,7 +416,8 @@ describe('UnitStore', () => {
   describe('remove', () => {
     it('drops the unit from memory and disk, returning true', async () => {
       const store = new UnitStore([], det());
-      const u = await store.add(mkInput());
+      const u = mkGithub(store);
+      await new Promise((r) => setTimeout(r, 20)); // let addGithubUnit's fire-and-forget save() land first
       expect(await store.remove(u.unitId)).toBe(true);
       expect(store.get(u.unitId)).toBeUndefined();
       // gone from disk too: a fresh load must not resurrect it
@@ -506,78 +428,6 @@ describe('UnitStore', () => {
     it('returns false for an unknown id', async () => {
       const store = new UnitStore([], det());
       expect(await store.remove('nope')).toBe(false);
-    });
-  });
-
-  describe('findByWorktree', () => {
-    it('finds a local unit by its worktree path', async () => {
-      const store = new UnitStore([], det());
-      const u = await store.add(mkInput({ worktreePath: '/tmp/a', source: 'cli' }));
-      await store.add(mkInput({ worktreePath: '/tmp/b', source: 'cli' }));
-      expect(store.findByWorktree('/tmp/a')?.unitId).toBe(u.unitId);
-      expect(store.findByWorktree('/tmp/missing')).toBeUndefined();
-    });
-
-    it('ignores github units (they carry no worktree)', () => {
-      const store = new UnitStore([], det());
-      store.addGithubUnit({
-        owner: 'o',
-        repo: 'r',
-        number: 1,
-        title: 't',
-        headBranch: 'b',
-        headSha: 'h',
-        author: 'a',
-        url: 'u',
-        metadata: mkMetadata('b'),
-      });
-      expect(store.findByWorktree('')).toBeUndefined();
-    });
-  });
-
-  describe('resubmit', () => {
-    it('resets a failed unit to submitted with a fresh slice, clearing prior review state', async () => {
-      const store = new UnitStore([], det());
-      const u = await store.add(mkInput({ source: 'cli' }));
-      await store.setReviewing(u.unitId);
-      await store.setReviewFailed(u.unitId, 'Planner returned non-JSON');
-      expect(store.get(u.unitId)!.status).toBe('queued');
-
-      const out = await store.resubmit(u.unitId, {
-        taskLabel: 'fresh task',
-        baseRef: 'main',
-        diffContentKey: 'key-2',
-        files: [],
-        metadata: mkMetadata('feat/x'),
-      });
-      expect(out.status).toBe('submitted');
-      expect(out.error).toBeUndefined();
-      expect(out.narrative).toBeUndefined();
-      expect(out.verdict).toBeUndefined();
-      expect(out.decision).toBeUndefined();
-      expect(out.toResolve).toBe(0);
-      expect(out.diffContentKey).toBe('key-2');
-      expect(out.taskLabel).toBe('fresh task');
-    });
-
-    it('keeps the existing taskLabel/intent when not provided', async () => {
-      const store = new UnitStore([], det());
-      const u = await store.add(mkInput({ taskLabel: 'orig', intent: 'orig intent', source: 'cli' }));
-      const out = await store.resubmit(u.unitId, {
-        baseRef: 'main',
-        diffContentKey: 'k',
-        files: [],
-        metadata: mkMetadata(),
-      });
-      expect(out.taskLabel).toBe('orig');
-      expect(out.intent).toBe('orig intent');
-    });
-
-    it('throws UnknownUnitError for an unknown id', async () => {
-      const store = new UnitStore([], det());
-      await expect(
-        store.resubmit('nope', { baseRef: 'main', diffContentKey: 'k', files: [], metadata: mkMetadata() }),
-      ).rejects.toThrow(UnknownUnitError);
     });
   });
 });
