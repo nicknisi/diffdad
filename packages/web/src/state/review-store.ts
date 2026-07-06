@@ -48,6 +48,8 @@ type ReviewState = {
   mode: 'pr' | 'command-center';
   /** Command-center: the daemon's review-unit queue, kept live via the `units` SSE event. */
   units: Unit[];
+  /** Wall-clock ms of the last `units` snapshot. Null until the first lands — powers the freshness caption. */
+  lastUnitsAt: number | null;
   /** Command-center client-side route (center vs. a drill-in `/units/:id`). */
   route: Route;
   checkRuns: CheckRun[];
@@ -134,6 +136,8 @@ type ReviewState = {
   setComments: (comments: PRComment[]) => void;
   setMode: (mode: 'pr' | 'command-center') => void;
   setUnits: (units: Unit[]) => void;
+  /** Stamp the freshness clock when a `units` snapshot lands. */
+  setLastUnitsAt: (ts: number) => void;
   /** Navigate the command center, pushing browser history (deep-linkable `/units/:id`). */
   navigate: (route: Route) => void;
   /** Sync the route from the address bar without pushing history (popstate / initial load). */
@@ -289,6 +293,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
   comments: [],
   mode: 'pr',
   units: [],
+  lastUnitsAt: null,
   route: typeof window !== 'undefined' ? parseRoute(window.location.pathname) : { name: 'center' },
   checkRuns: [],
   reviews: [],
@@ -432,6 +437,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
   setComments: (comments) => set({ comments }),
   setMode: (mode) => set({ mode }),
   setUnits: (units) => set({ units }),
+  setLastUnitsAt: (lastUnitsAt) => set({ lastUnitsAt }),
 
   navigate: (route) => {
     if (typeof window !== 'undefined') window.history.pushState(null, '', routePath(route));

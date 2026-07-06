@@ -144,8 +144,12 @@ export function useLiveStream() {
     // Command center: the daemon broadcasts the full cross-repo queue on every unit change.
     const onUnits = (e: MessageEvent) => {
       try {
-        const data = JSON.parse(e.data) as { units: Unit[] };
+        const data = JSON.parse(e.data) as { units: Unit[]; polledAt?: number };
         useReviewStore.getState().setUnits(data.units ?? []);
+        // Only stamp the freshness caption on real GitHub poll passes: `pollOnce` tags its broadcast
+        // with `polledAt`. Other `units` broadcasts (decision/delete/hydrate/review/initial snapshot,
+        // and SSE reconnects) never re-query GitHub, so stamping them would falsely reset "checked …".
+        if (typeof data.polledAt === 'number') useReviewStore.getState().setLastUnitsAt(data.polledAt);
         setLastEventAt(Date.now());
       } catch {
         // ignore malformed event

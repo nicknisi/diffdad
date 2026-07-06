@@ -77,6 +77,9 @@ export async function pollOnce(deps: {
     }
   }
 
-  broadcast('units', { units: store.list() });
+  // `polledAt` marks this as a real GitHub check (interval or manual /api/poll), so the command
+  // center stamps its "checked …" freshness caption only on true poll passes — not on the other
+  // `units` broadcasts (decision/delete/hydrate/review/initial snapshot) that never re-query GitHub.
+  broadcast('units', { units: store.list(), polledAt: Date.now() });
   return { minted, resurfaced };
 }

@@ -95,6 +95,13 @@ export type DaemonAppDeps = {
    * like the other GitHub deps; absent → the status route returns empties. Read live, not stored.
    */
   statusFetcher?: (unit: ReviewUnit) => Promise<{ checks: CheckRun[]; reviews: PRReview[] }>;
+  /**
+   * Runs one GitHub review-request poll on demand — the same `pollOnce` pass the interval poller runs
+   * (search GitHub, mint/resurface units, broadcast a `units` snapshot), returning the counts. Injected
+   * so tests fake it and the daemon wires the authenticated search+store+broadcast. Absent → the manual
+   * poll route 503s (no GitHub token, nothing to poll).
+   */
+  pollNow?: () => Promise<{ minted: number; resurfaced: number }>;
   /** Override the command-center static root (defaults to the same fallbacks as `server.ts`). */
   webDist?: string;
 };
@@ -119,9 +126,11 @@ function resolveWebDist(override?: string): string {
  */
 export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
   const { store, hub, reviewPoster, hydrate } = deps;
-  const { commentFetcher, commentPoster, reviewSubmitter, ai, statusFetcher } = deps;
+  const { commentFetcher, commentPoster, reviewSubmitter, ai, statusFetcher, pollNow } = deps;
   const app = new Hono();
   const broadcast = hub.broadcast;
+  // Single-flight state for POST /api/poll: concurrent manual refreshes share one in-flight poll.
+  let inflight: Promise<{ minted: number; resurfaced: number }> | null = null;
 
   // --- Command-center bootstrap ---------------------------------------------
   // The web SPA's single bootstrap is `GET /api/narrative`; it multiplexes on `mode`
@@ -202,6 +211,39 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
     if (!removed) return c.json({ error: new UnknownUnitError(id).message }, 404);
     broadcast('units', { units: store.list() });
     return c.json({ ok: true });
+  });
+
+  // Manual "check GitHub now" — the same review-request poll the interval runs (`pollOnce`), on demand.
+  // The poll broadcasts a `units` snapshot that repaints every open tab; the returned counts feed only
+  // the command center's result toast. Single-flight in the route closure: concurrent POSTs (button
+  // mashing) coalesce onto one in-flight `pollNow()` so we don't fan out a GitHub search per click —
+  // overlap with the interval poller is benign since classify dedupes. Route-level (not wiring-level) so
+  // this file's tests can cover it. Must precede the static catch-all.
+  app.post('/api/poll', async (c) => {
+    // A poll we can't run is meaningless — refuse rather than pretend the list is fresh.
+    if (!pollNow) {
+      return c.json({ error: 'GitHub is not configured — cannot poll for review requests' }, 503);
+    }
+    const poll = (inflight ??= pollNow()
+      .catch((err) => {
+        // Log on the shared in-flight promise, not per-awaiter: the single-flight coalesces concurrent
+        // POSTs onto this one poll, so logging here emits exactly one line per real failure instead of
+        // one per request (matches the poller's + hydrate route's plain failure line). Re-throw so each
+        // awaiting request still 502s below.
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(`[diffdad] manual poll failed: ${message}`);
+        throw err;
+      })
+      .finally(() => {
+        inflight = null;
+      }));
+    try {
+      const { minted, resurfaced } = await poll;
+      return c.json({ ok: true, minted, resurfaced });
+    } catch (err) {
+      // A real GitHub/network failure is a bad gateway, not an unhandled 500 (logged once above).
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 502);
+    }
   });
 
   // Lazy narrative — generated on open, not on poll, so dad never burns tokens narrating PRs you

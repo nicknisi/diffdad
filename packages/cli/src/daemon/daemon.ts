@@ -288,6 +288,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<number> {
     commentPoster: githubClient ? makeCommentPoster(githubClient) : undefined,
     reviewSubmitter: githubClient ? makeReviewSubmitter(githubClient) : undefined,
     statusFetcher: githubClient ? makeStatusFetcher(githubClient) : undefined,
+    // Manual refresh runs the identical pass startPoller does — one on-demand `pollOnce` over the same
+    // search+store+broadcast. No token → undefined and the /api/poll route 503s.
+    pollNow: githubClient
+      ? () => pollOnce({ search: () => githubClient.searchReviewRequested(), store, broadcast: hub.broadcast })
+      : undefined,
     // AI works without a GitHub token (the default provider shells out to `claude -p`), so it's
     // always wired — the route reads config per-call, mirroring the PR server's /api/ai.
     ai: async (system, user) => callAi(await readConfig(), system, user),

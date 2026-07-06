@@ -68,11 +68,12 @@ type SetupOpts = {
   ) => Promise<void>;
   ai?: (system: string, user: string) => Promise<{ text: string }>;
   statusFetcher?: (unit: ReviewUnit) => Promise<{ checks: CheckRun[]; reviews: PRReview[] }>;
+  pollNow?: () => Promise<{ minted: number; resurfaced: number }>;
 };
 
 function setup(opts: SetupOpts = {}) {
   const { reviewPoster, hydrate, commentFetcher, commentPoster, reviewSubmitter, ai } = opts;
-  const { statusFetcher } = opts;
+  const { statusFetcher, pollNow } = opts;
   const store = new UnitStore([], { dir, ...deterministic() });
   const hub = new SseHub();
   const events: string[] = [];
@@ -91,6 +92,7 @@ function setup(opts: SetupOpts = {}) {
     reviewSubmitter,
     ai,
     statusFetcher,
+    pollNow,
   });
   return { store, hub, events, messages, app };
 }
@@ -409,6 +411,100 @@ describe('POST /api/units/:id/hydrate (lazy narrative on open)', () => {
       expect(line).toContain(String(gh.prNumber));
       expect(line).toContain(gh.unitId);
       expect(line).toContain('PR fetch failed');
+    } finally {
+      errSpy.mockRestore();
+    }
+  });
+});
+
+describe('POST /api/poll (manual refresh)', () => {
+  const poll = (app: ReturnType<typeof setup>['app']) => app.request('/api/poll', { method: 'POST' });
+
+  it('503s when no pollNow dep is wired (GitHub not configured)', async () => {
+    const { app } = setup(); // no pollNow
+    const res = await poll(app);
+    expect(res.status).toBe(503);
+    expect(((await res.json()) as { error: string }).error).toContain('GitHub is not configured');
+  });
+
+  it('passes the mint/resurface counts through on success', async () => {
+    const { app } = setup({ pollNow: async () => ({ minted: 2, resurfaced: 1 }) });
+    const res = await poll(app);
+    expect(res.status).toBe(200);
+    expect((await res.json()) as unknown).toEqual({ ok: true, minted: 2, resurfaced: 1 });
+  });
+
+  it('502s and logs one line when pollNow throws', async () => {
+    const { app } = setup({
+      pollNow: async () => {
+        throw new Error('github search failed');
+      },
+    });
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const res = await poll(app);
+      expect(res.status).toBe(502);
+      expect(((await res.json()) as { error: string }).error).toBe('github search failed'); // reaches the client
+      expect(errSpy).toHaveBeenCalledTimes(1);
+      const line = String(errSpy.mock.calls[0]![0]);
+      expect(line).toContain('manual poll failed');
+      expect(line).toContain('github search failed');
+    } finally {
+      errSpy.mockRestore();
+    }
+  });
+
+  it('single-flights concurrent POSTs into one pollNow, then polls again after it settles', async () => {
+    let invocations = 0;
+    let resolve!: (v: { minted: number; resurfaced: number }) => void;
+    let deferred = new Promise<{ minted: number; resurfaced: number }>((r) => {
+      resolve = r;
+    });
+    const { app } = setup({
+      pollNow: () => {
+        invocations++;
+        return deferred;
+      },
+    });
+
+    // Two concurrent POSTs (button mashing) share one in-flight poll.
+    const first = poll(app);
+    const second = poll(app);
+    // Let both handlers reach the shared `await inflight` before the poll settles.
+    await new Promise((r) => setTimeout(r, 0));
+    resolve({ minted: 3, resurfaced: 0 });
+    const [r1, r2] = await Promise.all([first, second]);
+    expect(r1.status).toBe(200);
+    expect(r2.status).toBe(200);
+    expect((await r1.json()) as unknown).toEqual({ ok: true, minted: 3, resurfaced: 0 });
+    expect((await r2.json()) as unknown).toEqual({ ok: true, minted: 3, resurfaced: 0 });
+    expect(invocations).toBe(1); // coalesced into a single GitHub search
+
+    // In-flight cleared once it settled → a later request runs a fresh poll.
+    deferred = Promise.resolve({ minted: 0, resurfaced: 0 });
+    const r3 = await poll(app);
+    expect(r3.status).toBe(200);
+    expect(invocations).toBe(2);
+  });
+
+  it('logs one line when concurrent POSTs coalesce onto a single failing poll', async () => {
+    let reject!: (e: Error) => void;
+    const deferred = new Promise<{ minted: number; resurfaced: number }>((_, r) => {
+      reject = r;
+    });
+    const { app } = setup({ pollNow: () => deferred });
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      // Two concurrent POSTs share one in-flight poll; when it fails, both must 502 but only one
+      // failure line should be logged (the log lives on the shared promise, not per-request).
+      const first = poll(app);
+      const second = poll(app);
+      await new Promise((r) => setTimeout(r, 0));
+      reject(new Error('github search failed'));
+      const [r1, r2] = await Promise.all([first, second]);
+      expect(r1.status).toBe(502);
+      expect(r2.status).toBe(502);
+      expect(errSpy).toHaveBeenCalledTimes(1);
     } finally {
       errSpy.mockRestore();
     }

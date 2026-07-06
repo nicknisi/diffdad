@@ -30,4 +30,14 @@ export const copy = {
   noDrafts: 'No pending comments. Clean slate.',
   shortcutsFooter: 'Measure twice, commit once.',
   brandTooltip: "I'm not mad, just diff-appointed.",
+
+  // Manual refresh outcome — minted = brand-new units, resurfaced = ones back for another pass.
+  refreshResult: (minted: number, resurfaced: number): string => {
+    if (minted === 0 && resurfaced === 0) return "Nothing new. You're all caught up.";
+    const parts: string[] = [];
+    if (minted > 0) parts.push(`${minted} new`);
+    if (resurfaced > 0) parts.push(`${resurfaced} back for another look`);
+    return `${parts.join(', ')}.`;
+  },
+  refreshUnreachable: 'Could not reach the daemon.',
 } as const;

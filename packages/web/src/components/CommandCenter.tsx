@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { getAccentMeta } from '../lib/accents';
 import { copy } from '../lib/microcopy';
 import { useReviewStore } from '../state/review-store';
@@ -14,6 +14,14 @@ const LIVE: Record<string, { label: string; dot: string; fg: string }> = {
   connecting: { label: 'Reconnecting…', dot: 'var(--amber-10)', fg: 'var(--amber-11)' },
   disconnected: { label: 'Offline', dot: 'var(--gray-9)', fg: 'var(--fg-3)' },
 };
+
+/** Dim freshness caption for the last `units` snapshot: 'checked just now' / '42s ago' / '3m ago'. */
+function freshness(lastUnitsAt: number, now: number): string {
+  const secs = Math.max(0, Math.round((now - lastUnitsAt) / 1000));
+  if (secs < 10) return 'checked just now';
+  if (secs < 60) return `checked ${secs}s ago`;
+  return `checked ${Math.floor(secs / 60)}m ago`;
+}
 
 function GroupLabel({ title, count }: { title: string; count: number }) {
   return (
@@ -51,15 +59,28 @@ export function CommandCenter() {
   const liveStatus = useReviewStore((s) => s.liveStatus);
   const accent = useReviewStore((s) => s.accent);
   const { markBg } = getAccentMeta(accent);
+  const lastUnitsAt = useReviewStore((s) => s.lastUnitsAt);
   const [now, setNow] = useState(() => Date.now());
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showCleared, setShowCleared] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [toast, setToast] = useState<{ kind: 'ok' | 'error'; message: string } | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // One ~10s tick drives both the row timestamps and the freshness caption's seconds granularity.
   useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 30_000);
+    const id = setInterval(() => setNow(Date.now()), 10_000);
     return () => clearInterval(id);
   }, []);
+
+  // A pending toast timeout must not fire after unmount.
+  useEffect(
+    () => () => {
+      if (toastTimer.current) clearTimeout(toastTimer.current);
+    },
+    [],
+  );
 
   const open = (unit: Unit) => navigate({ name: 'unit', unitId: unit.unitId });
 
@@ -76,6 +97,39 @@ export function CommandCenter() {
       setError(e instanceof Error ? e.message : 'Decision failed');
     } finally {
       setBusyId(null);
+    }
+  }
+
+  // Show a result toast and (re)start its 4s auto-dismiss, replacing any toast already up.
+  function flashToast(next: { kind: 'ok' | 'error'; message: string }) {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast(next);
+    toastTimer.current = setTimeout(() => {
+      setToast(null);
+      toastTimer.current = null;
+    }, 4000);
+  }
+
+  async function refresh() {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      const res = await fetch('/api/poll', { method: 'POST' });
+      if (!res.ok) {
+        let message = `HTTP ${res.status}`;
+        try {
+          const body = (await res.json()) as { error?: string };
+          if (body?.error) message = body.error;
+        } catch {}
+        flashToast({ kind: 'error', message });
+        return;
+      }
+      const data = (await res.json()) as { minted?: number; resurfaced?: number };
+      flashToast({ kind: 'ok', message: copy.refreshResult(data.minted ?? 0, data.resurfaced ?? 0) });
+    } catch {
+      flashToast({ kind: 'error', message: copy.refreshUnreachable });
+    } finally {
+      setRefreshing(false);
     }
   }
 
@@ -113,6 +167,43 @@ export function CommandCenter() {
           />
           {live.label}
         </span>
+        {lastUnitsAt !== null && (
+          // Fixed width + tabular-nums so the caption's box doesn't change size as it ticks
+          // ('just now' → '42s ago' → '1m ago'), which would jitter the live dot to its left.
+          <span className="inline-block min-w-[96px] text-[12px] tabular-nums text-[var(--fg-3)]">
+            {freshness(lastUnitsAt, now)}
+          </span>
+        )}
+        <div className="relative flex items-center">
+          <button
+            type="button"
+            onClick={refresh}
+            disabled={refreshing}
+            className="inline-flex items-center gap-1.5 rounded-md bg-[var(--bg-page)] px-2 py-1 text-[12.5px] font-medium text-[var(--fg-1)] transition-opacity disabled:opacity-50"
+            style={{ boxShadow: 'inset 0 0 0 1px var(--gray-a5)' }}
+          >
+            <span className={refreshing ? 'animate-spin' : ''} aria-hidden>
+              ↻
+            </span>
+            Refresh
+          </button>
+          <span aria-live="polite">
+            {toast && (
+              <span
+                // Absolute (out of flow) so showing/hiding the toast doesn't collapse the header's
+                // right-anchored cluster and snap the dot + caption + button sideways on every refresh.
+                className="absolute right-0 top-full z-10 mt-1.5 whitespace-nowrap rounded-md px-2.5 py-1 text-[12px] font-medium"
+                style={
+                  toast.kind === 'error'
+                    ? { background: 'var(--red-3)', color: 'var(--red-11)', boxShadow: 'inset 0 0 0 1px var(--red-a6)' }
+                    : { background: 'var(--gray-3)', color: 'var(--fg-2)', boxShadow: 'inset 0 0 0 1px var(--gray-a5)' }
+                }
+              >
+                {toast.message}
+              </span>
+            )}
+          </span>
+        </div>
         {repos.length > 1 && (
           <select
             value={repoFilter ?? ''}
