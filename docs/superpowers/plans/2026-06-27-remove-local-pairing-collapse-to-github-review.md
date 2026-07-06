@@ -4,7 +4,7 @@
 
 **Goal:** Remove the local-working-tree / agent-pairing subsystem (`dad watch`, `dad add`, `dad comments`, the daemon's local-unit ingestion + agent-comment loop), collapsing Diff Dad to two coherent GitHub-oriented surfaces: `dad review <pr>` (one-shot PR review) and `dad daemon` (a GitHub PR-review command center).
 
-**Architecture:** This is a deletion/refactor, not a feature. The ordering principle is **remove consumers before sweeping the now-dead modules**, so every task ends with a green build. Each task removes code *and its tests together* and ends with build + test + lint green + a commit. The TypeScript compiler is the safety net: a missed importer surfaces as a build error, not a runtime bug.
+**Architecture:** This is a deletion/refactor, not a feature. The ordering principle is **remove consumers before sweeping the now-dead modules**, so every task ends with a green build. Each task removes code _and its tests together_ and ends with build + test + lint green + a commit. The TypeScript compiler is the safety net: a missed importer surfaces as a build error, not a runtime bug.
 
 **Tech Stack:** Bun workspaces monorepo; `packages/cli` (Bun + Hono server, MCP); `packages/web` (React 19 + Vite + Zustand). Tests: `bun test` (CLI), Vitest (web).
 
@@ -24,12 +24,14 @@
 ### Task 1: Remove the local CLI surface (`dad watch`, `dad add`, `dad comments`) + watch-mode server path
 
 **Files:**
+
 - Modify: `packages/cli/src/cli.ts` — remove `watchCommand`, `commentsCommand`, `addCommand`, their dispatch cases, their `Command` union members (`'watch' | 'comments' | 'add'`), `parseArgs` cases, and their help text; remove now-unused imports (`buildLocalReview`, `resolveBaseRef`, `NotAGitRepoError`, `resolveLocalIdentity`, `renderCommentsMarkdown`, `inferRepoFromGit`, `gitText`/`gitText`-only helpers, `basename`, `DEFAULT_DAEMON_PORT` if only `add` used it).
 - Modify: `packages/cli/src/server.ts` — remove all watch-only code (see steps); collapse `ctx.mode` to a constant `'pr'`.
 - Delete: `packages/cli/src/triage/` (entire dir — only `server.ts` watch path consumed `runTriage`).
 - Delete: any triage test (`packages/cli/src/__tests__/triage*.test.ts` if present).
 
 **Interfaces:**
+
 - Consumes: nothing new.
 - Produces: `createServer` no longer reads `ctx.mode`/`ctx.baseRef`/`ctx.contentKey`/`ctx.triage`; `ServerContext.mode` is removed (PR is the only mode). The agent-comment loop stays for now (removed in Task 3).
 
@@ -50,9 +52,11 @@ rm -rf packages/cli/src/triage
 - [ ] **Step 6: Build, test, lint — expect green.**
 
 Run:
+
 ```bash
 bun run build && cd packages/cli && bun test && cd ../.. && bun run lint
 ```
+
 Expected: PASS. If the build flags a dangling `triage`/`buildLocalReview`/watch import, remove that reference (it's a leftover consumer).
 
 - [ ] **Step 7: Verify the commands are gone.**
@@ -72,6 +76,7 @@ git add -A && git commit -m "refactor(cli): remove dad watch/add/comments + watc
 ### Task 2: Remove watch mode from the web frontend
 
 **Files:**
+
 - Delete: `packages/web/src/components/WatchView.tsx`.
 - Modify: `packages/web/src/App.tsx` — remove the `WatchView` import (`:17`) and the `if (mode === 'watch')` branch (`:145-147`).
 - Modify: `packages/web/src/state/review-store.ts` — narrow the `mode` union from `'pr' | 'watch' | 'command-center'` to `'pr' | 'command-center'` (`:56`, `:147`); fix the doc comment (`:53`).
@@ -81,6 +86,7 @@ git add -A && git commit -m "refactor(cli): remove dad watch/add/comments + watc
 - Modify: `packages/web/src/lib/__tests__/units-view.test.ts` and `packages/web/src/hooks/__tests__/useLiveStream.test.ts` — delete the `'watch'` test cases (`units-view.test.ts:177, 201, 208, 226`; `useLiveStream.test.ts:148`).
 
 **Interfaces:**
+
 - Consumes: the narrowed `mode` union from `review-store`.
 - Produces: `mode` is `'pr' | 'command-center'` everywhere; `commentTarget` returns only `'review' | 'github' | 'agent'` (agent still possible for command-center local units until Task 6).
 
@@ -93,9 +99,11 @@ git add -A && git commit -m "refactor(cli): remove dad watch/add/comments + watc
 - [ ] **Step 4: Build + web tests + lint — expect green.**
 
 Run:
+
 ```bash
 bun run build && cd packages/web && bunx vitest run && cd ../.. && bun run lint
 ```
+
 Expected: PASS. A `TS2367`/"not comparable to type" error means a `=== 'watch'` comparison was missed — remove it.
 
 - [ ] **Step 5: Commit.**
@@ -110,6 +118,7 @@ git add -A && git commit -m "refactor(web): remove watch mode (WatchView + 'watc
 ### Task 3: Strip the agent-comment loop from `dad review` (and delete `src/mcp/tools.ts`)
 
 **Files:**
+
 - Modify: `packages/cli/src/server.ts` — remove `ServerContext.store` (`:38`), the `/api/agent-comments` GET+POST routes (`:366-416`), the MCP mount (`:738`), the shutdown-gate references to `hasUnresolvedAgentComments` (`:627, :629`) and the function itself (`:86-88`), and imports (`AgentCommentStore` `:18`, `UnknownCommentError` `:19`, `registerAgentCommentTools` `:23`, `mountMcp` `:22` if now unused).
 - Modify: `packages/cli/src/cli.ts` — in `reviewCommand`, drop `store: await AgentCommentStore.load(...)` (`:285`) and the `AgentCommentStore` import (`:3`).
 - Modify: `packages/web/src/hooks/useNarrative.ts` — remove the `/api/agent-comments` fetch (`:123`).
@@ -117,8 +126,9 @@ git add -A && git commit -m "refactor(web): remove watch mode (WatchView + 'watc
 - Delete: `packages/cli/src/__tests__/mcp-tools.test.ts`, `packages/cli/src/__tests__/agent-comments-routes.test.ts`; trim agent-comment setup out of `packages/cli/src/__tests__/server.test.ts` (`:4, :127`) and `server-sse.test.ts` (`:2, :145`) — remove the `store:` field and any agent-comment assertions; keep the GitHub/PR-mode assertions.
 
 **Interfaces:**
+
 - Consumes: nothing new.
-- Produces: `createServer` no longer mounts `/mcp` or `/api/agent-comments`; `dad review` is GitHub-only. `src/agent-comments/` is now consumed *only* by the daemon (deleted in Task 7).
+- Produces: `createServer` no longer mounts `/mcp` or `/api/agent-comments`; `dad review` is GitHub-only. `src/agent-comments/` is now consumed _only_ by the daemon (deleted in Task 7).
 
 - [ ] **Step 1: Confirm the loop is vestigial in PR mode.** Verify `commentTarget('pr', …)` returns `'review'` (`units-view.ts`) and `commentGoesToAgent('pr')` is `false` — so the PR composer posts to GitHub, never the agent. (Already asserted in `units-view.test.ts:218,229`.) This confirms removing the routes loses no PR-mode feature.
 
@@ -135,9 +145,11 @@ rm packages/cli/src/mcp/tools.ts packages/cli/src/__tests__/mcp-tools.test.ts pa
 - [ ] **Step 5: Build + CLI tests + web tests + lint — expect green.**
 
 Run:
+
 ```bash
 bun run build && cd packages/cli && bun test && cd ../web && bunx vitest run && cd ../.. && bun run lint
 ```
+
 Expected: PASS.
 
 - [ ] **Step 6: Commit.**
@@ -152,18 +164,20 @@ git add -A && git commit -m "refactor: strip agent-comment loop from dad review 
 ### Task 4: Remove the daemon's local-unit ingestion + agent loop
 
 **Files:**
+
 - Modify: `packages/cli/src/daemon/app.ts` — remove: `POST /api/units` ingest (`:261-311`), `POST /api/units/:id/retry` (`:317-342`), `GET/POST /api/units/:id/agent-comments` (`:446-505`), `GET /api/units/:id/presence` (`:512-516`), the per-unit comment-store machinery (`loadCommentStore`/`commentStores`/`getCommentStore` `:155-165`), `AgentActivity` wiring (`:170-172`), and the `registerSubmitTools` + `registerUnitCommentTools` mounts (`:689-701`) — remove the whole `mountMcp(...)` block (the daemon's MCP endpoint existed only for the local loop). Drop the now-unused `DaemonAppDeps` fields (`computeSlice`, `onSubmitted`, `awaitTimeoutMs`, `loadCommentStore`, `activity`) and imports (`AgentCommentStore`, `UnknownCommentError`, `registerUnitCommentTools`, `AgentActivity`, `DecisionChannel`, `registerSubmitTools`, `ComputeSlice`, `CleanTreeError`).
 - Modify: `packages/cli/src/daemon/daemon.ts` — remove `computeSlice` (`:297`), the `ReviewWorkerPool` wiring (`:296, :309`), `DecisionChannel` (`:293`), `reviewUnit` (`:249-258`), `onSubmitted`, and the `decision` dep passed to `createDaemonApp`; remove imports (`buildLocalReview`, `DecisionChannel`, `ReviewWorkerPool`, `ReviewResult`). Keep all GitHub deps (poster/hydrate/fetcher/etc.) and `pool.kick()`→delete.
 - Delete: `packages/cli/src/daemon/pool.ts`, `packages/cli/src/units/decision-channel.ts`, `packages/cli/src/units/agent-activity.ts`, `packages/cli/src/mcp/submit.ts`, `packages/cli/src/mcp/unit-comments.ts`.
 - Delete tests: `daemon/__tests__/pool.test.ts`, `units/__tests__/decision-channel.test.ts`, `__tests__/mcp-submit.test.ts`, `__tests__/unit-agent-comments.test.ts`; trim local cases from `__tests__/units-routes.test.ts` (the ingest/retry/agent-comment/presence cases — keep the github decision/hydrate/comments/status/review cases) and from `daemon/__tests__/*` that exercised the pool/submit.
 
 **Interfaces:**
+
 - Consumes: the surviving `UnitStore` github methods (Task 5 narrows them).
 - Produces: the daemon serves only github routes (`/api/units`, `/api/units/:id`, `/api/units/:id/decision` (github branch), `/hydrate`, `/comments`, `/review`, `/ai`, `/status`, `/events`) + the SPA. No `/mcp`, no ingest, no agent-comments, no presence.
 
 - [ ] **Step 1: Remove the local routes + MCP mount from `app.ts`.** Delete the route blocks and helper closures listed; remove the `mountMcp(...)` block entirely. The `/api/units/:id/decision` route keeps only its `decisionTarget(existing) === 'github'` path (the `agent/cli` branch at `app.ts:244-255` is removed; a non-github unit can no longer exist).
 
-- [ ] **Step 2: Simplify `daemon.ts` startup.** Remove the pool, `computeSlice`, `DecisionChannel`, `reviewUnit`, `onSubmitted`; delete the `pool.kick()` calls and the "resuming review" log. Update the startup banner: replace the "Point an agent at the review loop / submit_for_review" block (`daemon.ts:342-346`) with a line pointing at the GitHub review queue (e.g. *"Watching GitHub for review requests."* / the poller-off hint already at `:357`).
+- [ ] **Step 2: Simplify `daemon.ts` startup.** Remove the pool, `computeSlice`, `DecisionChannel`, `reviewUnit`, `onSubmitted`; delete the `pool.kick()` calls and the "resuming review" log. Update the startup banner: replace the "Point an agent at the review loop / submit*for_review" block (`daemon.ts:342-346`) with a line pointing at the GitHub review queue (e.g. *"Watching GitHub for review requests."\_ / the poller-off hint already at `:357`).
 
 - [ ] **Step 3: Delete the dead modules + their tests.**
 
@@ -182,9 +196,11 @@ rm packages/cli/src/daemon/pool.ts packages/cli/src/units/decision-channel.ts \
 - [ ] **Step 5: Build + CLI tests + lint — expect green.**
 
 Run:
+
 ```bash
 bun run build && cd packages/cli && bun test && cd ../.. && bun run lint
 ```
+
 Expected: PASS. Dangling-import errors point at a missed consumer in `app.ts`/`daemon.ts`.
 
 - [ ] **Step 6: Commit.**
@@ -199,12 +215,14 @@ git add -A && git commit -m "refactor(daemon): remove local-unit ingestion, work
 ### Task 5: Collapse the unit store + state machine to GitHub-only
 
 **Files:**
+
 - Modify: `packages/cli/src/units/types.ts` — narrow `UnitStatus` to `'queued' | 'approved' | 'changes_requested' | 'done'` (remove `'submitted' | 'reviewing' | 'addressing'`); narrow `UnitSource` to `'github'` (or remove `source` entirely — keep as `'github'` literal for least churn). Update the state-machine doc comment (`:4-9`).
 - Modify: `packages/cli/src/units/store.ts` — remove `add`, `resubmit`, `findByWorktree`, `setReviewing`, `setQueued`, `setReviewFailed`, and the local edges from `TRANSITIONS`; keep `addGithubUnit`, `attachReview`, `setDecision`, `setReviewedSha`, `resurfaceForNewPush`, `linkPr`, `remove`, `list`, `get`. In `load()`, drop any unit with `source !== 'github'` (replaces the `u.source ??= 'agent'` back-compat at `:93`).
 - Modify: `packages/cli/src/units/decision-target.ts` — `decisionTarget` now always returns `'github'`; simplify or inline. Keep `linking.ts` (poller uses it) unchanged.
 - Modify tests: `units/__tests__/store.test.ts` (drop local-mutator + local-transition tests; keep github lifecycle), `units/__tests__/decision-target.test.ts` (github-only), `units/__tests__/linking.test.ts` (unchanged unless it minted local units).
 
 **Interfaces:**
+
 - Consumes: nothing new.
 - Produces: `TRANSITIONS = { queued: ['approved','changes_requested'], approved: ['done'], changes_requested: [], done: [] }`. `UnitStatus` is the 4-value union. All units are `source: 'github'`.
 
@@ -239,14 +257,16 @@ git add -A && git commit -m "refactor(units): collapse store + state machine to 
 ### Task 6: Collapse the web drill-in + command center to GitHub-only
 
 **Files:**
+
 - Modify: `packages/web/src/components/UnitReview.tsx` — remove the `!isGithub` branches: the `AgentPresencePill` (`:48-77, :387`), the agent-comments fetch effect (`:184`+), and the agent/cli decision bar (`:511-575`); keep the github review bar (`:480-507`), the CI/review status strip, and the github comment flow. The drill-in is now always the github experience.
-- Modify: `packages/web/src/components/UnitRow.tsx` + `packages/web/src/components/CommandCenter.tsx` — remove the `agent`/`cli` source badges + tones (`UnitRow.tsx:13-17`, `units-view sourceBadge`), and any presence usage. Update the empty-state copy (`CommandCenter.tsx:193-202`) to describe the GitHub queue (e.g. *"Open a review request on GitHub and it shows up here."*) instead of `submit_for_review`.
+- Modify: `packages/web/src/components/UnitRow.tsx` + `packages/web/src/components/CommandCenter.tsx` — remove the `agent`/`cli` source badges + tones (`UnitRow.tsx:13-17`, `units-view sourceBadge`), and any presence usage. Update the empty-state copy (`CommandCenter.tsx:193-202`) to describe the GitHub queue (e.g. _"Open a review request on GitHub and it shows up here."_) instead of `submit_for_review`.
 - Modify: `packages/web/src/lib/units-view.ts` — `commentTarget` now returns `'github'` for any command-center unit (remove the `'agent'` path); remove `agentPresence`, `sourceBadge`'s agent/cli arms, `commentGoesToAgent` (or hardcode `false`), and `agentCommentsEndpoint`.
 - Modify: `packages/web/src/components/CommentThread.tsx` + `ResolveStrip.tsx` — remove the `'agent'` target branches ("Send to agent", `commentGoesToAgent` gating); the composer is GitHub/review-only.
 - Modify hooks: `useComments.ts`, `useInlineComments.ts` — remove the `commentGoesToAgent` agent branch + `agentToPRComments` usage if now dead (`lib/agent-comments.ts` may become deletable — check importers).
 - Modify tests: `lib/__tests__/units-view.test.ts` — drop the `'agent'`/command-center-local `commentTarget`/`commentGoesToAgent` cases; keep `'github'`/`'review'`.
 
 **Interfaces:**
+
 - Consumes: the github-only `Unit` shape (`source: 'github'`).
 - Produces: a single github drill-in; `commentTarget` ∈ `{'review','github'}`.
 
@@ -275,6 +295,7 @@ git add -A && git commit -m "refactor(web): collapse unit drill-in + command cen
 ### Task 7: Final dead-module sweep + dependency prune
 
 **Files:**
+
 - Delete: `packages/cli/src/agent-comments/` (store, types, markdown) and `packages/cli/src/local/` (diff-source, git, identity) — both now have zero non-test importers.
 - Delete tests: `__tests__/agent-comments.test.ts`, `__tests__/agent-comments-markdown.test.ts`, `__tests__/agent-comments-sse.test.ts`, `__tests__/local-diff.test.ts`.
 - Modify: `packages/cli/src/paths.ts` — remove `'agent-comments'` from `DURABLE_SUBDIRS` (`:27`); update `__tests__/paths.test.ts` (`:30-39`) to migrate only `units`.
@@ -282,15 +303,18 @@ git add -A && git commit -m "refactor(web): collapse unit drill-in + command cen
 - Modify: `package.json` (root + workspaces) — drop dependencies that were only used by removed code (audit `open` — still used by `dad review`/daemon `--open`, so KEEP; check any triage-only deps).
 
 **Interfaces:**
+
 - Consumes: nothing.
 - Produces: the dead local/agent-comment modules no longer exist anywhere in the tree.
 
 - [ ] **Step 1: Confirm zero importers** before deleting:
 
 Run:
+
 ```bash
 grep -rn --include='*.ts' --include='*.tsx' "agent-comments\|local/diff-source\|local/git\|local/identity\|buildLocalReview" packages | grep -vE "(agent-comments/|local/|__tests__)"
 ```
+
 Expected: no output. Any hit is a consumer that an earlier task missed — fix it before deleting.
 
 - [ ] **Step 2: Delete the modules + tests.**
@@ -308,18 +332,22 @@ rm -rf packages/cli/src/agent-comments packages/cli/src/local \
 - [ ] **Step 4: Full green gate.**
 
 Run:
+
 ```bash
 bun run build && cd packages/cli && bun test && cd ../web && bunx vitest run && cd ../.. && bun run lint
 ```
+
 Expected: PASS, no skipped suites.
 
 - [ ] **Step 5: Smoke-test the survivors manually.**
 
 Run (in two shells):
+
 ```bash
 bun packages/cli/src/cli.ts review <a-real-pr>   # renders, comments post to GitHub, no /mcp, no "send to agent"
 bun packages/cli/src/cli.ts daemon                # boots, banner mentions GitHub queue (no submit_for_review), poller runs
 ```
+
 Expected: both work; `dad daemon status` reports running.
 
 - [ ] **Step 6: Commit.**
@@ -334,6 +362,7 @@ git add -A && git commit -m "chore: sweep dead local/agent-comment modules + pru
 ## Self-Review
 
 **1. Spec coverage** (against the conversation's locked scope):
+
 - `dad watch` removed → Task 1 (CLI) + Task 2 (web). ✓
 - `dad add` + `dad comments` removed → Task 1. ✓
 - Daemon local ingestion / pool / decision channel / presence / agent MCP loop → Task 4. ✓
