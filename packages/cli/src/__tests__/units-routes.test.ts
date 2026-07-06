@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { UnitStore } from '../units/store';
 import { createDaemonApp, SseHub } from '../daemon/app';
 import type { CheckRun, PRComment, PRMetadata, PRReview } from '../github/types';
@@ -381,21 +381,37 @@ describe('POST /api/units/:id/hydrate (lazy narrative on open)', () => {
     expect(res.status).toBe(404);
   });
 
-  it('502s (not 500) and leaves the unit unchanged when hydrate throws', async () => {
+  it('502s (not 500), leaves the unit unchanged, and logs the failure when hydrate throws', async () => {
     const { store, events, app } = setup({
       hydrate: async () => {
         throw new Error('PR fetch failed');
       },
     });
     const gh = seedGithubUnit(store);
+    // The drill-in spinner never exits on failure, so the daemon must surface the cause in its output.
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const res = await post(app, gh.unitId);
+      expect(res.status).toBe(502); // a real fetch/LLM failure is a bad-gateway, not an unhandled 500
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toBe('PR fetch failed'); // the error message still reaches the client
 
-    const res = await post(app, gh.unitId);
-    expect(res.status).toBe(502); // a real fetch/LLM failure is a bad-gateway, not an unhandled 500
+      const after = store.get(gh.unitId)!;
+      expect(after.narrative).toBeUndefined(); // unchanged
+      expect(after.status).toBe('queued');
+      expect(events).not.toContain('units'); // no broadcast on failure
 
-    const after = store.get(gh.unitId)!;
-    expect(after.narrative).toBeUndefined(); // unchanged
-    expect(after.status).toBe('queued');
-    expect(events).not.toContain('units'); // no broadcast on failure
+      // logged server-side with enough context to find the PR (repo / number / unit id / message).
+      expect(errSpy).toHaveBeenCalledTimes(1);
+      const line = String(errSpy.mock.calls[0]![0]);
+      expect(line).toContain('hydrate failed');
+      expect(line).toContain(gh.repo);
+      expect(line).toContain(String(gh.prNumber));
+      expect(line).toContain(gh.unitId);
+      expect(line).toContain('PR fetch failed');
+    } finally {
+      errSpy.mockRestore();
+    }
   });
 });
 

@@ -2,7 +2,7 @@ import { rm } from 'fs/promises';
 import { streamText } from 'ai';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createOpenAI } from '@ai-sdk/openai';
-import type { LanguageModelV1 } from 'ai';
+import type { FinishReason, LanguageModelUsage, LanguageModelV1 } from 'ai';
 import { DEFAULT_CLI_MODELS, LOCAL_CLIS, type DiffDadConfig, type LocalCli } from '../config';
 
 export type AiChunkHandler = (delta: string) => void;
@@ -303,6 +303,27 @@ async function callLocalCli(
   );
 }
 
+/**
+ * Coerces an ai@4 fullStream 'error' part into an Error that carries the
+ * underlying provider message. Provider errors arrive in two shapes: an
+ * APICallError instance (request-level failures) or a bare OpenAI-style error
+ * object `{ message, ... }` (mid-stream error events from OpenAI-compatible
+ * servers). Both must surface a readable message so the daemon can log it.
+ */
+function asError(err: unknown): Error {
+  if (err instanceof Error) return err;
+  if (typeof err === 'string') return new Error(err);
+  if (
+    err !== null &&
+    typeof err === 'object' &&
+    'message' in err &&
+    typeof (err as { message: unknown }).message === 'string'
+  ) {
+    return new Error((err as { message: string }).message);
+  }
+  return new Error(JSON.stringify(err));
+}
+
 export async function callAi(
   config: DiffDadConfig,
   system: string,
@@ -335,16 +356,39 @@ export async function callAi(
       { role: 'user', content: user },
     ],
     maxTokens,
+    // Defense-in-depth: the load-bearing error handling is the 'error' part
+    // thrown out of the fullStream loop below. This no-op just suppresses ai@4's
+    // default onError (a console.error) so the same failure isn't logged twice.
+    onError: () => {},
   });
 
+  // Iterate fullStream (not textStream): ai@4's textStream never terminates on
+  // an API/stream error, so awaiting stream.finishReason/stream.usage afterward
+  // hangs forever. fullStream surfaces an 'error' part we can throw on, plus the
+  // terminal 'finish' part carrying finishReason + usage — so we never await the
+  // (potentially dangling) stream.finishReason/stream.usage promises.
   let text = '';
-  for await (const delta of stream.textStream) {
-    if (delta.length === 0) continue;
-    text += delta;
-    onChunk?.(delta);
+  let finishReason: FinishReason | undefined;
+  let usage: LanguageModelUsage | undefined;
+  for await (const part of stream.fullStream) {
+    if (part.type === 'text-delta') {
+      if (part.textDelta.length === 0) continue;
+      text += part.textDelta;
+      onChunk?.(part.textDelta);
+    } else if (part.type === 'error') {
+      throw asError(part.error);
+    } else if (part.type === 'finish') {
+      finishReason = part.finishReason;
+      usage = part.usage;
+    }
   }
-  const finishReason = await stream.finishReason;
-  const usage = await stream.usage.catch(() => undefined);
+
+  if (text.length === 0) {
+    throw new Error(
+      `AI returned an empty response (finishReason: ${finishReason ?? 'unknown'}) — the model may have refused or the provider returned no content`,
+    );
+  }
+
   return {
     text,
     truncated: finishReason === 'length',

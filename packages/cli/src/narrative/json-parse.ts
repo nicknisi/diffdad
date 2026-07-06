@@ -19,6 +19,17 @@ export function extractJson(text: string): string {
 }
 
 /**
+ * A short, single-line snippet of a raw model response, formatted as a suffix for a "non-JSON"
+ * parse-failure error so an intermittent failure is diagnosable from the thrown message alone.
+ * `JSON.stringify` escapes newlines/quotes to keep it single-line; a blank response is reported
+ * explicitly rather than as empty quotes.
+ */
+export function rawResponseSnippet(text: string, max = 200): string {
+  const snippet = text.trim().length === 0 ? '(empty response)' : JSON.stringify(text.slice(0, max));
+  return ` — raw response (first ${max} chars): ${snippet}`;
+}
+
+/**
  * Parse an LLM JSON response, tolerating truncation. Tries a strict parse of the extracted JSON
  * first; if that fails, falls back to the partial parser below — so a response the model cut off at
  * its `max_tokens` ceiling (the classic "Expected ']'" mid-array) still yields the prefix that

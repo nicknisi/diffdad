@@ -38,6 +38,22 @@ function applyUnitToStore(unit: Unit): void {
   });
 }
 
+/**
+ * Make a raw hydrate failure safe to show under Dad's folksy heading. Server-side generation errors
+ * carry a diagnostic tail — an escaped raw-response snippet and internal theme ids (see
+ * `rawResponseSnippet` / `parseChapterResponse` on the CLI side) — that belongs in the daemon log, not
+ * in the UI, where it reads as tonal whiplash and leaks internals. Drop the `— raw response …` suffix
+ * and collapse the writer's non-JSON failure to a plain sentence; already-human messages (daemon
+ * unreachable, empty narrative, bare HTTP status) pass through untouched.
+ */
+function friendlyHydrateError(raw: string): string {
+  const base = (raw.split(' — raw response')[0] ?? raw).trim();
+  if (/returned non-JSON/i.test(base)) {
+    return "The writer came back with something Dad couldn't parse. This is usually temporary — hit Retry.";
+  }
+  return base;
+}
+
 function BackLink() {
   const navigate = useReviewStore((s) => s.navigate);
   return (
@@ -82,12 +98,17 @@ export function UnitReview() {
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Lazy-hydrate failure surface: a failed narrative generation lands here instead of spinning forever.
+  const [hydrateError, setHydrateError] = useState<string | null>(null);
+  // Bumped by Retry to re-run the hydrate effect — its [unitId, unit?.narrative] deps don't change on retry.
+  const [retryNonce, setRetryNonce] = useState(0);
 
   // Authoritative load — covers a hard refresh / deep link where the queue isn't in the store yet.
   useEffect(() => {
     if (!unitId) return;
     let cancelled = false;
     setNotFound(false);
+    setHydrateError(null); // switching units: drop the prior unit's hydrate error so it can't render stale
     void (async () => {
       try {
         const res = await fetch(`/api/units/${encodeURIComponent(unitId)}`);
@@ -156,7 +177,12 @@ export function UnitReview() {
 
   // Lazy narrative: PRs aren't narrated until opened. Fire one hydrate POST when a unit with no
   // narrative comes into view; the SSE `units` broadcast (and the response, as a fallback) repaint
-  // the walkthrough when generation lands. Deduped per unit so SSE re-renders don't refire.
+  // the walkthrough when generation lands. Deduped per unit so SSE re-renders don't refire. Any
+  // failure lands in `hydrateError` (rendered as a retry panel) rather than spinning forever.
+  // `hasUnit` must be a dep: on a deep link the unit loads async, and `unit?.narrative` is
+  // undefined both before and after it arrives — without it the effect never re-runs and the
+  // POST never fires.
+  const hasUnit = unit !== null;
   useEffect(() => {
     if (!unitId || !unit) return;
     if (unit.narrative) return;
@@ -166,20 +192,32 @@ export function UnitReview() {
     void (async () => {
       try {
         const res = await fetch(`/api/units/${encodeURIComponent(unitId)}/hydrate`, { method: 'POST' });
-        if (!res.ok || cancelled) return;
+        if (cancelled) return;
+        if (!res.ok) {
+          const message = await res
+            .json()
+            .then((body: { error?: string }) => body?.error)
+            .catch(() => undefined);
+          if (!cancelled) setHydrateError(message || `HTTP ${res.status}`);
+          return;
+        }
         const data = (await res.json()) as { unit: Unit };
-        if (!cancelled && data.unit) {
+        if (cancelled) return;
+        if (data.unit?.narrative) {
           setUnit(data.unit);
           applyUnitToStore(data.unit);
+        } else {
+          // Graceful no-op path (e.g. GitHub not wired): 200 OK but nothing to show — don't spin.
+          setHydrateError('The daemon returned no narrative for this PR.');
         }
       } catch {
-        // ignore — the SSE `units` stream still delivers the narrative when it's ready
+        if (!cancelled) setHydrateError('Could not reach the daemon — is it still running?');
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [unitId, unit?.narrative]);
+  }, [unitId, hasUnit, unit?.narrative, retryNonce]);
 
   if (notFound) {
     return (
@@ -268,7 +306,7 @@ export function UnitReview() {
       {error && (
         <div
           className="mx-auto mt-4 max-w-[1100px] rounded-lg px-3.5 py-2.5 text-[13px]"
-          style={{ background: 'var(--red-3)', color: 'var(--red-11)', boxShadow: 'inset 0 0 0 1px var(--red-a6)' }}
+          style={{ background: 'var(--red-3)', color: 'var(--red-11)', boxShadow: 'inset 0 0 0 1px var(--red-9)' }}
         >
           {error}
         </div>
@@ -304,6 +342,43 @@ export function UnitReview() {
 
       {narrative ? (
         <StoryView />
+      ) : hydrateError ? (
+        <>
+          {/* Hydrate failed — an explicit, retryable panel in place of the eternal spinner. The raw diff
+              (ClassicView) stays below so the PR is still readable while narration is down. */}
+          <div className="mx-auto max-w-[1100px] px-6 pt-4">
+            <div
+              role="alert"
+              className="flex items-start gap-3 rounded-[10px] px-4 py-3.5"
+              style={{ background: 'var(--red-2)', boxShadow: 'inset 0 0 0 1px var(--red-9)' }}
+            >
+              <div className="mt-0.5 shrink-0">
+                <DadMark size={30} bg={markBg} shape="circle" showBadge={false} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[13.5px] font-semibold" style={{ color: 'var(--red-11)' }}>
+                  Dad couldn&apos;t find the story in this one.
+                </p>
+                <p className="mt-1 text-[12.5px] leading-relaxed break-words" style={{ color: 'var(--fg-2)' }}>
+                  {friendlyHydrateError(hydrateError)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setHydrateError(null);
+                  hydratedRef.current = null;
+                  setRetryNonce((n) => n + 1);
+                }}
+                className="shrink-0 self-center rounded-md px-4 py-1.5 text-[13px] font-semibold text-white"
+                style={{ background: 'var(--red-9)' }}
+              >
+                Retry
+              </button>
+            </div>
+          </div>
+          <ClassicView />
+        </>
       ) : (
         <>
           <ReviewProgress />

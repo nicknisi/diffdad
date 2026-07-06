@@ -219,8 +219,12 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
       updated = await hydrate(unit);
     } catch (err) {
       // A real PR-fetch / LLM failure is a bad gateway, not an unhandled 500 with a stack trace.
-      // Record nothing and don't broadcast — the unit stays as-is for a later retry.
-      return c.json({ error: err instanceof Error ? err.message : String(err) }, 502);
+      // Record nothing and don't broadcast — the unit stays as-is for a later retry. Log it, though:
+      // the drill-in shows an eternal spinner on failure, so without this line the cause is invisible
+      // in the daemon's output (matches the poller's plain `[diffdad] ...` failure line).
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`[diffdad] hydrate failed for ${unit.repo}#${unit.prNumber} (unit ${id}): ${message}`);
+      return c.json({ error: message }, 502);
     }
     broadcast('units', { units: store.list() });
     return c.json({ unit: updated });
