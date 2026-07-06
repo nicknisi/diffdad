@@ -205,8 +205,6 @@ export type CheckRun = {
  */
 export type UnitStatus = 'queued' | 'approved' | 'changes_requested' | 'done';
 
-export type UnitDecisionKind = 'approved' | 'changes_requested';
-
 export type Unit = {
   unitId: string;
   repo: string; // owner/name

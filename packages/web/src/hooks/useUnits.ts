@@ -1,14 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useReviewStore } from '../state/review-store';
 import { groupUnits, type GroupedUnits, repoOptions } from '../lib/units-view';
-import type { Concern, Unit, UnitDecisionKind } from '../state/types';
-
-export type UnitDecisionInput = {
-  kind: UnitDecisionKind;
-  /** Concerns the agent should address (changes_requested) — curated in the drill-in, all by default. */
-  concerns?: Concern[];
-  note?: string;
-};
+import type { Unit } from '../state/types';
 
 /**
  * Command-center data hook. The live queue lives in the store (seeded by the `command-center`
@@ -56,19 +49,6 @@ export function useUnits() {
   const groups: GroupedUnits = useMemo(() => groupUnits(visible), [visible]);
 
   return { groups, repos, repoFilter, setRepoFilter, total: units.length, loaded };
-}
-
-/** POST a verdict to the daemon → records the GitHub verdict on the unit (and posts it to GitHub). */
-export async function postDecision(unitId: string, decision: UnitDecisionInput): Promise<void> {
-  const res = await fetch(`/api/units/${encodeURIComponent(unitId)}/decision`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(decision),
-  });
-  if (!res.ok) {
-    const detail = await res.text().catch(() => '');
-    throw new Error(`Decision failed (${res.status})${detail ? `: ${detail}` : ''}`);
-  }
 }
 
 /** Remove a unit from the queue (manual cleanup of stale work). SSE repaints the list. */

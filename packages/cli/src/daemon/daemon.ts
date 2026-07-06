@@ -8,7 +8,7 @@ import { parseDiff } from '../github/diff-parser';
 import type { CheckRun, PRComment, PRReview } from '../github/types';
 import { callAi, generateNarrative } from '../narrative/engine';
 import { UnitStore } from '../units/store';
-import type { Decision, ReviewUnit } from '../units/types';
+import type { ReviewUnit } from '../units/types';
 import { createDaemonApp, type ReviewInlineComment, SseHub } from './app';
 import { pollOnce } from './poller';
 
@@ -99,7 +99,7 @@ export type DaemonOptions = { port?: number; open?: boolean; pollMs?: number };
  * Start the GitHub review-request poller on an interval. Runs one pass at startup, then every
  * `pollMs`. Each pass is wrapped so a transient GitHub/network failure logs a one-line warning and
  * never crashes the daemon. The authenticated client is resolved once by the caller and shared with
- * the decision/hydrate deps, so there is a single source of truth for "is GitHub wired".
+ * the review/hydrate deps, so there is a single source of truth for "is GitHub wired".
  */
 async function startPoller(
   client: GitHubClient,
@@ -116,33 +116,6 @@ async function startPoller(
   };
   await tick();
   setInterval(tick, pollMs);
-}
-
-/**
- * Post a `github` unit's verdict to GitHub as a real review. APPROVE / REQUEST_CHANGES per the
- * decision kind. The review body prefers the reviewer's free-form note; absent one, it summarizes
- * the curated concerns into a short line so the PR review is never blank. Throws on API failure —
- * the decision route relies on that to 502 and record NOTHING locally (dad ⇄ GitHub never disagree).
- */
-function makeReviewPoster(client: GitHubClient): (unit: ReviewUnit, decision: Decision) => Promise<void> {
-  return async (unit, decision) => {
-    const { owner, name } = splitRepo(unit.repo);
-    if (unit.prNumber === undefined) {
-      throw new Error(`unit ${unit.unitId} has no PR number`);
-    }
-    const event = decision.kind === 'approved' ? 'APPROVE' : 'REQUEST_CHANGES';
-    let body = (decision.note && decision.note.trim()) || summarizeConcerns(decision);
-    // GitHub rejects a REQUEST_CHANGES review with an empty body (422); an empty APPROVE body is fine.
-    if (!body && event === 'REQUEST_CHANGES') body = 'Changes requested — see Diff Dad.';
-    await client.submitReview(owner, name, unit.prNumber, event, body);
-  };
-}
-
-/** A short review body built from the curated concerns when the reviewer left no free-form note. */
-function summarizeConcerns(decision: Decision): string {
-  const questions = (decision.concerns ?? []).map((c) => c.question).filter(Boolean);
-  if (questions.length === 0) return '';
-  return questions.map((q) => `- ${q}`).join('\n');
 }
 
 /**
@@ -274,7 +247,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<number> {
   const store = await UnitStore.load();
   const hub = new SseHub();
 
-  // Resolve GitHub auth once: the same client drives the poller AND the github decision/hydrate deps.
+  // Resolve GitHub auth once: the same client drives the poller AND the github review/hydrate deps.
   // No token → the deps are undefined and the routes no-op gracefully.
   const githubToken = await resolveGitHubToken();
   const githubClient = githubToken ? new GitHubClient(githubToken) : null;
@@ -282,7 +255,6 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<number> {
   const { app } = createDaemonApp({
     store,
     hub,
-    reviewPoster: githubClient ? makeReviewPoster(githubClient) : undefined,
     hydrate: githubClient ? makeHydrate(githubClient, store) : undefined,
     commentFetcher: githubClient ? makeCommentFetcher(githubClient) : undefined,
     commentPoster: githubClient ? makeCommentPoster(githubClient) : undefined,

@@ -1,12 +1,4 @@
-import {
-  groupOf,
-  recommendedAction,
-  relativeTime,
-  type SourceBadge,
-  sourceBadge,
-  type VerdictTone,
-  verdictTone,
-} from '../lib/units-view';
+import { groupOf, relativeTime, type SourceBadge, sourceBadge, type VerdictTone, verdictTone } from '../lib/units-view';
 import type { Unit, UnitStatus } from '../state/types';
 
 /** Source-badge palette — github reads blue (comments post to the PR). */
@@ -34,49 +26,17 @@ type Props = {
   /** Ticking clock (ms) from the parent, so every row's elapsed label updates in lockstep. */
   now: number;
   onOpen: (unit: Unit) => void;
-  onApprove?: (unit: Unit) => void;
-  onRequestChanges?: (unit: Unit) => void;
   /** Remove the unit from the queue (manual cleanup). Shown on every row when provided. */
   onRemove?: (unit: Unit) => void;
-  /** A decision for this unit is in flight — disables its buttons. */
+  /** A remove for this unit is in flight — disables its ✕ button. */
   busy?: boolean;
 };
 
-function PillButton({
-  label,
-  onClick,
-  tone,
-  disabled,
-}: {
-  label: string;
-  onClick: () => void;
-  tone: 'approve' | 'neutral' | 'warn';
-  disabled?: boolean;
-}) {
-  const styles: Record<typeof tone, React.CSSProperties> = {
-    approve: { background: 'var(--green-9)', color: 'white' },
-    warn: { background: 'var(--amber-3)', color: 'var(--amber-11)', boxShadow: 'inset 0 0 0 1px var(--amber-a5)' },
-    neutral: { background: 'var(--gray-3)', color: 'var(--fg-1)', boxShadow: 'inset 0 0 0 1px var(--gray-a5)' },
-  };
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className="shrink-0 rounded-md px-2.5 py-1 text-[12px] font-semibold transition-opacity disabled:opacity-50"
-      style={styles[tone]}
-    >
-      {label}
-    </button>
-  );
-}
-
 /**
- * One queue / in-flight / cleared row. The left region is a single button (a generous click
- * target that opens the unit's review) so we never nest the decision buttons inside it. Needs-you
- * rows carry the recommended action + Approve / Request-changes; other groups are read-only digest.
+ * One queue / in-flight / cleared row. The whole row is a single button (a generous click target
+ * that opens the unit's review); verdicts are only ever submitted from the drill-in, never inline.
  */
-export function UnitRow({ unit, now, onOpen, onApprove, onRequestChanges, onRemove, busy }: Props) {
+export function UnitRow({ unit, now, onOpen, onRemove, busy }: Props) {
   const group = groupOf(unit.status);
   const isNeedsYou = group === 'needs-you';
   const tone = TONE[verdictTone(unit.verdict)];
@@ -84,7 +44,6 @@ export function UnitRow({ unit, now, onOpen, onApprove, onRequestChanges, onRemo
   const lead = isNeedsYou ? tone : { fg: status.color, glyph: status.glyph };
   const branch = unit.metadata?.branch;
   const elapsed = relativeTime(unit.updatedAt, now);
-  const action = isNeedsYou ? recommendedAction(unit) : null;
   const badge = sourceBadge(unit.source);
 
   const meta: string[] = [];
@@ -132,24 +91,6 @@ export function UnitRow({ unit, now, onOpen, onApprove, onRequestChanges, onRemo
           {meta.length > 0 && <span className="mt-0.5 block text-[12px] text-[var(--fg-3)]">{meta.join(' · ')}</span>}
         </span>
       </button>
-
-      {isNeedsYou && (
-        <div className="flex shrink-0 items-center gap-1.5">
-          {action?.primary === 'approve' ? (
-            <span className="mr-0.5 hidden text-[12px] font-medium text-[var(--green-11)] sm:inline">
-              {action.label}
-            </span>
-          ) : (
-            <span className="mr-0.5 hidden text-[12px] font-medium sm:inline" style={{ color: tone.fg }}>
-              {action?.label}
-            </span>
-          )}
-          {onApprove && <PillButton label="Approve" tone="approve" disabled={busy} onClick={() => onApprove(unit)} />}
-          {onRequestChanges && (
-            <PillButton label="Request changes" tone="warn" disabled={busy} onClick={() => onRequestChanges(unit)} />
-          )}
-        </div>
-      )}
 
       {onRemove && (
         <button

@@ -77,7 +77,7 @@ dad daemon install               # Run it under launchd — survives terminal cl
 dad daemon uninstall             # Remove the launchd agent
 ```
 
-The queue is fed by GitHub: open a review request on GitHub and it shows up here. With a token configured (see [GitHub Token](#github-token)), the daemon polls for every open PR where you're a requested reviewer or assignee and mints a unit for it. Opening one generates its walkthrough lazily (PRs you never click cost nothing); approving or requesting changes posts a **real GitHub review**. A PR you've reviewed stays out of the queue until its author pushes again.
+The queue is fed by GitHub: open a review request on GitHub and it shows up here. With a token configured (see [GitHub Token](#github-token)), the daemon polls for every open PR where you're a requested reviewer or assignee and mints a unit for it. A queue row opens that unit's review — it generates its walkthrough lazily (PRs you never click cost nothing), and from inside that review you approve or request changes, posting a **real GitHub review**. A PR you've reviewed stays out of the queue until its author pushes again.
 
 ## How It Works
 

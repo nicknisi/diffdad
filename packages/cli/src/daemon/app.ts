@@ -8,10 +8,9 @@ import type { PRComment } from '../github/types';
 import { buildChapterAiPrompt } from '../narrative/chapter-ai';
 import { buildReviewSummaryPrompt } from '../narrative/review-summary';
 import type { CheckRun, PRReview } from '../github/types';
-import type { Concern } from '../narrative/types';
 import type { Broadcast } from '../mcp/broadcast';
 import type { UnitStore } from '../units/store';
-import { type Decision, IllegalTransitionError, type ReviewUnit, UnknownUnitError } from '../units/types';
+import { IllegalTransitionError, type ReviewUnit, UnknownUnitError } from '../units/types';
 
 type SseSend = (event: string, data: unknown) => void;
 
@@ -51,12 +50,6 @@ export class SseHub {
 export type DaemonAppDeps = {
   store: UnitStore;
   hub: SseHub;
-  /**
-   * Posts a `github` unit's verdict to GitHub as a real review. Injected so tests fake it and the
-   * daemon wires the authenticated client. Must throw on failure — the route then 502s and records
-   * NOTHING locally, so dad and GitHub never disagree.
-   */
-  reviewPoster?: (unit: ReviewUnit, decision: Decision) => Promise<void>;
   /**
    * Lazily hydrates a `github` unit on open: fetch the PR diff, generate the narrative, store it, and
    * return the updated unit. Injected so tests fake it and the daemon wires the real fetch+generate
@@ -119,13 +112,13 @@ function resolveWebDist(override?: string): string {
 
 /**
  * The daemon's Hono app: one multiplexed process hosting many review units (rather than `server.ts`'s
- * one-PR-per-process model). Serves the units API + decision route, the live SSE stream, and the
+ * one-PR-per-process model). Serves the units API + review submission, the live SSE stream, and the
  * command-center SPA. A separate factory from `createServer` on purpose — the scout flagged that
  * retrofitting `ServerContext` (a single PR + narrative) would break its route handlers; the
  * unit-scoped store is a cleaner seam.
  */
 export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
-  const { store, hub, reviewPoster, hydrate } = deps;
+  const { store, hub, hydrate } = deps;
   const { commentFetcher, commentPoster, reviewSubmitter, ai, statusFetcher, pollNow } = deps;
   const app = new Hono();
   const broadcast = hub.broadcast;
@@ -150,56 +143,6 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
     const unit = store.get(c.req.param('id'));
     if (!unit) return c.json({ error: 'unknown unit' }, 404);
     return c.json({ unit });
-  });
-
-  // Nick's verdict on a unit → posted to GitHub as a real review, then recorded locally so the unit
-  // leaves the needs-you queue. GitHub is the source of truth; we never record a verdict that isn't
-  // really on the PR.
-  app.post('/api/units/:id/decision', async (c) => {
-    const id = c.req.param('id');
-    let body: { kind?: string; concerns?: Concern[]; note?: string };
-    try {
-      body = (await c.req.json()) as typeof body;
-    } catch {
-      return c.json({ error: 'invalid JSON body' }, 400);
-    }
-    if (body.kind !== 'approved' && body.kind !== 'changes_requested') {
-      return c.json({ error: "decision 'kind' must be 'approved' or 'changes_requested'" }, 400);
-    }
-    const decisionValue: Decision = { kind: body.kind, concerns: body.concerns, note: body.note };
-
-    const existing = store.get(id);
-    if (!existing) return c.json({ error: new UnknownUnitError(id).message }, 404);
-
-    // The verdict becomes a real GitHub review (every unit tracks an open PR). Post to GitHub FIRST;
-    // only record locally if that succeeds, so dad and GitHub never disagree.
-    // Validate the transition BEFORE the network call: a verdict is only valid on a unit awaiting
-    // review. A repeat decision (double-click / second tab) must not post a second real review to
-    // GitHub and then fail locally — the exact dad⇄GitHub divergence we forbid.
-    if (existing.status !== 'queued') {
-      return c.json({ error: `unit is ${existing.status}, not awaiting a decision` }, 409);
-    }
-    if (existing.prNumber === undefined) return c.json({ error: 'unit has no PR' }, 400);
-    // A verdict is meaningless without a way to post it — refuse rather than record a local
-    // "approved" that never reaches GitHub.
-    if (!reviewPoster) {
-      return c.json({ error: 'GitHub is not configured — cannot post a review for this unit' }, 503);
-    }
-    try {
-      await reviewPoster(existing, decisionValue);
-    } catch (err) {
-      return c.json({ error: err instanceof Error ? err.message : String(err) }, 502);
-    }
-    let unit: ReviewUnit;
-    try {
-      await store.setDecision(id, decisionValue);
-      unit = store.setReviewedSha(id, existing.metadata.headSha);
-    } catch (err) {
-      if (err instanceof IllegalTransitionError) return c.json({ error: err.message }, 409);
-      throw err;
-    }
-    broadcast('units', { units: store.list() });
-    return c.json({ ok: true, unit });
   });
 
   // Remove a unit from the queue (the reviewer's manual cleanup of failed / stale / abandoned units).
@@ -275,7 +218,7 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
   // --- Comments -------------------------------------------------------------
   // Two-way with GitHub, mirroring the PR server's /api/comments: a unit's comments are fetched and
   // posted LIVE from GitHub (never stored on the unit), so dad and the PR can't drift — the same
-  // reason the decision route posts to GitHub first. Both routes must precede the static catch-all.
+  // reason the review route posts to GitHub first. Both routes must precede the static catch-all.
   app.get('/api/units/:id/comments', async (c) => {
     const id = c.req.param('id');
     const unit = store.get(id);
@@ -336,10 +279,11 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
 
   // --- Review submission (github units) -------------------------------------
   // The drill-in's full submit: COMMENT/APPROVE/REQUEST_CHANGES + batched inline draft comments, in
-  // one GitHub review (mirrors the PR server's /api/review). Unlike that route, a verdict (approve /
-  // request_changes) ALSO records locally so the unit leaves the needs-you queue — so we post to
-  // GitHub FIRST and validate `queued` before the network (same divergence guard as the decision
-  // route). A COMMENT review carries no verdict: it posts to GitHub but the unit stays queued.
+  // one GitHub review (mirrors the PR server's /api/review). This is the ONLY path that submits a
+  // verdict. Unlike the PR server's route, a verdict (approve / request_changes) ALSO records locally
+  // so the unit leaves the needs-you queue — so we post to GitHub FIRST and validate `queued` before
+  // the network (a repeat decision must not post a second real review then fail locally, the exact
+  // dad⇄GitHub divergence we forbid). A COMMENT review carries no verdict: it posts but stays queued.
   app.post('/api/units/:id/review', async (c) => {
     const id = c.req.param('id');
     const unit = store.get(id);

@@ -5,7 +5,6 @@ import {
   groupOf,
   groupUnits,
   parseRoute,
-  recommendedAction,
   relativeTime,
   repoOptions,
   reviewEndpoint,
@@ -88,26 +87,6 @@ describe('verdictTone', () => {
     expect(verdictTone('caution')).toBe('warn');
     expect(verdictTone('safe')).toBe('safe');
     expect(verdictTone(undefined)).toBe('neutral');
-  });
-});
-
-describe('recommendedAction', () => {
-  it('recommends resolving when there are open concerns, surfacing the count', () => {
-    const a = recommendedAction(mkUnit({ toResolve: 3, verdict: 'caution' }));
-    expect(a.primary).toBe('review');
-    expect(a.label).toContain('3');
-  });
-
-  it('recommends a one-click approve only when safe with nothing to resolve', () => {
-    const a = recommendedAction(mkUnit({ toResolve: 0, verdict: 'safe' }));
-    expect(a.primary).toBe('approve');
-    expect(a.tone).toBe('safe');
-  });
-
-  it('recommends review for a risky verdict even with nothing to resolve', () => {
-    const a = recommendedAction(mkUnit({ toResolve: 0, verdict: 'risky' }));
-    expect(a.primary).toBe('review');
-    expect(a.tone).toBe('risk');
   });
 });
 

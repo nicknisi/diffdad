@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { getAccentMeta } from '../lib/accents';
 import { copy } from '../lib/microcopy';
 import { useReviewStore } from '../state/review-store';
-import { postDecision, removeUnit, useUnits } from '../hooks/useUnits';
+import { removeUnit, useUnits } from '../hooks/useUnits';
 import { AccentPicker } from './AccentPicker';
 import { DadMark } from './DadMark';
 import { ThemeToggle } from './ThemeToggle';
@@ -82,24 +82,6 @@ export function CommandCenter() {
     [],
   );
 
-  const open = (unit: Unit) => navigate({ name: 'unit', unitId: unit.unitId });
-
-  async function decide(unit: Unit, kind: 'approved' | 'changes_requested') {
-    setBusyId(unit.unitId);
-    setError(null);
-    try {
-      // The SSE `units` event moves the unit out of needs-you once recorded — no manual refetch.
-      await postDecision(unit.unitId, {
-        kind,
-        concerns: kind === 'changes_requested' ? unit.narrative?.concerns : undefined,
-      });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Decision failed');
-    } finally {
-      setBusyId(null);
-    }
-  }
-
   // Show a result toast and (re)start its 4s auto-dismiss, replacing any toast already up.
   function flashToast(next: { kind: 'ok' | 'error'; message: string }) {
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -132,6 +114,8 @@ export function CommandCenter() {
       setRefreshing(false);
     }
   }
+
+  const open = (unit: Unit) => navigate({ name: 'unit', unitId: unit.unitId });
 
   async function remove(unit: Unit) {
     setBusyId(unit.unitId);
@@ -279,14 +263,7 @@ export function CommandCenter() {
             ) : (
               <Panel>
                 {groups.needsYou.map((u) => (
-                  <UnitRow
-                    key={u.unitId}
-                    {...rowProps(u)}
-                    onOpen={open}
-                    onApprove={(unit) => decide(unit, 'approved')}
-                    onRequestChanges={(unit) => decide(unit, 'changes_requested')}
-                    onRemove={remove}
-                  />
+                  <UnitRow key={u.unitId} {...rowProps(u)} onOpen={open} onRemove={remove} />
                 ))}
               </Panel>
             )}

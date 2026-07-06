@@ -61,26 +61,6 @@ export function groupUnits(units: Unit[]): GroupedUnits {
   return { needsYou, inFlight, cleared };
 }
 
-/** The verdict + to-resolve count distilled into the one move Nick should make on a unit. */
-export type RecommendedAction = {
-  primary: 'review' | 'approve';
-  label: string;
-  tone: VerdictTone;
-};
-
-export function recommendedAction(unit: Unit): RecommendedAction {
-  const tone = verdictTone(unit.verdict);
-  if (unit.toResolve > 0) {
-    return {
-      primary: 'review',
-      label: `Review · ${unit.toResolve} to resolve`,
-      tone: tone === 'neutral' ? 'warn' : tone,
-    };
-  }
-  if (unit.verdict === 'safe') return { primary: 'approve', label: 'Approve', tone: 'safe' };
-  return { primary: 'review', label: 'Review', tone };
-}
-
 /** Distinct repos across the queue, sorted — the repo filter's option list. */
 export function repoOptions(units: Unit[]): string[] {
   return [...new Set(units.map((u) => u.repo))].sort();

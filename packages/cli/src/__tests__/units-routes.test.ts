@@ -6,7 +6,7 @@ import { UnitStore } from '../units/store';
 import { createDaemonApp, SseHub } from '../daemon/app';
 import type { CheckRun, PRComment, PRMetadata, PRReview } from '../github/types';
 import type { PostCommentOptions } from '../github/client';
-import type { Decision, ReviewUnit } from '../units/types';
+import type { ReviewUnit } from '../units/types';
 import type { NarrativeResponse } from '../narrative/types';
 
 const NARRATIVE: NarrativeResponse = {
@@ -56,7 +56,6 @@ type ReviewEvent = 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES';
 type SubmitInlineComment = { path: string; line: number; body: string; side?: 'LEFT' | 'RIGHT' };
 
 type SetupOpts = {
-  reviewPoster?: (unit: ReviewUnit, decision: Decision) => Promise<void>;
   hydrate?: (unit: ReviewUnit) => Promise<ReviewUnit>;
   commentFetcher?: (unit: ReviewUnit) => Promise<PRComment[]>;
   commentPoster?: (unit: ReviewUnit, body: string, opts: PostCommentOptions) => Promise<PRComment>;
@@ -72,7 +71,7 @@ type SetupOpts = {
 };
 
 function setup(opts: SetupOpts = {}) {
-  const { reviewPoster, hydrate, commentFetcher, commentPoster, reviewSubmitter, ai } = opts;
+  const { hydrate, commentFetcher, commentPoster, reviewSubmitter, ai } = opts;
   const { statusFetcher, pollNow } = opts;
   const store = new UnitStore([], { dir, ...deterministic() });
   const hub = new SseHub();
@@ -85,7 +84,6 @@ function setup(opts: SetupOpts = {}) {
   const { app } = createDaemonApp({
     store,
     hub,
-    reviewPoster,
     hydrate,
     commentFetcher,
     commentPoster,
@@ -182,141 +180,6 @@ describe('GET /api/units/:id', () => {
     const { app } = setup();
     const res = await app.request('/api/units/nope');
     expect(res.status).toBe(404);
-  });
-});
-
-describe('POST /api/units/:id/decision', () => {
-  it('404s for an unknown unit', async () => {
-    const { app } = setup();
-    const res = await app.request('/api/units/nope/decision', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind: 'approved' }),
-    });
-    expect(res.status).toBe(404);
-  });
-
-  it('400s for an invalid decision kind', async () => {
-    const { store, app } = setup();
-    const gh = seedGithubUnit(store);
-    const res = await app.request(`/api/units/${gh.unitId}/decision`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind: 'merge_it' }),
-    });
-    expect(res.status).toBe(400);
-  });
-});
-
-describe('POST /api/units/:id/decision (github dispatch)', () => {
-  it('posts the verdict to GitHub, records the decision + reviewed SHA, and broadcasts', async () => {
-    const calls: Array<[ReviewUnit, Decision]> = [];
-    const { store, events, app } = setup({
-      reviewPoster: async (unit, d) => {
-        calls.push([unit, d]);
-      },
-    });
-    const gh = seedGithubUnit(store, { headSha: 'sha-1' });
-
-    const res = await app.request(`/api/units/${gh.unitId}/decision`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind: 'approved', note: 'lgtm' }),
-    });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { ok: boolean; unit: ReviewUnit };
-    expect(body.ok).toBe(true);
-
-    // (a) the injected poster was called with the unit + the decision
-    expect(calls).toHaveLength(1);
-    expect(calls[0]![0].unitId).toBe(gh.unitId);
-    expect(calls[0]![1]).toMatchObject({ kind: 'approved', note: 'lgtm' });
-
-    // recorded locally: decision + freshness SHA from metadata.headSha
-    const after = store.get(gh.unitId)!;
-    expect(after.status).toBe('approved');
-    expect(after.decision).toMatchObject({ kind: 'approved', note: 'lgtm' });
-    expect(after.lastReviewedSha).toBe('sha-1');
-
-    expect(events).toContain('units');
-  });
-
-  it('502s and does NOT record the decision when the review poster throws', async () => {
-    const { store, app } = setup({
-      reviewPoster: async () => {
-        throw new Error('github 500');
-      },
-    });
-    const gh = seedGithubUnit(store);
-
-    const res = await app.request(`/api/units/${gh.unitId}/decision`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind: 'changes_requested', note: 'nope' }),
-    });
-    expect(res.status).toBe(502);
-
-    // dad and GitHub must not disagree: nothing recorded locally.
-    const after = store.get(gh.unitId)!;
-    expect(after.status).toBe('queued');
-    expect(after.decision).toBeUndefined();
-    expect(after.lastReviewedSha).toBeUndefined();
-  });
-
-  it('400s a github unit with no PR number', async () => {
-    const { store, app } = setup({ reviewPoster: async () => {} });
-    // A github unit minted without a prNumber (shouldn't happen via addGithubUnit, but guard anyway).
-    const gh = seedGithubUnit(store);
-    store.get(gh.unitId)!.prNumber = undefined;
-
-    const res = await app.request(`/api/units/${gh.unitId}/decision`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind: 'approved' }),
-    });
-    expect(res.status).toBe(400);
-    expect(store.get(gh.unitId)!.decision).toBeUndefined();
-  });
-
-  it('503s (and records nothing) on a github decision when GitHub is not configured (no reviewPoster)', async () => {
-    const { store, events, app } = setup(); // no reviewPoster wired
-    const gh = seedGithubUnit(store, { headSha: 'sha-1' });
-
-    const res = await app.request(`/api/units/${gh.unitId}/decision`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind: 'approved', note: 'lgtm' }),
-    });
-    expect(res.status).toBe(503);
-
-    // refuse rather than record a local "approved" that never reaches GitHub
-    const after = store.get(gh.unitId)!;
-    expect(after.status).toBe('queued');
-    expect(after.decision).toBeUndefined();
-    expect(after.lastReviewedSha).toBeUndefined();
-    expect(events).not.toContain('units');
-  });
-
-  it('409s a repeat decision on an already-decided github unit WITHOUT posting a second review', async () => {
-    const calls: Array<[ReviewUnit, Decision]> = [];
-    const { store, app } = setup({
-      reviewPoster: async (unit, d) => {
-        calls.push([unit, d]);
-      },
-    });
-    const gh = seedGithubUnit(store, { headSha: 'sha-1' });
-    // Drive the unit to a decided state the way a first decision would have.
-    (store.get(gh.unitId) as { status: string }).status = 'approved';
-    (store.get(gh.unitId) as { decision?: unknown }).decision = { kind: 'approved' };
-
-    const res = await app.request(`/api/units/${gh.unitId}/decision`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind: 'approved', note: 'again' }),
-    });
-    expect(res.status).toBe(409);
-    // the divergence we forbid: a second real review must NOT be posted before the local 409
-    expect(calls).toHaveLength(0);
   });
 });
 
