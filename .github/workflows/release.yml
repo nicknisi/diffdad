@@ -85,8 +85,6 @@ jobs:
     strategy:
       matrix:
         include:
-          - repo: nicknisi/homebrew-diffdad
-            path: tap-legacy
           - repo: nicknisi/homebrew-formulae
             path: tap-formulae
     steps:
