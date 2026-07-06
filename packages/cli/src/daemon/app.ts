@@ -54,8 +54,11 @@ export type DaemonAppDeps = {
    * Lazily hydrates a `github` unit on open: fetch the PR diff, generate the narrative, store it, and
    * return the updated unit. Injected so tests fake it and the daemon wires the real fetch+generate
    * path. Absent → the hydrate route is a graceful no-op (the unit is returned unchanged).
+   *
+   * `force` (the per-PR re-read) regenerates even when a narrative already exists: it advances the unit
+   * to the live head SHA and bypasses the cache read. The route passes it through from the POST body.
    */
-  hydrate?: (unit: ReviewUnit) => Promise<ReviewUnit>;
+  hydrate?: (unit: ReviewUnit, force?: boolean) => Promise<ReviewUnit>;
   /**
    * Fetches a `github` unit's live comments from GitHub (review + issue comments). Injected so tests
    * fake it and the daemon wires the authenticated client. Absent → the comments route returns []
@@ -124,6 +127,10 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
   const broadcast = hub.broadcast;
   // Single-flight state for POST /api/poll: concurrent manual refreshes share one in-flight poll.
   let inflight: Promise<{ minted: number; resurfaced: number }> | null = null;
+  // Single-flight state for POST /api/units/:id/hydrate, keyed per unit: concurrent hydrates of the
+  // SAME unit (a Re-read double-click, or an SSE re-open racing the button) coalesce onto one run —
+  // no doubled PR fetch + LLM generation. Different units still hydrate in parallel (distinct keys).
+  const hydrating = new Map<string, Promise<ReviewUnit>>();
 
   // --- Command-center bootstrap ---------------------------------------------
   // The web SPA's single bootstrap is `GET /api/narrative`; it multiplexes on `mode`
@@ -194,22 +201,57 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
   // `hydrate` dep fetches the PR diff + generates the walkthrough and stores it (without a status
   // transition). No-op for already-hydrated units or when no hydrate dep is wired. Must precede the
   // static catch-all or serveStatic swallows it.
+  //
+  // The per-PR re-read POSTs an optional `{ force: true }` body: it regenerates even when a narrative
+  // exists (advancing to the live head SHA + bypassing the cache read). The body is optional — the
+  // legacy no-body lazy-open callers must keep working, so an absent/invalid body is a plain hydrate,
+  // never a 400.
   app.post('/api/units/:id/hydrate', async (c) => {
     const id = c.req.param('id');
     const unit = store.get(id);
     if (!unit) return c.json({ error: new UnknownUnitError(id).message }, 404);
-    if (unit.narrative || !hydrate) return c.json({ unit });
+
+    let force = false;
+    try {
+      const body = (await c.req.json()) as { force?: boolean } | null;
+      force = body?.force === true;
+    } catch {
+      // No body / not JSON — the lazy first-open path posts nothing. Treat it as a non-force hydrate.
+    }
+
+    // No GitHub wired → graceful no-op (unit returned unchanged). A non-force hydrate on an already
+    // narrated unit is also a no-op (the lazy path fires once per open); `force` bypasses that guard.
+    if (!hydrate) return c.json({ unit });
+    if (!force && unit.narrative) return c.json({ unit });
+
+    // Single-flight per unit: coalesce concurrent hydrates for this id onto one run. The first caller's
+    // `force` wins the shared run — a follow-on that rides it gets the same result, which is the intent
+    // (one regeneration, not two). Mirrors /api/poll: log on the shared promise (one line per real
+    // failure, not per awaiter) and clear the entry in `.finally`.
+    let run = hydrating.get(id);
+    if (!run) {
+      run = hydrate(unit, force)
+        .catch((err) => {
+          // The drill-in shows a spinner while hydrating, so on failure the daemon must surface the
+          // cause in its output (matches the poller's + poll route's plain `[diffdad] ...` line).
+          // Re-throw so each awaiting request still 502s below.
+          const message = err instanceof Error ? err.message : String(err);
+          console.error(`[diffdad] hydrate failed for ${unit.repo}#${unit.prNumber} (unit ${id}): ${message}`);
+          throw err;
+        })
+        .finally(() => {
+          hydrating.delete(id);
+        });
+      hydrating.set(id, run);
+    }
+
     let updated: ReviewUnit;
     try {
-      updated = await hydrate(unit);
+      updated = await run;
     } catch (err) {
-      // A real PR-fetch / LLM failure is a bad gateway, not an unhandled 500 with a stack trace.
-      // Record nothing and don't broadcast — the unit stays as-is for a later retry. Log it, though:
-      // the drill-in shows an eternal spinner on failure, so without this line the cause is invisible
-      // in the daemon's output (matches the poller's plain `[diffdad] ...` failure line).
-      const message = err instanceof Error ? err.message : String(err);
-      console.error(`[diffdad] hydrate failed for ${unit.repo}#${unit.prNumber} (unit ${id}): ${message}`);
-      return c.json({ error: message }, 502);
+      // A real PR-fetch / LLM failure is a bad gateway, not an unhandled 500 (logged once above).
+      // Record nothing and don't broadcast — the unit stays as-is for a later retry.
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 502);
     }
     broadcast('units', { units: store.list() });
     return c.json({ unit: updated });

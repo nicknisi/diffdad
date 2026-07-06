@@ -193,6 +193,26 @@ export class UnitStore {
   }
 
   /**
+   * Advance a unit to a live head SHA for a force re-read: bump `metadata.headSha` + `diffContentKey`
+   * to the current head so a regeneration keys off today's diff, not the SHA frozen at mint. Mirrors
+   * the mint-time invariant (`diffContentKey = headSha`) — the narrative cache key must track the head,
+   * else a re-read replays the stale entry. When fresh `metadata` is passed the PR's title/branch
+   * (which shift as the author pushes) are refreshed too. Unlike `resurfaceForNewPush` this is NOT a
+   * transition: a reviewer-triggered refresh leaves the unit `queued` where it already sits. The
+   * narrative is left in place (the caller overwrites it via `attachReview` once regeneration lands).
+   * Synchronous; persistence is best-effort via `save()`.
+   */
+  advanceHead(unitId: string, headSha: string, metadata?: PRMetadata): ReviewUnit {
+    const unit = this.require(unitId);
+    unit.metadata = metadata ? { ...metadata, headSha } : { ...unit.metadata, headSha };
+    unit.diffContentKey = headSha;
+    if (metadata) unit.taskLabel = metadata.title;
+    unit.updatedAt = this.now();
+    void this.save(unit);
+    return unit;
+  }
+
+  /**
    * Lazy-hydration write for `github` units: attach the fetched diff + generated narrative WITHOUT a
    * status transition (a github unit stays `queued`). The unit is already `queued`; this only fills in
    * the deferred walkthrough. Synchronous; persistence is best-effort via `save()`.

@@ -66,6 +66,91 @@ export function repoOptions(units: Unit[]): string[] {
   return [...new Set(units.map((u) => u.repo))].sort();
 }
 
+// --- Repo facets (the command-center sidebar) --------------------------------------------------
+
+/**
+ * One repo's row in the facet sidebar: the repo split into owner + short name, plus how many of its
+ * units currently need Nick (`needs-you`, via `groupOf`) and its total unit count. Counts are always
+ * derived from the UNFILTERED queue so selecting a facet never changes them.
+ */
+export type RepoFacet = {
+  repo: string; // full "owner/name" — the value handed to setRepoFilter
+  owner: string; // "workos" ('' when the repo has no owner segment)
+  shortName: string; // "authkit" (the whole repo when there's no owner segment)
+  needsYou: number;
+  total: number;
+};
+
+export type RepoFacets = {
+  /** Total needs-you across every repo — the "All" facet's count. */
+  needsYou: number;
+  /** More than one distinct owner present — the cue to label owner groups (short names collide otherwise). */
+  multipleOwners: boolean;
+  /** Repos with work waiting on Nick, busiest-first. */
+  busy: RepoFacet[];
+  /** Repos holding only in-flight/cleared units (0 needs-you) — folded behind the "quiet" toggle. */
+  quiet: RepoFacet[];
+};
+
+function splitRepo(repo: string): { owner: string; shortName: string } {
+  const slash = repo.indexOf('/');
+  if (slash === -1) return { owner: '', shortName: repo };
+  return { owner: repo.slice(0, slash), shortName: repo.slice(slash + 1) };
+}
+
+// Busiest-first: most work waiting on you, then most units overall, then alphabetical for a stable order.
+const byBusiest = (a: RepoFacet, b: RepoFacet): number =>
+  b.needsYou - a.needsYou || b.total - a.total || a.repo.localeCompare(b.repo);
+
+/**
+ * Fold the queue into sidebar facets. Per-repo `needs-you` reuses `groupOf` so a row's count matches
+ * the "Needs you" lane exactly; repos with none drop into `quiet` (they still hold in-flight/cleared
+ * units, so they stay reachable behind the toggle).
+ */
+export function buildRepoFacets(units: Unit[]): RepoFacets {
+  const byRepo = new Map<string, RepoFacet>();
+  let needsYou = 0;
+  for (const u of units) {
+    let facet = byRepo.get(u.repo);
+    if (!facet) {
+      facet = { repo: u.repo, ...splitRepo(u.repo), needsYou: 0, total: 0 };
+      byRepo.set(u.repo, facet);
+    }
+    facet.total++;
+    if (groupOf(u.status) === 'needs-you') {
+      facet.needsYou++;
+      needsYou++;
+    }
+  }
+  const facets = [...byRepo.values()];
+  const multipleOwners = new Set(facets.map((f) => f.owner)).size > 1;
+  const busy = facets.filter((f) => f.needsYou > 0).sort(byBusiest);
+  const quiet = facets.filter((f) => f.needsYou === 0).sort(byBusiest);
+  return { needsYou, multipleOwners, busy, quiet };
+}
+
+export type OwnerGroup = { owner: string; repos: RepoFacet[] };
+
+/**
+ * Group an already-sorted facet list into owner sections, preserving the incoming order — so the
+ * busiest owner leads and rows stay busiest-first within a section. Used only when more than one
+ * owner is present; single-owner lists render flat, without labels.
+ */
+export function groupByOwner(facets: RepoFacet[]): OwnerGroup[] {
+  const groups: OwnerGroup[] = [];
+  const index = new Map<string, OwnerGroup>();
+  for (const facet of facets) {
+    let group = index.get(facet.owner);
+    if (!group) {
+      group = { owner: facet.owner, repos: [] };
+      index.set(facet.owner, group);
+      groups.push(group);
+    }
+    group.repos.push(facet);
+  }
+  return groups;
+}
+
 /**
  * The visible "where did this unit come from" badge. github-only now — every unit mirrors a real
  * GitHub PR, and comments post back to that PR.

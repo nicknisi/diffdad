@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { getAccentMeta } from '../lib/accents';
+import { copy } from '../lib/microcopy';
 import { loadDrafts, pendingReviewComments, useReviewStore } from '../state/review-store';
 import { reviewEndpoint, summarizeChecks, summarizeReviews } from '../lib/units-view';
 import { useComments } from '../hooks/useComments';
@@ -100,8 +101,14 @@ export function UnitReview() {
   const [busy, setBusy] = useState(false);
   // Lazy-hydrate failure surface: a failed narrative generation lands here instead of spinning forever.
   const [hydrateError, setHydrateError] = useState<string | null>(null);
-  // Bumped by Retry to re-run the hydrate effect — its [unitId, unit?.narrative] deps don't change on retry.
+  // Bumped by Retry / Re-read to re-run the hydrate effect — its [unitId, unit?.narrative] deps don't
+  // change on retry (nor on a re-read, where a narrative already exists).
   const [retryNonce, setRetryNonce] = useState(0);
+  // Re-read (force regeneration): the flag is consumed by the shared hydrate effect so it POSTs
+  // { force: true } and doesn't bail on the existing narrative. `rereading` drives the button's
+  // spinning/disabled state. Kept a ref (not a dep) so toggling it doesn't itself re-run the effect.
+  const forceRef = useRef(false);
+  const [rereading, setRereading] = useState(false);
 
   // Authoritative load — covers a hard refresh / deep link where the queue isn't in the store yet.
   useEffect(() => {
@@ -109,6 +116,8 @@ export function UnitReview() {
     let cancelled = false;
     setNotFound(false);
     setHydrateError(null); // switching units: drop the prior unit's hydrate error so it can't render stale
+    setRereading(false); // and any in-flight re-read state — the new unit starts clean
+    forceRef.current = false;
     void (async () => {
       try {
         const res = await fetch(`/api/units/${encodeURIComponent(unitId)}`);
@@ -185,13 +194,23 @@ export function UnitReview() {
   const hasUnit = unit !== null;
   useEffect(() => {
     if (!unitId || !unit) return;
-    if (unit.narrative) return;
-    if (hydratedRef.current === unitId) return;
+    // Consume the re-read intent for this run: a forced pass regenerates even when a narrative already
+    // exists, and dedupe never applies. Reading + clearing it here keeps a stale flag from leaking into
+    // the next unit's lazy open.
+    const force = forceRef.current;
+    forceRef.current = false;
+    if (unit.narrative && !force) return;
+    if (hydratedRef.current === unitId && !force) return;
     hydratedRef.current = unitId;
     let cancelled = false;
     void (async () => {
       try {
-        const res = await fetch(`/api/units/${encodeURIComponent(unitId)}/hydrate`, { method: 'POST' });
+        const res = await fetch(`/api/units/${encodeURIComponent(unitId)}/hydrate`, {
+          method: 'POST',
+          // Only the re-read sends a body; the lazy open posts nothing, so the daemon takes the plain
+          // non-force path (and any absent/invalid body stays a plain hydrate, never a 400).
+          ...(force ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ force: true }) } : {}),
+        });
         if (cancelled) return;
         if (!res.ok) {
           const message = await res
@@ -212,12 +231,28 @@ export function UnitReview() {
         }
       } catch {
         if (!cancelled) setHydrateError('Could not reach the daemon — is it still running?');
+      } finally {
+        setRereading(false); // clear the re-read spinner whether it landed, failed, or was superseded
       }
     })();
     return () => {
       cancelled = true;
     };
   }, [unitId, hasUnit, unit?.narrative, retryNonce]);
+
+  // Re-read: reviewer-triggered force regeneration. Reuse the hydrate effect above — clear the shown
+  // narrative so the existing full loading state (bobbing dad / ReviewProgress) renders, flag the next
+  // run as forced, and bump the nonce to fire it. Failures land in the same hydrateError panel + Retry.
+  function reRead() {
+    if (!unitId || rereading) return;
+    setRereading(true);
+    setError(null);
+    setHydrateError(null);
+    forceRef.current = true;
+    hydratedRef.current = null; // clear dedupe so the effect doesn't short-circuit this unit
+    useReviewStore.setState({ narrative: null });
+    setRetryNonce((n) => n + 1);
+  }
 
   if (notFound) {
     return (
@@ -288,6 +323,19 @@ export function UnitReview() {
         )}
         <span className="truncate text-[13.5px] font-semibold text-[var(--fg-1)]">{unit?.taskLabel}</span>
         <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            onClick={reRead}
+            disabled={rereading || !narrative}
+            title={copy.rereadTitle}
+            aria-label={copy.rereadTitle}
+            className="inline-flex items-center gap-1 text-[12.5px] font-medium text-[var(--fg-2)] transition-colors hover:text-[var(--fg-1)] disabled:opacity-50"
+          >
+            <span className={rereading ? 'animate-spin' : ''} aria-hidden>
+              ⟳
+            </span>
+            {rereading ? copy.rereadBusy : copy.rereadLabel}
+          </button>
           {unit?.prUrl && (
             <a
               href={unit.prUrl}
@@ -366,6 +414,15 @@ export function UnitReview() {
               <button
                 type="button"
                 onClick={() => {
+                  // A re-read failure leaves the OLD narrative in local `unit` state (reRead only nulls the
+                  // store copy), so a plain retry would bail on `unit.narrative && !force` and strand the
+                  // spinner. When a narrative is present the failed pass was necessarily a force re-read
+                  // (lazy open only fires with no narrative), so re-run it through reRead() to actually
+                  // regenerate; a lazy first-open failure (no narrative yet) just re-fires the effect.
+                  if (unit?.narrative) {
+                    reRead();
+                    return;
+                  }
                   setHydrateError(null);
                   hydratedRef.current = null;
                   setRetryNonce((n) => n + 1);

@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   aiEndpoint,
+  buildRepoFacets,
   commentsEndpoint,
+  groupByOwner,
   groupOf,
   groupUnits,
   parseRoute,
@@ -98,6 +100,75 @@ describe('repoOptions', () => {
       mkUnit({ repo: 'workos/node' }),
     ];
     expect(repoOptions(units)).toEqual(['workos/authkit', 'workos/node']);
+  });
+});
+
+describe('buildRepoFacets', () => {
+  it('counts needs-you per repo from the unfiltered list and totals them for "All"', () => {
+    const units = [
+      mkUnit({ repo: 'workos/authkit', status: 'queued' }),
+      mkUnit({ repo: 'workos/authkit', status: 'queued' }),
+      mkUnit({ repo: 'workos/authkit', status: 'changes_requested' }), // in-flight, not needs-you
+      mkUnit({ repo: 'workos/node', status: 'queued' }),
+      mkUnit({ repo: 'workos/node', status: 'approved' }), // cleared
+    ];
+    const f = buildRepoFacets(units);
+    expect(f.needsYou).toBe(3);
+    expect(f.busy.find((r) => r.repo === 'workos/authkit')).toMatchObject({
+      owner: 'workos',
+      shortName: 'authkit',
+      needsYou: 2,
+      total: 3,
+    });
+  });
+
+  it('sorts busy repos busiest-first (needs-you desc, then name)', () => {
+    const units = [
+      mkUnit({ repo: 'o/a', status: 'queued' }),
+      mkUnit({ repo: 'o/b', status: 'queued' }),
+      mkUnit({ repo: 'o/b', status: 'queued' }),
+    ];
+    expect(buildRepoFacets(units).busy.map((r) => r.repo)).toEqual(['o/b', 'o/a']);
+  });
+
+  it('splits repos with zero needs-you into quiet (still reachable), keeping their total', () => {
+    const units = [
+      mkUnit({ repo: 'o/busy', status: 'queued' }),
+      mkUnit({ repo: 'o/quiet', status: 'changes_requested' }),
+      mkUnit({ repo: 'o/quiet', status: 'approved' }),
+    ];
+    const f = buildRepoFacets(units);
+    expect(f.busy.map((r) => r.repo)).toEqual(['o/busy']);
+    expect(f.quiet.map((r) => r.repo)).toEqual(['o/quiet']);
+    expect(f.quiet[0]).toMatchObject({ needsYou: 0, total: 2 });
+  });
+
+  it('flags multiple owners so the sidebar can label groups', () => {
+    expect(buildRepoFacets([mkUnit({ repo: 'a/one' }), mkUnit({ repo: 'a/two' })]).multipleOwners).toBe(false);
+    expect(buildRepoFacets([mkUnit({ repo: 'a/one' }), mkUnit({ repo: 'b/two' })]).multipleOwners).toBe(true);
+  });
+
+  it('handles a repo with no owner segment', () => {
+    expect(buildRepoFacets([mkUnit({ repo: 'localonly', status: 'queued' })]).busy[0]).toMatchObject({
+      owner: '',
+      shortName: 'localonly',
+    });
+  });
+});
+
+describe('groupByOwner', () => {
+  it('groups an already-sorted facet list by owner, preserving the busiest-first order', () => {
+    const busy = buildRepoFacets([
+      mkUnit({ repo: 'workos/authkit', status: 'queued' }),
+      mkUnit({ repo: 'workos/authkit', status: 'queued' }),
+      mkUnit({ repo: 'vercel/next', status: 'queued' }),
+      mkUnit({ repo: 'workos/node', status: 'queued' }),
+    ]).busy;
+    const groups = groupByOwner(busy);
+    // workos/authkit(2) leads → workos section first; node folds up into that same section.
+    expect(groups.map((g) => g.owner)).toEqual(['workos', 'vercel']);
+    expect(groups[0]?.repos.map((r) => r.shortName)).toEqual(['authkit', 'node']);
+    expect(groups[1]?.repos.map((r) => r.shortName)).toEqual(['next']);
   });
 });
 

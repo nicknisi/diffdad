@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useReviewStore } from '../state/review-store';
-import { groupUnits, type GroupedUnits, repoOptions } from '../lib/units-view';
+import { buildRepoFacets, groupUnits, type GroupedUnits, type RepoFacets, repoOptions } from '../lib/units-view';
 import type { Unit } from '../state/types';
 
 /**
@@ -47,8 +47,10 @@ export function useUnits() {
 
   const visible = useMemo(() => (repoFilter ? units.filter((u) => u.repo === repoFilter) : units), [units, repoFilter]);
   const groups: GroupedUnits = useMemo(() => groupUnits(visible), [visible]);
+  // Facets are derived from the UNFILTERED list so selecting a repo never changes the counts.
+  const facets: RepoFacets = useMemo(() => buildRepoFacets(units), [units]);
 
-  return { groups, repos, repoFilter, setRepoFilter, total: units.length, loaded };
+  return { groups, repos, facets, repoFilter, setRepoFilter, total: units.length, loaded };
 }
 
 /** Remove a unit from the queue (manual cleanup of stale work). SSE repaints the list. */

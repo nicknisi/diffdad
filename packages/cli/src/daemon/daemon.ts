@@ -122,19 +122,36 @@ async function startPoller(
  * Lazily hydrate a `github` unit on open: fetch the PR's unified diff, parse it, generate the
  * Phase-1 narrative, attach both to the unit (no status transition — it stays `queued`), and return
  * the updated unit. Wired only when a GitHub client exists; otherwise the hydrate route no-ops.
+ *
+ * `force` powers the per-PR re-read: fetch the PR live first to advance the unit to the current head
+ * SHA (+ fresh title/branch), then bypass the narrative cache READ so a same-SHA regeneration yields
+ * new prose instead of replaying the cached walkthrough. The non-force path is unchanged.
  */
-function makeHydrate(client: GitHubClient, store: UnitStore): (unit: ReviewUnit) => Promise<ReviewUnit> {
-  return async (unit) => {
+function makeHydrate(
+  client: GitHubClient,
+  store: UnitStore,
+): (unit: ReviewUnit, force?: boolean) => Promise<ReviewUnit> {
+  return async (unit, force = false) => {
     const { owner, name } = splitRepo(unit.repo);
-    if (unit.prNumber === undefined) {
+    const prNumber = unit.prNumber;
+    if (prNumber === undefined) {
       throw new Error(`unit ${unit.unitId} has no PR number`);
     }
-    const diff = await client.getPRDiff(owner, name, unit.prNumber);
+    // Re-read: pull the live PR to advance the head SHA (+ refresh title/branch) so the cache key and
+    // diff track the current push, not the SHA frozen at mint.
+    let target = unit;
+    if (force) {
+      const meta = await client.getPR(owner, name, prNumber);
+      target = store.advanceHead(unit.unitId, meta.headSha, meta);
+    }
+    const diff = await client.getPRDiff(owner, name, prNumber);
     const files = parseDiff(diff);
-    const { narrative } = await generateNarrative(unit.metadata, files, [], await readConfig(), undefined, {
-      // contentKey-style cache key: keyed on the head SHA carried in diffContentKey at mint time.
-      cacheKey: { owner, repo: name, number: unit.prNumber, sha: unit.diffContentKey },
+    const { narrative } = await generateNarrative(target.metadata, files, [], await readConfig(), undefined, {
+      // contentKey-style cache key: keyed on the head SHA carried in diffContentKey (advanced above on
+      // a re-read). `force` skips the cache read but still writes, so the fresh prose replaces it.
+      cacheKey: { owner, repo: name, number: prNumber, sha: target.diffContentKey },
       comments: [],
+      force,
     });
     store.attachReview(unit.unitId, files, narrative, narrative.concerns?.length ?? 0);
     return store.get(unit.unitId)!;

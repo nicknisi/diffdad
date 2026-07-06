@@ -112,6 +112,12 @@ export type NarrativeGenerationOptions = {
   cacheKey?: { owner: string; repo: string; number: number; sha: string };
   /** Existing inline review comments — fed to the planner as hints (hot-zone signal). */
   comments?: PRComment[];
+  /**
+   * Force a fresh generation: skip the cache READ but still WRITE the result under `cacheKey`. Powers
+   * the per-PR re-read — a same-SHA regeneration must produce new prose instead of replaying the
+   * cached plan. No effect on the single-pass path (it has no cache).
+   */
+  force?: boolean;
 };
 
 export type NarrativeGenerationResult = {
@@ -216,7 +222,9 @@ async function generateNarrativeTwoPass(
   // structural-violation feedback.
   let plan: Plan | null = null;
   let plannerProvider = 'cached';
-  if (options.cacheKey) {
+  // `force` skips the read (a re-read must regenerate) but the write below still runs, so the fresh
+  // plan replaces the cached one under the same key.
+  if (options.cacheKey && !options.force) {
     plan = await getCachedPlan(
       options.cacheKey.owner,
       options.cacheKey.repo,

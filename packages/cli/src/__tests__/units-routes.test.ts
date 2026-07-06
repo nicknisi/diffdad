@@ -56,7 +56,7 @@ type ReviewEvent = 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES';
 type SubmitInlineComment = { path: string; line: number; body: string; side?: 'LEFT' | 'RIGHT' };
 
 type SetupOpts = {
-  hydrate?: (unit: ReviewUnit) => Promise<ReviewUnit>;
+  hydrate?: (unit: ReviewUnit, force?: boolean) => Promise<ReviewUnit>;
   commentFetcher?: (unit: ReviewUnit) => Promise<PRComment[]>;
   commentPoster?: (unit: ReviewUnit, body: string, opts: PostCommentOptions) => Promise<PRComment>;
   reviewSubmitter?: (
@@ -277,6 +277,133 @@ describe('POST /api/units/:id/hydrate (lazy narrative on open)', () => {
     } finally {
       errSpy.mockRestore();
     }
+  });
+});
+
+describe('POST /api/units/:id/hydrate (force re-read + single-flight)', () => {
+  // Sends an optional JSON body; `body === undefined` posts nothing (the legacy lazy-open shape).
+  const post = (app: ReturnType<typeof setup>['app'], id: string, body?: unknown) =>
+    app.request(`/api/units/${id}/hydrate`, {
+      method: 'POST',
+      ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+    });
+
+  it('force advances the head SHA + regenerates, bypassing the already-narrated no-op guard', async () => {
+    const forceSeen: (boolean | undefined)[] = [];
+    let store!: UnitStore;
+    const FRESH: NarrativeResponse = { ...NARRATIVE, tldr: 'fresh take' };
+    const ctx = setup({
+      hydrate: async (unit, force) => {
+        forceSeen.push(force);
+        // Mimic the real force hydrate: advance to the live head (+ fresh title), then attach new prose.
+        if (force) {
+          store.advanceHead(unit.unitId, 'sha-live', { ...mkMetadata(), headSha: 'sha-live', title: 'Renamed PR' });
+        }
+        return store.attachReview(unit.unitId, [], FRESH, 0);
+      },
+    });
+    store = ctx.store;
+    const gh = seedGithubUnit(store, { headSha: 'sha-1' });
+    store.attachReview(gh.unitId, [], NARRATIVE, 0); // already narrated → a non-force hydrate would no-op
+
+    const res = await post(ctx.app, gh.unitId, { force: true });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { unit: ReviewUnit };
+    expect(forceSeen).toEqual([true]); // the force flag reached hydrate → the engine bypasses the cache read
+    expect(body.unit.narrative).toEqual(FRESH); // regenerated despite an existing narrative
+
+    const after = store.get(gh.unitId)!;
+    expect(after.diffContentKey).toBe('sha-live'); // cache key advanced to the live SHA
+    expect(after.metadata.headSha).toBe('sha-live');
+    expect(after.taskLabel).toBe('Renamed PR'); // title refreshed from the live PR
+    expect(ctx.events).toContain('units'); // broadcast repaints open tabs
+  });
+
+  it('a non-force hydrate ({ force: false }) still no-ops an already-narrated unit', async () => {
+    let called = false;
+    const { store, app, events } = setup({
+      hydrate: async (unit) => {
+        called = true;
+        return unit;
+      },
+    });
+    const gh = seedGithubUnit(store);
+    store.attachReview(gh.unitId, [], NARRATIVE, 1); // already hydrated
+
+    const res = await post(app, gh.unitId, { force: false });
+    expect(res.status).toBe(200);
+    expect(called).toBe(false); // force:false is the plain path — the existing narrative short-circuits it
+    expect(events).not.toContain('units');
+  });
+
+  it('ignores an invalid JSON body — a plain hydrate, not a 400', async () => {
+    const forceSeen: (boolean | undefined)[] = [];
+    let store!: UnitStore;
+    const ctx = setup({
+      hydrate: async (unit, force) => {
+        forceSeen.push(force);
+        return store.attachReview(unit.unitId, [], NARRATIVE, 0);
+      },
+    });
+    store = ctx.store;
+    const gh = seedGithubUnit(store);
+
+    const res = await ctx.app.request(`/api/units/${gh.unitId}/hydrate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{ not json',
+    });
+    expect(res.status).toBe(200); // the legacy no-body callers must keep working — never a 400
+    expect(forceSeen).toEqual([false]); // an unparseable body is treated as a non-force hydrate
+  });
+
+  it('coalesces concurrent hydrates for one unit into a single hydrate call', async () => {
+    let store!: UnitStore;
+    const calls: string[] = [];
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = () => r();
+    });
+    const ctx = setup({
+      hydrate: async (unit) => {
+        calls.push(unit.unitId);
+        await gate; // hold the run so a second concurrent POST rides the same in-flight promise
+        return store.attachReview(unit.unitId, [], NARRATIVE, 0);
+      },
+    });
+    store = ctx.store;
+    const gh = seedGithubUnit(store);
+
+    const first = post(ctx.app, gh.unitId, { force: true });
+    const second = post(ctx.app, gh.unitId, { force: true });
+    await new Promise((r) => setTimeout(r, 0)); // let both handlers reach the shared single-flight
+    release();
+    const [r1, r2] = await Promise.all([first, second]);
+    expect(r1.status).toBe(200);
+    expect(r2.status).toBe(200);
+    expect(calls).toEqual([gh.unitId]); // ONE hydrate for two concurrent POSTs
+
+    // Cleared once it settled → a later re-read runs a fresh hydrate.
+    const r3 = await post(ctx.app, gh.unitId, { force: true });
+    expect(r3.status).toBe(200);
+    expect(calls).toEqual([gh.unitId, gh.unitId]);
+  });
+
+  it('does not coalesce across different units — they hydrate in parallel', async () => {
+    let store!: UnitStore;
+    const calls: string[] = [];
+    const ctx = setup({
+      hydrate: async (unit) => {
+        calls.push(unit.unitId);
+        return store.attachReview(unit.unitId, [], NARRATIVE, 0);
+      },
+    });
+    store = ctx.store;
+    const a = seedGithubUnit(store, { number: 1 });
+    const b = seedGithubUnit(store, { number: 2 });
+
+    await Promise.all([post(ctx.app, a.unitId, { force: true }), post(ctx.app, b.unitId, { force: true })]);
+    expect(calls.slice().sort()).toEqual([a.unitId, b.unitId].sort()); // one hydrate per distinct unit
   });
 });
 

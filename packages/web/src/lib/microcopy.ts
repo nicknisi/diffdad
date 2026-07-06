@@ -13,6 +13,11 @@ export const copy = {
     'Measure twice, merge once...',
   ],
 
+  // Per-PR re-read — dad takes another look at the latest push.
+  rereadLabel: 'Re-read',
+  rereadTitle: 'Fresh eyes — re-read the latest diff from scratch.',
+  rereadBusy: 'Reading it again…',
+
   queueLoading: 'Rounding up your reviews…',
   emptyState: 'Go make a diff-erence.',
   inlineHint: 'Use your comment sense.',
