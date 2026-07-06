@@ -20,12 +20,10 @@ export function AppBar({ onOpenActivity }: AppBarProps) {
   const pr = useReviewStore((s) => s.pr);
   const accent = useReviewStore((s) => s.accent);
   const repoUrl = useReviewStore((s) => s.repoUrl);
-  const mode = useReviewStore((s) => s.mode);
 
   const slug = repoSlug(repoUrl);
   const { markBg } = getAccentMeta(accent);
   const prNum = pr ? pr.number : null;
-  const isWatch = mode === 'watch';
 
   return (
     <header
@@ -47,19 +45,12 @@ export function AppBar({ onOpenActivity }: AppBarProps) {
           className="whitespace-nowrap rounded-[4px] bg-[var(--gray-3)] px-2 py-0.5 text-[var(--fg-1)]"
           style={{ boxShadow: 'inset 0 0 0 1px var(--gray-a5)' }}
         >
-          {isWatch ? 'dad watch' : `dad review ${prNum ?? '—'}`}
+          {`dad review ${prNum ?? '—'}`}
         </span>
         <span className="inline-flex text-[var(--fg-3)]">
           <IconArrowRight className="h-[11px] w-[11px]" />
         </span>
-        {isWatch ? (
-          <span className="truncate text-[13px] font-medium font-sans">
-            <span className="font-semibold" style={{ color: 'var(--purple-11)' }}>
-              {slug ?? 'local'}
-            </span>
-            {pr?.branch ? <span style={{ color: 'var(--fg-1)' }}> @{pr.branch}</span> : null}
-          </span>
-        ) : slug && repoUrl && prNum != null ? (
+        {slug && repoUrl && prNum != null ? (
           <a
             href={`${repoUrl}/pull/${prNum}`}
             target="_blank"

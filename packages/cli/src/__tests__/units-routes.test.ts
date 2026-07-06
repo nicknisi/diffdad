@@ -1,15 +1,12 @@
 import { mkdtemp, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { UnitStore } from '../units/store';
-import { DecisionChannel } from '../units/decision-channel';
 import { createDaemonApp, SseHub } from '../daemon/app';
-import type { ComputeSlice } from '../mcp/submit';
-import { CleanTreeError, type LocalReview } from '../local/diff-source';
 import type { CheckRun, PRComment, PRMetadata, PRReview } from '../github/types';
 import type { PostCommentOptions } from '../github/client';
-import type { Decision, ReviewUnit } from '../units/types';
+import type { ReviewUnit } from '../units/types';
 import type { NarrativeResponse } from '../narrative/types';
 
 const NARRATIVE: NarrativeResponse = {
@@ -42,13 +39,6 @@ function mkMetadata(): PRMetadata {
   };
 }
 
-const fakeSlice: ComputeSlice = async (): Promise<LocalReview> => ({
-  files: [],
-  metadata: mkMetadata(),
-  contentKey: 'abc',
-  baseRef: 'main',
-});
-
 function deterministic() {
   let id = 0;
   return { genId: () => `unit-${++id}`, now: () => '2026-06-26T00:00:00.000Z' };
@@ -66,9 +56,7 @@ type ReviewEvent = 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES';
 type SubmitInlineComment = { path: string; line: number; body: string; side?: 'LEFT' | 'RIGHT' };
 
 type SetupOpts = {
-  computeSlice?: ComputeSlice;
-  reviewPoster?: (unit: ReviewUnit, decision: Decision) => Promise<void>;
-  hydrate?: (unit: ReviewUnit) => Promise<ReviewUnit>;
+  hydrate?: (unit: ReviewUnit, force?: boolean) => Promise<ReviewUnit>;
   commentFetcher?: (unit: ReviewUnit) => Promise<PRComment[]>;
   commentPoster?: (unit: ReviewUnit, body: string, opts: PostCommentOptions) => Promise<PRComment>;
   reviewSubmitter?: (
@@ -79,13 +67,13 @@ type SetupOpts = {
   ) => Promise<void>;
   ai?: (system: string, user: string) => Promise<{ text: string }>;
   statusFetcher?: (unit: ReviewUnit) => Promise<{ checks: CheckRun[]; reviews: PRReview[] }>;
+  pollNow?: () => Promise<{ minted: number; resurfaced: number; removed: number }>;
 };
 
 function setup(opts: SetupOpts = {}) {
-  const { computeSlice = fakeSlice, reviewPoster, hydrate, commentFetcher, commentPoster, reviewSubmitter, ai } = opts;
-  const { statusFetcher } = opts;
+  const { hydrate, commentFetcher, commentPoster, reviewSubmitter, ai } = opts;
+  const { statusFetcher, pollNow } = opts;
   const store = new UnitStore([], { dir, ...deterministic() });
-  const decision = new DecisionChannel();
   const hub = new SseHub();
   const events: string[] = [];
   const messages: Array<{ event: string; data: unknown }> = [];
@@ -93,22 +81,18 @@ function setup(opts: SetupOpts = {}) {
     events.push(event);
     messages.push({ event, data });
   });
-  const submitted: ReviewUnit[] = [];
   const { app } = createDaemonApp({
     store,
-    decision,
     hub,
-    computeSlice,
-    onSubmitted: (unit) => submitted.push(unit),
-    reviewPoster,
     hydrate,
     commentFetcher,
     commentPoster,
     reviewSubmitter,
     ai,
     statusFetcher,
+    pollNow,
   });
-  return { store, decision, hub, events, messages, submitted, app };
+  return { store, hub, events, messages, app };
 }
 
 function seedGithubUnit(store: UnitStore, over: { number?: number; headSha?: string } = {}) {
@@ -126,21 +110,18 @@ function seedGithubUnit(store: UnitStore, over: { number?: number; headSha?: str
 }
 
 async function addUnit(store: UnitStore, repo = 'owner/a') {
-  return store.add({
-    repo,
-    worktreePath: '/wt',
-    taskLabel: 't',
-    intent: 'x',
-    baseRef: 'main',
-    diffContentKey: 'k',
-    files: [],
+  const [owner, name] = repo.split('/');
+  return store.addGithubUnit({
+    owner: owner!,
+    repo: name!,
+    number: 1,
+    title: 't',
+    headBranch: 'feat/x',
+    headSha: 'abc',
+    author: 'octocat',
+    url: `https://github.com/${repo}/pull/1`,
     metadata: mkMetadata(),
   });
-}
-
-async function toQueued(store: UnitStore, id: string) {
-  await store.setReviewing(id);
-  await store.setQueued(id, NARRATIVE, 2);
 }
 
 describe('GET /api/narrative (command-center bootstrap)', () => {
@@ -153,64 +134,6 @@ describe('GET /api/narrative (command-center bootstrap)', () => {
     const body = (await res.json()) as { mode: string; units: { repo: string }[] };
     expect(body.mode).toBe('command-center');
     expect(body.units.map((u) => u.repo).sort()).toEqual(['owner/a', 'owner/b']);
-  });
-});
-
-describe('POST /api/units (dad add ingest)', () => {
-  const post = (app: ReturnType<typeof setup>['app'], body: unknown) =>
-    app.request('/api/units', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-
-  it('creates a source:cli unit from the computed slice and broadcasts + onSubmitted', async () => {
-    const { store, events, submitted, app } = setup();
-    const res = await post(app, {
-      taskLabel: 'fix the thing',
-      intent: 'because',
-      repo: 'owner/a',
-      worktreePath: '/wt',
-    });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { unitId: string };
-    expect(body.unitId).toBe('unit-1');
-
-    const unit = store.get(body.unitId)!;
-    expect(unit.source).toBe('cli');
-    expect(unit.status).toBe('submitted');
-    expect(unit.taskLabel).toBe('fix the thing');
-    expect(unit.intent).toBe('because');
-    expect(events).toContain('units');
-    expect(submitted.map((u) => u.unitId)).toEqual(['unit-1']);
-  });
-
-  it('defaults intent to empty string when omitted', async () => {
-    const { store, app } = setup();
-    const res = await post(app, { taskLabel: 't', repo: 'owner/a', worktreePath: '/wt' });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { unitId: string };
-    expect(store.get(body.unitId)!.intent).toBe('');
-  });
-
-  it('400s when a required field is missing', async () => {
-    const { app } = setup();
-    expect((await post(app, { intent: 'x', repo: 'owner/a', worktreePath: '/wt' })).status).toBe(400); // no taskLabel
-    expect((await post(app, { taskLabel: 't', worktreePath: '/wt' })).status).toBe(400); // no repo
-    expect((await post(app, { taskLabel: 't', repo: 'owner/a' })).status).toBe(400); // no worktreePath
-  });
-
-  it('returns { ok: false, reason: clean-tree } (200) when the tree is clean', async () => {
-    const cleanSlice: ComputeSlice = async () => {
-      throw new CleanTreeError('main');
-    };
-    const { store, app } = setup({ computeSlice: cleanSlice });
-    const res = await post(app, { taskLabel: 't', repo: 'owner/a', worktreePath: '/wt' });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { ok: boolean; reason?: string };
-    expect(body.ok).toBe(false);
-    expect(body.reason).toBe('clean-tree');
-    expect(store.list()).toHaveLength(0);
   });
 });
 
@@ -227,11 +150,13 @@ describe('GET /api/units', () => {
 
   it('filters by status and repo', async () => {
     const { store, app } = setup();
-    await addUnit(store, 'owner/a'); // unit-1, submitted
-    const u2 = await addUnit(store, 'owner/b'); // unit-2
-    await toQueued(store, u2.unitId);
+    await addUnit(store, 'owner/a'); // unit-1, queued
+    const u2 = await addUnit(store, 'owner/b'); // unit-2, queued
+    await store.setDecision(u2.unitId, { kind: 'approved' }); // unit-2 → approved
 
-    const byStatus = (await (await app.request('/api/units?status=queued')).json()) as { units: { unitId: string }[] };
+    const byStatus = (await (await app.request('/api/units?status=approved')).json()) as {
+      units: { unitId: string }[];
+    };
     expect(byStatus.units.map((u) => u.unitId)).toEqual(['unit-2']);
 
     const byRepo = (await (await app.request('/api/units?repo=owner/a')).json()) as { units: { unitId: string }[] };
@@ -243,7 +168,7 @@ describe('GET /api/units/:id', () => {
   it('returns one unit with its narrative', async () => {
     const { store, app } = setup();
     const u = await addUnit(store);
-    await toQueued(store, u.unitId);
+    store.attachReview(u.unitId, [], NARRATIVE, 2);
     const res = await app.request(`/api/units/${u.unitId}`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as { unit: { unitId: string; narrative: { verdict: string } } };
@@ -255,197 +180,6 @@ describe('GET /api/units/:id', () => {
     const { app } = setup();
     const res = await app.request('/api/units/nope');
     expect(res.status).toBe(404);
-  });
-});
-
-describe('POST /api/units/:id/decision', () => {
-  it('records the decision, delivers it to a parked agent, and broadcasts', async () => {
-    const { store, decision, events, app } = setup();
-    const u = await addUnit(store);
-    await toQueued(store, u.unitId);
-
-    const parked = decision.wait(u.unitId, 1000);
-    const res = await app.request(`/api/units/${u.unitId}/decision`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind: 'approved', note: 'ship it' }),
-    });
-    expect(res.status).toBe(200);
-    expect(store.get(u.unitId)!.status).toBe('approved');
-    expect(store.get(u.unitId)!.decision).toMatchObject({ kind: 'approved', note: 'ship it' });
-    expect(await parked).toMatchObject({ kind: 'approved', note: 'ship it' });
-    expect(events).toContain('units');
-  });
-
-  it('404s for an unknown unit', async () => {
-    const { app } = setup();
-    const res = await app.request('/api/units/nope/decision', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind: 'approved' }),
-    });
-    expect(res.status).toBe(404);
-  });
-
-  it('400s for an invalid decision kind', async () => {
-    const { store, app } = setup();
-    const u = await addUnit(store);
-    await toQueued(store, u.unitId);
-    const res = await app.request(`/api/units/${u.unitId}/decision`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind: 'merge_it' }),
-    });
-    expect(res.status).toBe(400);
-  });
-
-  it('409s when deciding a unit that is not awaiting a decision', async () => {
-    const { store, app } = setup();
-    const u = await addUnit(store); // still 'submitted' — not yet 'queued'
-    const res = await app.request(`/api/units/${u.unitId}/decision`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind: 'approved' }),
-    });
-    expect(res.status).toBe(409);
-  });
-
-  it('uses the channel path (decision.deliver) for a non-github unit, never the review poster', async () => {
-    const calls: Array<[ReviewUnit, Decision]> = [];
-    const { store, decision, app } = setup({
-      reviewPoster: async (unit, d) => {
-        calls.push([unit, d]);
-      },
-    });
-    const u = await addUnit(store); // source defaults to 'agent'
-    await toQueued(store, u.unitId);
-
-    const parked = decision.wait(u.unitId, 1000);
-    const res = await app.request(`/api/units/${u.unitId}/decision`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind: 'approved', note: 'ship it' }),
-    });
-    expect(res.status).toBe(200);
-    expect(await parked).toMatchObject({ kind: 'approved', note: 'ship it' });
-    expect(store.get(u.unitId)!.status).toBe('approved');
-    expect(calls).toHaveLength(0); // the review poster is never called for agent/cli units
-  });
-});
-
-describe('POST /api/units/:id/decision (github dispatch)', () => {
-  it('posts the verdict to GitHub, records the decision + reviewed SHA, and broadcasts', async () => {
-    const calls: Array<[ReviewUnit, Decision]> = [];
-    const { store, decision, events, app } = setup({
-      reviewPoster: async (unit, d) => {
-        calls.push([unit, d]);
-      },
-    });
-    const gh = seedGithubUnit(store, { headSha: 'sha-1' });
-
-    // A github decision must NOT touch the agent decision channel.
-    const parked = decision.wait(gh.unitId, 200);
-
-    const res = await app.request(`/api/units/${gh.unitId}/decision`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind: 'approved', note: 'lgtm' }),
-    });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { ok: boolean; unit: ReviewUnit };
-    expect(body.ok).toBe(true);
-
-    // (a) the injected poster was called with the unit + the decision
-    expect(calls).toHaveLength(1);
-    expect(calls[0]![0].unitId).toBe(gh.unitId);
-    expect(calls[0]![1]).toMatchObject({ kind: 'approved', note: 'lgtm' });
-
-    // recorded locally: decision + freshness SHA from metadata.headSha
-    const after = store.get(gh.unitId)!;
-    expect(after.status).toBe('approved');
-    expect(after.decision).toMatchObject({ kind: 'approved', note: 'lgtm' });
-    expect(after.lastReviewedSha).toBe('sha-1');
-
-    expect(events).toContain('units');
-    expect(await parked).toBeNull(); // the channel was never delivered to
-  });
-
-  it('502s and does NOT record the decision when the review poster throws', async () => {
-    const { store, app } = setup({
-      reviewPoster: async () => {
-        throw new Error('github 500');
-      },
-    });
-    const gh = seedGithubUnit(store);
-
-    const res = await app.request(`/api/units/${gh.unitId}/decision`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind: 'changes_requested', note: 'nope' }),
-    });
-    expect(res.status).toBe(502);
-
-    // dad and GitHub must not disagree: nothing recorded locally.
-    const after = store.get(gh.unitId)!;
-    expect(after.status).toBe('queued');
-    expect(after.decision).toBeUndefined();
-    expect(after.lastReviewedSha).toBeUndefined();
-  });
-
-  it('400s a github unit with no PR number', async () => {
-    const { store, app } = setup({ reviewPoster: async () => {} });
-    // A github unit minted without a prNumber (shouldn't happen via addGithubUnit, but guard anyway).
-    const gh = seedGithubUnit(store);
-    store.get(gh.unitId)!.prNumber = undefined;
-
-    const res = await app.request(`/api/units/${gh.unitId}/decision`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind: 'approved' }),
-    });
-    expect(res.status).toBe(400);
-    expect(store.get(gh.unitId)!.decision).toBeUndefined();
-  });
-
-  it('503s (and records nothing) on a github decision when GitHub is not configured (no reviewPoster)', async () => {
-    const { store, events, app } = setup(); // no reviewPoster wired
-    const gh = seedGithubUnit(store, { headSha: 'sha-1' });
-
-    const res = await app.request(`/api/units/${gh.unitId}/decision`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind: 'approved', note: 'lgtm' }),
-    });
-    expect(res.status).toBe(503);
-
-    // refuse rather than record a local "approved" that never reaches GitHub
-    const after = store.get(gh.unitId)!;
-    expect(after.status).toBe('queued');
-    expect(after.decision).toBeUndefined();
-    expect(after.lastReviewedSha).toBeUndefined();
-    expect(events).not.toContain('units');
-  });
-
-  it('409s a repeat decision on an already-decided github unit WITHOUT posting a second review', async () => {
-    const calls: Array<[ReviewUnit, Decision]> = [];
-    const { store, app } = setup({
-      reviewPoster: async (unit, d) => {
-        calls.push([unit, d]);
-      },
-    });
-    const gh = seedGithubUnit(store, { headSha: 'sha-1' });
-    // Drive the unit to a decided state the way a first decision would have.
-    (store.get(gh.unitId) as { status: string }).status = 'approved';
-    (store.get(gh.unitId) as { decision?: unknown }).decision = { kind: 'approved' };
-
-    const res = await app.request(`/api/units/${gh.unitId}/decision`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind: 'approved', note: 'again' }),
-    });
-    expect(res.status).toBe(409);
-    // the divergence we forbid: a second real review must NOT be posted before the local 409
-    expect(calls).toHaveLength(0);
   });
 });
 
@@ -496,23 +230,6 @@ describe('POST /api/units/:id/hydrate (lazy narrative on open)', () => {
     expect(events).not.toContain('units'); // no broadcast for a no-op
   });
 
-  it('is a no-op (no hydrate call) on a non-github unit', async () => {
-    let called = false;
-    const { store, app } = setup({
-      hydrate: async (unit) => {
-        called = true;
-        return unit;
-      },
-    });
-    const u = await addUnit(store); // source defaults to 'agent'
-
-    const res = await post(app, u.unitId);
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { unit: ReviewUnit };
-    expect(called).toBe(false);
-    expect(body.unit.unitId).toBe(u.unitId);
-  });
-
   it('returns the unit unchanged when no hydrate dep is wired', async () => {
     const { store, app } = setup(); // no hydrate injected
     const gh = seedGithubUnit(store);
@@ -529,98 +246,258 @@ describe('POST /api/units/:id/hydrate (lazy narrative on open)', () => {
     expect(res.status).toBe(404);
   });
 
-  it('502s (not 500) and leaves the unit unchanged when hydrate throws', async () => {
+  it('502s (not 500), leaves the unit unchanged, and logs the failure when hydrate throws', async () => {
     const { store, events, app } = setup({
       hydrate: async () => {
         throw new Error('PR fetch failed');
       },
     });
     const gh = seedGithubUnit(store);
+    // The drill-in spinner never exits on failure, so the daemon must surface the cause in its output.
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const res = await post(app, gh.unitId);
+      expect(res.status).toBe(502); // a real fetch/LLM failure is a bad-gateway, not an unhandled 500
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toBe('PR fetch failed'); // the error message still reaches the client
 
-    const res = await post(app, gh.unitId);
-    expect(res.status).toBe(502); // a real fetch/LLM failure is a bad-gateway, not an unhandled 500
+      const after = store.get(gh.unitId)!;
+      expect(after.narrative).toBeUndefined(); // unchanged
+      expect(after.status).toBe('queued');
+      expect(events).not.toContain('units'); // no broadcast on failure
 
-    const after = store.get(gh.unitId)!;
-    expect(after.narrative).toBeUndefined(); // unchanged
-    expect(after.status).toBe('queued');
-    expect(events).not.toContain('units'); // no broadcast on failure
+      // logged server-side with enough context to find the PR (repo / number / unit id / message).
+      expect(errSpy).toHaveBeenCalledTimes(1);
+      const line = String(errSpy.mock.calls[0]![0]);
+      expect(line).toContain('hydrate failed');
+      expect(line).toContain(gh.repo);
+      expect(line).toContain(String(gh.prNumber));
+      expect(line).toContain(gh.unitId);
+      expect(line).toContain('PR fetch failed');
+    } finally {
+      errSpy.mockRestore();
+    }
   });
 });
 
-describe('POST /api/units (re-add dedup)', () => {
-  const post = (app: ReturnType<typeof setup>['app'], body: unknown) =>
-    app.request('/api/units', {
+describe('POST /api/units/:id/hydrate (force re-read + single-flight)', () => {
+  // Sends an optional JSON body; `body === undefined` posts nothing (the legacy lazy-open shape).
+  const post = (app: ReturnType<typeof setup>['app'], id: string, body?: unknown) =>
+    app.request(`/api/units/${id}/hydrate`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
     });
 
-  it('updates the existing local unit in place rather than minting a duplicate', async () => {
-    const { store, submitted, app } = setup();
-    const r1 = await post(app, { taskLabel: 'v1', repo: 'owner/a', worktreePath: '/wt' });
-    const id1 = ((await r1.json()) as { unitId: string }).unitId;
-    const r2 = await post(app, { taskLabel: 'v2', repo: 'owner/a', worktreePath: '/wt' });
-    const id2 = ((await r2.json()) as { unitId: string }).unitId;
+  it('force advances the head SHA + regenerates, bypassing the already-narrated no-op guard', async () => {
+    const forceSeen: (boolean | undefined)[] = [];
+    let store!: UnitStore;
+    const FRESH: NarrativeResponse = { ...NARRATIVE, tldr: 'fresh take' };
+    const ctx = setup({
+      hydrate: async (unit, force) => {
+        forceSeen.push(force);
+        // Mimic the real force hydrate: advance to the live head (+ fresh title), then attach new prose.
+        if (force) {
+          store.advanceHead(unit.unitId, 'sha-live', { ...mkMetadata(), headSha: 'sha-live', title: 'Renamed PR' });
+        }
+        return store.attachReview(unit.unitId, [], FRESH, 0);
+      },
+    });
+    store = ctx.store;
+    const gh = seedGithubUnit(store, { headSha: 'sha-1' });
+    store.attachReview(gh.unitId, [], NARRATIVE, 0); // already narrated → a non-force hydrate would no-op
 
-    expect(id2).toBe(id1); // same unit
-    expect(store.list()).toHaveLength(1);
-    expect(store.get(id1)!.taskLabel).toBe('v2');
-    expect(store.get(id1)!.status).toBe('submitted');
-    expect(submitted).toHaveLength(2); // worker re-kicked each time
+    const res = await post(ctx.app, gh.unitId, { force: true });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { unit: ReviewUnit };
+    expect(forceSeen).toEqual([true]); // the force flag reached hydrate → the engine bypasses the cache read
+    expect(body.unit.narrative).toEqual(FRESH); // regenerated despite an existing narrative
+
+    const after = store.get(gh.unitId)!;
+    expect(after.diffContentKey).toBe('sha-live'); // cache key advanced to the live SHA
+    expect(after.metadata.headSha).toBe('sha-live');
+    expect(after.taskLabel).toBe('Renamed PR'); // title refreshed from the live PR
+    expect(ctx.events).toContain('units'); // broadcast repaints open tabs
   });
 
-  it('re-adding a failed unit clears its error and re-queues it', async () => {
-    const { store, app } = setup();
-    const r = await post(app, { taskLabel: 't', repo: 'owner/a', worktreePath: '/wt' });
-    const id = ((await r.json()) as { unitId: string }).unitId;
-    await store.setReviewing(id);
-    await store.setReviewFailed(id, 'Planner returned non-JSON');
+  it('a non-force hydrate ({ force: false }) still no-ops an already-narrated unit', async () => {
+    let called = false;
+    const { store, app, events } = setup({
+      hydrate: async (unit) => {
+        called = true;
+        return unit;
+      },
+    });
+    const gh = seedGithubUnit(store);
+    store.attachReview(gh.unitId, [], NARRATIVE, 1); // already hydrated
 
-    await post(app, { taskLabel: 't', repo: 'owner/a', worktreePath: '/wt' });
-    expect(store.get(id)!.error).toBeUndefined();
-    expect(store.get(id)!.status).toBe('submitted');
+    const res = await post(app, gh.unitId, { force: false });
+    expect(res.status).toBe(200);
+    expect(called).toBe(false); // force:false is the plain path — the existing narrative short-circuits it
+    expect(events).not.toContain('units');
+  });
+
+  it('ignores an invalid JSON body — a plain hydrate, not a 400', async () => {
+    const forceSeen: (boolean | undefined)[] = [];
+    let store!: UnitStore;
+    const ctx = setup({
+      hydrate: async (unit, force) => {
+        forceSeen.push(force);
+        return store.attachReview(unit.unitId, [], NARRATIVE, 0);
+      },
+    });
+    store = ctx.store;
+    const gh = seedGithubUnit(store);
+
+    const res = await ctx.app.request(`/api/units/${gh.unitId}/hydrate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{ not json',
+    });
+    expect(res.status).toBe(200); // the legacy no-body callers must keep working — never a 400
+    expect(forceSeen).toEqual([false]); // an unparseable body is treated as a non-force hydrate
+  });
+
+  it('coalesces concurrent hydrates for one unit into a single hydrate call', async () => {
+    let store!: UnitStore;
+    const calls: string[] = [];
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = () => r();
+    });
+    const ctx = setup({
+      hydrate: async (unit) => {
+        calls.push(unit.unitId);
+        await gate; // hold the run so a second concurrent POST rides the same in-flight promise
+        return store.attachReview(unit.unitId, [], NARRATIVE, 0);
+      },
+    });
+    store = ctx.store;
+    const gh = seedGithubUnit(store);
+
+    const first = post(ctx.app, gh.unitId, { force: true });
+    const second = post(ctx.app, gh.unitId, { force: true });
+    await new Promise((r) => setTimeout(r, 0)); // let both handlers reach the shared single-flight
+    release();
+    const [r1, r2] = await Promise.all([first, second]);
+    expect(r1.status).toBe(200);
+    expect(r2.status).toBe(200);
+    expect(calls).toEqual([gh.unitId]); // ONE hydrate for two concurrent POSTs
+
+    // Cleared once it settled → a later re-read runs a fresh hydrate.
+    const r3 = await post(ctx.app, gh.unitId, { force: true });
+    expect(r3.status).toBe(200);
+    expect(calls).toEqual([gh.unitId, gh.unitId]);
+  });
+
+  it('does not coalesce across different units — they hydrate in parallel', async () => {
+    let store!: UnitStore;
+    const calls: string[] = [];
+    const ctx = setup({
+      hydrate: async (unit) => {
+        calls.push(unit.unitId);
+        return store.attachReview(unit.unitId, [], NARRATIVE, 0);
+      },
+    });
+    store = ctx.store;
+    const a = seedGithubUnit(store, { number: 1 });
+    const b = seedGithubUnit(store, { number: 2 });
+
+    await Promise.all([post(ctx.app, a.unitId, { force: true }), post(ctx.app, b.unitId, { force: true })]);
+    expect(calls.slice().sort()).toEqual([a.unitId, b.unitId].sort()); // one hydrate per distinct unit
   });
 });
 
-describe('POST /api/units/:id/retry', () => {
-  it('recomputes the slice, resubmits the unit, and re-kicks the worker', async () => {
-    const { store, submitted, events, app } = setup();
-    const u = await addUnit(store);
-    await store.setReviewing(u.unitId);
-    await store.setReviewFailed(u.unitId, 'boom');
+describe('POST /api/poll (manual refresh)', () => {
+  const poll = (app: ReturnType<typeof setup>['app']) => app.request('/api/poll', { method: 'POST' });
 
-    const res = await app.request(`/api/units/${u.unitId}/retry`, { method: 'POST' });
+  it('503s when no pollNow dep is wired (GitHub not configured)', async () => {
+    const { app } = setup(); // no pollNow
+    const res = await poll(app);
+    expect(res.status).toBe(503);
+    expect(((await res.json()) as { error: string }).error).toContain('GitHub is not configured');
+  });
+
+  it('passes the mint/resurface/removed counts through on success', async () => {
+    const { app } = setup({ pollNow: async () => ({ minted: 2, resurfaced: 1, removed: 3 }) });
+    const res = await poll(app);
     expect(res.status).toBe(200);
-    expect(store.get(u.unitId)!.status).toBe('submitted');
-    expect(store.get(u.unitId)!.error).toBeUndefined();
-    expect(submitted.map((s) => s.unitId)).toContain(u.unitId);
-    expect(events).toContain('units');
+    expect((await res.json()) as unknown).toEqual({ ok: true, minted: 2, resurfaced: 1, removed: 3 });
   });
 
-  it('404s for an unknown unit', async () => {
-    const { app } = setup();
-    expect((await app.request('/api/units/nope/retry', { method: 'POST' })).status).toBe(404);
+  it('502s and logs one line when pollNow throws', async () => {
+    const { app } = setup({
+      pollNow: async () => {
+        throw new Error('github search failed');
+      },
+    });
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const res = await poll(app);
+      expect(res.status).toBe(502);
+      expect(((await res.json()) as { error: string }).error).toBe('github search failed'); // reaches the client
+      expect(errSpy).toHaveBeenCalledTimes(1);
+      const line = String(errSpy.mock.calls[0]![0]);
+      expect(line).toContain('manual poll failed');
+      expect(line).toContain('github search failed');
+    } finally {
+      errSpy.mockRestore();
+    }
   });
 
-  it('400s for a github unit — retry is for local work', async () => {
-    const { store, app } = setup();
-    const gh = seedGithubUnit(store);
-    expect((await app.request(`/api/units/${gh.unitId}/retry`, { method: 'POST' })).status).toBe(400);
+  it('single-flights concurrent POSTs into one pollNow, then polls again after it settles', async () => {
+    let invocations = 0;
+    let resolve!: (v: { minted: number; resurfaced: number; removed: number }) => void;
+    let deferred = new Promise<{ minted: number; resurfaced: number; removed: number }>((r) => {
+      resolve = r;
+    });
+    const { app } = setup({
+      pollNow: () => {
+        invocations++;
+        return deferred;
+      },
+    });
+
+    // Two concurrent POSTs (button mashing) share one in-flight poll.
+    const first = poll(app);
+    const second = poll(app);
+    // Let both handlers reach the shared `await inflight` before the poll settles.
+    await new Promise((r) => setTimeout(r, 0));
+    resolve({ minted: 3, resurfaced: 0, removed: 0 });
+    const [r1, r2] = await Promise.all([first, second]);
+    expect(r1.status).toBe(200);
+    expect(r2.status).toBe(200);
+    expect((await r1.json()) as unknown).toEqual({ ok: true, minted: 3, resurfaced: 0, removed: 0 });
+    expect((await r2.json()) as unknown).toEqual({ ok: true, minted: 3, resurfaced: 0, removed: 0 });
+    expect(invocations).toBe(1); // coalesced into a single GitHub search
+
+    // In-flight cleared once it settled → a later request runs a fresh poll.
+    deferred = Promise.resolve({ minted: 0, resurfaced: 0, removed: 0 });
+    const r3 = await poll(app);
+    expect(r3.status).toBe(200);
+    expect(invocations).toBe(2);
   });
 
-  it('returns { ok:false, reason:clean-tree } when the worktree is now clean', async () => {
-    const cleanSlice: ComputeSlice = async () => {
-      throw new CleanTreeError('main');
-    };
-    const { store, app } = setup({ computeSlice: cleanSlice });
-    const u = await addUnit(store);
-    await store.setReviewing(u.unitId);
-    await store.setReviewFailed(u.unitId, 'boom');
-    const res = await app.request(`/api/units/${u.unitId}/retry`, { method: 'POST' });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { ok: boolean; reason?: string };
-    expect(body.ok).toBe(false);
-    expect(body.reason).toBe('clean-tree');
+  it('logs one line when concurrent POSTs coalesce onto a single failing poll', async () => {
+    let reject!: (e: Error) => void;
+    const deferred = new Promise<{ minted: number; resurfaced: number; removed: number }>((_, r) => {
+      reject = r;
+    });
+    const { app } = setup({ pollNow: () => deferred });
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      // Two concurrent POSTs share one in-flight poll; when it fails, both must 502 but only one
+      // failure line should be logged (the log lives on the shared promise, not per-request).
+      const first = poll(app);
+      const second = poll(app);
+      await new Promise((r) => setTimeout(r, 0));
+      reject(new Error('github search failed'));
+      const [r1, r2] = await Promise.all([first, second]);
+      expect(r1.status).toBe(502);
+      expect(r2.status).toBe(502);
+      expect(errSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      errSpy.mockRestore();
+    }
   });
 });
 
@@ -693,21 +570,6 @@ describe('GET /api/units/:id/comments', () => {
     expect(body.map((c) => c.id)).toEqual([5]);
   });
 
-  it('returns [] for a non-github unit without calling the fetcher', async () => {
-    let called = false;
-    const { store, app } = setup({
-      commentFetcher: async () => {
-        called = true;
-        return [mkComment()];
-      },
-    });
-    const u = await addUnit(store); // source defaults to 'agent'
-    const res = await app.request(`/api/units/${u.unitId}/comments`);
-    expect(res.status).toBe(200);
-    expect((await res.json()) as PRComment[]).toEqual([]);
-    expect(called).toBe(false);
-  });
-
   it('returns [] for a github unit when no fetcher is wired', async () => {
     const { store, app } = setup(); // no commentFetcher
     const gh = seedGithubUnit(store);
@@ -765,19 +627,6 @@ describe('POST /api/units/:id/comments', () => {
     const gh = seedGithubUnit(store, { headSha: 'sha-1' });
     await post(app, gh.unitId, { body: 'x', path: 'a.ts', line: 1, commitId: 'sha-override' });
     expect(calls[0]!.commitId).toBe('sha-override');
-  });
-
-  it('400s a non-github unit (no PR to comment on)', async () => {
-    let called = false;
-    const { store, app } = setup({
-      commentPoster: async () => {
-        called = true;
-        return mkComment();
-      },
-    });
-    const u = await addUnit(store);
-    expect((await post(app, u.unitId, { body: 'hi' })).status).toBe(400);
-    expect(called).toBe(false);
   });
 
   it('503s a github unit when GitHub is not configured (no poster)', async () => {
@@ -899,14 +748,6 @@ describe('POST /api/units/:id/review (submit a GitHub review)', () => {
     const { store, app } = setup({ reviewSubmitter: rec.fn });
     const gh = seedGithubUnit(store);
     expect((await post(app, gh.unitId, { event: 'merge' })).status).toBe(400);
-    expect(rec.calls).toHaveLength(0);
-  });
-
-  it('400s a non-github unit', async () => {
-    const rec = recorder();
-    const { store, app } = setup({ reviewSubmitter: rec.fn });
-    const u = await addUnit(store);
-    expect((await post(app, u.unitId, { event: 'approve' })).status).toBe(400);
     expect(rec.calls).toHaveLength(0);
   });
 
@@ -1064,21 +905,6 @@ describe('GET /api/units/:id/status (checks + reviews)', () => {
     expect(seen[0]!.unitId).toBe(gh.unitId);
     expect(body.checks[0]!.conclusion).toBe('failure');
     expect(body.reviews[0]!.state).toBe('APPROVED');
-  });
-
-  it('returns empty for a non-github unit without calling the fetcher', async () => {
-    let called = false;
-    const { store, app } = setup({
-      statusFetcher: async () => {
-        called = true;
-        return { checks: [mkCheck()], reviews: [] };
-      },
-    });
-    const u = await addUnit(store);
-    const res = await app.request(`/api/units/${u.unitId}/status`);
-    expect(res.status).toBe(200);
-    expect((await res.json()) as unknown).toEqual({ checks: [], reviews: [] });
-    expect(called).toBe(false);
   });
 
   it('returns empty when no fetcher is wired', async () => {

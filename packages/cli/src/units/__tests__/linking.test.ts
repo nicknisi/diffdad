@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { classify, shouldResurface } from '../linking';
-import type { PolledPr, ReviewUnit, UnitSource, UnitStatus } from '../types';
+import type { PolledPr, ReviewUnit, UnitStatus } from '../types';
 import type { PRMetadata } from '../../github/types';
 
 // --- fixtures -------------------------------------------------------------
@@ -26,12 +26,13 @@ function mkMetadata(branch = 'feat/x'): PRMetadata {
   };
 }
 
-function mkUnit(o: Partial<ReviewUnit> & { source: UnitSource; status: UnitStatus }): ReviewUnit {
+function mkUnit(o: Partial<ReviewUnit> & { status: UnitStatus }): ReviewUnit {
   const branch = o.metadata?.branch ?? 'feat/x';
   return {
     unitId: 'u1',
     repo: 'octo/demo',
-    worktreePath: '/tmp/wt',
+    source: 'github',
+    worktreePath: '',
     taskLabel: 'task',
     intent: '',
     uncertainties: [],
@@ -69,128 +70,21 @@ describe('classify', () => {
     expect(classify([], mkPr())).toEqual({ kind: 'create' });
   });
 
-  it("returns 'create' when no unit matches repo+branch and no github unit holds the prNumber", () => {
+  it("returns 'create' when no github unit holds the polled prNumber", () => {
     const units = [
-      mkUnit({
-        unitId: 'a',
-        source: 'agent',
-        status: 'reviewing',
-        repo: 'octo/other',
-        metadata: mkMetadata('feat/widgets'),
-      }),
-      mkUnit({
-        unitId: 'b',
-        source: 'agent',
-        status: 'reviewing',
-        repo: 'octo/demo',
-        metadata: mkMetadata('different-branch'),
-      }),
+      mkUnit({ unitId: 'a', status: 'queued', repo: 'octo/demo', prNumber: 7 }),
+      mkUnit({ unitId: 'b', status: 'approved', repo: 'octo/other', prNumber: 42 }),
     ];
     expect(classify(units, mkPr())).toEqual({ kind: 'create' });
-  });
-
-  it("returns 'link' when an agent unit matches repo+headBranch with no prNumber yet", () => {
-    const units = [
-      mkUnit({
-        unitId: 'agent-1',
-        source: 'agent',
-        status: 'reviewing',
-        repo: 'octo/demo',
-        metadata: mkMetadata('feat/widgets'),
-      }),
-    ];
-    expect(classify(units, mkPr())).toEqual({ kind: 'link', unitId: 'agent-1' });
-  });
-
-  it("returns 'link' for a cli unit matching repo+headBranch with no prNumber", () => {
-    const units = [
-      mkUnit({
-        unitId: 'cli-1',
-        source: 'cli',
-        status: 'queued',
-        repo: 'octo/demo',
-        metadata: mkMetadata('feat/widgets'),
-      }),
-    ];
-    expect(classify(units, mkPr())).toEqual({ kind: 'link', unitId: 'cli-1' });
-  });
-
-  it('does NOT link an agent/cli unit that already has a prNumber for a DIFFERENT pr (falls through to create)', () => {
-    const units = [
-      mkUnit({
-        unitId: 'agent-1',
-        source: 'agent',
-        status: 'reviewing',
-        repo: 'octo/demo',
-        metadata: mkMetadata('feat/widgets'),
-        prNumber: 7, // already linked to some OTHER PR → not eligible for a fresh link
-      }),
-    ];
-    expect(classify(units, mkPr())).toEqual({ kind: 'create' });
-  });
-
-  it("returns 'existing-github' for an already-LINKED agent/cli unit (prNumber matches), not 'create' (no duplicate)", () => {
-    // After the poller links a PR onto an agent unit, source stays 'agent' but prNumber is set.
-    // The next poll of the SAME PR must recognise it as already-tracked, not mint a duplicate.
-    const units = [
-      mkUnit({
-        unitId: 'agent-1',
-        source: 'agent',
-        status: 'reviewing',
-        repo: 'octo/demo',
-        metadata: mkMetadata('feat/widgets'),
-        prNumber: 42, // linked to THIS pr already
-      }),
-    ];
-    expect(classify(units, mkPr())).toEqual({ kind: 'existing-github', unitId: 'agent-1' });
   });
 
   it("returns 'existing-github' when a github unit already holds that prNumber", () => {
-    const units = [
-      mkUnit({
-        unitId: 'gh-1',
-        source: 'github',
-        status: 'queued',
-        repo: 'octo/demo',
-        metadata: mkMetadata('feat/widgets'),
-        prNumber: 42,
-      }),
-    ];
-    expect(classify(units, mkPr())).toEqual({ kind: 'existing-github', unitId: 'gh-1' });
-  });
-
-  it("prefers 'existing-github' over 'link' when both a github match and a branch match exist", () => {
-    const units = [
-      mkUnit({
-        unitId: 'agent-1',
-        source: 'agent',
-        status: 'reviewing',
-        repo: 'octo/demo',
-        metadata: mkMetadata('feat/widgets'),
-      }),
-      mkUnit({
-        unitId: 'gh-1',
-        source: 'github',
-        status: 'approved',
-        repo: 'octo/demo',
-        metadata: mkMetadata('feat/widgets'),
-        prNumber: 42,
-      }),
-    ];
+    const units = [mkUnit({ unitId: 'gh-1', status: 'queued', repo: 'octo/demo', prNumber: 42 })];
     expect(classify(units, mkPr())).toEqual({ kind: 'existing-github', unitId: 'gh-1' });
   });
 
   it('does not match a github unit from a different repo with the same number', () => {
-    const units = [
-      mkUnit({
-        unitId: 'gh-other',
-        source: 'github',
-        status: 'queued',
-        repo: 'octo/other',
-        metadata: mkMetadata('feat/widgets'),
-        prNumber: 42,
-      }),
-    ];
+    const units = [mkUnit({ unitId: 'gh-other', status: 'queued', repo: 'octo/other', prNumber: 42 })];
     expect(classify(units, mkPr())).toEqual({ kind: 'create' });
   });
 });
@@ -199,32 +93,27 @@ describe('classify', () => {
 
 describe('shouldResurface', () => {
   it('true for an approved github unit whose lastReviewedSha differs from the polled head', () => {
-    const u = mkUnit({ source: 'github', status: 'approved', lastReviewedSha: 'old' });
+    const u = mkUnit({ status: 'approved', lastReviewedSha: 'old' });
     expect(shouldResurface(u, 'new')).toBe(true);
   });
 
   it('true for a changes_requested github unit whose lastReviewedSha differs', () => {
-    const u = mkUnit({ source: 'github', status: 'changes_requested', lastReviewedSha: 'old' });
+    const u = mkUnit({ status: 'changes_requested', lastReviewedSha: 'old' });
     expect(shouldResurface(u, 'new')).toBe(true);
   });
 
   it('false when the polled head equals lastReviewedSha (already reviewed this head)', () => {
-    const u = mkUnit({ source: 'github', status: 'approved', lastReviewedSha: 'same' });
+    const u = mkUnit({ status: 'approved', lastReviewedSha: 'same' });
     expect(shouldResurface(u, 'same')).toBe(false);
   });
 
-  it('false for a non-github unit even if reviewed against a different sha', () => {
-    const u = mkUnit({ source: 'agent', status: 'approved', lastReviewedSha: 'old' });
-    expect(shouldResurface(u, 'new')).toBe(false);
-  });
-
   it('false for a github unit that is not in a reviewed state (queued)', () => {
-    const u = mkUnit({ source: 'github', status: 'queued', lastReviewedSha: undefined });
+    const u = mkUnit({ status: 'queued', lastReviewedSha: undefined });
     expect(shouldResurface(u, 'new')).toBe(false);
   });
 
   it('true when lastReviewedSha is undefined and differs from a defined polled head', () => {
-    const u = mkUnit({ source: 'github', status: 'approved', lastReviewedSha: undefined });
+    const u = mkUnit({ status: 'approved', lastReviewedSha: undefined });
     expect(shouldResurface(u, 'new')).toBe(true);
   });
 });

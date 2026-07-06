@@ -1,7 +1,6 @@
 import { useEffect } from 'react';
 import { useReviewStore } from '../state/review-store';
 import type {
-  AgentComment,
   Chapter,
   CheckRun,
   DiffFile,
@@ -12,8 +11,6 @@ import type {
   PRComment,
   PRData,
   PRReview,
-  TriageFlag,
-  TriageStatus,
   Unit,
 } from '../state/types';
 import type { RecapResponse } from '../state/recap-types';
@@ -68,28 +65,6 @@ export function handleUnitCommentEvent(e: MessageEvent): void {
     if (state.comments.find((c) => c.id === comment.id)) return; // the poster already added it optimistically
     useReviewStore.setState({ comments: [...state.comments, comment] });
     state.setLastEventAt(Date.now());
-  } catch {
-    // ignore malformed event
-  }
-}
-
-/**
- * Apply an `agent-comment` event. Watch/PR payloads carry the full mailbox (`{ comments }`) and apply
- * globally. The daemon is multi-unit, so its payloads are unit-scoped (`{ unitId, comments }`) — apply
- * them ONLY when that unit is the open drill-in, mirroring `handleUnitCommentEvent`, so a comment on
- * unit B can't repaint a tab open on unit A. Exported for direct unit testing; ignores malformed data.
- */
-export function handleAgentCommentEvent(e: MessageEvent): void {
-  try {
-    const data = JSON.parse(e.data) as { unitId?: string; comments: AgentComment[] };
-    const state = useReviewStore.getState();
-    if (data.unitId !== undefined) {
-      const open = state.mode === 'command-center' && state.route.name === 'unit' && state.route.unitId === data.unitId;
-      if (!open) return;
-    }
-    state.setAgentComments(data.comments ?? []);
-    state.setLastEventAt(Date.now());
-    state.addLiveEvent(makeEvent('comment', 'Agent comments updated', data.comments));
   } catch {
     // ignore malformed event
   }
@@ -166,43 +141,15 @@ export function useLiveStream() {
       }
     };
 
-    const onWatchUpdate = (e: MessageEvent) => {
-      try {
-        const data = JSON.parse(e.data) as { pr: PRData; files: DiffFile[] };
-        useReviewStore.setState({ pr: data.pr, files: data.files });
-        setLastEventAt(Date.now());
-        addLiveEvent(makeEvent('commit', 'Working tree updated'));
-      } catch {
-        // ignore malformed event
-      }
-    };
-
     // Command center: the daemon broadcasts the full cross-repo queue on every unit change.
     const onUnits = (e: MessageEvent) => {
       try {
-        const data = JSON.parse(e.data) as { units: Unit[] };
+        const data = JSON.parse(e.data) as { units: Unit[]; polledAt?: number };
         useReviewStore.getState().setUnits(data.units ?? []);
-        setLastEventAt(Date.now());
-      } catch {
-        // ignore malformed event
-      }
-    };
-
-    // Command center: a unit's agent checked in (parked on the verdict, or worked its comments).
-    const onPresence = (e: MessageEvent) => {
-      try {
-        const data = JSON.parse(e.data) as { unitId: string; lastSeenAt: number | null };
-        useReviewStore.getState().setPresence(data.unitId, data.lastSeenAt ?? null);
-        setLastEventAt(Date.now());
-      } catch {
-        // ignore malformed event
-      }
-    };
-
-    const onTriage = (e: MessageEvent) => {
-      try {
-        const data = JSON.parse(e.data) as { flags: TriageFlag[]; status?: TriageStatus };
-        useReviewStore.getState().setTriage(data.flags ?? [], data.status ?? 'ready');
+        // Only stamp the freshness caption on real GitHub poll passes: `pollOnce` tags its broadcast
+        // with `polledAt`. Other `units` broadcasts (decision/delete/hydrate/review/initial snapshot,
+        // and SSE reconnects) never re-query GitHub, so stamping them would falsely reset "checked …".
+        if (typeof data.polledAt === 'number') useReviewStore.getState().setLastUnitsAt(data.polledAt);
         setLastEventAt(Date.now());
       } catch {
         // ignore malformed event
@@ -212,11 +159,9 @@ export function useLiveStream() {
     const onRegenerating = (e: MessageEvent) => {
       try {
         const data = JSON.parse(e.data) as { previousSha: string; newSha: string };
-        // Watch mode broadcasts empty SHAs (no commits — the working tree changed).
-        const summary = data.newSha
-          ? `New commits detected (${data.previousSha} → ${data.newSha}). Regenerating narrative...`
-          : 'Working tree changed. Regenerating narrative...';
-        addLiveEvent(makeEvent('system', summary));
+        addLiveEvent(
+          makeEvent('system', `New commits detected (${data.previousSha} → ${data.newSha}). Regenerating narrative...`),
+        );
         useReviewStore.getState().setRegenerating(true);
         useReviewStore.getState().setNarrativeProgressChars(0);
       } catch {
@@ -312,14 +257,10 @@ export function useLiveStream() {
     es.addEventListener('comment', onComment as EventListener);
     es.addEventListener('unit-comment', handleUnitCommentEvent as EventListener);
     es.addEventListener('comments', onComments as EventListener);
-    es.addEventListener('agent-comment', handleAgentCommentEvent as EventListener);
     es.addEventListener('checks', onChecks as EventListener);
     es.addEventListener('reviews', onReviews as EventListener);
     es.addEventListener('pr', onPr as EventListener);
-    es.addEventListener('watch-update', onWatchUpdate as EventListener);
     es.addEventListener('units', onUnits as EventListener);
-    es.addEventListener('presence', onPresence as EventListener);
-    es.addEventListener('triage', onTriage as EventListener);
     es.addEventListener('regenerating', onRegenerating as EventListener);
     es.addEventListener('narrative-progress', onNarrativeProgress as EventListener);
     es.addEventListener('narrative.partial', handleNarrativePartialEvent as EventListener);
@@ -343,14 +284,10 @@ export function useLiveStream() {
       es.removeEventListener('comment', onComment as EventListener);
       es.removeEventListener('unit-comment', handleUnitCommentEvent as EventListener);
       es.removeEventListener('comments', onComments as EventListener);
-      es.removeEventListener('agent-comment', handleAgentCommentEvent as EventListener);
       es.removeEventListener('checks', onChecks as EventListener);
       es.removeEventListener('reviews', onReviews as EventListener);
       es.removeEventListener('pr', onPr as EventListener);
-      es.removeEventListener('watch-update', onWatchUpdate as EventListener);
       es.removeEventListener('units', onUnits as EventListener);
-      es.removeEventListener('presence', onPresence as EventListener);
-      es.removeEventListener('triage', onTriage as EventListener);
       es.removeEventListener('regenerating', onRegenerating as EventListener);
       es.removeEventListener('narrative-progress', onNarrativeProgress as EventListener);
       es.removeEventListener('narrative.partial', handleNarrativePartialEvent as EventListener);

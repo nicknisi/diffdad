@@ -1,10 +1,5 @@
 #!/usr/bin/env bun
-import { renderCommentsMarkdown } from './agent-comments/markdown';
-import { AgentCommentStore } from './agent-comments/store';
 import { resolveGitHubToken } from './auth';
-import { buildLocalReview, CleanTreeError, resolveBaseRef } from './local/diff-source';
-import { NotAGitRepoError } from './local/git';
-import { resolveLocalIdentity } from './local/identity';
 import { LOCAL_CLIS, readConfig, resetConfig, runConfig, showConfig } from './config';
 import { GitHubClient } from './github/client';
 import { cacheNarrative, clearCache, computePromptMetaHash, getCachedNarrative } from './narrative/cache';
@@ -12,8 +7,7 @@ import { generateNarrative, resolveAiPath, resolveProviderKey, setCliOverride } 
 import { migrateLegacyData } from './paths';
 import { getCachedRecap } from './recap/cache';
 import { createServer } from './server';
-import { DEFAULT_DAEMON_PORT, daemonStatus, startDaemon } from './daemon/daemon';
-import { basename } from 'path';
+import { daemonStatus, startDaemon } from './daemon/daemon';
 
 const a = {
   reset: '\x1b[0m',
@@ -62,21 +56,11 @@ Usage:
                                      lazily generates an orientation view —
                                      goal, decisions, blockers, mental model
                                      — when you first click it.
-  dad watch [base]                   Review the local working tree (vs [base],
-                                     default: merge-base with the default
-                                     branch) and feed comments to your agent
-                                     over MCP. No PR or GitHub token needed.
-  dad comments [base]                Print open watch-mode comments as markdown
-                                     (manual fallback for non-MCP agents).
-  dad add [--task=…] [--base=…]      Add the current working tree to the running
-                                     daemon's review queue (the CLI door). Resolves
-                                     repo from the git remote and cwd. Requires
-                                     dad daemon to be running.
   dad daemon                         Start the per-machine review daemon: a
-                                     long-lived process that owns a cross-repo
-                                     review queue and serves the command center
-                                     + MCP endpoint. Agents submit_for_review
-                                     and park on await_decision.
+                                     long-lived process that polls GitHub for
+                                     review requests and serves the command
+                                     center — a cross-repo queue of every PR
+                                     waiting on you.
   dad daemon status                  Report whether the daemon is running.
   dad daemon install                 Install a launchd agent so the daemon
                                      survives terminal close and starts at login
@@ -282,8 +266,6 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
     owner: parsed.owner,
     repo: parsed.repo,
     headSha: metadata.headSha,
-    store: await AgentCommentStore.load(`${parsed.owner}-${parsed.repo}-${parsed.number}`),
-    mode: 'pr' as const,
     recap: cachedRecap,
     recapGenerating: false,
     recapError: null,
@@ -387,104 +369,14 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
   return 0;
 }
 
-async function watchCommand(base?: string): Promise<number> {
-  let review;
-  try {
-    review = await buildLocalReview(base);
-  } catch (err) {
-    if (err instanceof NotAGitRepoError) {
-      console.error(`\n  ${a.red}${a.bold}error:${a.reset} ${err.message}\n`);
-      return 1;
-    }
-    if (err instanceof CleanTreeError) {
-      console.log(`\n  ${a.dim}${err.message}${a.reset}\n`);
-      return 0;
-    }
-    console.error(`\n  ${a.red}${a.bold}error:${a.reset} ${err instanceof Error ? err.message : String(err)}\n`);
-    return 1;
-  }
-
-  const withFlag = Bun.argv.find((f) => f.startsWith('--with='));
-  if (withFlag) setCliOverride(withFlag.split('=')[1]!);
-
-  const { owner, repo } = await resolveLocalIdentity();
-  const store = await AgentCommentStore.load(`${owner}-${repo}-local-${review.baseRef}`);
-
-  // Watch mode is diff-first: no narrative, ever. The server serves the working-tree diff
-  // directly and runs a cheap non-blocking triage pass — no LLM on the startup path.
-  const ctx = {
-    narrative: null,
-    pr: review.metadata,
-    files: review.files,
-    comments: [],
-    checkRuns: [],
-    reviews: [],
-    github: null,
-    owner,
-    repo,
-    headSha: review.metadata.headSha,
-    store,
-    mode: 'watch' as const,
-    baseRef: review.baseRef,
-    contentKey: review.contentKey,
-    recap: null,
-    recapGenerating: false,
-    recapError: null,
-  };
-
-  console.log(
-    `\n  ${a.purple}${a.bold}Diff Dad${a.reset}  ${a.dim}—${a.reset}  ${a.white}watch ${review.metadata.branch}${a.reset}`,
-  );
-  console.log(
-    `  ${a.green}+${review.metadata.additions}${a.reset} ${a.red}-${review.metadata.deletions}${a.reset}  ${a.dim}${review.files.length} files vs ${review.baseRef.slice(0, 12)}${a.reset}`,
-  );
-
-  const { app } = createServer(ctx);
-  const portFlag = Bun.argv.find((f) => f.startsWith('--port='));
-  const port = portFlag ? parseInt(portFlag.split('=')[1] ?? '0') : 0;
-  const server = Bun.serve({ fetch: app.fetch, port, idleTimeout: 255 });
-  const url = `http://localhost:${server.port}`;
-
-  console.log(`\n  ${a.purple}${a.bold}${url}${a.reset}`);
-  console.log(`\n  ${a.dim}Connect your agent (Claude Code):${a.reset}`);
-  console.log(`  ${a.cyan}claude mcp add --transport http diffdad ${url}/mcp${a.reset}`);
-  console.log(
-    `  ${a.dim}Then ask it to call ${a.reset}${a.cyan}list_review_comments${a.reset}${a.dim} — or run ${a.reset}${a.cyan}dad comments${a.reset}${a.dim} to copy them.${a.reset}\n`,
-  );
-
-  if (!Bun.argv.includes('--no-open')) {
-    const { default: open } = await import('open');
-    await open(url);
-  }
-
-  await new Promise<never>(() => {});
-  return 0;
-}
-
-async function commentsCommand(base?: string): Promise<number> {
-  let baseRef: string;
-  try {
-    baseRef = await resolveBaseRef(base);
-  } catch (err) {
-    console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
-    return 1;
-  }
-  const { owner, repo } = await resolveLocalIdentity();
-  const store = await AgentCommentStore.load(`${owner}-${repo}-local-${baseRef}`);
-  console.log(renderCommentsMarkdown(store.list()));
-  return 0;
-}
-
 async function daemonCommand(sub?: string): Promise<number> {
   const portFlag = Bun.argv.find((f) => f.startsWith('--port='));
   const port = portFlag ? parseInt(portFlag.split('=')[1] ?? '0', 10) || undefined : undefined;
-  const concFlag = Bun.argv.find((f) => f.startsWith('--concurrency='));
-  const concurrency = concFlag ? parseInt(concFlag.split('=')[1] ?? '0', 10) || undefined : undefined;
 
   switch (sub) {
     case undefined:
     case 'start':
-      return await startDaemon({ port, concurrency, open: !Bun.argv.includes('--no-open') });
+      return await startDaemon({ port, open: !Bun.argv.includes('--no-open') });
     case 'status':
       return await daemonStatus(port);
     case 'install': {
@@ -517,74 +409,6 @@ async function daemonCommand(sub?: string): Promise<number> {
   }
 }
 
-/** Run a git command in the cwd, returning trimmed stdout or '' on any failure. */
-async function gitText(args: string[]): Promise<string> {
-  try {
-    const proc = Bun.spawn(['git', ...args], { stdout: 'pipe', stderr: 'pipe' });
-    if ((await proc.exited) !== 0) return '';
-    return (await new Response(proc.stdout).text()).trim();
-  } catch {
-    return '';
-  }
-}
-
-/**
- * `dad add` — the CLI door into the review queue. Resolves repo (git remote → owner/name, else cwd
- * basename) + worktreePath (cwd) + taskLabel (--task= else the current branch), and POSTs them to the
- * running daemon's ingest endpoint, which runs the same path `submit_for_review` does. The daemon owns
- * the store; this command never writes it. No daemon running → a friendly "start `dad daemon`" hint.
- */
-async function addCommand(): Promise<number> {
-  const inferred = await inferRepoFromGit();
-  const worktreePath = process.cwd();
-  const repo = inferred ? `${inferred.owner}/${inferred.repo}` : basename(worktreePath);
-
-  const branch = await gitText(['rev-parse', '--abbrev-ref', 'HEAD']);
-  const taskFlag = Bun.argv.find((f) => f.startsWith('--task='))?.split('=')[1];
-  const taskLabel = taskFlag || branch || 'working tree';
-  const baseRef = Bun.argv.find((f) => f.startsWith('--base='))?.split('=')[1];
-  const portFlag = Bun.argv.find((f) => f.startsWith('--port='));
-  const port = portFlag ? parseInt(portFlag.split('=')[1] ?? '0', 10) || DEFAULT_DAEMON_PORT : DEFAULT_DAEMON_PORT;
-
-  const url = `http://localhost:${port}`;
-  let res: Response;
-  try {
-    res = await fetch(`${url}/api/units`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ taskLabel, intent: '', repo, worktreePath, baseRef }),
-    });
-  } catch {
-    console.error(`\n  ${a.red}${a.bold}error:${a.reset} no dad daemon running on localhost:${port}.`);
-    console.error(`  ${a.dim}Start it with ${a.cyan}dad daemon${a.reset}${a.dim}.${a.reset}\n`);
-    return 1;
-  }
-
-  if (!res.ok) {
-    const detail = await res.text().catch(() => '');
-    console.error(
-      `\n  ${a.red}${a.bold}error:${a.reset} daemon rejected the unit (${res.status})${detail ? `: ${detail}` : ''}\n`,
-    );
-    return 1;
-  }
-
-  const body = (await res.json().catch(() => ({}))) as {
-    unitId?: string;
-    ok?: boolean;
-    reason?: string;
-    message?: string;
-  };
-  if (body.ok === false) {
-    console.log(`\n  ${a.dim}${body.message ?? 'nothing to review — working tree is clean'}${a.reset}\n`);
-    return 0;
-  }
-
-  console.log(`\n  ${a.green}✓${a.reset} ${a.white}${repo}${a.reset} ${a.dim}—${a.reset} ${taskLabel}`);
-  console.log(`  ${a.dim}unit ${a.reset}${a.cyan}${body.unitId}${a.reset} ${a.dim}queued for review${a.reset}`);
-  console.log(`\n  ${a.purple}${a.bold}${url}${a.reset}\n`);
-  return 0;
-}
-
 async function configCommand(sub?: string): Promise<number> {
   if (sub === 'show') return await showConfig();
   if (sub === 'reset') {
@@ -599,19 +423,13 @@ async function configCommand(sub?: string): Promise<number> {
   return await runConfig();
 }
 
-export type Command = 'review' | 'watch' | 'comments' | 'add' | 'daemon' | 'config' | 'cache' | 'pr-shorthand';
+export type Command = 'review' | 'daemon' | 'config' | 'cache' | 'pr-shorthand';
 
 /** Map the first positional token to a command. Unknown tokens are PR shorthands. */
 export function classifyCommand(cmd: string | undefined): Command {
   switch (cmd) {
     case 'review':
       return 'review';
-    case 'watch':
-      return 'watch';
-    case 'comments':
-      return 'comments';
-    case 'add':
-      return 'add';
     case 'daemon':
       return 'daemon';
     case 'config':
@@ -655,12 +473,6 @@ async function main(argv: string[]): Promise<number> {
   switch (classifyCommand(cmd)) {
     case 'review':
       return await reviewCommand(rest[0]);
-    case 'watch':
-      return await watchCommand(rest[0]);
-    case 'comments':
-      return await commentsCommand(rest[0]);
-    case 'add':
-      return await addCommand();
     case 'daemon':
       return await daemonCommand(rest[0]);
     case 'config':

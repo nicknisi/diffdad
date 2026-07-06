@@ -1,14 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useReviewStore } from '../state/review-store';
-import { groupUnits, type GroupedUnits, repoOptions } from '../lib/units-view';
-import type { Concern, Unit, UnitDecisionKind } from '../state/types';
-
-export type UnitDecisionInput = {
-  kind: UnitDecisionKind;
-  /** Concerns the agent should address (changes_requested) — curated in the drill-in, all by default. */
-  concerns?: Concern[];
-  note?: string;
-};
+import { buildRepoFacets, groupUnits, type GroupedUnits, type RepoFacets, repoOptions } from '../lib/units-view';
+import type { Unit } from '../state/types';
 
 /**
  * Command-center data hook. The live queue lives in the store (seeded by the `command-center`
@@ -54,41 +47,17 @@ export function useUnits() {
 
   const visible = useMemo(() => (repoFilter ? units.filter((u) => u.repo === repoFilter) : units), [units, repoFilter]);
   const groups: GroupedUnits = useMemo(() => groupUnits(visible), [visible]);
+  // Facets are derived from the UNFILTERED list so selecting a repo never changes the counts.
+  const facets: RepoFacets = useMemo(() => buildRepoFacets(units), [units]);
 
-  return { groups, repos, repoFilter, setRepoFilter, total: units.length, loaded };
+  return { groups, repos, facets, repoFilter, setRepoFilter, total: units.length, loaded };
 }
 
-/** POST a verdict to the daemon → persisted on the unit + delivered to the parked agent. */
-export async function postDecision(unitId: string, decision: UnitDecisionInput): Promise<void> {
-  const res = await fetch(`/api/units/${encodeURIComponent(unitId)}/decision`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(decision),
-  });
-  if (!res.ok) {
-    const detail = await res.text().catch(() => '');
-    throw new Error(`Decision failed (${res.status})${detail ? `: ${detail}` : ''}`);
-  }
-}
-
-/** Remove a unit from the queue (manual cleanup of failed / stale work). SSE repaints the list. */
+/** Remove a unit from the queue (manual cleanup of stale work). SSE repaints the list. */
 export async function removeUnit(unitId: string): Promise<void> {
   const res = await fetch(`/api/units/${encodeURIComponent(unitId)}`, { method: 'DELETE' });
   if (!res.ok) {
     const detail = await res.text().catch(() => '');
     throw new Error(`Remove failed (${res.status})${detail ? `: ${detail}` : ''}`);
   }
-}
-
-/**
- * Re-run the review for a local unit (used after a failed review, or to re-review the current worktree).
- * Resolves `{ ok:false, reason:'clean-tree' }` when there's nothing left to review.
- */
-export async function retryUnit(unitId: string): Promise<{ ok: boolean; reason?: string }> {
-  const res = await fetch(`/api/units/${encodeURIComponent(unitId)}/retry`, { method: 'POST' });
-  if (!res.ok) {
-    const detail = await res.text().catch(() => '');
-    throw new Error(`Retry failed (${res.status})${detail ? `: ${detail}` : ''}`);
-  }
-  return (await res.json().catch(() => ({ ok: true }))) as { ok: boolean; reason?: string };
 }

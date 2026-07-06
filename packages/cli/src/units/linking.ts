@@ -4,40 +4,19 @@ import type { PolledPr, ReviewUnit } from './types';
  * The decision the poller makes for a single polled PR, against the current set of units. Pure — no
  * I/O, no store — so it's exhaustively unit-testable and the poller stays a thin reducer over it.
  *
- * - `existing-github`: a unit already tracks this exact PR (same owner/repo + `prNumber`) — either a
- *   `github`-minted unit or an `agent`/`cli` unit the poller already linked. The poller only re-surfaces
- *   it if it's a reviewed github unit whose head moved (see `shouldResurface`); a linked agent/cli unit
- *   is a no-op.
- * - `link`: an `agent`/`cli` unit is the *same work* (same `repo` + head branch) and isn't yet tied
- *   to a PR — best-effort identity linking (full durable identity is a later phase). Attach PR info.
+ * - `existing-github`: a github unit already tracks this exact PR (same owner/repo + `prNumber`). The
+ *   poller only re-surfaces it if its head moved (see `shouldResurface`); otherwise it's a no-op.
  * - `create`: nothing matches → mint a fresh `github` unit.
- *
- * `existing-github` is checked first so a PR that already has its own github unit is never also
- * re-linked onto a stray branch-matching agent unit.
  */
-export type Classification =
-  | { kind: 'existing-github'; unitId: string }
-  | { kind: 'link'; unitId: string }
-  | { kind: 'create' };
+export type Classification = { kind: 'existing-github'; unitId: string } | { kind: 'create' };
 
 export function classify(units: ReviewUnit[], pr: PolledPr): Classification {
   const repo = `${pr.owner}/${pr.repo}`;
 
-  // Already-tracked guard (kind kept as 'existing-github' to avoid churn): covers ANY unit that already
-  // holds this PR — a github-minted unit OR an agent/cli unit the poller previously linked (source stays
-  // agent/cli but prNumber is set). Without the source-agnostic match a linked unit would fall through to
-  // 'create' on the next poll and mint a duplicate github unit.
+  // Already-tracked guard: a github unit already holds this PR (same owner/repo + prNumber). Without it
+  // the PR would fall through to 'create' on the next poll and mint a duplicate.
   const existing = units.find((u) => u.repo === repo && u.prNumber === pr.number);
   if (existing) return { kind: 'existing-github', unitId: existing.unitId };
-
-  const linkable = units.find(
-    (u) =>
-      (u.source === 'agent' || u.source === 'cli') &&
-      u.repo === repo &&
-      u.metadata.branch === pr.headBranch &&
-      u.prNumber === undefined,
-  );
-  if (linkable) return { kind: 'link', unitId: linkable.unitId };
 
   return { kind: 'create' };
 }

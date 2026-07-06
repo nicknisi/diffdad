@@ -1,11 +1,11 @@
 import { mkdtemp, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { pollOnce } from '../poller';
 import { UnitStore } from '../../units/store';
 import type { PRMetadata } from '../../github/types';
-import type { PolledPr } from '../../units/types';
+import type { PolledPr, ReviewUnit } from '../../units/types';
 
 // --- fixtures -------------------------------------------------------------
 
@@ -78,7 +78,7 @@ describe('pollOnce', () => {
 
     const result = await pollOnce({ search: search([mkPr()]), store, broadcast });
 
-    expect(result).toEqual({ minted: 1, linked: 0, resurfaced: 0 });
+    expect(result).toEqual({ minted: 1, resurfaced: 0, removed: 0 });
     const units = store.list();
     expect(units.length).toBe(1);
     const u = units[0]!;
@@ -112,41 +112,12 @@ describe('pollOnce', () => {
   it('is idempotent: re-polling the SAME unchanged PR mints/links/resurfaces nothing', async () => {
     const store = new UnitStore([], det());
     const first = await pollOnce({ search: search([mkPr()]), store, broadcast: () => {} });
-    expect(first).toEqual({ minted: 1, linked: 0, resurfaced: 0 });
+    expect(first).toEqual({ minted: 1, resurfaced: 0, removed: 0 });
     expect(store.list().length).toBe(1);
 
     const second = await pollOnce({ search: search([mkPr()]), store, broadcast: () => {} });
-    expect(second).toEqual({ minted: 0, linked: 0, resurfaced: 0 });
+    expect(second).toEqual({ minted: 0, resurfaced: 0, removed: 0 });
     expect(store.list().length).toBe(1); // no duplicate minted
-  });
-
-  it('links a PR to a pre-seeded agent unit by repo + head branch (no new unit)', async () => {
-    const store = new UnitStore([], det());
-    const seeded = await store.add({
-      repo: 'octo/demo',
-      source: 'agent',
-      worktreePath: '/wt',
-      taskLabel: 'agent work',
-      intent: 'x',
-      baseRef: 'main',
-      diffContentKey: 'k',
-      files: [],
-      metadata: mkMetadata('feat/widgets'),
-    });
-    const events: string[] = [];
-    const broadcast = (event: string) => events.push(event);
-
-    const result = await pollOnce({ search: search([mkPr()]), store, broadcast });
-
-    expect(result).toEqual({ minted: 0, linked: 1, resurfaced: 0 });
-    expect(store.list().length).toBe(1); // no new unit
-    const u = store.get(seeded.unitId)!;
-    expect(u.source).toBe('agent'); // source unchanged
-    expect(u.status).toBe('submitted'); // status unchanged
-    expect(u.prNumber).toBe(42);
-    expect(u.prUrl).toBe('https://github.com/octo/demo/pull/42');
-    expect(u.prAuthor).toBe('octocat');
-    expect(u.metadata.headSha).toBe('sha-1'); // linkPr advances the head sha
   });
 
   it('resurfaces a previously-reviewed github unit when the head sha moved', async () => {
@@ -172,7 +143,7 @@ describe('pollOnce', () => {
 
     const result = await pollOnce({ search: search([mkPr({ headSha: 'new-sha' })]), store, broadcast });
 
-    expect(result).toEqual({ minted: 0, linked: 0, resurfaced: 1 });
+    expect(result).toEqual({ minted: 0, resurfaced: 1, removed: 0 });
     const after = store.get(u.unitId)!;
     expect(after.status).toBe('queued');
     expect(after.decision).toBeUndefined();
@@ -200,7 +171,7 @@ describe('pollOnce', () => {
 
     const result = await pollOnce({ search: search([mkPr({ headSha: 'sha-1' })]), store, broadcast: () => {} });
 
-    expect(result).toEqual({ minted: 0, linked: 0, resurfaced: 0 });
+    expect(result).toEqual({ minted: 0, resurfaced: 0, removed: 0 });
     const after = store.get(u.unitId)!;
     expect(after.status).toBe('approved'); // untouched — already reviewed at this head
     expect(after.metadata.headSha).toBe('sha-1'); // metadata not advanced (no-op)
@@ -216,5 +187,193 @@ describe('pollOnce', () => {
     const unitsEvent = events.find((e) => e.event === 'units');
     expect(unitsEvent).toBeDefined();
     expect((unitsEvent!.data as { units: unknown[] }).units.length).toBe(1);
+  });
+});
+
+// --- reconciliation (drop units GitHub no longer lists) -------------------
+
+/** Seed a stored `github` unit for a PR the search will (mostly) not return. */
+function seedUnit(store: UnitStore, over: { number?: number; headSha?: string } = {}): ReviewUnit {
+  const number = over.number ?? 99;
+  return store.addGithubUnit({
+    owner: 'octo',
+    repo: 'demo',
+    number,
+    title: 'Stale PR',
+    headBranch: 'feat/stale',
+    headSha: over.headSha ?? 'sha-1',
+    author: 'octocat',
+    url: `https://github.com/octo/demo/pull/${number}`,
+    metadata: { ...mkMetadata(), headSha: over.headSha ?? 'sha-1' },
+  });
+}
+
+const openState = () => Promise.resolve({ open: true });
+const closedState = () => Promise.resolve({ open: false });
+
+describe('pollOnce reconciliation', () => {
+  it('removes a github unit immediately when its PR is closed/merged', async () => {
+    const store = new UnitStore([], det());
+    const u = seedUnit(store);
+    const streaks = new Map<string, number>();
+
+    const result = await pollOnce({
+      search: search([]), // #99 no longer on your plate
+      store,
+      broadcast: () => {},
+      fetchPrState: closedState,
+      missStreaks: streaks,
+    });
+
+    expect(result.removed).toBe(1);
+    expect(store.get(u.unitId)).toBeUndefined(); // hard-deleted this pass — streak irrelevant when closed
+    expect(streaks.size).toBe(0); // no streak entry leaked for the removed unit
+  });
+
+  it('removes an open-but-unrequested unit only after two consecutive missing polls (shared streak map)', async () => {
+    const store = new UnitStore([], det());
+    const u = seedUnit(store);
+    const streaks = new Map<string, number>(); // the ONE map the interval poller and manual /api/poll share
+
+    const p1 = await pollOnce({
+      search: search([]),
+      store,
+      broadcast: () => {},
+      fetchPrState: openState,
+      missStreaks: streaks,
+    });
+    expect(p1.removed).toBe(0);
+    expect(store.get(u.unitId)).toBeDefined(); // one miss is not evidence
+    expect(streaks.get(u.unitId)).toBe(1);
+
+    const p2 = await pollOnce({
+      search: search([]),
+      store,
+      broadcast: () => {},
+      fetchPrState: openState,
+      missStreaks: streaks,
+    });
+    expect(p2.removed).toBe(1);
+    expect(store.get(u.unitId)).toBeUndefined(); // gone at the second consecutive miss
+    expect(streaks.size).toBe(0); // streak cleared on removal
+  });
+
+  it('resets the miss streak when the unit reappears in the search', async () => {
+    const store = new UnitStore([], det());
+    const u = seedUnit(store, { headSha: 'sha-1' });
+    const streaks = new Map<string, number>();
+
+    await pollOnce({ search: search([]), store, broadcast: () => {}, fetchPrState: openState, missStreaks: streaks });
+    expect(streaks.get(u.unitId)).toBe(1); // one strike
+
+    // Reappears on your plate → streak cleared, no removal (sha unchanged → no resurface either).
+    await pollOnce({
+      search: search([mkPr({ number: 99, headSha: 'sha-1' })]),
+      store,
+      broadcast: () => {},
+      fetchPrState: openState,
+      missStreaks: streaks,
+    });
+    expect(streaks.has(u.unitId)).toBe(false);
+    expect(store.get(u.unitId)).toBeDefined();
+
+    // Misses again → a fresh streak of 1 (not the second strike), so it survives.
+    const p3 = await pollOnce({
+      search: search([]),
+      store,
+      broadcast: () => {},
+      fetchPrState: openState,
+      missStreaks: streaks,
+    });
+    expect(p3.removed).toBe(0);
+    expect(streaks.get(u.unitId)).toBe(1);
+    expect(store.get(u.unitId)).toBeDefined();
+  });
+
+  it('leaves the unit and its streak untouched when the PR-state fetch throws', async () => {
+    const store = new UnitStore([], det());
+    const u = seedUnit(store);
+    const streaks = new Map<string, number>([[u.unitId, 1]]); // a pending strike from a prior pass
+
+    const result = await pollOnce({
+      search: search([]),
+      store,
+      broadcast: () => {},
+      fetchPrState: () => Promise.reject(new Error('network')),
+      missStreaks: streaks,
+    });
+
+    expect(result.removed).toBe(0);
+    expect(store.get(u.unitId)).toBeDefined(); // transient failure ≠ evidence
+    expect(streaks.get(u.unitId)).toBe(1); // streak neither incremented nor cleared on error
+  });
+
+  it('keeps a decided unit still present in the search (and never fetches its state)', async () => {
+    const store = new UnitStore([], det());
+    const u = seedUnit(store, { headSha: 'sha-1' });
+    store.setReviewedSha(u.unitId, 'sha-1');
+    (store.get(u.unitId) as { decision?: unknown }).decision = { kind: 'approved' };
+    (store.get(u.unitId) as { status: string }).status = 'approved';
+
+    let fetched = 0;
+    const result = await pollOnce({
+      search: search([mkPr({ number: 99, headSha: 'sha-1' })]), // still listed (e.g. you're an assignee)
+      store,
+      broadcast: () => {},
+      fetchPrState: () => {
+        fetched++;
+        return openState();
+      },
+      missStreaks: new Map(),
+    });
+
+    expect(result.removed).toBe(0);
+    expect(store.get(u.unitId)!.status).toBe('approved'); // kept: it's the resurface machinery's memory
+    expect(fetched).toBe(0); // present in the search → no direct fetch needed
+  });
+
+  it('removes nothing when no fetchPrState dep is wired (reconciliation skipped)', async () => {
+    const store = new UnitStore([], det());
+    const u = seedUnit(store);
+    const result = await pollOnce({ search: search([]), store, broadcast: () => {} }); // no dep
+    expect(result.removed).toBe(0);
+    expect(store.get(u.unitId)).toBeDefined();
+  });
+
+  it('returns correct counts when a pass both mints and removes', async () => {
+    const store = new UnitStore([], det());
+    const stale = seedUnit(store, { number: 99 }); // closed → removed
+    const result = await pollOnce({
+      search: search([mkPr({ number: 42, headSha: 'sha-new' })]), // a brand-new PR → minted
+      store,
+      broadcast: () => {},
+      fetchPrState: closedState,
+      missStreaks: new Map(),
+    });
+
+    expect(result).toEqual({ minted: 1, resurfaced: 0, removed: 1 });
+    expect(store.get(stale.unitId)).toBeUndefined();
+    expect(store.list().some((x) => x.prNumber === 42)).toBe(true);
+  });
+
+  it('logs one reconciliation line naming each removed repo#pr and its reason', async () => {
+    const store = new UnitStore([], det());
+    seedUnit(store);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await pollOnce({
+        search: search([]),
+        store,
+        broadcast: () => {},
+        fetchPrState: closedState,
+        missStreaks: new Map(),
+      });
+      expect(logSpy).toHaveBeenCalledTimes(1);
+      const line = String(logSpy.mock.calls[0]![0]);
+      expect(line).toContain('octo/demo#99');
+      expect(line).toContain('closed');
+    } finally {
+      logSpy.mockRestore();
+    }
   });
 });

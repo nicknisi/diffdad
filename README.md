@@ -44,7 +44,6 @@ dad config show              # Print current config with secrets redacted
 dad config reset [--yes]     # Delete saved config
 dad cache clear              # Clear cached narratives
 dad daemon                   # Start the per-machine review command center
-dad add                      # Add the current working tree to the daemon's queue
 dad --version                # Print version
 ```
 
@@ -69,33 +68,24 @@ The CLI fetches the PR diff, generates a semantic narrative, and opens a local w
 
 ## Command Center (daemon)
 
-`dad daemon` runs a long-lived, per-machine review hub: one cross-repo queue of everything waiting on you, served at a stable local URL (`http://localhost:4319`) and grouped by status — **needs-you**, **in-flight**, **cleared**.
+`dad daemon` runs a long-lived, per-machine review hub: one cross-repo queue of everything waiting on you, served at a stable local URL (`http://localhost:4319`) and grouped by status — **needs you**, **in flight**, **cleared**.
 
 ```sh
 dad daemon                       # Start the command center
 dad daemon status                # Is it running?
 dad daemon install               # Run it under launchd — survives terminal close, restarts at login
 dad daemon uninstall             # Remove the launchd agent
-dad add [--task=…] [--base=…]    # Drop the current working tree into the queue
 ```
 
-Three doors feed the queue:
+With a GitHub token configured (see [GitHub Token](#github-token)), the daemon polls every 60 seconds for open PRs where you're a requested reviewer or assignee and mints a queue unit for each. Open a review request on GitHub and it shows up here.
 
-- **Agents** call `submit_for_review` over MCP when they finish, then park on `await_decision` for your verdict. Register the endpoint once: `claude mcp add --transport http diffdad http://localhost:4319/mcp`.
-- **`dad add`** drops the current worktree in by hand (or from a script/alias). It infers the repo from the git remote and the task label from the branch (or `--task=`), and posts to the running daemon — so it needs `dad daemon` up.
-- **GitHub** review requests appear automatically when a token is configured (see [GitHub Token](#github-token)) — every open PR where you're a requested reviewer or assignee. Opening one generates its walkthrough lazily (PRs you never click cost nothing); approving or requesting changes posts a **real GitHub review**.
-
-Your verdict flows back to whoever submitted the work — to the agent over `await_decision`, or to GitHub as a review. A PR you've reviewed stays out of the queue until its author pushes again.
-
-### Auto-submit from agents
-
-So work registers itself instead of relying on you to remember, wire `dad add` into your agent's finish hook (Claude Code's `Stop` hook, a git `post-commit` hook, a shell alias, or the agent's own instructions):
-
-```sh
-dad add || true    # '|| true' so a missing daemon never blocks the agent
-```
-
-`dad add` is the primitive; you choose the trigger.
+- **Lazy narration** — a unit's walkthrough is generated the first time you open it, not on poll, so PRs you never click cost nothing.
+- **Review from the drill-in** — a queue row only opens the PR; you approve or request changes from inside the review, which posts a **real GitHub review**. There is no queue-level verdict. A PR you've reviewed stays out of the queue until its author pushes past the commit you reviewed.
+- **Re-read (⟳)** — from a PR's review, re-fetch its live head SHA and regenerate the walkthrough from scratch, bypassing the cache — for when the author has pushed since you last looked.
+- **Refresh (↻)** — the header button runs a poll on demand instead of waiting for the next tick; a "checked … ago" caption shows how fresh the queue is, and a toast reports what changed.
+- **Self-cleaning queue** — every poll reconciles against GitHub: closed or merged PRs drop immediately; PRs no longer requested of you drop after two consecutive polls without them.
+- **Repo filter** — a sidebar facets the queue by repo with per-repo "needs you" counts (a native dropdown on narrow screens), so a busy inbox stays scannable.
+- **Errors, not spinners** — if narration fails, the review shows an explicit panel with a Retry button (and the raw diff below) instead of spinning forever.
 
 ## How It Works
 
@@ -131,7 +121,9 @@ Diff Dad needs a GitHub token to fetch PR data and post comments. It checks, in 
 
 ### Caching
 
-Narratives are cached at `~/.cache/diffdad/` keyed by `{owner}-{repo}-{number}-{sha}`. Same commit = instant reload. Use `--no-cache` to regenerate, or `dad cache clear` to wipe all cached narratives.
+Narratives and recaps are cached at `~/.cache/diffdad/`, keyed by the PR and its head commit — same commit = instant reload. Use `--no-cache` to regenerate, or `dad cache clear` to wipe the cache.
+
+The daemon's review queue is durable state, not a cache, so it lives in the app-data dir instead: `~/Library/Application Support/diffdad` on macOS, else `$XDG_DATA_HOME/diffdad` or `~/.local/share/diffdad`. `dad cache clear` never touches it.
 
 ## Features
 

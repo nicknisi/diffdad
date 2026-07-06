@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { getAccentMeta } from '../lib/accents';
 import { copy } from '../lib/microcopy';
 import { useReviewStore } from '../state/review-store';
-import { postDecision, removeUnit, retryUnit, useUnits } from '../hooks/useUnits';
+import { removeUnit, useUnits } from '../hooks/useUnits';
 import { AccentPicker } from './AccentPicker';
 import { DadMark } from './DadMark';
+import { RepoFacets } from './RepoFacets';
 import { ThemeToggle } from './ThemeToggle';
 import { UnitRow } from './UnitRow';
 import type { Unit } from '../state/types';
@@ -14,6 +15,14 @@ const LIVE: Record<string, { label: string; dot: string; fg: string }> = {
   connecting: { label: 'Reconnecting…', dot: 'var(--amber-10)', fg: 'var(--amber-11)' },
   disconnected: { label: 'Offline', dot: 'var(--gray-9)', fg: 'var(--fg-3)' },
 };
+
+/** Dim freshness caption for the last `units` snapshot: 'checked just now' / '42s ago' / '3m ago'. */
+function freshness(lastUnitsAt: number, now: number): string {
+  const secs = Math.max(0, Math.round((now - lastUnitsAt) / 1000));
+  if (secs < 10) return 'checked just now';
+  if (secs < 60) return `checked ${secs}s ago`;
+  return `checked ${Math.floor(secs / 60)}m ago`;
+}
 
 function GroupLabel({ title, count }: { title: string; count: number }) {
   return (
@@ -46,38 +55,71 @@ function Panel({ children }: { children: React.ReactNode[] }) {
  * Live via the shared SSE stream; a row click drills into that unit's review.
  */
 export function CommandCenter() {
-  const { groups, repos, repoFilter, setRepoFilter, total, loaded } = useUnits();
+  const { groups, repos, facets, repoFilter, setRepoFilter, total, loaded } = useUnits();
   const navigate = useReviewStore((s) => s.navigate);
   const liveStatus = useReviewStore((s) => s.liveStatus);
   const accent = useReviewStore((s) => s.accent);
   const { markBg } = getAccentMeta(accent);
+  const lastUnitsAt = useReviewStore((s) => s.lastUnitsAt);
   const [now, setNow] = useState(() => Date.now());
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showCleared, setShowCleared] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [toast, setToast] = useState<{ kind: 'ok' | 'error'; message: string } | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // One ~10s tick drives both the row timestamps and the freshness caption's seconds granularity.
   useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 30_000);
+    const id = setInterval(() => setNow(Date.now()), 10_000);
     return () => clearInterval(id);
   }, []);
 
-  const open = (unit: Unit) => navigate({ name: 'unit', unitId: unit.unitId });
+  // A pending toast timeout must not fire after unmount.
+  useEffect(
+    () => () => {
+      if (toastTimer.current) clearTimeout(toastTimer.current);
+    },
+    [],
+  );
 
-  async function decide(unit: Unit, kind: 'approved' | 'changes_requested') {
-    setBusyId(unit.unitId);
-    setError(null);
+  // Show a result toast and (re)start its 4s auto-dismiss, replacing any toast already up.
+  function flashToast(next: { kind: 'ok' | 'error'; message: string }) {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast(next);
+    toastTimer.current = setTimeout(() => {
+      setToast(null);
+      toastTimer.current = null;
+    }, 4000);
+  }
+
+  async function refresh() {
+    if (refreshing) return;
+    setRefreshing(true);
     try {
-      // The SSE `units` event moves the unit out of needs-you once recorded — no manual refetch.
-      await postDecision(unit.unitId, {
-        kind,
-        concerns: kind === 'changes_requested' ? unit.narrative?.concerns : undefined,
+      const res = await fetch('/api/poll', { method: 'POST' });
+      if (!res.ok) {
+        let message = `HTTP ${res.status}`;
+        try {
+          const body = (await res.json()) as { error?: string };
+          if (body?.error) message = body.error;
+        } catch {}
+        flashToast({ kind: 'error', message });
+        return;
+      }
+      const data = (await res.json()) as { minted?: number; resurfaced?: number; removed?: number };
+      flashToast({
+        kind: 'ok',
+        message: copy.refreshResult(data.minted ?? 0, data.resurfaced ?? 0, data.removed ?? 0),
       });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Decision failed');
+    } catch {
+      flashToast({ kind: 'error', message: copy.refreshUnreachable });
     } finally {
-      setBusyId(null);
+      setRefreshing(false);
     }
   }
+
+  const open = (unit: Unit) => navigate({ name: 'unit', unitId: unit.unitId });
 
   async function remove(unit: Unit) {
     setBusyId(unit.unitId);
@@ -86,24 +128,6 @@ export function CommandCenter() {
       await removeUnit(unit.unitId); // SSE `units` repaints the queue without it
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Remove failed');
-    } finally {
-      setBusyId(null);
-    }
-  }
-
-  async function retry(unit: Unit) {
-    setBusyId(unit.unitId);
-    setError(null);
-    try {
-      const r = await retryUnit(unit.unitId);
-      if (r.ok === false) {
-        setError(
-          r.reason === 'clean-tree' ? 'Nothing to re-review — that working tree is clean now.' : 'Could not retry.',
-        );
-      }
-      // else: the unit flips back to reviewing via SSE and the worker picks it up again
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Retry failed');
     } finally {
       setBusyId(null);
     }
@@ -131,11 +155,48 @@ export function CommandCenter() {
           />
           {live.label}
         </span>
+        {lastUnitsAt !== null && (
+          // Fixed width + tabular-nums so the caption's box doesn't change size as it ticks
+          // ('just now' → '42s ago' → '1m ago'), which would jitter the live dot to its left.
+          <span className="inline-block min-w-[96px] text-[12px] tabular-nums text-[var(--fg-3)]">
+            {freshness(lastUnitsAt, now)}
+          </span>
+        )}
+        <div className="relative flex items-center">
+          <button
+            type="button"
+            onClick={refresh}
+            disabled={refreshing}
+            className="inline-flex items-center gap-1.5 rounded-md bg-[var(--bg-page)] px-2 py-1 text-[12.5px] font-medium text-[var(--fg-1)] transition-opacity disabled:opacity-50"
+            style={{ boxShadow: 'inset 0 0 0 1px var(--gray-a5)' }}
+          >
+            <span className={refreshing ? 'animate-spin' : ''} aria-hidden>
+              ↻
+            </span>
+            Refresh
+          </button>
+          <span aria-live="polite">
+            {toast && (
+              <span
+                // Absolute (out of flow) so showing/hiding the toast doesn't collapse the header's
+                // right-anchored cluster and snap the dot + caption + button sideways on every refresh.
+                className="absolute right-0 top-full z-10 mt-1.5 whitespace-nowrap rounded-md px-2.5 py-1 text-[12px] font-medium"
+                style={
+                  toast.kind === 'error'
+                    ? { background: 'var(--red-3)', color: 'var(--red-11)', boxShadow: 'inset 0 0 0 1px var(--red-9)' }
+                    : { background: 'var(--gray-3)', color: 'var(--fg-2)', boxShadow: 'inset 0 0 0 1px var(--gray-a5)' }
+                }
+              >
+                {toast.message}
+              </span>
+            )}
+          </span>
+        </div>
         {repos.length > 1 && (
           <select
             value={repoFilter ?? ''}
             onChange={(e) => setRepoFilter(e.target.value || null)}
-            className="rounded-md bg-[var(--bg-page)] px-2 py-1 text-[12.5px] text-[var(--fg-1)]"
+            className="rounded-md bg-[var(--bg-page)] px-2 py-1 text-[12.5px] text-[var(--fg-1)] md:hidden"
             style={{ boxShadow: 'inset 0 0 0 1px var(--gray-a5)' }}
             aria-label="Filter by repo"
           >
@@ -151,111 +212,115 @@ export function CommandCenter() {
         <ThemeToggle />
       </header>
 
-      <main className="mx-auto max-w-[1100px] px-6">
-        {error && (
-          <div
-            className="mt-4 flex items-center justify-between rounded-lg px-3.5 py-2.5 text-[13px]"
-            style={{ background: 'var(--red-3)', color: 'var(--red-11)', boxShadow: 'inset 0 0 0 1px var(--red-a6)' }}
-          >
-            <span>{error}</span>
-            <button type="button" onClick={() => setError(null)} className="font-semibold" aria-label="Dismiss">
-              ✕
-            </button>
-          </div>
-        )}
-
-        {!loaded && total === 0 ? (
-          <div className="pt-24 text-center">
-            <div className="mx-auto mb-4 w-fit" style={{ animation: 'generating-bob 2s ease-in-out infinite' }}>
-              <DadMark size={64} bg={markBg} shape="circle" showBadge={false} showWink />
-            </div>
-            <div className="flex items-center justify-center gap-3">
-              <div className="flex gap-1">
-                {[0, 0.2, 0.4].map((d) => (
-                  <span
-                    key={d}
-                    className="h-1.5 w-1.5 rounded-full"
-                    style={{
-                      background: 'var(--purple-9)',
-                      animation: `generating-dot 1.4s ease-in-out ${d}s infinite`,
-                    }}
-                  />
-                ))}
-              </div>
-              <p
-                className="text-[14px] italic text-[var(--fg-2)]"
-                style={{ animation: 'generating-fade 2.5s ease-in-out infinite' }}
+      {/* Two columns under the sticky header: the repo facet rail (md+, only when there's more than
+          one repo — same rule as the header select) and the queue. The queue keeps its own max width
+          and centers within its column so the composition stays balanced when the rail is absent. */}
+      <main className="mx-auto flex max-w-[1404px] gap-8 px-6">
+        {repos.length > 1 && <RepoFacets facets={facets} value={repoFilter} onSelect={setRepoFilter} />}
+        <div className="min-w-0 flex-1">
+          <div className="mx-auto max-w-[1100px]">
+            {error && (
+              <div
+                className="mt-4 flex items-center justify-between rounded-lg px-3.5 py-2.5 text-[13px]"
+                style={{
+                  background: 'var(--red-3)',
+                  color: 'var(--red-11)',
+                  boxShadow: 'inset 0 0 0 1px var(--red-9)',
+                }}
               >
-                {copy.queueLoading}
-              </p>
-            </div>
-          </div>
-        ) : total === 0 ? (
-          <div className="pt-24 text-center">
-            <DadMark size={64} bg={markBg} shape="circle" showBadge className="mx-auto mb-4 opacity-90" />
-            <p className="text-[15px] font-medium text-[var(--fg-2)]">All clear, champ. Nothing in the queue.</p>
-            <p className="mt-1.5 text-[13px] text-[var(--fg-3)]">
-              Point an agent at this daemon and have it call{' '}
-              <code className="font-mono text-[12px] text-[var(--fg-2)]">submit_for_review</code> — finished work shows
-              up here, grouped by what needs you.
-            </p>
-          </div>
-        ) : (
-          <>
-            <GroupLabel title="Needs you" count={groups.needsYou.length} />
-            {groups.needsYou.length === 0 ? (
-              <p className="px-1 text-[13px] text-[var(--fg-3)]">Nothing waiting on you. 🎉</p>
-            ) : (
-              <Panel>
-                {groups.needsYou.map((u) => (
-                  <UnitRow
-                    key={u.unitId}
-                    {...rowProps(u)}
-                    onOpen={open}
-                    onApprove={(unit) => decide(unit, 'approved')}
-                    onRequestChanges={(unit) => decide(unit, 'changes_requested')}
-                    onRetry={retry}
-                    onRemove={remove}
-                  />
-                ))}
-              </Panel>
+                <span>{error}</span>
+                <button type="button" onClick={() => setError(null)} className="font-semibold" aria-label="Dismiss">
+                  ✕
+                </button>
+              </div>
             )}
 
-            {groups.inFlight.length > 0 && (
-              <>
-                <GroupLabel title="In flight" count={groups.inFlight.length} />
-                <Panel>
-                  {groups.inFlight.map((u) => (
-                    <UnitRow key={u.unitId} {...rowProps(u)} onOpen={open} onRemove={remove} />
-                  ))}
-                </Panel>
-              </>
-            )}
-
-            {groups.cleared.length > 0 && (
-              <>
-                <div className="mb-2 mt-6 flex items-baseline gap-2 px-1">
-                  <h2 className="text-[12px] font-semibold uppercase tracking-[0.06em] text-[var(--fg-2)]">Cleared</h2>
-                  <span className="text-[12px] tabular-nums text-[var(--fg-3)]">{groups.cleared.length}</span>
-                  <button
-                    type="button"
-                    onClick={() => setShowCleared((v) => !v)}
-                    className="ml-1 text-[12px] font-medium text-[var(--blue-11)]"
-                  >
-                    {showCleared ? 'hide' : 'show'}
-                  </button>
+            {!loaded && total === 0 ? (
+              <div className="pt-24 text-center">
+                <div className="mx-auto mb-4 w-fit" style={{ animation: 'generating-bob 2s ease-in-out infinite' }}>
+                  <DadMark size={64} bg={markBg} shape="circle" showBadge={false} showWink />
                 </div>
-                {showCleared && (
+                <div className="flex items-center justify-center gap-3">
+                  <div className="flex gap-1">
+                    {[0, 0.2, 0.4].map((d) => (
+                      <span
+                        key={d}
+                        className="h-1.5 w-1.5 rounded-full"
+                        style={{
+                          background: 'var(--purple-9)',
+                          animation: `generating-dot 1.4s ease-in-out ${d}s infinite`,
+                        }}
+                      />
+                    ))}
+                  </div>
+                  <p
+                    className="text-[14px] italic text-[var(--fg-2)]"
+                    style={{ animation: 'generating-fade 2.5s ease-in-out infinite' }}
+                  >
+                    {copy.queueLoading}
+                  </p>
+                </div>
+              </div>
+            ) : total === 0 ? (
+              <div className="pt-24 text-center">
+                <DadMark size={64} bg={markBg} shape="circle" showBadge className="mx-auto mb-4 opacity-90" />
+                <p className="text-[15px] font-medium text-[var(--fg-2)]">All clear, champ. Nothing in the queue.</p>
+                <p className="mt-1.5 text-[13px] text-[var(--fg-3)]">
+                  Open a review request on GitHub and it shows up here, grouped by what needs you.
+                </p>
+              </div>
+            ) : (
+              <>
+                <GroupLabel title="Needs you" count={groups.needsYou.length} />
+                {groups.needsYou.length === 0 ? (
+                  <p className="px-1 text-[13px] text-[var(--fg-3)]">Nothing waiting on you. 🎉</p>
+                ) : (
                   <Panel>
-                    {groups.cleared.map((u) => (
+                    {groups.needsYou.map((u) => (
                       <UnitRow key={u.unitId} {...rowProps(u)} onOpen={open} onRemove={remove} />
                     ))}
                   </Panel>
                 )}
+
+                {groups.inFlight.length > 0 && (
+                  <>
+                    <GroupLabel title="In flight" count={groups.inFlight.length} />
+                    <Panel>
+                      {groups.inFlight.map((u) => (
+                        <UnitRow key={u.unitId} {...rowProps(u)} onOpen={open} onRemove={remove} />
+                      ))}
+                    </Panel>
+                  </>
+                )}
+
+                {groups.cleared.length > 0 && (
+                  <>
+                    <div className="mb-2 mt-6 flex items-baseline gap-2 px-1">
+                      <h2 className="text-[12px] font-semibold uppercase tracking-[0.06em] text-[var(--fg-2)]">
+                        Cleared
+                      </h2>
+                      <span className="text-[12px] tabular-nums text-[var(--fg-3)]">{groups.cleared.length}</span>
+                      <button
+                        type="button"
+                        onClick={() => setShowCleared((v) => !v)}
+                        className="ml-1 text-[12px] font-medium text-[var(--blue-11)]"
+                      >
+                        {showCleared ? 'hide' : 'show'}
+                      </button>
+                    </div>
+                    {showCleared && (
+                      <Panel>
+                        {groups.cleared.map((u) => (
+                          <UnitRow key={u.unitId} {...rowProps(u)} onOpen={open} onRemove={remove} />
+                        ))}
+                      </Panel>
+                    )}
+                  </>
+                )}
               </>
             )}
-          </>
-        )}
+          </div>
+        </div>
       </main>
     </div>
   );

@@ -27,10 +27,9 @@ type Props = {
   showFilePath?: boolean;
 };
 
-type Provenance = 'draft' | 'synced' | 'github' | 'syncing' | 'agent';
+type Provenance = 'draft' | 'synced' | 'github' | 'syncing';
 
 function provenance(comment: PRComment): Provenance {
-  if (comment.source === 'agent') return 'agent';
   // The id-sign heuristic only applies to GitHub comments (numeric ids).
   if (typeof comment.id === 'number' && comment.id < 0) return 'draft';
   const created = new Date(comment.createdAt).getTime();
@@ -45,32 +44,9 @@ function provenance(comment: PRComment): Provenance {
   return 'github';
 }
 
-function SourceBadge({ kind, status }: { kind: Provenance; status?: PRComment['status'] }) {
+function SourceBadge({ kind }: { kind: Provenance }) {
   const baseStyle =
     'inline-flex items-center gap-1 rounded-[3px] px-[5px] py-px text-[10.5px] font-medium tracking-[0.02em]';
-  if (kind === 'agent') {
-    const s = status ?? 'open';
-    if (s === 'addressed') {
-      return (
-        <span className={baseStyle} style={{ background: 'var(--green-3)', color: 'var(--green-11)' }}>
-          <IconCheck className="h-[9px] w-[9px]" />
-          addressed
-        </span>
-      );
-    }
-    if (s === 'delivered') {
-      return (
-        <span className={baseStyle} style={{ background: 'var(--amber-3)', color: 'var(--amber-11)' }}>
-          delivered to agent
-        </span>
-      );
-    }
-    return (
-      <span className={baseStyle} style={{ background: 'var(--blue-3)', color: 'var(--blue-11)' }}>
-        for agent
-      </span>
-    );
-  }
   if (kind === 'syncing') {
     return (
       <span className={baseStyle} style={{ background: 'var(--yellow-3)', color: 'var(--yellow-11)' }}>
@@ -222,7 +198,7 @@ export function Comment({ comment, replies = [], isReply = false, showFilePath =
                 Reply
               </button>
             )}
-            <SourceBadge kind={kind} status={comment.status} />
+            <SourceBadge kind={kind} />
           </span>
         </div>
         {showFilePath && comment.path && (

@@ -27,16 +27,13 @@ describe('migrateLegacyData', () => {
     await rm(to, { recursive: true, force: true });
   });
 
-  it('moves durable subdirs (units, agent-comments) from the legacy dir into the data dir', async () => {
+  it('moves the durable units subdir from the legacy dir into the data dir', async () => {
     await mkdir(join(from, 'units'), { recursive: true });
     await writeFile(join(from, 'units', 'u1.json'), '{"unitId":"u1"}');
-    await mkdir(join(from, 'agent-comments'), { recursive: true });
-    await writeFile(join(from, 'agent-comments', 'unit-u1.json'), '[]');
 
     await migrateLegacyData({ from, to });
 
     expect(await readFile(join(to, 'units', 'u1.json'), 'utf-8')).toContain('u1');
-    expect(await readFile(join(to, 'agent-comments', 'unit-u1.json'), 'utf-8')).toBe('[]');
   });
 
   it('leaves regenerable caches behind — only durable data moves', async () => {

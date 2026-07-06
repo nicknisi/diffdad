@@ -2,33 +2,28 @@ import type { DiffFile, PRMetadata } from '../github/types';
 import type { Concern, NarrativeResponse } from '../narrative/types';
 
 /**
- * State machine (see spec-phase-2 Data Model):
- *   submitted → reviewing → queued → { approved | changes_requested }
- *   changes_requested → addressing → reviewing → …
+ * State machine (github-only): a unit is born `queued` when the poller mints it from an open PR,
+ * advances to the reviewer's verdict, and `approved → done`.
+ *   queued → { approved | changes_requested }
  *   approved → done
+ * (A new push re-opens a reviewed unit back to `queued` via `resurfaceForNewPush` — the one reverse
+ * edge, kept outside the forward-only `TRANSITIONS` table.)
  */
-export type UnitStatus =
-  | 'submitted'
-  | 'reviewing'
-  | 'queued'
-  | 'approved'
-  | 'changes_requested'
-  | 'addressing'
-  | 'done';
+export type UnitStatus = 'queued' | 'approved' | 'changes_requested' | 'done';
 
-/** Which door a unit entered the queue through (multi-source ingestion). Defaults to `'agent'`. */
-export type UnitSource = 'agent' | 'cli' | 'github';
+/** Which door a unit entered through. Collapsed to github-only — every unit is minted from a PR. */
+export type UnitSource = 'github';
 
-/** The reviewer's verdict on a unit, delivered back to the agent over `await_decision`. */
+/** The reviewer's verdict on a unit, recorded locally and posted to GitHub as a review. */
 export type Decision = {
   kind: 'approved' | 'changes_requested';
-  /** Curated concerns the agent should address (changes_requested). CLI-native shape. */
+  /** Curated concerns to surface on changes_requested. CLI-native shape. */
   concerns?: Concern[];
   note?: string;
 };
 
 /**
- * A unit of agent work submitted for review. Owns its diff slice (`files`/`metadata`), the
+ * A unit of review work, minted from an open GitHub PR. Owns its diff slice (`files`/`metadata`), the
  * Phase-1 review output (`narrative` — the brief is derived in the UI via `buildWalkthrough`,
  * since `WalkthroughModel` is a web type the CLI can't produce), a state-machine `status`, and
  * a `toResolve` count. Persisted one-file-per-unit under <dataDir>/units/ (see paths.ts).
@@ -36,7 +31,7 @@ export type Decision = {
 export type ReviewUnit = {
   unitId: string;
   repo: string; // owner/name
-  /** Which door this unit entered through; defaults to `'agent'` on load for back-compat. */
+  /** Which door this unit entered through. Always `'github'` — units are minted from open PRs. */
   source: UnitSource;
   worktreePath: string;
   taskLabel: string;
@@ -66,25 +61,6 @@ export type ReviewUnit = {
   lastReviewedSha?: string;
   createdAt: string;
   updatedAt: string;
-};
-
-/** Input to `UnitStore.add` — identity, status, and timestamps are assigned by the store. */
-export type NewReviewUnit = {
-  repo: string;
-  /** Defaults to `'agent'` when omitted (set by the store). */
-  source?: UnitSource;
-  worktreePath: string;
-  taskLabel: string;
-  intent: string;
-  uncertainties?: string[];
-  baseRef: string;
-  diffContentKey: string;
-  files: DiffFile[];
-  metadata: PRMetadata;
-  /** Optional PR linkage, carried through when a unit is born already tied to a PR. */
-  prNumber?: number;
-  prUrl?: string;
-  prAuthor?: string;
 };
 
 /**

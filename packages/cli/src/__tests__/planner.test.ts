@@ -26,6 +26,15 @@ describe('parsePlanResponse', () => {
   it('throws when there is no recoverable object at all', () => {
     expect(() => parsePlanResponse('I cannot help with that.')).toThrow(/non-JSON/);
   });
+
+  it('includes a raw-response snippet so the failure is diagnosable from the error alone', () => {
+    expect(() => parsePlanResponse('I cannot help with that.')).toThrow(/raw response/);
+    expect(() => parsePlanResponse('I cannot help with that.')).toThrow(/I cannot help with that\./);
+  });
+
+  it('reports an empty response explicitly rather than an empty snippet', () => {
+    expect(() => parsePlanResponse('')).toThrow(/\(empty response\)/);
+  });
 });
 
 function hunk(): DiffHunk {

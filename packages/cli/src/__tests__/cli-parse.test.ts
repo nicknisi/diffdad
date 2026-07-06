@@ -2,11 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { classifyCommand, parsePrArg } from '../cli';
 
 describe('classifyCommand', () => {
-  it('recognizes watch and comments as subcommands (not PR args)', () => {
-    expect(classifyCommand('watch')).toBe('watch');
-    expect(classifyCommand('comments')).toBe('comments');
-  });
-
   it('recognizes daemon as a subcommand', () => {
     expect(classifyCommand('daemon')).toBe('daemon');
   });

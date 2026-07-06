@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import type {
-  AgentComment,
   Chapter,
   ChapterState,
   CheckRun,
@@ -13,8 +12,6 @@ import type {
   PRComment,
   PRData,
   PRReview,
-  TriageFlag,
-  TriageStatus,
   Unit,
 } from './types';
 import type { RecapResponse } from './recap-types';
@@ -45,19 +42,14 @@ type ReviewState = {
   narrative: NarrativeResponse | null;
   files: DiffFile[];
   comments: PRComment[];
-  agentComments: AgentComment[];
-  /** Watch mode: non-blocking triage flags ("look here first") and the pass's lifecycle status. */
-  triageFlags: TriageFlag[];
-  triageStatus: TriageStatus;
   /**
-   * 'watch' = local working-tree mode (comments go to the agent, not GitHub).
    * 'command-center' = the daemon's cross-repo dashboard (many units behind one app).
    */
-  mode: 'pr' | 'watch' | 'command-center';
+  mode: 'pr' | 'command-center';
   /** Command-center: the daemon's review-unit queue, kept live via the `units` SSE event. */
   units: Unit[];
-  /** Per-unit agent last-seen (epoch-ms, or null if never) behind the drill-in's presence cue. */
-  presence: Record<string, number | null>;
+  /** Wall-clock ms of the last `units` snapshot. Null until the first lands — powers the freshness caption. */
+  lastUnitsAt: number | null;
   /** Command-center client-side route (center vs. a drill-in `/units/:id`). */
   route: Route;
   checkRuns: CheckRun[];
@@ -142,12 +134,10 @@ type ReviewState = {
   cancelCommentDrag: () => void;
   addComment: (comment: PRComment) => void;
   setComments: (comments: PRComment[]) => void;
-  setAgentComments: (comments: AgentComment[]) => void;
-  setTriage: (flags: TriageFlag[], status: TriageStatus) => void;
-  setMode: (mode: 'pr' | 'watch' | 'command-center') => void;
+  setMode: (mode: 'pr' | 'command-center') => void;
   setUnits: (units: Unit[]) => void;
-  /** Record a unit's agent last-seen (from the `presence` SSE event or the drill-in's open fetch). */
-  setPresence: (unitId: string, lastSeenAt: number | null) => void;
+  /** Stamp the freshness clock when a `units` snapshot lands. */
+  setLastUnitsAt: (ts: number) => void;
   /** Navigate the command center, pushing browser history (deep-linkable `/units/:id`). */
   navigate: (route: Route) => void;
   /** Sync the route from the address bar without pushing history (popstate / initial load). */
@@ -301,12 +291,9 @@ export const useReviewStore = create<ReviewState>((set) => ({
   narrative: null,
   files: [],
   comments: [],
-  agentComments: [],
-  triageFlags: [],
-  triageStatus: 'idle',
   mode: 'pr',
   units: [],
-  presence: {},
+  lastUnitsAt: null,
   route: typeof window !== 'undefined' ? parseRoute(window.location.pathname) : { name: 'center' },
   checkRuns: [],
   reviews: [],
@@ -448,11 +435,9 @@ export const useReviewStore = create<ReviewState>((set) => ({
     }),
 
   setComments: (comments) => set({ comments }),
-  setAgentComments: (agentComments) => set({ agentComments }),
-  setTriage: (triageFlags, triageStatus) => set({ triageFlags, triageStatus }),
   setMode: (mode) => set({ mode }),
   setUnits: (units) => set({ units }),
-  setPresence: (unitId, lastSeenAt) => set((s) => ({ presence: { ...s.presence, [unitId]: lastSeenAt } })),
+  setLastUnitsAt: (lastUnitsAt) => set({ lastUnitsAt }),
 
   navigate: (route) => {
     if (typeof window !== 'undefined') window.history.pushState(null, '', routePath(route));

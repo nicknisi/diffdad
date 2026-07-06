@@ -6,19 +6,14 @@ import { readConfig } from '../config';
 import { GitHubClient, type PostCommentOptions } from '../github/client';
 import { parseDiff } from '../github/diff-parser';
 import type { CheckRun, PRComment, PRReview } from '../github/types';
-import { buildLocalReview } from '../local/diff-source';
 import { callAi, generateNarrative } from '../narrative/engine';
-import type { ComputeSlice } from '../mcp/submit';
-import { DecisionChannel } from '../units/decision-channel';
 import { UnitStore } from '../units/store';
-import type { Decision, ReviewUnit } from '../units/types';
+import type { ReviewUnit } from '../units/types';
 import { createDaemonApp, type ReviewInlineComment, SseHub } from './app';
 import { pollOnce } from './poller';
-import { ReviewWorkerPool, type ReviewResult } from './pool';
 
 /** Stable default port so launchd (Phase #23) and manual launches agree. Override with `--port=`. */
 export const DEFAULT_DAEMON_PORT = 4319;
-const DEFAULT_CONCURRENCY = 3;
 /** Cadence for the GitHub review-request poller. One search per tick — well within auth'd rate limits. */
 const DEFAULT_POLL_MS = 60_000;
 
@@ -98,23 +93,25 @@ const a = {
   white: '\x1b[97m',
 };
 
-export type DaemonOptions = { port?: number; concurrency?: number; open?: boolean; pollMs?: number };
+export type DaemonOptions = { port?: number; open?: boolean; pollMs?: number };
 
 /**
  * Start the GitHub review-request poller on an interval. Runs one pass at startup, then every
  * `pollMs`. Each pass is wrapped so a transient GitHub/network failure logs a one-line warning and
  * never crashes the daemon. The authenticated client is resolved once by the caller and shared with
- * the decision/hydrate deps, so there is a single source of truth for "is GitHub wired".
+ * the review/hydrate deps, so there is a single source of truth for "is GitHub wired".
  */
 async function startPoller(
   client: GitHubClient,
   store: UnitStore,
   broadcast: SseHub['broadcast'],
   pollMs: number,
+  fetchPrState: (unit: ReviewUnit) => Promise<{ open: boolean }>,
+  missStreaks: Map<string, number>,
 ): Promise<void> {
   const tick = async () => {
     try {
-      await pollOnce({ search: () => client.searchReviewRequested(), store, broadcast });
+      await pollOnce({ search: () => client.searchReviewRequested(), store, broadcast, fetchPrState, missStreaks });
     } catch (err) {
       console.warn(`[diffdad] review poll failed: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -124,49 +121,39 @@ async function startPoller(
 }
 
 /**
- * Post a `github` unit's verdict to GitHub as a real review. APPROVE / REQUEST_CHANGES per the
- * decision kind. The review body prefers the reviewer's free-form note; absent one, it summarizes
- * the curated concerns into a short line so the PR review is never blank. Throws on API failure —
- * the decision route relies on that to 502 and record NOTHING locally (dad ⇄ GitHub never disagree).
- */
-function makeReviewPoster(client: GitHubClient): (unit: ReviewUnit, decision: Decision) => Promise<void> {
-  return async (unit, decision) => {
-    const { owner, name } = splitRepo(unit.repo);
-    if (unit.prNumber === undefined) {
-      throw new Error(`unit ${unit.unitId} has no PR number`);
-    }
-    const event = decision.kind === 'approved' ? 'APPROVE' : 'REQUEST_CHANGES';
-    let body = (decision.note && decision.note.trim()) || summarizeConcerns(decision);
-    // GitHub rejects a REQUEST_CHANGES review with an empty body (422); an empty APPROVE body is fine.
-    if (!body && event === 'REQUEST_CHANGES') body = 'Changes requested — see Diff Dad.';
-    await client.submitReview(owner, name, unit.prNumber, event, body);
-  };
-}
-
-/** A short review body built from the curated concerns when the reviewer left no free-form note. */
-function summarizeConcerns(decision: Decision): string {
-  const questions = (decision.concerns ?? []).map((c) => c.question).filter(Boolean);
-  if (questions.length === 0) return '';
-  return questions.map((q) => `- ${q}`).join('\n');
-}
-
-/**
  * Lazily hydrate a `github` unit on open: fetch the PR's unified diff, parse it, generate the
  * Phase-1 narrative, attach both to the unit (no status transition — it stays `queued`), and return
  * the updated unit. Wired only when a GitHub client exists; otherwise the hydrate route no-ops.
+ *
+ * `force` powers the per-PR re-read: fetch the PR live first to advance the unit to the current head
+ * SHA (+ fresh title/branch), then bypass the narrative cache READ so a same-SHA regeneration yields
+ * new prose instead of replaying the cached walkthrough. The non-force path is unchanged.
  */
-function makeHydrate(client: GitHubClient, store: UnitStore): (unit: ReviewUnit) => Promise<ReviewUnit> {
-  return async (unit) => {
+function makeHydrate(
+  client: GitHubClient,
+  store: UnitStore,
+): (unit: ReviewUnit, force?: boolean) => Promise<ReviewUnit> {
+  return async (unit, force = false) => {
     const { owner, name } = splitRepo(unit.repo);
-    if (unit.prNumber === undefined) {
+    const prNumber = unit.prNumber;
+    if (prNumber === undefined) {
       throw new Error(`unit ${unit.unitId} has no PR number`);
     }
-    const diff = await client.getPRDiff(owner, name, unit.prNumber);
+    // Re-read: pull the live PR to advance the head SHA (+ refresh title/branch) so the cache key and
+    // diff track the current push, not the SHA frozen at mint.
+    let target = unit;
+    if (force) {
+      const meta = await client.getPR(owner, name, prNumber);
+      target = store.advanceHead(unit.unitId, meta.headSha, meta);
+    }
+    const diff = await client.getPRDiff(owner, name, prNumber);
     const files = parseDiff(diff);
-    const { narrative } = await generateNarrative(unit.metadata, files, [], await readConfig(), undefined, {
-      // contentKey-style cache key: keyed on the head SHA carried in diffContentKey at mint time.
-      cacheKey: { owner, repo: name, number: unit.prNumber, sha: unit.diffContentKey },
+    const { narrative } = await generateNarrative(target.metadata, files, [], await readConfig(), undefined, {
+      // contentKey-style cache key: keyed on the head SHA carried in diffContentKey (advanced above on
+      // a re-read). `force` skips the cache read but still writes, so the fresh prose replaces it.
+      cacheKey: { owner, repo: name, number: prNumber, sha: target.diffContentKey },
       comments: [],
+      force,
     });
     store.attachReview(unit.unitId, files, narrative, narrative.concerns?.length ?? 0);
     return store.get(unit.unitId)!;
@@ -239,32 +226,33 @@ function makeStatusFetcher(
   };
 }
 
+/**
+ * Fetch a `github` unit's PR open/closed state for the poller's queue reconciliation. A merged PR is
+ * closed on GitHub, so `state === 'open'` is the only distinction the reconciler needs. Wired only when
+ * a GitHub client exists; throws on API failure so the reconciler treats it as "no evidence" and skips.
+ */
+function makePrStateFetcher(client: GitHubClient): (unit: ReviewUnit) => Promise<{ open: boolean }> {
+  return async (unit) => {
+    const { owner, name } = splitRepo(unit.repo);
+    if (unit.prNumber === undefined) throw new Error(`unit ${unit.unitId} has no PR number`);
+    const pr = await client.getPR(owner, name, unit.prNumber);
+    return { open: pr.state === 'open' };
+  };
+}
+
 /** Split `owner/name` for the narrative cache key; tolerate a bare name. */
 function splitRepo(repo: string): { owner: string; name: string } {
   const slash = repo.indexOf('/');
   return slash === -1 ? { owner: 'local', name: repo } : { owner: repo.slice(0, slash), name: repo.slice(slash + 1) };
 }
 
-/** Run Phase 1's narrative pipeline for one unit. `toResolve` = the count of concerns to address. */
-async function reviewUnit(unit: ReviewUnit): Promise<ReviewResult> {
-  const config = await readConfig();
-  const { owner, name } = splitRepo(unit.repo);
-  const { narrative } = await generateNarrative(unit.metadata, unit.files, [], config, undefined, {
-    // contentKey (not headSha) keys the cache — it moves with uncommitted edits, headSha doesn't.
-    cacheKey: { owner, repo: name, number: 0, sha: unit.diffContentKey },
-    comments: [],
-  });
-  return { narrative, toResolve: narrative.concerns?.length ?? 0 };
-}
-
 /**
  * Start the per-machine daemon: one long-lived process owning the cross-repo `UnitStore`, serving
- * the command center + units API + MCP endpoint, and draining the review queue through a bounded
- * worker pool. Unlike `dad review`/`dad watch`, it never exits on browser disconnect.
+ * the command center + units API for GitHub PR review, and polling GitHub for review requests.
+ * Unlike `dad review`, it never exits on browser disconnect.
  */
 export async function startDaemon(opts: DaemonOptions = {}): Promise<number> {
   const port = opts.port ?? DEFAULT_DAEMON_PORT;
-  const concurrency = opts.concurrency ?? DEFAULT_CONCURRENCY;
   const pollFlag = Bun.argv.find((f) => f.startsWith('--poll='));
   const pollMs =
     opts.pollMs ?? (pollFlag ? parseInt(pollFlag.split('=')[1] ?? '0', 10) || undefined : undefined) ?? DEFAULT_POLL_MS;
@@ -290,29 +278,38 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<number> {
   process.once('SIGTERM', () => process.exit(143));
 
   const store = await UnitStore.load();
-  const decision = new DecisionChannel();
   const hub = new SseHub();
 
-  const pool = new ReviewWorkerPool({ store, review: reviewUnit, broadcast: hub.broadcast, concurrency });
-  const computeSlice: ComputeSlice = (worktreePath, baseRef) => buildLocalReview(baseRef, { cwd: worktreePath });
-
-  // Resolve GitHub auth once: the same client drives the poller AND the github decision/hydrate deps.
-  // No token → all three are skipped/undefined and the routes no-op gracefully (local units still work).
+  // Resolve GitHub auth once: the same client drives the poller AND the github review/hydrate deps.
+  // No token → the deps are undefined and the routes no-op gracefully.
   const githubToken = await resolveGitHubToken();
   const githubClient = githubToken ? new GitHubClient(githubToken) : null;
 
+  // One shared miss-streak map so the interval poller and the manual /api/poll reconcile against the
+  // same streak state (a unit missing on one path then the other still removes at two total misses).
+  const missStreaks = new Map<string, number>();
+  const fetchPrState = githubClient ? makePrStateFetcher(githubClient) : undefined;
+
   const { app } = createDaemonApp({
     store,
-    decision,
     hub,
-    computeSlice,
-    onSubmitted: () => pool.kick(),
-    reviewPoster: githubClient ? makeReviewPoster(githubClient) : undefined,
     hydrate: githubClient ? makeHydrate(githubClient, store) : undefined,
     commentFetcher: githubClient ? makeCommentFetcher(githubClient) : undefined,
     commentPoster: githubClient ? makeCommentPoster(githubClient) : undefined,
     reviewSubmitter: githubClient ? makeReviewSubmitter(githubClient) : undefined,
     statusFetcher: githubClient ? makeStatusFetcher(githubClient) : undefined,
+    // Manual refresh runs the identical pass startPoller does — one on-demand `pollOnce` over the same
+    // search+store+broadcast. No token → undefined and the /api/poll route 503s.
+    pollNow: githubClient
+      ? () =>
+          pollOnce({
+            search: () => githubClient.searchReviewRequested(),
+            store,
+            broadcast: hub.broadcast,
+            fetchPrState,
+            missStreaks,
+          })
+      : undefined,
     // AI works without a GitHub token (the default provider shells out to `claude -p`), so it's
     // always wired — the route reads config per-call, mirroring the PR server's /api/ai.
     ai: async (system, user) => callAi(await readConfig(), system, user),
@@ -331,28 +328,17 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<number> {
   }
 
   const url = `http://localhost:${server.port}`;
-  const pending = store.list({ status: 'submitted' }).length + store.list({ status: 'reviewing' }).length;
 
   console.log(`\n  ${a.purple}${a.bold}Diff Dad${a.reset}  ${a.dim}—${a.reset}  ${a.white}daemon${a.reset}`);
-  console.log(
-    `  ${a.dim}${store.list().length} unit${store.list().length === 1 ? '' : 's'} loaded` +
-      `${pending > 0 ? `, ${pending} resuming review` : ''}${a.reset}`,
-  );
+  console.log(`  ${a.dim}${store.list().length} unit${store.list().length === 1 ? '' : 's'} loaded${a.reset}`);
   console.log(`\n  ${a.purple}${a.bold}${url}${a.reset}`);
-  console.log(`\n  ${a.dim}Point an agent at the review loop:${a.reset}`);
-  console.log(`  ${a.cyan}claude mcp add --transport http diffdad ${url}/mcp${a.reset}`);
-  console.log(
-    `  ${a.dim}Then have it call ${a.reset}${a.cyan}submit_for_review${a.reset}${a.dim} and park on ${a.reset}${a.cyan}await_decision${a.reset}${a.dim}.${a.reset}\n`,
-  );
-
-  // Resume any work persisted across a restart (submitted never started; reviewing crashed mid-flight).
-  pool.kick();
+  console.log(`\n  ${a.dim}Watching GitHub for review requests.${a.reset}`);
 
   // Open the GitHub "reviews requested of me" door: poll on an interval, mint/link/resurface units.
   // Awaited only through the initial pass; the interval then runs detached. With no token the whole
   // GitHub door is closed (no poll, no review-post, no lazy-narrate) — local units still flow.
   if (githubClient) {
-    await startPoller(githubClient, store, hub.broadcast, pollMs);
+    await startPoller(githubClient, store, hub.broadcast, pollMs, fetchPrState!, missStreaks);
   } else {
     console.log(
       `  ${a.gray}○${a.reset} ${a.dim}GitHub poller off — no token. Set ${a.reset}${a.cyan}DIFFDAD_GITHUB_TOKEN${a.reset}` +

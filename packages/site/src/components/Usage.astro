@@ -6,11 +6,11 @@ import InstallPill from './InstallPill.astro';
   <div class="wrap">
     <div class="section-eye">// usage</div>
     <h2 class="font-serif font-semibold text-[44px] leading-[1.1] tracking-[-0.02em] m-0 mb-[18px] text-balance">
-      Five commands, three flags, <em class="italic text-accent-2">one</em> mustache.
+      Two ways in, <em class="italic text-accent-2">one</em> mustache.
     </h2>
     <p class="text-lg text-ink-2 max-w-[620px] m-0 mb-10">
-      The CLI fetches a PR, generates the narrative, starts a local server, and opens your browser.
-      That's it. Dad's been doing this for years.
+      Point dad at a single PR for a one-shot read, or start the daemon and let the command center
+      round up every review waiting on you. Either way: local server, your browser, done.
     </p>
 
     <div class="grid grid-cols-1 md:grid-cols-[1.2fr_1fr] gap-7">
@@ -18,6 +18,10 @@ import InstallPill from './InstallPill.astro';
         <div class="text-[11px] text-[#6B7B9A] tracking-[0.1em] uppercase mb-[14px]">// commands</div>
         <div class="grid grid-cols-[minmax(180px,max-content)_1fr] gap-[18px] py-1"><span class="text-[#FFF6E6]">dad &lt;pr&gt;</span><span class="text-[#8A95AD]">Open a PR as a narrated story</span></div>
         <div class="grid grid-cols-[minmax(180px,max-content)_1fr] gap-[18px] py-1"><span class="text-[#FFF6E6]">dad review &lt;pr&gt;</span><span class="text-[#8A95AD]">Same as above (explicit)</span></div>
+        <div class="grid grid-cols-[minmax(180px,max-content)_1fr] gap-[18px] py-1"><span class="text-[#FFF6E6]">dad daemon</span><span class="text-[#8A95AD]">Start the review daemon + command center</span></div>
+        <div class="grid grid-cols-[minmax(180px,max-content)_1fr] gap-[18px] py-1"><span class="text-[#FFF6E6]">dad daemon status</span><span class="text-[#8A95AD]">Is the daemon running?</span></div>
+        <div class="grid grid-cols-[minmax(180px,max-content)_1fr] gap-[18px] py-1"><span class="text-[#FFF6E6]">dad daemon install</span><span class="text-[#8A95AD]">Install a launchd agent (starts at login, macOS)</span></div>
+        <div class="grid grid-cols-[minmax(180px,max-content)_1fr] gap-[18px] py-1"><span class="text-[#FFF6E6]">dad daemon uninstall</span><span class="text-[#8A95AD]">Remove the launchd agent</span></div>
         <div class="grid grid-cols-[minmax(180px,max-content)_1fr] gap-[18px] py-1"><span class="text-[#FFF6E6]">dad config</span><span class="text-[#8A95AD]">Configure AI provider, GH token, display</span></div>
         <div class="grid grid-cols-[minmax(180px,max-content)_1fr] gap-[18px] py-1"><span class="text-[#FFF6E6]">dad cache clear</span><span class="text-[#8A95AD]">Wipe cached narratives</span></div>
         <div class="grid grid-cols-[minmax(180px,max-content)_1fr] gap-[18px] py-1"><span class="text-[#FFF6E6]">dad --version</span><span class="text-[#8A95AD]">Print version</span></div>
@@ -37,7 +41,10 @@ import InstallPill from './InstallPill.astro';
         <div class="grid grid-cols-[minmax(170px,max-content)_1fr] gap-[14px] py-2 text-[13px] items-baseline border-t border-line"><span class="font-mono text-accent-2 font-medium whitespace-nowrap">--port=3000</span><span class="text-ink-2">Use a specific port</span></div>
 
         <h4 class="font-serif font-semibold text-xl m-0 mt-[22px] mb-3">Try it</h4>
-        <InstallPill cmd="dad nicknisi/diffdad#42" />
+        <div class="flex flex-col gap-2 items-start">
+          <InstallPill cmd="dad nicknisi/diffdad#42" />
+          <InstallPill cmd="dad daemon" />
+        </div>
       </div>
     </div>
   </div>

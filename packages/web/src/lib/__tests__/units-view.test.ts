@@ -1,14 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
-  agentCommentsEndpoint,
-  agentPresence,
   aiEndpoint,
-  commentGoesToAgent,
+  buildRepoFacets,
   commentsEndpoint,
+  groupByOwner,
   groupOf,
   groupUnits,
   parseRoute,
-  recommendedAction,
   relativeTime,
   repoOptions,
   reviewEndpoint,
@@ -42,8 +40,8 @@ describe('groupOf', () => {
     expect(groupOf('queued')).toBe('needs-you');
   });
 
-  it('routes work-in-motion statuses to in-flight', () => {
-    const inflight: UnitStatus[] = ['submitted', 'reviewing', 'addressing', 'changes_requested'];
+  it('routes changes_requested to in-flight (the ball is back with the author)', () => {
+    const inflight: UnitStatus[] = ['changes_requested'];
     for (const s of inflight) expect(groupOf(s)).toBe('in-flight');
   });
 
@@ -57,9 +55,9 @@ describe('groupUnits', () => {
   it('partitions units into the three command-center groups', () => {
     const units = [
       mkUnit({ unitId: 'a', status: 'queued' }),
-      mkUnit({ unitId: 'b', status: 'reviewing' }),
+      mkUnit({ unitId: 'b', status: 'changes_requested' }),
       mkUnit({ unitId: 'c', status: 'approved' }),
-      mkUnit({ unitId: 'd', status: 'submitted' }),
+      mkUnit({ unitId: 'd', status: 'changes_requested' }),
     ];
     const g = groupUnits(units);
     expect(g.needsYou.map((u) => u.unitId)).toEqual(['a']);
@@ -78,8 +76,8 @@ describe('groupUnits', () => {
 
   it('orders in-flight and cleared by most-recent activity first', () => {
     const units = [
-      mkUnit({ unitId: 'old', status: 'reviewing', updatedAt: '2026-06-26T00:01:00.000Z' }),
-      mkUnit({ unitId: 'new', status: 'reviewing', updatedAt: '2026-06-26T00:09:00.000Z' }),
+      mkUnit({ unitId: 'old', status: 'changes_requested', updatedAt: '2026-06-26T00:01:00.000Z' }),
+      mkUnit({ unitId: 'new', status: 'changes_requested', updatedAt: '2026-06-26T00:09:00.000Z' }),
     ];
     expect(groupUnits(units).inFlight.map((u) => u.unitId)).toEqual(['new', 'old']);
   });
@@ -94,33 +92,6 @@ describe('verdictTone', () => {
   });
 });
 
-describe('recommendedAction', () => {
-  it('flags a failed review for attention regardless of verdict', () => {
-    const a = recommendedAction(mkUnit({ error: 'pipeline blew up', verdict: 'safe' }));
-    expect(a.primary).toBe('review');
-    expect(a.tone).toBe('risk');
-    expect(a.label.toLowerCase()).toContain('fail');
-  });
-
-  it('recommends resolving when there are open concerns, surfacing the count', () => {
-    const a = recommendedAction(mkUnit({ toResolve: 3, verdict: 'caution' }));
-    expect(a.primary).toBe('review');
-    expect(a.label).toContain('3');
-  });
-
-  it('recommends a one-click approve only when safe with nothing to resolve', () => {
-    const a = recommendedAction(mkUnit({ toResolve: 0, verdict: 'safe' }));
-    expect(a.primary).toBe('approve');
-    expect(a.tone).toBe('safe');
-  });
-
-  it('recommends review for a risky verdict even with nothing to resolve', () => {
-    const a = recommendedAction(mkUnit({ toResolve: 0, verdict: 'risky' }));
-    expect(a.primary).toBe('review');
-    expect(a.tone).toBe('risk');
-  });
-});
-
 describe('repoOptions', () => {
   it('returns the distinct repos, sorted, for the filter', () => {
     const units = [
@@ -129,6 +100,75 @@ describe('repoOptions', () => {
       mkUnit({ repo: 'workos/node' }),
     ];
     expect(repoOptions(units)).toEqual(['workos/authkit', 'workos/node']);
+  });
+});
+
+describe('buildRepoFacets', () => {
+  it('counts needs-you per repo from the unfiltered list and totals them for "All"', () => {
+    const units = [
+      mkUnit({ repo: 'workos/authkit', status: 'queued' }),
+      mkUnit({ repo: 'workos/authkit', status: 'queued' }),
+      mkUnit({ repo: 'workos/authkit', status: 'changes_requested' }), // in-flight, not needs-you
+      mkUnit({ repo: 'workos/node', status: 'queued' }),
+      mkUnit({ repo: 'workos/node', status: 'approved' }), // cleared
+    ];
+    const f = buildRepoFacets(units);
+    expect(f.needsYou).toBe(3);
+    expect(f.busy.find((r) => r.repo === 'workos/authkit')).toMatchObject({
+      owner: 'workos',
+      shortName: 'authkit',
+      needsYou: 2,
+      total: 3,
+    });
+  });
+
+  it('sorts busy repos busiest-first (needs-you desc, then name)', () => {
+    const units = [
+      mkUnit({ repo: 'o/a', status: 'queued' }),
+      mkUnit({ repo: 'o/b', status: 'queued' }),
+      mkUnit({ repo: 'o/b', status: 'queued' }),
+    ];
+    expect(buildRepoFacets(units).busy.map((r) => r.repo)).toEqual(['o/b', 'o/a']);
+  });
+
+  it('splits repos with zero needs-you into quiet (still reachable), keeping their total', () => {
+    const units = [
+      mkUnit({ repo: 'o/busy', status: 'queued' }),
+      mkUnit({ repo: 'o/quiet', status: 'changes_requested' }),
+      mkUnit({ repo: 'o/quiet', status: 'approved' }),
+    ];
+    const f = buildRepoFacets(units);
+    expect(f.busy.map((r) => r.repo)).toEqual(['o/busy']);
+    expect(f.quiet.map((r) => r.repo)).toEqual(['o/quiet']);
+    expect(f.quiet[0]).toMatchObject({ needsYou: 0, total: 2 });
+  });
+
+  it('flags multiple owners so the sidebar can label groups', () => {
+    expect(buildRepoFacets([mkUnit({ repo: 'a/one' }), mkUnit({ repo: 'a/two' })]).multipleOwners).toBe(false);
+    expect(buildRepoFacets([mkUnit({ repo: 'a/one' }), mkUnit({ repo: 'b/two' })]).multipleOwners).toBe(true);
+  });
+
+  it('handles a repo with no owner segment', () => {
+    expect(buildRepoFacets([mkUnit({ repo: 'localonly', status: 'queued' })]).busy[0]).toMatchObject({
+      owner: '',
+      shortName: 'localonly',
+    });
+  });
+});
+
+describe('groupByOwner', () => {
+  it('groups an already-sorted facet list by owner, preserving the busiest-first order', () => {
+    const busy = buildRepoFacets([
+      mkUnit({ repo: 'workos/authkit', status: 'queued' }),
+      mkUnit({ repo: 'workos/authkit', status: 'queued' }),
+      mkUnit({ repo: 'vercel/next', status: 'queued' }),
+      mkUnit({ repo: 'workos/node', status: 'queued' }),
+    ]).busy;
+    const groups = groupByOwner(busy);
+    // workos/authkit(2) leads → workos section first; node folds up into that same section.
+    expect(groups.map((g) => g.owner)).toEqual(['workos', 'vercel']);
+    expect(groups[0]?.repos.map((r) => r.shortName)).toEqual(['authkit', 'node']);
+    expect(groups[1]?.repos.map((r) => r.shortName)).toEqual(['next']);
   });
 });
 
@@ -172,9 +212,8 @@ describe('commentsEndpoint', () => {
   it('falls back to the PR endpoint at the command center root (no open unit)', () => {
     expect(commentsEndpoint('command-center', { name: 'center' })).toBe('/api/comments');
   });
-  it('uses the PR endpoint in pr and watch modes', () => {
+  it('uses the PR endpoint in pr mode', () => {
     expect(commentsEndpoint('pr', { name: 'center' })).toBe('/api/comments');
-    expect(commentsEndpoint('watch', { name: 'unit', unitId: 'u_1' })).toBe('/api/comments');
   });
 });
 
@@ -191,26 +230,8 @@ describe('reviewEndpoint / aiEndpoint', () => {
   });
 });
 
-describe('agentCommentsEndpoint', () => {
-  it('targets the unit-scoped endpoint in a command-center drill-in', () => {
-    expect(agentCommentsEndpoint('command-center', { name: 'unit', unitId: 'u_1' })).toBe(
-      '/api/units/u_1/agent-comments',
-    );
-  });
-  it('falls back to the single-mailbox endpoint in watch mode and at the center root', () => {
-    expect(agentCommentsEndpoint('watch', { name: 'center' })).toBe('/api/agent-comments');
-    expect(agentCommentsEndpoint('command-center', { name: 'center' })).toBe('/api/agent-comments');
-  });
-});
-
 describe('commentTarget', () => {
-  it('sends to the agent loop in watch mode and on local daemon units', () => {
-    expect(commentTarget('watch', { name: 'center' }, [])).toBe('agent');
-    const units = [mkUnit({ unitId: 'u1', source: 'cli' }), mkUnit({ unitId: 'u2', source: 'agent' })];
-    expect(commentTarget('command-center', { name: 'unit', unitId: 'u1' }, units)).toBe('agent');
-    expect(commentTarget('command-center', { name: 'unit', unitId: 'u2' }, units)).toBe('agent');
-  });
-  it('targets the GitHub PR on a github daemon unit (the relabel case)', () => {
+  it('targets the GitHub PR on a github daemon unit', () => {
     const units = [mkUnit({ unitId: 'g1', source: 'github' })];
     expect(commentTarget('command-center', { name: 'unit', unitId: 'g1' }, units)).toBe('github');
   });
@@ -221,54 +242,15 @@ describe('commentTarget', () => {
   });
 });
 
-describe('commentGoesToAgent', () => {
-  it('always routes to the agent loop in watch mode', () => {
-    expect(commentGoesToAgent('watch', { name: 'center' }, [])).toBe(true);
-  });
-  it('routes to GitHub in pr mode', () => {
-    expect(commentGoesToAgent('pr', { name: 'center' }, [])).toBe(false);
-  });
-  it('routes a LOCAL daemon unit (agent/cli) to the agent loop', () => {
-    const units = [mkUnit({ unitId: 'u1', source: 'cli' }), mkUnit({ unitId: 'u2', source: 'agent' })];
-    expect(commentGoesToAgent('command-center', { name: 'unit', unitId: 'u1' }, units)).toBe(true);
-    expect(commentGoesToAgent('command-center', { name: 'unit', unitId: 'u2' }, units)).toBe(true);
-  });
-  it('routes a GITHUB daemon unit to GitHub (it has a real PR)', () => {
-    const units = [mkUnit({ unitId: 'g1', source: 'github' })];
-    expect(commentGoesToAgent('command-center', { name: 'unit', unitId: 'g1' }, units)).toBe(false);
-  });
-  it('routes to GitHub at the center root or for an unknown unit', () => {
-    expect(commentGoesToAgent('command-center', { name: 'center' }, [])).toBe(false);
-    expect(commentGoesToAgent('command-center', { name: 'unit', unitId: 'missing' }, [])).toBe(false);
-  });
-});
-
 describe('sourceBadge', () => {
-  it('labels each ingestion door distinctly so the queue is legible', () => {
-    expect(sourceBadge('agent')).toMatchObject({ label: 'agent', tone: 'agent' });
-    expect(sourceBadge('cli')).toMatchObject({ label: 'local', tone: 'local' });
+  it('labels the github door so the queue is legible', () => {
     expect(sourceBadge('github')).toMatchObject({ label: 'GitHub', tone: 'github' });
   });
-  it('defaults an unset source to the agent door (matches server back-compat)', () => {
-    expect(sourceBadge(undefined)).toMatchObject({ label: 'agent', tone: 'agent' });
+  it('defaults an unset source to the github door', () => {
+    expect(sourceBadge(undefined)).toMatchObject({ label: 'GitHub', tone: 'github' });
   });
   it('carries a human title explaining where the unit came from', () => {
     expect(sourceBadge('github').title).toMatch(/github/i);
-    expect(sourceBadge('cli').title).toMatch(/dad add/i);
-  });
-});
-
-describe('agentPresence', () => {
-  const now = Date.parse('2026-06-26T12:00:00.000Z');
-  it('reads as disconnected when an agent has never been seen', () => {
-    expect(agentPresence(null, now)).toEqual({ connected: false, label: 'no agent connected' });
-    expect(agentPresence(undefined, now)).toEqual({ connected: false, label: 'no agent connected' });
-  });
-  it('reads as connected when the agent checked in within the freshness window', () => {
-    expect(agentPresence(now - 60_000, now)).toEqual({ connected: true, label: 'agent connected' });
-  });
-  it('goes stale (disconnected) once the last check-in is past the window', () => {
-    expect(agentPresence(now - 10 * 60_000, now)).toEqual({ connected: false, label: 'no agent connected' });
   });
 });
 

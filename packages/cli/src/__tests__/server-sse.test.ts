@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { AgentCommentStore } from '../agent-comments/store';
 import { createServer, type ServerContext } from '../server';
 import type { NarrativeResponse } from '../narrative/types';
 import type { CheckRun, DiffFile, PRComment, PRMetadata, PRReview } from '../github/types';
@@ -142,8 +141,6 @@ function mkContext(over: Partial<ServerContext> = {}): ServerContext {
     owner: 'o',
     repo: 'r',
     headSha: 'sha-A',
-    store: new AgentCommentStore('__diffdad_test__sse'),
-    mode: 'pr',
     ...over,
   };
 }

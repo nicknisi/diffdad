@@ -130,25 +130,13 @@ export type DiffLine = {
   lineNumber: { old?: number; new?: number };
 };
 
+/** Shared severity vocabulary for the beat rail + walkthrough resolve strips (see `lib/severity.ts`). */
 export type TriageSeverity = 'risk' | 'warn' | 'info';
 
-export type TriageStatus = 'idle' | 'running' | 'ready' | 'error';
-
-/** A single watch-mode triage flag: "look here first" for an agent-era failure mode. */
-export type TriageFlag = {
-  file: string;
-  line?: number;
-  severity: TriageSeverity;
-  kind: string;
-  message: string;
-};
-
-/** Numeric for GitHub comments, string (UUID) for agent comments. */
+/** GitHub comment id (numeric). Kept as an alias for the inline-comment pipeline. */
 export type CommentId = number | string;
 
 export type PRComment = {
-  // string ids carry agent comments (UUIDs) through the same inline pipeline as GitHub
-  // comments (numeric ids); placement is by path+line, threading by id/inReplyToId.
   id: CommentId;
   author: string;
   avatarUrl?: string;
@@ -162,38 +150,6 @@ export type PRComment = {
   startSide?: string;
   inReplyToId?: number | string;
   diffHunk?: string;
-  /** Agent-loop fields (watch mode). Absent for GitHub comments. */
-  source?: 'agent' | 'github';
-  status?: 'open' | 'delivered' | 'addressed';
-  addressedNote?: string;
-};
-
-// Agent-loop comments (watch mode). Kept distinct from PRComment — string ids and a
-// status lifecycle — so they never flow through the numeric-id GitHub comment pipeline.
-export type AgentReply = {
-  id: string;
-  author: 'user' | 'agent';
-  body: string;
-  createdAt: string;
-};
-
-export type AgentComment = {
-  id: string;
-  path: string;
-  line: number;
-  side: 'LEFT' | 'RIGHT';
-  startLine?: number;
-  startSide?: 'LEFT' | 'RIGHT';
-  body: string;
-  status: 'open' | 'delivered' | 'addressed';
-  author: 'user' | 'agent';
-  replies: AgentReply[];
-  hunkContext: string;
-  chapterTitle?: string;
-  createdAt: string;
-  deliveredAt?: string;
-  addressedAt?: string;
-  addressedNote?: string;
 };
 
 export type ChapterState = 'reading' | 'reviewing' | 'replied' | 'reviewed';
@@ -247,16 +203,7 @@ export type CheckRun = {
  * into `setData` as the unit's PR. `narrative`/`files` are absent until the review worker queues
  * the unit; the diff (`files`) is present from submit time so the drill-in renders diff-first.
  */
-export type UnitStatus =
-  | 'submitted'
-  | 'reviewing'
-  | 'queued'
-  | 'approved'
-  | 'changes_requested'
-  | 'addressing'
-  | 'done';
-
-export type UnitDecisionKind = 'approved' | 'changes_requested';
+export type UnitStatus = 'queued' | 'approved' | 'changes_requested' | 'done';
 
 export type Unit = {
   unitId: string;
@@ -264,8 +211,8 @@ export type Unit = {
   taskLabel: string;
   intent: string;
   status: UnitStatus;
-  /** Ingestion door (CLI mirror of `UnitSource`). Defaults to `'agent'` server-side for back-compat. */
-  source?: 'agent' | 'cli' | 'github';
+  /** Ingestion door — github-only now (every unit mirrors a real GitHub PR). */
+  source?: 'github';
   /** github-only: the PR this unit mirrors. Drives the author cue + "View on GitHub" link + lazy hydrate. */
   prNumber?: number;
   prUrl?: string;

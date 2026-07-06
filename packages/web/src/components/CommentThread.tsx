@@ -78,11 +78,9 @@ export function CommentThread({
   const drafts = useReviewStore((s) => s.drafts);
   const addDraft = useReviewStore((s) => s.addDraft);
   const removeDraft = useReviewStore((s) => s.removeDraft);
-  // Where this comment lands drives the composer's copy + affordances. `agent` (watch, or a local
-  // daemon unit) drops the "Add to review" batch flow and relabels; `github` (a daemon PR unit) keeps
-  // the GitHub-comment flow but says so plainly ("Comment on PR"); `review` is PR mode's batch flow.
+  // Where this comment lands drives the composer's copy. `github` (a daemon PR unit) keeps the
+  // GitHub-comment flow but says so plainly ("Comment on PR"); `review` is PR mode's batch flow.
   const target = useReviewStore((s) => commentTarget(s.mode, s.route, s.units));
-  const isAgentTarget = target === 'agent';
 
   const draftKey = useMemo(() => draftKeyFor(path, line, chapterIndex), [path, line, chapterIndex]);
 
@@ -242,7 +240,7 @@ export function CommentThread({
           value={body}
           onChange={(e) => setBody(e.target.value)}
           onKeyDown={onKeyDown}
-          placeholder={isAgentTarget ? 'Leave a note for the agent…' : copy.commentPlaceholder}
+          placeholder={copy.commentPlaceholder}
           className="block w-full resize-y rounded-md border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--fg-1)] outline-none focus:border-[var(--brand)]"
           rows={3}
         />
@@ -261,31 +259,21 @@ export function CommentThread({
               Cancel
             </button>
           )}
-          {!isAgentTarget && (
-            <button
-              type="button"
-              disabled={!body.trim() || !draftKey}
-              onClick={saveDraft}
-              className="rounded-md border border-[var(--border-strong)] bg-[var(--bg-panel)] px-3 py-1 text-sm font-medium text-[var(--fg-1)] shadow-sm hover:bg-[var(--bg-subtle)] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Add to review
-            </button>
-          )}
+          <button
+            type="button"
+            disabled={!body.trim() || !draftKey}
+            onClick={saveDraft}
+            className="rounded-md border border-[var(--border-strong)] bg-[var(--bg-panel)] px-3 py-1 text-sm font-medium text-[var(--fg-1)] shadow-sm hover:bg-[var(--bg-subtle)] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Add to review
+          </button>
           <button
             type="button"
             disabled={!body.trim() || submitting}
             onClick={() => void submit()}
             className="rounded-md bg-[var(--brand)] px-3 py-1 text-sm font-semibold text-white shadow-sm hover:bg-[var(--brand-hover)] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {submitting
-              ? isAgentTarget
-                ? 'Sending…'
-                : 'Posting...'
-              : isAgentTarget
-                ? 'Send to agent'
-                : target === 'github'
-                  ? 'Comment on PR'
-                  : 'Comment'}
+            {submitting ? 'Posting...' : target === 'github' ? 'Comment on PR' : 'Comment'}
           </button>
         </div>
       </div>

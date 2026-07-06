@@ -2,7 +2,7 @@ import type { DiffDadConfig } from '../config';
 import type { DiffFile, PRMetadata } from '../github/types';
 import { callAi, type AiUsage } from './ai-runtime';
 import type { HunkHint } from './hints';
-import { parseLooseJson } from './json-parse';
+import { parseLooseJson, rawResponseSnippet } from './json-parse';
 import { buildPlannerPrompt, type PreviousNarrativeContext } from './prompt';
 import type { Plan, PlanTheme } from './plan-types';
 
@@ -72,7 +72,9 @@ export async function runPlanner(input: PlannerInput): Promise<PlannerResult> {
  */
 export function parsePlanResponse(text: string): unknown {
   const parsed = parseLooseJson(text);
-  if (parsed == null) throw new Error('Planner returned non-JSON (no recoverable object in response)');
+  if (parsed == null) {
+    throw new Error(`Planner returned non-JSON (no recoverable object in response)${rawResponseSnippet(text)}`);
+  }
   return parsed;
 }
 

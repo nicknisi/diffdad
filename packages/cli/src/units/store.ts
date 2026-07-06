@@ -3,25 +3,15 @@ import { join } from 'path';
 import { dataDir } from '../paths';
 import type { DiffFile, PRMetadata } from '../github/types';
 import type { NarrativeResponse } from '../narrative/types';
-import {
-  type Decision,
-  IllegalTransitionError,
-  type NewReviewUnit,
-  type ReviewUnit,
-  type UnitStatus,
-  UnknownUnitError,
-} from './types';
+import { type Decision, IllegalTransitionError, type ReviewUnit, type UnitStatus, UnknownUnitError } from './types';
 
 const DEFAULT_DIR = join(dataDir(), 'units');
 
-/** Permitted state-machine edges (spec-phase-2 Data Model). An unlisted edge throws. */
+/** Permitted forward-only state-machine edges (github-only). An unlisted edge throws. */
 const TRANSITIONS: Record<UnitStatus, UnitStatus[]> = {
-  submitted: ['reviewing'],
-  reviewing: ['queued'],
   queued: ['approved', 'changes_requested'],
   approved: ['done'],
-  changes_requested: ['addressing'],
-  addressing: ['reviewing'],
+  changes_requested: [],
   done: [],
 };
 
@@ -40,23 +30,12 @@ export type StoreOptions = {
 
 export type UnitFilter = { status?: UnitStatus; repo?: string };
 
-/** A fresh diff slice re-ingested into an existing local unit (re-`add` dedup, or retry of a review). */
-export type ResubmitInput = {
-  taskLabel?: string;
-  intent?: string;
-  baseRef: string;
-  diffContentKey: string;
-  files: DiffFile[];
-  metadata: PRMetadata;
-};
-
 /**
- * The cross-repo review-unit store — the spine of the daemon, shared by the MCP tools and the
- * HTTP routes. In-memory (keyed by globally-unique `unitId`) with best-effort write-through to
- * one JSON file per unit under <dataDir>/units/ (see paths.ts). Single-process synchronous mutations +
- * `save()` after each — no real concurrency in Bun's loop (same reasoning as agent-comments).
- * Mutations validate against the state machine; an illegal jump throws a typed error the MCP
- * layer maps to a tool error.
+ * The cross-repo review-unit store — the spine of the daemon, backing its HTTP routes. In-memory
+ * (keyed by globally-unique `unitId`) with best-effort write-through to one JSON file per unit under
+ * <dataDir>/units/ (see paths.ts). Single-process synchronous mutations + `save()` after each — no
+ * real concurrency in Bun's loop. Mutations validate against the state machine; an illegal jump
+ * throws a typed error the route maps to a 409.
  */
 export class UnitStore {
   private units = new Map<string, ReviewUnit>();
@@ -89,10 +68,8 @@ export class UnitStore {
           }),
       );
       for (const u of parsed) {
-        if (u && typeof u.unitId === 'string') {
-          u.source ??= 'agent'; // back-compat: files written before the discriminator existed
-          initial.push(u);
-        }
+        // Drop anything not github-sourced: a unit written by the old local path is no longer representable.
+        if (u && typeof u.unitId === 'string' && u.source === 'github') initial.push(u);
       }
     } catch {
       // dir missing — start clean
@@ -129,71 +106,9 @@ export class UnitStore {
   }
 
   /**
-   * Find a local (cli/agent) unit by its worktree path — the dedup/retry identity. A second `dad add`
-   * from the same checkout updates this unit in place rather than minting a duplicate. github units
-   * carry no worktree (`''`), so they never match.
-   */
-  findByWorktree(worktreePath: string): ReviewUnit | undefined {
-    for (const u of this.units.values()) {
-      if (u.source !== 'github' && u.worktreePath === worktreePath) return u;
-    }
-    return undefined;
-  }
-
-  /**
-   * Re-ingest a fresh slice into an existing local unit: back to `submitted` for re-review, prior
-   * narrative / verdict / decision / error cleared. Deliberately bypasses the forward-only machine —
-   * this is new content for the same worktree (a re-`add` or a retry of a failed review), not a state
-   * transition — which is also the only way a `queued` (failed) unit can re-enter the worker pool.
-   */
-  async resubmit(unitId: string, input: ResubmitInput): Promise<ReviewUnit> {
-    const unit = this.require(unitId);
-    unit.status = 'submitted';
-    unit.baseRef = input.baseRef;
-    unit.diffContentKey = input.diffContentKey;
-    unit.files = input.files;
-    unit.metadata = input.metadata;
-    if (input.taskLabel !== undefined) unit.taskLabel = input.taskLabel;
-    if (input.intent !== undefined) unit.intent = input.intent;
-    unit.narrative = undefined;
-    unit.verdict = undefined;
-    unit.decision = undefined;
-    unit.error = undefined;
-    unit.toResolve = 0;
-    unit.updatedAt = this.now();
-    await this.save(unit);
-    return unit;
-  }
-
-  async add(input: NewReviewUnit): Promise<ReviewUnit> {
-    const ts = this.now();
-    const unit: ReviewUnit = {
-      unitId: this.genId(),
-      repo: input.repo,
-      source: input.source ?? 'agent',
-      worktreePath: input.worktreePath,
-      taskLabel: input.taskLabel,
-      intent: input.intent,
-      uncertainties: input.uncertainties ?? [],
-      baseRef: input.baseRef,
-      diffContentKey: input.diffContentKey,
-      status: 'submitted',
-      toResolve: 0,
-      files: input.files,
-      metadata: input.metadata,
-      createdAt: ts,
-      updatedAt: ts,
-    };
-    this.units.set(unit.unitId, unit);
-    await this.save(unit);
-    return unit;
-  }
-
-  /**
-   * Mint a `github` unit from polled PR metadata. Unlike `add()`, it is born **`queued`**, not
-   * `submitted` — github units must never enter the local worker pool (which only claims
-   * `submitted`/`reviewing`); their walkthrough is generated lazily on open. The `headSha` keys the
-   * (lazy) narrative cache via `diffContentKey`, and `files` start empty until that fetch.
+   * Mint a `github` unit from polled PR metadata. It is born **`queued`** and its walkthrough is
+   * generated lazily on open. The `headSha` keys the (lazy) narrative cache via `diffContentKey`, and
+   * `files` start empty until that fetch.
    *
    * Synchronous (returns the unit immediately for the poller's reducer); the disk write goes through
    * the same best-effort `save()` path as every other mutation, the in-memory copy authoritative.
@@ -238,22 +153,6 @@ export class UnitStore {
   }
 
   /**
-   * Attach PR linkage to an EXISTING agent/cli unit the poller matched by repo + branch. Status is
-   * left untouched (the unit keeps advancing through the agent loop); only PR identity + the current
-   * `metadata.headSha` are recorded. Synchronous; persistence is best-effort via `save()`.
-   */
-  linkPr(unitId: string, link: { prNumber: number; prUrl: string; prAuthor: string; headSha: string }): ReviewUnit {
-    const unit = this.require(unitId);
-    unit.prNumber = link.prNumber;
-    unit.prUrl = link.prUrl;
-    unit.prAuthor = link.prAuthor;
-    unit.metadata = { ...unit.metadata, headSha: link.headSha };
-    unit.updatedAt = this.now();
-    void this.save(unit);
-    return unit;
-  }
-
-  /**
    * Record the head SHA a decision was made against (freshness). A later push past this SHA is what
    * lets the poller re-open the review. Used by the decision-dispatch slice. Synchronous.
    */
@@ -266,17 +165,13 @@ export class UnitStore {
   }
 
   /**
-   * Re-open a reviewed `github` unit when the author pushes again: back to `queued`, decision cleared,
-   * `metadata.headSha` advanced. This is the one source-gated reverse edge (`approved|changes_requested
-   * → queued`); it lives here rather than in the shared `TRANSITIONS` table so the strict forward-only
-   * machine the agent loop relies on stays intact. Throws if the unit isn't a github unit in a reviewed
-   * state. Synchronous.
+   * Re-open a reviewed unit when the author pushes again: back to `queued`, decision cleared,
+   * `metadata.headSha` advanced. This is the one reverse edge (`approved|changes_requested →
+   * queued`); it lives here rather than in the shared `TRANSITIONS` table so the strict forward-only
+   * machine stays intact. Throws if the unit isn't in a reviewed state. Synchronous.
    */
   resurfaceForNewPush(unitId: string, headSha: string): ReviewUnit {
     const unit = this.require(unitId);
-    if (unit.source !== 'github') {
-      throw new IllegalTransitionError(unit.status, 'queued', unitId);
-    }
     if (unit.status !== 'approved' && unit.status !== 'changes_requested') {
       throw new IllegalTransitionError(unit.status, 'queued', unitId);
     }
@@ -298,10 +193,29 @@ export class UnitStore {
   }
 
   /**
+   * Advance a unit to a live head SHA for a force re-read: bump `metadata.headSha` + `diffContentKey`
+   * to the current head so a regeneration keys off today's diff, not the SHA frozen at mint. Mirrors
+   * the mint-time invariant (`diffContentKey = headSha`) — the narrative cache key must track the head,
+   * else a re-read replays the stale entry. When fresh `metadata` is passed the PR's title/branch
+   * (which shift as the author pushes) are refreshed too. Unlike `resurfaceForNewPush` this is NOT a
+   * transition: a reviewer-triggered refresh leaves the unit `queued` where it already sits. The
+   * narrative is left in place (the caller overwrites it via `attachReview` once regeneration lands).
+   * Synchronous; persistence is best-effort via `save()`.
+   */
+  advanceHead(unitId: string, headSha: string, metadata?: PRMetadata): ReviewUnit {
+    const unit = this.require(unitId);
+    unit.metadata = metadata ? { ...metadata, headSha } : { ...unit.metadata, headSha };
+    unit.diffContentKey = headSha;
+    if (metadata) unit.taskLabel = metadata.title;
+    unit.updatedAt = this.now();
+    void this.save(unit);
+    return unit;
+  }
+
+  /**
    * Lazy-hydration write for `github` units: attach the fetched diff + generated narrative WITHOUT a
-   * status transition (a github unit stays `queued`). Distinct from `setQueued`, which owns the
-   * reviewing→queued edge for the agent/cli worker-pool path; here the unit is already `queued` and we
-   * only fill in the deferred walkthrough. Synchronous; persistence is best-effort via `save()`.
+   * status transition (a github unit stays `queued`). The unit is already `queued`; this only fills in
+   * the deferred walkthrough. Synchronous; persistence is best-effort via `save()`.
    */
   attachReview(unitId: string, files: DiffFile[], narrative: NarrativeResponse, toResolve: number): ReviewUnit {
     const unit = this.require(unitId);
@@ -312,27 +226,6 @@ export class UnitStore {
     unit.updatedAt = this.now();
     void this.save(unit);
     return unit;
-  }
-
-  async setReviewing(unitId: string): Promise<ReviewUnit> {
-    return this.mutate(unitId, 'reviewing', () => {});
-  }
-
-  async setQueued(unitId: string, narrative: NarrativeResponse, toResolve: number): Promise<ReviewUnit> {
-    return this.mutate(unitId, 'queued', (u) => {
-      u.narrative = narrative;
-      u.verdict = narrative.verdict;
-      u.toResolve = toResolve;
-      u.error = undefined;
-    });
-  }
-
-  /** Review worker threw: queue the unit anyway with an error so it still reaches the reviewer. */
-  async setReviewFailed(unitId: string, error: string): Promise<ReviewUnit> {
-    return this.mutate(unitId, 'queued', (u) => {
-      u.error = error;
-      u.toResolve = 0;
-    });
   }
 
   async setDecision(unitId: string, decision: Decision): Promise<ReviewUnit> {

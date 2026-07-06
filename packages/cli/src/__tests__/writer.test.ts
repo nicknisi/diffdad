@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildSuppressedChapter, normalizeChapter } from '../narrative/writer';
+import { buildSuppressedChapter, normalizeChapter, parseChapterResponse } from '../narrative/writer';
 import type { PlanTheme } from '../narrative/plan-types';
 
 const baseTheme: PlanTheme = {
@@ -52,6 +52,23 @@ describe('normalizeChapter', () => {
     expect(out.whyMatters).toBe('');
     expect(out.sections).toEqual([]);
     expect(out.themeId).toBe('theme-0');
+  });
+});
+
+describe('parseChapterResponse', () => {
+  it('returns the recovered object for valid JSON', () => {
+    const out = parseChapterResponse('{"title":"X","sections":[]}', 'theme-0') as { title: string };
+    expect(out.title).toBe('X');
+  });
+
+  it('throws with a raw-response snippet when the model returns prose', () => {
+    expect(() => parseChapterResponse('I cannot help with that.', 'theme-0')).toThrow(/theme-0 returned non-JSON/);
+    expect(() => parseChapterResponse('I cannot help with that.', 'theme-0')).toThrow(/raw response/);
+    expect(() => parseChapterResponse('I cannot help with that.', 'theme-0')).toThrow(/I cannot help with that\./);
+  });
+
+  it('reports an empty response explicitly rather than an empty snippet', () => {
+    expect(() => parseChapterResponse('', 'theme-0')).toThrow(/\(empty response\)/);
   });
 });
 

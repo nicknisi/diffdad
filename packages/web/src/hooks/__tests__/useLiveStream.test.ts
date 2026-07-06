@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach } from 'vitest';
-import { handleAgentCommentEvent, handleNarrativePartialEvent, handleUnitCommentEvent } from '../useLiveStream';
+import { handleNarrativePartialEvent, handleUnitCommentEvent } from '../useLiveStream';
 import { useReviewStore } from '../../state/review-store';
-import type { AgentComment, NarrativeResponse, PRComment, PRData } from '../../state/types';
+import type { NarrativeResponse, PRComment, PRData } from '../../state/types';
 
 function mkPr(): PRData {
   return {
@@ -111,47 +111,5 @@ describe('handleUnitCommentEvent', () => {
   it('ignores malformed JSON without throwing', () => {
     expect(() => handleUnitCommentEvent({ data: '{ not json' } as MessageEvent)).not.toThrow();
     expect(useReviewStore.getState().comments).toEqual([]);
-  });
-});
-
-function mkAgentComment(id: string): AgentComment {
-  return {
-    id,
-    path: 'a.ts',
-    line: 1,
-    side: 'RIGHT',
-    body: 'beat',
-    status: 'open',
-    author: 'user',
-    replies: [],
-    hunkContext: '',
-    createdAt: 'now',
-  };
-}
-
-describe('handleAgentCommentEvent', () => {
-  beforeEach(() => {
-    useReviewStore.setState({ mode: 'command-center', route: { name: 'unit', unitId: 'u_1' }, agentComments: [] });
-  });
-
-  it('applies a unit-scoped payload to the open unit', () => {
-    handleAgentCommentEvent(mkMessageEvent({ unitId: 'u_1', comments: [mkAgentComment('c1')] }));
-    expect(useReviewStore.getState().agentComments.map((c) => c.id)).toEqual(['c1']);
-  });
-
-  it('ignores a unit-scoped payload for a different unit (no cross-unit leak)', () => {
-    handleAgentCommentEvent(mkMessageEvent({ unitId: 'u_2', comments: [mkAgentComment('c2')] }));
-    expect(useReviewStore.getState().agentComments).toEqual([]);
-  });
-
-  it('applies an unscoped (watch) payload regardless of route', () => {
-    useReviewStore.setState({ mode: 'watch', route: { name: 'center' } });
-    handleAgentCommentEvent(mkMessageEvent({ comments: [mkAgentComment('c3')] }));
-    expect(useReviewStore.getState().agentComments.map((c) => c.id)).toEqual(['c3']);
-  });
-
-  it('ignores malformed JSON without throwing', () => {
-    expect(() => handleAgentCommentEvent({ data: '{ not json' } as MessageEvent)).not.toThrow();
-    expect(useReviewStore.getState().agentComments).toEqual([]);
   });
 });

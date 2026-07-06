@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { getAccentMeta } from '../lib/accents';
+import { copy } from '../lib/microcopy';
 import { loadDrafts, pendingReviewComments, useReviewStore } from '../state/review-store';
-import { agentPresence, reviewEndpoint, summarizeChecks, summarizeReviews } from '../lib/units-view';
+import { reviewEndpoint, summarizeChecks, summarizeReviews } from '../lib/units-view';
 import { useComments } from '../hooks/useComments';
-import { postDecision, removeUnit, retryUnit } from '../hooks/useUnits';
 import { AccentPicker } from './AccentPicker';
 import { ClassicView } from './ClassicView';
 import { DadMark } from './DadMark';
@@ -11,17 +11,17 @@ import { ReviewProgress } from './ReviewProgress';
 import { StoryView } from './StoryView';
 import { SubmitDialog } from './SubmitDialog';
 import { ThemeToggle } from './ThemeToggle';
-import type { AgentComment, ChapterState, CheckRun, PRReview, Unit } from '../state/types';
+import type { ChapterState, CheckRun, PRReview, Unit } from '../state/types';
 
 /**
  * Feed a unit's diff slice + brief into the review store so the existing review surface
  * (StoryView / ClassicView, both store-driven) renders it. We set state directly rather than
- * via `setData` so the per-unit reviewed/draft localStorage (keyed by `pr.number`, which is the
- * 0 sentinel for every local unit) can't bleed across units — each open starts fresh.
+ * via `setData` so the per-unit reviewed/draft localStorage (keyed by `pr.number`) can't bleed
+ * across units — each open starts fresh.
  *
- * Comments are intentionally NOT set here: they're loaded separately (and live, from GitHub for
- * github units) by the drill-in's comment effect. Clobbering them on every live re-apply would wipe
- * the loaded thread each time the unit's `updatedAt` ticks.
+ * Comments are intentionally NOT set here: they're loaded live from GitHub by the drill-in's
+ * comment effect. Clobbering them on every live re-apply would wipe the loaded thread each time
+ * the unit's `updatedAt` ticks.
  */
 function applyUnitToStore(unit: Unit): void {
   const narrative = unit.narrative ?? null;
@@ -40,40 +40,19 @@ function applyUnitToStore(unit: Unit): void {
 }
 
 /**
- * The drill-in's honest "is anyone listening" cue for local units. Reads the unit's agent last-seen
- * from the store (seeded on open, kept live by the `presence` SSE event) and ticks its own clock so a
- * fresh stamp goes stale on its own. Steady, not flickery: an active agent refreshes every poll, so
- * working between polls doesn't flip it — see {@link agentPresence}.
+ * Make a raw hydrate failure safe to show under Dad's folksy heading. Server-side generation errors
+ * carry a diagnostic tail — an escaped raw-response snippet and internal theme ids (see
+ * `rawResponseSnippet` / `parseChapterResponse` on the CLI side) — that belongs in the daemon log, not
+ * in the UI, where it reads as tonal whiplash and leaks internals. Drop the `— raw response …` suffix
+ * and collapse the writer's non-JSON failure to a plain sentence; already-human messages (daemon
+ * unreachable, empty narrative, bare HTTP status) pass through untouched.
  */
-function AgentPresencePill({ unitId }: { unitId: string }) {
-  const lastSeenAt = useReviewStore((s) => s.presence[unitId]);
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 30_000);
-    return () => clearInterval(id);
-  }, []);
-  const { connected, label } = agentPresence(lastSeenAt, now);
-  const title = connected
-    ? 'An agent is on this review — your comments and the verdict reach it on its next poll (≤4 min).'
-    : lastSeenAt == null
-      ? 'No agent has connected to this review yet. Your notes are saved and delivered when one does.'
-      : 'No agent connected right now. Your notes are saved and delivered when an agent reconnects.';
-  return (
-    <span
-      className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11.5px] font-medium"
-      style={{
-        background: connected ? 'var(--green-3)' : 'var(--gray-3)',
-        color: connected ? 'var(--green-11)' : 'var(--fg-3)',
-      }}
-      title={title}
-    >
-      <span
-        className={`inline-block h-1.5 w-1.5 rounded-full ${connected ? 'live-ping-dot' : ''}`}
-        style={{ background: connected ? 'var(--green-10)' : 'var(--gray-8)' }}
-      />
-      {label}
-    </span>
-  );
+function friendlyHydrateError(raw: string): string {
+  const base = (raw.split(' — raw response')[0] ?? raw).trim();
+  if (/returned non-JSON/i.test(base)) {
+    return "The writer came back with something Dad couldn't parse. This is usually temporary — hit Retry.";
+  }
+  return base;
 }
 
 function BackLink() {
@@ -90,11 +69,10 @@ function BackLink() {
 }
 
 /**
- * The per-unit review drill-in (`/units/:id`). Reuses Phase 1's diff + streaming walkthrough,
- * topped with a thin identity header and tailed with a decision bar (Approve / Request changes)
- * that posts the verdict back over the same channel `await_decision` waits on. Authoritative load
- * is a direct fetch (so a hard refresh works); the live `units` snapshot keeps it fresh as the
- * review worker finishes and the brief streams in.
+ * The per-unit review drill-in (`/units/:id`) — always the GitHub experience now. Reuses the diff +
+ * streaming walkthrough, topped with a thin identity header and tailed with the GitHub review bar
+ * (Comment / Approve / Request changes via {@link SubmitDialog}). Authoritative load is a direct
+ * fetch (so a hard refresh works); the live `units` snapshot keeps it fresh as the brief streams in.
  */
 export function UnitReview() {
   const route = useReviewStore((s) => s.route);
@@ -106,8 +84,6 @@ export function UnitReview() {
   const narrative = useReviewStore((s) => s.narrative);
   const mode = useReviewStore((s) => s.mode);
   const setComments = useReviewStore((s) => s.setComments);
-  const setAgentComments = useReviewStore((s) => s.setAgentComments);
-  const setPresence = useReviewStore((s) => s.setPresence);
   const draftCount = useReviewStore((s) => pendingReviewComments(s.drafts).length);
   const clearDrafts = useReviewStore((s) => s.clearDrafts);
   const setCheckRuns = useReviewStore((s) => s.setCheckRuns);
@@ -122,15 +98,26 @@ export function UnitReview() {
   const hydratedRef = useRef<string | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [requesting, setRequesting] = useState(false);
-  const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
+  // Lazy-hydrate failure surface: a failed narrative generation lands here instead of spinning forever.
+  const [hydrateError, setHydrateError] = useState<string | null>(null);
+  // Bumped by Retry / Re-read to re-run the hydrate effect — its [unitId, unit?.narrative] deps don't
+  // change on retry (nor on a re-read, where a narrative already exists).
+  const [retryNonce, setRetryNonce] = useState(0);
+  // Re-read (force regeneration): the flag is consumed by the shared hydrate effect so it POSTs
+  // { force: true } and doesn't bail on the existing narrative. `rereading` drives the button's
+  // spinning/disabled state. Kept a ref (not a dep) so toggling it doesn't itself re-run the effect.
+  const forceRef = useRef(false);
+  const [rereading, setRereading] = useState(false);
 
   // Authoritative load — covers a hard refresh / deep link where the queue isn't in the store yet.
   useEffect(() => {
     if (!unitId) return;
     let cancelled = false;
     setNotFound(false);
+    setHydrateError(null); // switching units: drop the prior unit's hydrate error so it can't render stale
+    setRereading(false); // and any in-flight re-read state — the new unit starts clean
+    forceRef.current = false;
     void (async () => {
       try {
         const res = await fetch(`/api/units/${encodeURIComponent(unitId)}`);
@@ -172,48 +159,6 @@ export function UnitReview() {
     void refreshComments();
   }, [unitId, hasNarrative, setComments, refreshComments]);
 
-  // Load this unit's agent comments (the "send to agent" loop) so they render inline through the same
-  // pipeline as GitHub comments. Clear first so switching units never flashes the prior unit's thread;
-  // the unit-scoped `agent-comment` SSE event keeps it live as the parked agent replies/resolves.
-  useEffect(() => {
-    if (!unitId) return;
-    let cancelled = false;
-    setAgentComments([]);
-    void (async () => {
-      try {
-        const res = await fetch(`/api/units/${encodeURIComponent(unitId)}/agent-comments`);
-        if (!res.ok || cancelled) return;
-        const data = (await res.json()) as AgentComment[];
-        if (!cancelled && Array.isArray(data)) setAgentComments(data);
-      } catch {
-        // ignore — the SSE stream backfills
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [unitId, setAgentComments]);
-
-  // Seed the agent-presence cue on open (the `presence` SSE event keeps it live thereafter). Cheap
-  // enough to fetch for any unit; the pill only renders for local units.
-  useEffect(() => {
-    if (!unitId) return;
-    let cancelled = false;
-    void (async () => {
-      try {
-        const res = await fetch(`/api/units/${encodeURIComponent(unitId)}/presence`);
-        if (!res.ok || cancelled) return;
-        const data = (await res.json()) as { lastSeenAt: number | null };
-        if (!cancelled) setPresence(unitId, data.lastSeenAt ?? null);
-      } catch {
-        // ignore — the SSE stream backfills
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [unitId, setPresence]);
-
   // Load this github unit's CI checks + reviews. Keyed on the head SHA too, so a new push (the SSE
   // `units` event updates the unit's metadata) re-fetches the status — modest liveness without a poll.
   const headSha = unit?.metadata?.headSha;
@@ -239,32 +184,75 @@ export function UnitReview() {
     };
   }, [unitId, headSha, setCheckRuns, setReviews]);
 
-  // Lazy narrative for github units: PRs aren't narrated until opened. Fire one hydrate POST when a
-  // github unit with no narrative comes into view; the SSE `units` broadcast (and the response, as a
-  // fallback) repaint the walkthrough when generation lands. Deduped per unit so SSE re-renders don't refire.
+  // Lazy narrative: PRs aren't narrated until opened. Fire one hydrate POST when a unit with no
+  // narrative comes into view; the SSE `units` broadcast (and the response, as a fallback) repaint
+  // the walkthrough when generation lands. Deduped per unit so SSE re-renders don't refire. Any
+  // failure lands in `hydrateError` (rendered as a retry panel) rather than spinning forever.
+  // `hasUnit` must be a dep: on a deep link the unit loads async, and `unit?.narrative` is
+  // undefined both before and after it arrives — without it the effect never re-runs and the
+  // POST never fires.
+  const hasUnit = unit !== null;
   useEffect(() => {
     if (!unitId || !unit) return;
-    if (unit.source !== 'github' || unit.narrative) return;
-    if (hydratedRef.current === unitId) return;
+    // Consume the re-read intent for this run: a forced pass regenerates even when a narrative already
+    // exists, and dedupe never applies. Reading + clearing it here keeps a stale flag from leaking into
+    // the next unit's lazy open.
+    const force = forceRef.current;
+    forceRef.current = false;
+    if (unit.narrative && !force) return;
+    if (hydratedRef.current === unitId && !force) return;
     hydratedRef.current = unitId;
     let cancelled = false;
     void (async () => {
       try {
-        const res = await fetch(`/api/units/${encodeURIComponent(unitId)}/hydrate`, { method: 'POST' });
-        if (!res.ok || cancelled) return;
+        const res = await fetch(`/api/units/${encodeURIComponent(unitId)}/hydrate`, {
+          method: 'POST',
+          // Only the re-read sends a body; the lazy open posts nothing, so the daemon takes the plain
+          // non-force path (and any absent/invalid body stays a plain hydrate, never a 400).
+          ...(force ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ force: true }) } : {}),
+        });
+        if (cancelled) return;
+        if (!res.ok) {
+          const message = await res
+            .json()
+            .then((body: { error?: string }) => body?.error)
+            .catch(() => undefined);
+          if (!cancelled) setHydrateError(message || `HTTP ${res.status}`);
+          return;
+        }
         const data = (await res.json()) as { unit: Unit };
-        if (!cancelled && data.unit) {
+        if (cancelled) return;
+        if (data.unit?.narrative) {
           setUnit(data.unit);
           applyUnitToStore(data.unit);
+        } else {
+          // Graceful no-op path (e.g. GitHub not wired): 200 OK but nothing to show — don't spin.
+          setHydrateError('The daemon returned no narrative for this PR.');
         }
       } catch {
-        // ignore — the SSE `units` stream still delivers the narrative when it's ready
+        if (!cancelled) setHydrateError('Could not reach the daemon — is it still running?');
+      } finally {
+        setRereading(false); // clear the re-read spinner whether it landed, failed, or was superseded
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [unitId, unit?.source, unit?.narrative]);
+  }, [unitId, hasUnit, unit?.narrative, retryNonce]);
+
+  // Re-read: reviewer-triggered force regeneration. Reuse the hydrate effect above — clear the shown
+  // narrative so the existing full loading state (bobbing dad / ReviewProgress) renders, flag the next
+  // run as forced, and bump the nonce to fire it. Failures land in the same hydrateError panel + Retry.
+  function reRead() {
+    if (!unitId || rereading) return;
+    setRereading(true);
+    setError(null);
+    setHydrateError(null);
+    forceRef.current = true;
+    hydratedRef.current = null; // clear dedupe so the effect doesn't short-circuit this unit
+    useReviewStore.setState({ narrative: null });
+    setRetryNonce((n) => n + 1);
+  }
 
   if (notFound) {
     return (
@@ -283,57 +271,9 @@ export function UnitReview() {
 
   const status = unit?.status;
   const decidable = status === 'queued';
-  const isGithub = unit?.source === 'github';
   const checks = summarizeChecks(checkRuns);
   const rv = summarizeReviews(reviews);
-  const showStatus = isGithub && (checkRuns.length > 0 || reviews.length > 0);
-
-  async function decide(kind: 'approved' | 'changes_requested') {
-    if (!unitId) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await postDecision(unitId, {
-        kind,
-        note: note.trim() || undefined,
-        concerns: kind === 'changes_requested' ? (unit?.narrative?.concerns ?? narrative?.concerns) : undefined,
-      });
-      navigate({ name: 'center' }); // the unit leaves the needs-you queue
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Decision failed');
-      setBusy(false);
-    }
-  }
-
-  async function retry() {
-    if (!unitId) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const r = await retryUnit(unitId);
-      if (r.ok === false) {
-        setError(r.reason === 'clean-tree' ? 'Nothing to re-review — the working tree is clean.' : 'Could not retry.');
-      }
-      // else: the unit flips back to reviewing via SSE and the live effect repaints with the loader
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Retry failed');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function remove() {
-    if (!unitId) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await removeUnit(unitId);
-      navigate({ name: 'center' });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Remove failed');
-      setBusy(false);
-    }
-  }
+  const showStatus = checkRuns.length > 0 || reviews.length > 0;
 
   // Submit a GitHub review for a github unit (COMMENT / APPROVE / REQUEST_CHANGES) with any batched
   // draft comments — the full PR-mode submit, scoped to this unit's PR via `reviewEndpoint`. A verdict
@@ -383,9 +323,20 @@ export function UnitReview() {
         )}
         <span className="truncate text-[13.5px] font-semibold text-[var(--fg-1)]">{unit?.taskLabel}</span>
         <div className="ml-auto flex items-center gap-2">
-          {/* Local units run the agent loop — show whether an agent is actually there to receive notes. */}
-          {unitId && unit && unit.source !== 'github' && <AgentPresencePill unitId={unitId} />}
-          {unit?.source === 'github' && unit.prUrl && (
+          <button
+            type="button"
+            onClick={reRead}
+            disabled={rereading || !narrative}
+            title={copy.rereadTitle}
+            aria-label={copy.rereadTitle}
+            className="inline-flex items-center gap-1 text-[12.5px] font-medium text-[var(--fg-2)] transition-colors hover:text-[var(--fg-1)] disabled:opacity-50"
+          >
+            <span className={rereading ? 'animate-spin' : ''} aria-hidden>
+              ⟳
+            </span>
+            {rereading ? copy.rereadBusy : copy.rereadLabel}
+          </button>
+          {unit?.prUrl && (
             <a
               href={unit.prUrl}
               target="_blank"
@@ -403,7 +354,7 @@ export function UnitReview() {
       {error && (
         <div
           className="mx-auto mt-4 max-w-[1100px] rounded-lg px-3.5 py-2.5 text-[13px]"
-          style={{ background: 'var(--red-3)', color: 'var(--red-11)', boxShadow: 'inset 0 0 0 1px var(--red-a6)' }}
+          style={{ background: 'var(--red-3)', color: 'var(--red-11)', boxShadow: 'inset 0 0 0 1px var(--red-9)' }}
         >
           {error}
         </div>
@@ -439,35 +390,52 @@ export function UnitReview() {
 
       {narrative ? (
         <StoryView />
-      ) : unit?.error ? (
-        <div className="mx-auto max-w-[1100px] px-6 pt-10 text-[14px] text-[var(--fg-2)]">
-          <p className="font-medium text-[var(--red-11)]">Dad couldn't get through this one.</p>
-          <p className="mt-1 font-mono text-[12.5px] text-[var(--fg-3)]">{unit.error}</p>
-          <p className="mt-3">Retry the review, decide from the diff below, or clear it from the queue.</p>
-          <div className="mt-4 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={retry}
-              disabled={busy}
-              className="rounded-md px-3 py-1.5 text-[13px] font-semibold text-white disabled:opacity-50"
-              style={{ background: 'var(--blue-9)' }}
+      ) : hydrateError ? (
+        <>
+          {/* Hydrate failed — an explicit, retryable panel in place of the eternal spinner. The raw diff
+              (ClassicView) stays below so the PR is still readable while narration is down. */}
+          <div className="mx-auto max-w-[1100px] px-6 pt-4">
+            <div
+              role="alert"
+              className="flex items-start gap-3 rounded-[10px] px-4 py-3.5"
+              style={{ background: 'var(--red-2)', boxShadow: 'inset 0 0 0 1px var(--red-9)' }}
             >
-              Retry review
-            </button>
-            <button
-              type="button"
-              onClick={remove}
-              disabled={busy}
-              className="rounded-md px-3 py-1.5 text-[13px] font-medium text-[var(--fg-2)] disabled:opacity-50"
-              style={{ boxShadow: 'inset 0 0 0 1px var(--gray-a5)' }}
-            >
-              Remove from queue
-            </button>
+              <div className="mt-0.5 shrink-0">
+                <DadMark size={30} bg={markBg} shape="circle" showBadge={false} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[13.5px] font-semibold" style={{ color: 'var(--red-11)' }}>
+                  Dad couldn&apos;t find the story in this one.
+                </p>
+                <p className="mt-1 text-[12.5px] leading-relaxed break-words" style={{ color: 'var(--fg-2)' }}>
+                  {friendlyHydrateError(hydrateError)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  // A re-read failure leaves the OLD narrative in local `unit` state (reRead only nulls the
+                  // store copy), so a plain retry would bail on `unit.narrative && !force` and strand the
+                  // spinner. When a narrative is present the failed pass was necessarily a force re-read
+                  // (lazy open only fires with no narrative), so re-run it through reRead() to actually
+                  // regenerate; a lazy first-open failure (no narrative yet) just re-fires the effect.
+                  if (unit?.narrative) {
+                    reRead();
+                    return;
+                  }
+                  setHydrateError(null);
+                  hydratedRef.current = null;
+                  setRetryNonce((n) => n + 1);
+                }}
+                className="shrink-0 self-center rounded-md px-4 py-1.5 text-[13px] font-semibold text-white"
+                style={{ background: 'var(--red-9)' }}
+              >
+                Retry
+              </button>
+            </div>
           </div>
-          <div className="mt-4">
-            <ClassicView />
-          </div>
-        </div>
+          <ClassicView />
+        </>
       ) : (
         <>
           <ReviewProgress />
@@ -475,9 +443,9 @@ export function UnitReview() {
         </>
       )}
 
-      {/* GitHub units get the full review submission (Comment / Approve / Request changes + batched
-          draft comments + AI-draftable summary) — the same dialog as PR mode, scoped to this PR. */}
-      {decidable && isGithub && (
+      {/* The full review submission (Comment / Approve / Request changes + batched draft comments +
+          AI-draftable summary) — the same dialog as PR mode, scoped to this unit's PR. */}
+      {decidable && (
         <div
           className="fixed inset-x-0 bottom-0 z-40 bg-[var(--bg-panel)] px-6 py-3"
           style={{ boxShadow: 'inset 0 1px 0 var(--gray-a4)' }}
@@ -501,74 +469,6 @@ export function UnitReview() {
               >
                 {draftCount > 0 ? `Submit review · ${draftCount}` : 'Submit review'}
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Local (agent/cli) units have no GitHub PR — the verdict goes to the parked agent over the
-          decision channel, so they keep the inline Approve / Request-changes bar. */}
-      {decidable && !isGithub && (
-        <div
-          className="fixed inset-x-0 bottom-0 z-40 bg-[var(--bg-panel)] px-6 py-3"
-          style={{ boxShadow: 'inset 0 1px 0 var(--gray-a4)' }}
-        >
-          <div className="mx-auto flex max-w-[1100px] flex-wrap items-center gap-3">
-            <span className="text-[12.5px] text-[var(--fg-3)]">
-              {unit && unit.toResolve > 0 ? `${unit.toResolve} to resolve before approving` : 'Ready for your verdict'}
-            </span>
-            {requesting && (
-              <input
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                placeholder="What should the agent change? (optional)"
-                className="min-w-0 flex-1 rounded-md bg-[var(--bg-page)] px-2.5 py-1.5 text-[13px] text-[var(--fg-1)]"
-                style={{ boxShadow: 'inset 0 0 0 1px var(--gray-a5)' }}
-              />
-            )}
-            <div className="ml-auto flex items-center gap-2">
-              {requesting ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setRequesting(false)}
-                    disabled={busy}
-                    className="rounded-md px-3 py-1.5 text-[13px] font-medium text-[var(--fg-2)] disabled:opacity-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => decide('changes_requested')}
-                    disabled={busy}
-                    className="rounded-md px-3 py-1.5 text-[13px] font-semibold disabled:opacity-50"
-                    style={{ background: 'var(--amber-9)', color: 'var(--gray-12)' }}
-                  >
-                    Send changes
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setRequesting(true)}
-                    disabled={busy}
-                    className="rounded-md px-3 py-1.5 text-[13px] font-medium text-[var(--amber-11)] disabled:opacity-50"
-                    style={{ background: 'var(--amber-3)', boxShadow: 'inset 0 0 0 1px var(--amber-a5)' }}
-                  >
-                    Request changes
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => decide('approved')}
-                    disabled={busy}
-                    className="rounded-md px-4 py-1.5 text-[13px] font-semibold text-white disabled:opacity-50"
-                    style={{ background: 'var(--green-9)' }}
-                  >
-                    Approve
-                  </button>
-                </>
-              )}
             </div>
           </div>
         </div>

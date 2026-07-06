@@ -5,22 +5,12 @@ import { dirname, resolve } from 'path';
 import type { PostCommentOptions } from '../github/client';
 import { mapCommentsToChapters } from '../github/comments';
 import type { PRComment } from '../github/types';
-import { CleanTreeError } from '../local/diff-source';
 import { buildChapterAiPrompt } from '../narrative/chapter-ai';
 import { buildReviewSummaryPrompt } from '../narrative/review-summary';
 import type { CheckRun, PRReview } from '../github/types';
-import type { Concern } from '../narrative/types';
-import { mountMcp } from '../mcp/server';
-import { type ComputeSlice, registerSubmitTools } from '../mcp/submit';
-import type { Broadcast } from '../mcp/tools';
-import { AgentCommentStore } from '../agent-comments/store';
-import { UnknownCommentError } from '../agent-comments/types';
-import { registerUnitCommentTools } from '../mcp/unit-comments';
-import { AgentActivity } from '../units/agent-activity';
-import type { DecisionChannel } from '../units/decision-channel';
-import { decisionTarget } from '../units/decision-target';
+import type { Broadcast } from '../mcp/broadcast';
 import type { UnitStore } from '../units/store';
-import { type Decision, IllegalTransitionError, type ReviewUnit, UnknownUnitError } from '../units/types';
+import { IllegalTransitionError, type ReviewUnit, UnknownUnitError } from '../units/types';
 
 type SseSend = (event: string, data: unknown) => void;
 
@@ -35,9 +25,9 @@ export type ReviewInlineComment = {
 };
 
 /**
- * SSE fan-out registry shared by the daemon's HTTP routes, MCP tools, and review-worker pool.
- * Owned by the daemon process (not the app) so the pool — constructed before the app — can
- * broadcast through the same hub the `/api/events` route streams from.
+ * SSE fan-out registry shared by the daemon's HTTP routes. Owned by the daemon process (not the
+ * app) so a single hub backs both the routes that broadcast and the `/api/events` route that
+ * streams from it.
  */
 export class SseHub {
   private clients = new Set<SseSend>();
@@ -59,23 +49,16 @@ export class SseHub {
 
 export type DaemonAppDeps = {
   store: UnitStore;
-  decision: DecisionChannel;
   hub: SseHub;
-  computeSlice: ComputeSlice;
-  /** Fired after a unit is submitted so the daemon can kick the review-worker pool. */
-  onSubmitted?: (unit: ReviewUnit) => void;
-  /**
-   * Posts a `github` unit's verdict to GitHub as a real review. Injected so tests fake it and the
-   * daemon wires the authenticated client. Must throw on failure — the route then 502s and records
-   * NOTHING locally, so dad and GitHub never disagree.
-   */
-  reviewPoster?: (unit: ReviewUnit, decision: Decision) => Promise<void>;
   /**
    * Lazily hydrates a `github` unit on open: fetch the PR diff, generate the narrative, store it, and
    * return the updated unit. Injected so tests fake it and the daemon wires the real fetch+generate
    * path. Absent → the hydrate route is a graceful no-op (the unit is returned unchanged).
+   *
+   * `force` (the per-PR re-read) regenerates even when a narrative already exists: it advances the unit
+   * to the live head SHA and bypasses the cache read. The route passes it through from the POST body.
    */
-  hydrate?: (unit: ReviewUnit) => Promise<ReviewUnit>;
+  hydrate?: (unit: ReviewUnit, force?: boolean) => Promise<ReviewUnit>;
   /**
    * Fetches a `github` unit's live comments from GitHub (review + issue comments). Injected so tests
    * fake it and the daemon wires the authenticated client. Absent → the comments route returns []
@@ -108,18 +91,13 @@ export type DaemonAppDeps = {
    * like the other GitHub deps; absent → the status route returns empties. Read live, not stored.
    */
   statusFetcher?: (unit: ReviewUnit) => Promise<{ checks: CheckRun[]; reviews: PRReview[] }>;
-  /** Long-poll ceiling for `await_decision`; tests shrink it. */
-  awaitTimeoutMs?: number;
   /**
-   * Loads (or creates) the per-unit `AgentCommentStore` — the "send to agent" mailbox the ResolveStrip
-   * posts to and the agent reads over MCP. Injected so tests use in-memory stores; the daemon defaults
-   * to a disk-backed store keyed by unitId. The app caches the result per unit so the HTTP routes and
-   * MCP tools share ONE instance (a UI-posted comment must be visible to `list_review_comments`, and an
-   * agent's reply visible to the UI).
+   * Runs one GitHub review-request poll on demand — the same `pollOnce` pass the interval poller runs
+   * (search GitHub, mint/resurface units, broadcast a `units` snapshot), returning the counts. Injected
+   * so tests fake it and the daemon wires the authenticated search+store+broadcast. Absent → the manual
+   * poll route 503s (no GitHub token, nothing to poll).
    */
-  loadCommentStore?: (unitId: string) => Promise<AgentCommentStore>;
-  /** Last-seen-per-unit tracker behind the presence cue. Injected for tests; defaults to a fresh one. */
-  activity?: AgentActivity;
+  pollNow?: () => Promise<{ minted: number; resurfaced: number; removed: number }>;
   /** Override the command-center static root (defaults to the same fallbacks as `server.ts`). */
   webDist?: string;
 };
@@ -137,45 +115,28 @@ function resolveWebDist(override?: string): string {
 
 /**
  * The daemon's Hono app: one multiplexed process hosting many review units (rather than `server.ts`'s
- * one-PR-per-process model). Serves the units API + decision route, the MCP endpoint (submit/await),
- * the live SSE stream, and the command-center SPA. A separate factory from `createServer` on purpose
- * — the scout flagged that retrofitting `ServerContext` (a single PR + narrative) would break its
- * route handlers; the unit-scoped store is a cleaner seam.
+ * one-PR-per-process model). Serves the units API + review submission, the live SSE stream, and the
+ * command-center SPA. A separate factory from `createServer` on purpose — the scout flagged that
+ * retrofitting `ServerContext` (a single PR + narrative) would break its route handlers; the
+ * unit-scoped store is a cleaner seam.
  */
 export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
-  const { store, decision, hub, computeSlice, onSubmitted, reviewPoster, hydrate, awaitTimeoutMs } = deps;
-  const { commentFetcher, commentPoster, reviewSubmitter, ai, statusFetcher } = deps;
+  const { store, hub, hydrate } = deps;
+  const { commentFetcher, commentPoster, reviewSubmitter, ai, statusFetcher, pollNow } = deps;
   const app = new Hono();
   const broadcast = hub.broadcast;
-
-  // Per-unit agent-comment stores, created lazily and shared by the HTTP routes + MCP tools. We cache
-  // the PROMISE (not the resolved store) so two concurrent first-touches for the same unit can't each
-  // build a separate instance and diverge. Resolves to `undefined` for an unknown unit, so the routes
-  // 404 and the MCP tools error cleanly instead of writing to a phantom store.
-  const loadCommentStore = deps.loadCommentStore ?? ((unitId: string) => AgentCommentStore.load(`unit-${unitId}`));
-  const commentStores = new Map<string, Promise<AgentCommentStore>>();
-  const getCommentStore = (unitId: string): Promise<AgentCommentStore | undefined> => {
-    if (!store.get(unitId)) return Promise.resolve(undefined);
-    let pending = commentStores.get(unitId);
-    if (!pending) {
-      pending = loadCommentStore(unitId);
-      commentStores.set(unitId, pending);
-    }
-    return pending;
-  };
-
-  // Last-seen-per-unit, the honest backing for the drill-in's "agent connected / no agent connected"
-  // cue: the MCP tools touch it whenever the unit's agent parks or works its comments, and a touch
-  // broadcasts a `presence` snapshot so an open tab updates live.
-  const activity = deps.activity ?? new AgentActivity();
-  activity.onTouch = (unitId, lastSeenAt) => broadcast('presence', { unitId, lastSeenAt });
-  const onAgentSeen = (unitId: string) => activity.touch(unitId);
+  // Single-flight state for POST /api/poll: concurrent manual refreshes share one in-flight poll.
+  let inflight: Promise<{ minted: number; resurfaced: number; removed: number }> | null = null;
+  // Single-flight state for POST /api/units/:id/hydrate, keyed per unit: concurrent hydrates of the
+  // SAME unit (a Re-read double-click, or an SSE re-open racing the button) coalesce onto one run —
+  // no doubled PR fetch + LLM generation. Different units still hydrate in parallel (distinct keys).
+  const hydrating = new Map<string, Promise<ReviewUnit>>();
 
   // --- Command-center bootstrap ---------------------------------------------
   // The web SPA's single bootstrap is `GET /api/narrative`; it multiplexes on `mode`
-  // ('pr' | 'watch' | 'command-center'). The daemon has no single PR/narrative, so it declares
-  // 'command-center' and seeds the queue — the same seam watch mode uses. Must precede the static
-  // catch-all, or serveStatic answers with index.html and the SPA can't tell it's on a daemon.
+  // ('pr' | 'command-center'). The daemon has no single PR/narrative, so it declares
+  // 'command-center' and seeds the queue. Must precede the static catch-all, or serveStatic
+  // answers with index.html and the SPA can't tell it's on a daemon.
   app.get('/api/narrative', (c) => c.json({ mode: 'command-center', units: store.list() }));
 
   // --- Units API ------------------------------------------------------------
@@ -191,156 +152,6 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
     return c.json({ unit });
   });
 
-  // Nick's verdict on a unit → persisted on the unit AND delivered to the parked agent via the
-  // decision channel (the same channel `await_decision` waits on, and Phase 4's auto-clear reuses).
-  app.post('/api/units/:id/decision', async (c) => {
-    const id = c.req.param('id');
-    let body: { kind?: string; concerns?: Concern[]; note?: string };
-    try {
-      body = (await c.req.json()) as typeof body;
-    } catch {
-      return c.json({ error: 'invalid JSON body' }, 400);
-    }
-    if (body.kind !== 'approved' && body.kind !== 'changes_requested') {
-      return c.json({ error: "decision 'kind' must be 'approved' or 'changes_requested'" }, 400);
-    }
-    const decisionValue: Decision = { kind: body.kind, concerns: body.concerns, note: body.note };
-
-    const existing = store.get(id);
-    if (!existing) return c.json({ error: new UnknownUnitError(id).message }, 404);
-
-    // --- github units: the verdict becomes a real GitHub review --------------
-    // Post to GitHub FIRST; only record locally if that succeeds, so dad and GitHub never disagree.
-    if (decisionTarget(existing) === 'github') {
-      // Validate the transition BEFORE the network call: a github verdict is only valid on a unit
-      // awaiting review. A repeat decision (double-click / second tab) must not post a second real
-      // review to GitHub and then fail locally — the exact dad⇄GitHub divergence we forbid.
-      if (existing.status !== 'queued') {
-        return c.json({ error: `unit is ${existing.status}, not awaiting a decision` }, 409);
-      }
-      if (existing.prNumber === undefined) return c.json({ error: 'unit has no PR' }, 400);
-      // A github verdict is meaningless without a way to post it — refuse rather than record a local
-      // "approved" that never reaches GitHub.
-      if (!reviewPoster) {
-        return c.json({ error: 'GitHub is not configured — cannot post a review for this unit' }, 503);
-      }
-      try {
-        await reviewPoster(existing, decisionValue);
-      } catch (err) {
-        return c.json({ error: err instanceof Error ? err.message : String(err) }, 502);
-      }
-      let unit: ReviewUnit;
-      try {
-        await store.setDecision(id, decisionValue);
-        unit = store.setReviewedSha(id, existing.metadata.headSha);
-      } catch (err) {
-        if (err instanceof IllegalTransitionError) return c.json({ error: err.message }, 409);
-        throw err;
-      }
-      broadcast('units', { units: store.list() });
-      return c.json({ ok: true, unit });
-    }
-
-    // --- agent / cli units: delivered over the decision channel --------------
-    let unit: ReviewUnit;
-    try {
-      unit = await store.setDecision(id, decisionValue);
-    } catch (err) {
-      if (err instanceof UnknownUnitError) return c.json({ error: err.message }, 404);
-      if (err instanceof IllegalTransitionError) return c.json({ error: err.message }, 409);
-      throw err;
-    }
-    decision.deliver(id, decisionValue);
-    broadcast('units', { units: store.list() });
-    return c.json({ ok: true, unit });
-  });
-
-  // `dad add` ingest — the CLI door (source:'cli'). Mirrors the MCP `submit_for_review` path over
-  // HTTP: compute the worktree slice, mint a unit, kick the worker pool. The daemon owns the store;
-  // `dad add` never writes it directly. A clean tree is a no-op (HTTP 200 { ok:false }), like submit.
-  app.post('/api/units', async (c) => {
-    let body: { taskLabel?: string; intent?: string; repo?: string; worktreePath?: string; baseRef?: string };
-    try {
-      body = (await c.req.json()) as typeof body;
-    } catch {
-      return c.json({ error: 'invalid JSON body' }, 400);
-    }
-    const { taskLabel, intent, repo, worktreePath, baseRef } = body;
-    if (!repo || !worktreePath || !taskLabel) {
-      return c.json({ error: 'repo, worktreePath, and taskLabel are required' }, 400);
-    }
-
-    let review;
-    try {
-      review = await computeSlice(worktreePath, baseRef);
-    } catch (err) {
-      if (err instanceof CleanTreeError) {
-        return c.json({ ok: false, reason: 'clean-tree', message: err.message }, 200);
-      }
-      throw err;
-    }
-
-    // Dedup: a second `dad add` from the same worktree updates the existing unit in place (fresh slice,
-    // back to `submitted`, prior verdict/error cleared) rather than minting a duplicate — which also
-    // re-reviews a unit whose first review failed.
-    const existing = store.findByWorktree(worktreePath);
-    const unit = existing
-      ? await store.resubmit(existing.unitId, {
-          taskLabel,
-          intent,
-          baseRef: review.baseRef,
-          diffContentKey: review.contentKey,
-          files: review.files,
-          metadata: review.metadata,
-        })
-      : await store.add({
-          repo,
-          worktreePath,
-          taskLabel,
-          intent: intent ?? '',
-          uncertainties: [],
-          baseRef: review.baseRef,
-          diffContentKey: review.contentKey,
-          files: review.files,
-          metadata: review.metadata,
-          source: 'cli',
-        });
-    onSubmitted?.(unit);
-    broadcast('units', { units: store.list() });
-    return c.json({ unitId: unit.unitId });
-  });
-
-  // Retry a local unit's review — re-compute the worktree slice and resubmit it to the worker pool.
-  // The one way a `queued` unit that failed its review (the forward machine has no edge out of `queued`
-  // back to `submitted`) gets re-evaluated from the UI. github units have no worktree → 400 (they
-  // re-review via the poller / lazy hydrate instead). A now-clean tree is a friendly no-op.
-  app.post('/api/units/:id/retry', async (c) => {
-    const id = c.req.param('id');
-    const unit = store.get(id);
-    if (!unit) return c.json({ error: new UnknownUnitError(id).message }, 404);
-    if (unit.source === 'github') {
-      return c.json({ error: 'github units cannot be retried — they re-review on a new push' }, 400);
-    }
-    let review;
-    try {
-      review = await computeSlice(unit.worktreePath, unit.baseRef);
-    } catch (err) {
-      if (err instanceof CleanTreeError) {
-        return c.json({ ok: false, reason: 'clean-tree', message: err.message }, 200);
-      }
-      throw err;
-    }
-    const updated = await store.resubmit(id, {
-      baseRef: review.baseRef,
-      diffContentKey: review.contentKey,
-      files: review.files,
-      metadata: review.metadata,
-    });
-    onSubmitted?.(updated);
-    broadcast('units', { units: store.list() });
-    return c.json({ ok: true, unit: updated });
-  });
-
   // Remove a unit from the queue (the reviewer's manual cleanup of failed / stale / abandoned units).
   // Hard delete: drops it from memory + disk. For github units the poller may re-mint it next cycle if
   // the review is still requested — that's intended (it's still on your plate); local units stay gone.
@@ -352,21 +163,93 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
     return c.json({ ok: true });
   });
 
-  // Lazy narrative for `github` units — generated on open, not on poll, so dad never burns tokens
-  // narrating PRs you never click. The web drill-in POSTs this once when it opens a github unit with
-  // no narrative; the `hydrate` dep fetches the PR diff + generates the walkthrough and stores it
-  // (without a status transition). No-op for non-github units, already-hydrated units, or when no
-  // hydrate dep is wired. Must precede the static catch-all or serveStatic swallows it.
+  // Manual "check GitHub now" — the same review-request poll the interval runs (`pollOnce`), on demand.
+  // The poll broadcasts a `units` snapshot that repaints every open tab; the returned counts feed only
+  // the command center's result toast. Single-flight in the route closure: concurrent POSTs (button
+  // mashing) coalesce onto one in-flight `pollNow()` so we don't fan out a GitHub search per click —
+  // overlap with the interval poller is benign since classify dedupes. Route-level (not wiring-level) so
+  // this file's tests can cover it. Must precede the static catch-all.
+  app.post('/api/poll', async (c) => {
+    // A poll we can't run is meaningless — refuse rather than pretend the list is fresh.
+    if (!pollNow) {
+      return c.json({ error: 'GitHub is not configured — cannot poll for review requests' }, 503);
+    }
+    const poll = (inflight ??= pollNow()
+      .catch((err) => {
+        // Log on the shared in-flight promise, not per-awaiter: the single-flight coalesces concurrent
+        // POSTs onto this one poll, so logging here emits exactly one line per real failure instead of
+        // one per request (matches the poller's + hydrate route's plain failure line). Re-throw so each
+        // awaiting request still 502s below.
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(`[diffdad] manual poll failed: ${message}`);
+        throw err;
+      })
+      .finally(() => {
+        inflight = null;
+      }));
+    try {
+      const { minted, resurfaced, removed } = await poll;
+      return c.json({ ok: true, minted, resurfaced, removed });
+    } catch (err) {
+      // A real GitHub/network failure is a bad gateway, not an unhandled 500 (logged once above).
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 502);
+    }
+  });
+
+  // Lazy narrative — generated on open, not on poll, so dad never burns tokens narrating PRs you
+  // never click. The web drill-in POSTs this once when it opens a unit with no narrative; the
+  // `hydrate` dep fetches the PR diff + generates the walkthrough and stores it (without a status
+  // transition). No-op for already-hydrated units or when no hydrate dep is wired. Must precede the
+  // static catch-all or serveStatic swallows it.
+  //
+  // The per-PR re-read POSTs an optional `{ force: true }` body: it regenerates even when a narrative
+  // exists (advancing to the live head SHA + bypassing the cache read). The body is optional — the
+  // legacy no-body lazy-open callers must keep working, so an absent/invalid body is a plain hydrate,
+  // never a 400.
   app.post('/api/units/:id/hydrate', async (c) => {
     const id = c.req.param('id');
     const unit = store.get(id);
     if (!unit) return c.json({ error: new UnknownUnitError(id).message }, 404);
-    if (unit.source !== 'github' || unit.narrative || !hydrate) return c.json({ unit });
+
+    let force = false;
+    try {
+      const body = (await c.req.json()) as { force?: boolean } | null;
+      force = body?.force === true;
+    } catch {
+      // No body / not JSON — the lazy first-open path posts nothing. Treat it as a non-force hydrate.
+    }
+
+    // No GitHub wired → graceful no-op (unit returned unchanged). A non-force hydrate on an already
+    // narrated unit is also a no-op (the lazy path fires once per open); `force` bypasses that guard.
+    if (!hydrate) return c.json({ unit });
+    if (!force && unit.narrative) return c.json({ unit });
+
+    // Single-flight per unit: coalesce concurrent hydrates for this id onto one run. The first caller's
+    // `force` wins the shared run — a follow-on that rides it gets the same result, which is the intent
+    // (one regeneration, not two). Mirrors /api/poll: log on the shared promise (one line per real
+    // failure, not per awaiter) and clear the entry in `.finally`.
+    let run = hydrating.get(id);
+    if (!run) {
+      run = hydrate(unit, force)
+        .catch((err) => {
+          // The drill-in shows a spinner while hydrating, so on failure the daemon must surface the
+          // cause in its output (matches the poller's + poll route's plain `[diffdad] ...` line).
+          // Re-throw so each awaiting request still 502s below.
+          const message = err instanceof Error ? err.message : String(err);
+          console.error(`[diffdad] hydrate failed for ${unit.repo}#${unit.prNumber} (unit ${id}): ${message}`);
+          throw err;
+        })
+        .finally(() => {
+          hydrating.delete(id);
+        });
+      hydrating.set(id, run);
+    }
+
     let updated: ReviewUnit;
     try {
-      updated = await hydrate(unit);
+      updated = await run;
     } catch (err) {
-      // A real PR-fetch / LLM failure is a bad gateway, not an unhandled 500 with a stack trace.
+      // A real PR-fetch / LLM failure is a bad gateway, not an unhandled 500 (logged once above).
       // Record nothing and don't broadcast — the unit stays as-is for a later retry.
       return c.json({ error: err instanceof Error ? err.message : String(err) }, 502);
     }
@@ -374,16 +257,15 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
     return c.json({ unit: updated });
   });
 
-  // --- Comments (github units) ----------------------------------------------
-  // Two-way with GitHub, mirroring the PR server's /api/comments: a github unit's comments are
-  // fetched and posted LIVE from GitHub (never stored on the unit), so dad and the PR can't drift —
-  // the same reason the decision route posts to GitHub first. Non-github units (agent/cli) have no PR
-  // to comment on, so GET returns [] and POST 400s. Both routes must precede the static catch-all.
+  // --- Comments -------------------------------------------------------------
+  // Two-way with GitHub, mirroring the PR server's /api/comments: a unit's comments are fetched and
+  // posted LIVE from GitHub (never stored on the unit), so dad and the PR can't drift — the same
+  // reason the review route posts to GitHub first. Both routes must precede the static catch-all.
   app.get('/api/units/:id/comments', async (c) => {
     const id = c.req.param('id');
     const unit = store.get(id);
     if (!unit) return c.json({ error: new UnknownUnitError(id).message }, 404);
-    if (unit.source !== 'github' || !commentFetcher) return c.json([] as PRComment[]);
+    if (!commentFetcher) return c.json([] as PRComment[]);
     const raw = await commentFetcher(unit);
     // Map to chapters once the walkthrough exists (the drill-in hydrates on open); before that, the
     // raw comments are still returned so they're never invisible — they just carry no chapterIndices.
@@ -394,7 +276,6 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
     const id = c.req.param('id');
     const unit = store.get(id);
     if (!unit) return c.json({ error: new UnknownUnitError(id).message }, 404);
-    if (unit.source !== 'github') return c.json({ error: 'only github units have a PR to comment on' }, 400);
     // A comment we can't post is worse than no comment — refuse rather than show a local ghost.
     if (!commentPoster) return c.json({ error: 'GitHub is not configured — cannot post a comment' }, 503);
 
@@ -438,94 +319,17 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
     return c.json(created, 201);
   });
 
-  // --- Agent comments (local units' "send to agent" loop) -------------------
-  // The daemon mirror of server.ts's /api/agent-comments, but PER-UNIT: the walkthrough's "Send to
-  // agent" posts a beat here, the agent reads/answers it over MCP (list/reply/resolve_comment), and
-  // both sides share the same per-unit store. Unknown unit → 404. The broadcast is unit-scoped so a
-  // comment on unit A never repaints a tab open on unit B. Must precede the static catch-all.
-  app.get('/api/units/:id/agent-comments', async (c) => {
-    const id = c.req.param('id');
-    const cs = await getCommentStore(id);
-    if (!cs) return c.json({ error: new UnknownUnitError(id).message }, 404);
-    return c.json(cs.list());
-  });
-
-  app.post('/api/units/:id/agent-comments', async (c) => {
-    const id = c.req.param('id');
-    const cs = await getCommentStore(id);
-    if (!cs) return c.json({ error: new UnknownUnitError(id).message }, 404);
-    let body: {
-      path?: string;
-      line?: number;
-      side?: 'LEFT' | 'RIGHT';
-      startLine?: number;
-      startSide?: 'LEFT' | 'RIGHT';
-      body?: string;
-      hunkContext?: string;
-      chapterTitle?: string;
-      inReplyToId?: string;
-    };
-    try {
-      body = (await c.req.json()) as typeof body;
-    } catch {
-      return c.json({ error: 'invalid JSON body' }, 400);
-    }
-    if (!body.body || typeof body.body !== 'string') return c.json({ error: "missing 'body'" }, 400);
-
-    // Reply: thread under an existing comment (it inherits the parent's path/line) rather than spawning
-    // a sibling at the same location. This is what the UI's in-thread composer expects.
-    if (body.inReplyToId) {
-      let updated;
-      try {
-        updated = await cs.addReply(body.inReplyToId, { author: 'user', body: body.body });
-      } catch (err) {
-        if (err instanceof UnknownCommentError) return c.json({ error: err.message }, 404);
-        throw err;
-      }
-      broadcast('agent-comment', { unitId: id, comments: cs.list() });
-      return c.json(updated, 201);
-    }
-
-    // New top-level comment needs an anchor.
-    if (!body.path || typeof body.path !== 'string' || typeof body.line !== 'number') {
-      return c.json({ error: "missing 'path'/'line'" }, 400);
-    }
-    const comment = await cs.add({
-      path: body.path,
-      line: body.line,
-      side: body.side,
-      startLine: body.startLine,
-      startSide: body.startSide,
-      body: body.body,
-      hunkContext: body.hunkContext,
-      chapterTitle: body.chapterTitle,
-    });
-    broadcast('agent-comment', { unitId: id, comments: cs.list() });
-    return c.json(comment, 201);
-  });
-
-  // --- Agent presence (local units) -----------------------------------------
-  // The drill-in's "agent connected / no agent connected" cue. `lastSeenAt` is epoch-ms of the unit's
-  // most recent agent interaction (parking on await_decision, or working its comments), or null if an
-  // agent has never checked in. The client decides "connected" from how fresh it is; live updates
-  // arrive over the `presence` SSE event. Unknown unit → 404. Must precede the static catch-all.
-  app.get('/api/units/:id/presence', (c) => {
-    const id = c.req.param('id');
-    if (!store.get(id)) return c.json({ error: new UnknownUnitError(id).message }, 404);
-    return c.json({ lastSeenAt: activity.lastSeen(id) ?? null });
-  });
-
   // --- Review submission (github units) -------------------------------------
   // The drill-in's full submit: COMMENT/APPROVE/REQUEST_CHANGES + batched inline draft comments, in
-  // one GitHub review (mirrors the PR server's /api/review). Unlike that route, a verdict (approve /
-  // request_changes) ALSO records locally so the unit leaves the needs-you queue — so we post to
-  // GitHub FIRST and validate `queued` before the network (same divergence guard as the decision
-  // route). A COMMENT review carries no verdict: it posts to GitHub but the unit stays queued.
+  // one GitHub review (mirrors the PR server's /api/review). This is the ONLY path that submits a
+  // verdict. Unlike the PR server's route, a verdict (approve / request_changes) ALSO records locally
+  // so the unit leaves the needs-you queue — so we post to GitHub FIRST and validate `queued` before
+  // the network (a repeat decision must not post a second real review then fail locally, the exact
+  // dad⇄GitHub divergence we forbid). A COMMENT review carries no verdict: it posts but stays queued.
   app.post('/api/units/:id/review', async (c) => {
     const id = c.req.param('id');
     const unit = store.get(id);
     if (!unit) return c.json({ error: new UnknownUnitError(id).message }, 404);
-    if (unit.source !== 'github') return c.json({ error: 'only github units submit a GitHub review' }, 400);
     if (!reviewSubmitter) return c.json({ error: 'GitHub is not configured — cannot submit a review' }, 503);
 
     let body: { event?: string; body?: string; comments?: ReviewInlineComment[] };
@@ -637,14 +441,14 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
     }
   });
 
-  // --- Status (github units): CI checks + reviews ---------------------------
+  // --- Status: CI checks + reviews ------------------------------------------
   // The PR's merge-readiness context for the drill-in (is CI green, who's approved). Read live from
-  // GitHub, never stored. Non-github units / no fetcher → empties (they have no PR).
+  // GitHub, never stored. No fetcher → empties.
   app.get('/api/units/:id/status', async (c) => {
     const id = c.req.param('id');
     const unit = store.get(id);
     if (!unit) return c.json({ error: new UnknownUnitError(id).message }, 404);
-    if (unit.source !== 'github' || !statusFetcher) {
+    if (!statusFetcher) {
       return c.json({ checks: [] as CheckRun[], reviews: [] as PRReview[] });
     }
     return c.json(await statusFetcher(unit));
@@ -679,25 +483,6 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
     return new Response(stream, {
       headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' },
     });
-  });
-
-  // --- MCP endpoint ---------------------------------------------------------
-  // submit_for_review + await_decision (sharing the store + decision channel) plus the per-unit
-  // comment loop (list/reply/resolve_comment, scoped by the unitId submit_for_review returned, sharing
-  // the same per-unit stores the HTTP routes use). Must be registered BEFORE the static catch-all or
-  // `/mcp` is swallowed by serveStatic.
-  mountMcp(app, (server) => {
-    registerSubmitTools(server, {
-      store,
-      decision,
-      broadcast,
-      computeSlice,
-      onSubmitted,
-      awaitTimeoutMs,
-      getCommentStore,
-      onAgentSeen,
-    });
-    registerUnitCommentTools(server, { getStore: getCommentStore, broadcast, onAgentSeen });
   });
 
   // --- Command-center SPA ---------------------------------------------------
