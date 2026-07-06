@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.11.0](https://github.com/nicknisi/diffdad/compare/v0.10.0...v0.11.0) (2026-07-06)
+
+
+### Features
+
+* per-machine daemon + agent review loop ([#38](https://github.com/nicknisi/diffdad/issues/38)) ([7f63138](https://github.com/nicknisi/diffdad/commit/7f63138361c45b65a987b203d1398574371a1c14))
+* review-loop robustness — legible doors, comment delivery, presence, app-data storage ([#40](https://github.com/nicknisi/diffdad/issues/40)) ([631eaa9](https://github.com/nicknisi/diffdad/commit/631eaa9e4988b490c405e5e9752488c0b3862340))
+
 ## [0.10.0](https://github.com/nicknisi/diffdad/compare/v0.9.1...v0.10.0) (2026-05-09)
 
 
