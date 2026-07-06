@@ -68,7 +68,7 @@ The CLI fetches the PR diff, generates a semantic narrative, and opens a local w
 
 ## Command Center (daemon)
 
-`dad daemon` runs a long-lived, per-machine review hub: one cross-repo queue of everything waiting on you, served at a stable local URL (`http://localhost:4319`) and grouped by status — **needs-you**, **in-flight**, **cleared**.
+`dad daemon` runs a long-lived, per-machine review hub: one cross-repo queue of everything waiting on you, served at a stable local URL (`http://localhost:4319`) and grouped by status — **needs you**, **in flight**, **cleared**.
 
 ```sh
 dad daemon                       # Start the command center
@@ -77,7 +77,15 @@ dad daemon install               # Run it under launchd — survives terminal cl
 dad daemon uninstall             # Remove the launchd agent
 ```
 
-The queue is fed by GitHub: open a review request on GitHub and it shows up here. With a token configured (see [GitHub Token](#github-token)), the daemon polls for every open PR where you're a requested reviewer or assignee and mints a unit for it. A queue row opens that unit's review — it generates its walkthrough lazily (PRs you never click cost nothing), and from inside that review you approve or request changes, posting a **real GitHub review**. A PR you've reviewed stays out of the queue until its author pushes again.
+With a GitHub token configured (see [GitHub Token](#github-token)), the daemon polls every 60 seconds for open PRs where you're a requested reviewer or assignee and mints a queue unit for each. Open a review request on GitHub and it shows up here.
+
+- **Lazy narration** — a unit's walkthrough is generated the first time you open it, not on poll, so PRs you never click cost nothing.
+- **Review from the drill-in** — a queue row only opens the PR; you approve or request changes from inside the review, which posts a **real GitHub review**. There is no queue-level verdict. A PR you've reviewed stays out of the queue until its author pushes past the commit you reviewed.
+- **Re-read (⟳)** — from a PR's review, re-fetch its live head SHA and regenerate the walkthrough from scratch, bypassing the cache — for when the author has pushed since you last looked.
+- **Refresh (↻)** — the header button runs a poll on demand instead of waiting for the next tick; a "checked … ago" caption shows how fresh the queue is, and a toast reports what changed.
+- **Self-cleaning queue** — every poll reconciles against GitHub: closed or merged PRs drop immediately; PRs no longer requested of you drop after two consecutive polls without them.
+- **Repo filter** — a sidebar facets the queue by repo with per-repo "needs you" counts (a native dropdown on narrow screens), so a busy inbox stays scannable.
+- **Errors, not spinners** — if narration fails, the review shows an explicit panel with a Retry button (and the raw diff below) instead of spinning forever.
 
 ## How It Works
 
@@ -113,7 +121,9 @@ Diff Dad needs a GitHub token to fetch PR data and post comments. It checks, in 
 
 ### Caching
 
-Narratives are cached at `~/.cache/diffdad/` keyed by `{owner}-{repo}-{number}-{sha}`. Same commit = instant reload. Use `--no-cache` to regenerate, or `dad cache clear` to wipe all cached narratives.
+Narratives and recaps are cached at `~/.cache/diffdad/`, keyed by the PR and its head commit — same commit = instant reload. Use `--no-cache` to regenerate, or `dad cache clear` to wipe the cache.
+
+The daemon's review queue is durable state, not a cache, so it lives in the app-data dir instead: `~/Library/Application Support/diffdad` on macOS, else `$XDG_DATA_HOME/diffdad` or `~/.local/share/diffdad`. `dad cache clear` never touches it.
 
 ## Features
 

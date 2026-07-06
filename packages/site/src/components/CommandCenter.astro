@@ -1,0 +1,135 @@
+---
+// Sidebar facets — needs-you counts, grouped by owner, busiest-first. "All" is the
+// active facet here so the mock queue can honestly show every row (no filtering).
+const facets = [
+  { owner: 'workos', repo: 'authkit', count: 2 },
+  { owner: 'workos', repo: 'node-sdk', count: 1 },
+  { owner: 'nicknisi', repo: 'diffdad', count: 1 },
+];
+const totalNeedsYou = facets.reduce((n, f) => n + f.count, 0);
+
+// One row per PR waiting on you — mirrors the real UnitRow: repo · branch · title,
+// a source badge, the author, and a meta line (to-resolve · files · age).
+const rows = [
+  { repo: 'workos/authkit', branch: 'fix/session-refresh', title: 'Rotate refresh tokens on every call', author: 'dmitr', meta: '2 to resolve · 4 files · 2h ago' },
+  { repo: 'workos/authkit', branch: 'feat/mfa-totp', title: 'TOTP enrollment endpoint', author: 'lena', meta: '1 to resolve · 9 files · 5h ago' },
+  { repo: 'workos/node-sdk', branch: 'fix/retry-backoff', title: 'Exponential backoff on 429s', author: 'sam', meta: '1 to resolve · 3 files · 8h ago' },
+  { repo: 'nicknisi/diffdad', branch: 'chore/deps', title: 'Bump undici to 6.x', author: 'renovate', meta: '3 files · 1d ago' },
+];
+
+const owners = [...new Set(facets.map((f) => f.owner))];
+
+const feats = [
+  { ico: '⇣', title: 'Review requests, delivered', body: 'Every 60 seconds the daemon asks GitHub for PRs where you\'re review-requested — or assigned — and drops each one into the queue. Stop spelunking through the notifications tab.' },
+  { ico: '⧉', title: 'Filter by where the work is', body: 'A repo facet sidebar with per-repo needs-you counts, grouped by owner and sorted busiest-first. Repos with nothing waiting fold behind a quiet toggle. Counts never lie — they\'re from the whole queue, not the filtered view.' },
+  { ico: '¶', title: 'Open a PR, get the story', body: 'Narratives generate lazily on first open — the same semantic chapters as dad <pr>. Hit ⟳ Re-read to regenerate at the PR\'s live head SHA after the author pushes again.' },
+  { ico: '⌦', title: 'A queue that cleans itself', body: 'Approve or request changes from the drill-in and it posts a real GitHub review. Then the PR clears itself: closed and merged the moment dad notices, reviewed-elsewhere within a poll or two.' },
+];
+---
+
+<section id="command-center" class="bg-bg-2 border-y border-line py-16">
+  <div class="wrap">
+    <div class="section-eye">// command center</div>
+    <h2 class="font-serif font-semibold text-[44px] leading-[1.1] tracking-[-0.02em] m-0 mb-[18px] text-balance">
+      Every PR waiting on you, <em class="italic text-accent-2">in one place.</em>
+    </h2>
+    <p class="text-lg text-ink-2 max-w-[620px] m-0 mb-10">
+      <code class="font-mono bg-card border border-line px-[6px] py-[2px] rounded text-base">dad daemon</code>
+      runs quietly in the background, polls GitHub for review requests, and serves a cross-repo queue
+      of everything on your plate. Open one and it becomes the same narrated story — chapters, risk
+      levels, real reviews. Like a fridge that tells you what needs eating before it goes bad.
+    </p>
+
+    <!-- Mock command-center panel — mirrors the real daemon UI. -->
+    <div class="bg-card border border-line rounded-[18px] shadow-soft overflow-hidden mb-12">
+      <div class="flex items-center gap-3 px-5 py-3 border-b border-line">
+        <span class="text-[14px] font-bold tracking-tight">
+          Diff Dad <span class="font-medium text-muted">· command center</span>
+        </span>
+        <span class="ml-auto inline-flex items-center gap-1.5 text-[12px] font-medium" style={{ color: 'var(--green-9)' }}>
+          <span class="inline-block h-2 w-2 rounded-full animate-pulse" style={{ background: 'var(--green-9)' }}></span>
+          Live
+        </span>
+        <span class="text-[12px] tabular-nums text-muted hidden sm:inline">checked 42s ago</span>
+        <span class="inline-flex items-center gap-1.5 rounded-md bg-bg-2 border border-line px-2 py-1 text-[12.5px] font-medium text-ink">
+          <span aria-hidden>↻</span> Refresh
+        </span>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-[204px_1fr]">
+        <!-- Repo facet sidebar -->
+        <aside class="lg:border-r lg:border-line p-3 text-[13.5px]">
+          <div class="flex items-center justify-between rounded-lg px-2.5 py-1.5 bg-accent/[0.14] text-ink font-medium">
+            <span>All</span>
+            <span class="font-mono text-[12px] text-accent-2">{totalNeedsYou}</span>
+          </div>
+          {
+            owners.map((owner) => (
+              <div class="flex flex-col">
+                <div class="px-2.5 pb-1 pt-3 text-[11px] font-medium text-muted">{owner}/</div>
+                {facets
+                  .filter((f) => f.owner === owner)
+                  .map((f) => (
+                    <div class="flex items-center justify-between rounded-lg px-2.5 py-1.5 text-ink-2">
+                      <span>{f.repo}</span>
+                      <span class="font-mono text-[12px] text-muted">{f.count}</span>
+                    </div>
+                  ))}
+              </div>
+            ))
+          }
+          <div class="flex items-center gap-1 px-2.5 pt-3 text-[12px] text-muted">
+            <span aria-hidden>▸</span> quiet
+          </div>
+        </aside>
+
+        <!-- Queue -->
+        <div class="p-3">
+          <div class="flex items-center gap-2 px-1.5 pb-1 pt-1">
+            <span class="text-[12px] font-semibold uppercase tracking-[0.06em] text-ink-2">Needs you</span>
+            <span class="font-mono text-[12px] text-muted">{totalNeedsYou}</span>
+          </div>
+          {
+            rows.map((r) => (
+              <div class="flex items-center gap-3 px-3.5 py-2.5 rounded-lg hover:bg-card-soft transition-colors">
+                <span class="mt-[2px] shrink-0 text-[13px] leading-none text-ink-2" aria-hidden>▸</span>
+                <span class="min-w-0 flex-1">
+                  <span class="flex flex-wrap items-baseline gap-x-1.5 text-[13.5px]">
+                    <span class="text-muted">{r.repo}</span>
+                    <span class="text-muted">·</span>
+                    <span class="font-mono text-[12.5px] text-muted">{r.branch}</span>
+                    <span class="text-muted">·</span>
+                    <span class="font-medium text-ink">{r.title}</span>
+                    <span class="rounded px-1 py-px text-[10.5px] font-medium leading-none bg-accent/[0.16] text-accent-2">GitHub</span>
+                    <span class="text-[12px] text-muted">@{r.author}</span>
+                  </span>
+                  <span class="mt-0.5 block text-[12px] text-muted">{r.meta}</span>
+                </span>
+              </div>
+            ))
+          }
+          <div class="flex items-center gap-2 px-3.5 pt-3 text-[12px] text-muted">
+            <span class="font-semibold uppercase tracking-[0.06em]">Cleared</span>
+            <span class="font-mono">6</span>
+            <span class="text-muted">— reviewed, merged, or closed</span>
+            <span class="ml-auto underline decoration-muted-2 underline-offset-[3px]">show</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {
+        feats.map((f) => (
+          <div class="bg-card border border-line rounded-2xl px-[22px] py-6">
+            <div class="w-10 h-10 rounded-[10px] bg-accent/[0.16] flex items-center justify-center mb-4 text-accent-2 text-lg">
+              {f.ico}
+            </div>
+            <h4 class="font-serif text-xl font-semibold m-0 mb-2 tracking-[-0.01em]">{f.title}</h4>
+            <p class="m-0 text-[14.5px] text-ink-2 leading-[1.55]">{f.body}</p>
+          </div>
+        ))
+      }
+    </div>
+  </div>
+</section>
