@@ -106,10 +106,12 @@ async function startPoller(
   store: UnitStore,
   broadcast: SseHub['broadcast'],
   pollMs: number,
+  fetchPrState: (unit: ReviewUnit) => Promise<{ open: boolean }>,
+  missStreaks: Map<string, number>,
 ): Promise<void> {
   const tick = async () => {
     try {
-      await pollOnce({ search: () => client.searchReviewRequested(), store, broadcast });
+      await pollOnce({ search: () => client.searchReviewRequested(), store, broadcast, fetchPrState, missStreaks });
     } catch (err) {
       console.warn(`[diffdad] review poll failed: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -224,6 +226,20 @@ function makeStatusFetcher(
   };
 }
 
+/**
+ * Fetch a `github` unit's PR open/closed state for the poller's queue reconciliation. A merged PR is
+ * closed on GitHub, so `state === 'open'` is the only distinction the reconciler needs. Wired only when
+ * a GitHub client exists; throws on API failure so the reconciler treats it as "no evidence" and skips.
+ */
+function makePrStateFetcher(client: GitHubClient): (unit: ReviewUnit) => Promise<{ open: boolean }> {
+  return async (unit) => {
+    const { owner, name } = splitRepo(unit.repo);
+    if (unit.prNumber === undefined) throw new Error(`unit ${unit.unitId} has no PR number`);
+    const pr = await client.getPR(owner, name, unit.prNumber);
+    return { open: pr.state === 'open' };
+  };
+}
+
 /** Split `owner/name` for the narrative cache key; tolerate a bare name. */
 function splitRepo(repo: string): { owner: string; name: string } {
   const slash = repo.indexOf('/');
@@ -269,6 +285,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<number> {
   const githubToken = await resolveGitHubToken();
   const githubClient = githubToken ? new GitHubClient(githubToken) : null;
 
+  // One shared miss-streak map so the interval poller and the manual /api/poll reconcile against the
+  // same streak state (a unit missing on one path then the other still removes at two total misses).
+  const missStreaks = new Map<string, number>();
+  const fetchPrState = githubClient ? makePrStateFetcher(githubClient) : undefined;
+
   const { app } = createDaemonApp({
     store,
     hub,
@@ -280,7 +301,14 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<number> {
     // Manual refresh runs the identical pass startPoller does — one on-demand `pollOnce` over the same
     // search+store+broadcast. No token → undefined and the /api/poll route 503s.
     pollNow: githubClient
-      ? () => pollOnce({ search: () => githubClient.searchReviewRequested(), store, broadcast: hub.broadcast })
+      ? () =>
+          pollOnce({
+            search: () => githubClient.searchReviewRequested(),
+            store,
+            broadcast: hub.broadcast,
+            fetchPrState,
+            missStreaks,
+          })
       : undefined,
     // AI works without a GitHub token (the default provider shells out to `claude -p`), so it's
     // always wired — the route reads config per-call, mirroring the PR server's /api/ai.
@@ -310,7 +338,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<number> {
   // Awaited only through the initial pass; the interval then runs detached. With no token the whole
   // GitHub door is closed (no poll, no review-post, no lazy-narrate) — local units still flow.
   if (githubClient) {
-    await startPoller(githubClient, store, hub.broadcast, pollMs);
+    await startPoller(githubClient, store, hub.broadcast, pollMs, fetchPrState!, missStreaks);
   } else {
     console.log(
       `  ${a.gray}○${a.reset} ${a.dim}GitHub poller off — no token. Set ${a.reset}${a.cyan}DIFFDAD_GITHUB_TOKEN${a.reset}` +

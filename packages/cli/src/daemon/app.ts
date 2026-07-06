@@ -97,7 +97,7 @@ export type DaemonAppDeps = {
    * so tests fake it and the daemon wires the authenticated search+store+broadcast. Absent → the manual
    * poll route 503s (no GitHub token, nothing to poll).
    */
-  pollNow?: () => Promise<{ minted: number; resurfaced: number }>;
+  pollNow?: () => Promise<{ minted: number; resurfaced: number; removed: number }>;
   /** Override the command-center static root (defaults to the same fallbacks as `server.ts`). */
   webDist?: string;
 };
@@ -126,7 +126,7 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
   const app = new Hono();
   const broadcast = hub.broadcast;
   // Single-flight state for POST /api/poll: concurrent manual refreshes share one in-flight poll.
-  let inflight: Promise<{ minted: number; resurfaced: number }> | null = null;
+  let inflight: Promise<{ minted: number; resurfaced: number; removed: number }> | null = null;
   // Single-flight state for POST /api/units/:id/hydrate, keyed per unit: concurrent hydrates of the
   // SAME unit (a Re-read double-click, or an SSE re-open racing the button) coalesce onto one run —
   // no doubled PR fetch + LLM generation. Different units still hydrate in parallel (distinct keys).
@@ -188,8 +188,8 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
         inflight = null;
       }));
     try {
-      const { minted, resurfaced } = await poll;
-      return c.json({ ok: true, minted, resurfaced });
+      const { minted, resurfaced, removed } = await poll;
+      return c.json({ ok: true, minted, resurfaced, removed });
     } catch (err) {
       // A real GitHub/network failure is a bad gateway, not an unhandled 500 (logged once above).
       return c.json({ error: err instanceof Error ? err.message : String(err) }, 502);

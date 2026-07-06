@@ -107,8 +107,11 @@ export function CommandCenter() {
         flashToast({ kind: 'error', message });
         return;
       }
-      const data = (await res.json()) as { minted?: number; resurfaced?: number };
-      flashToast({ kind: 'ok', message: copy.refreshResult(data.minted ?? 0, data.resurfaced ?? 0) });
+      const data = (await res.json()) as { minted?: number; resurfaced?: number; removed?: number };
+      flashToast({
+        kind: 'ok',
+        message: copy.refreshResult(data.minted ?? 0, data.resurfaced ?? 0, data.removed ?? 0),
+      });
     } catch {
       flashToast({ kind: 'error', message: copy.refreshUnreachable });
     } finally {

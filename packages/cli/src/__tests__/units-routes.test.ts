@@ -67,7 +67,7 @@ type SetupOpts = {
   ) => Promise<void>;
   ai?: (system: string, user: string) => Promise<{ text: string }>;
   statusFetcher?: (unit: ReviewUnit) => Promise<{ checks: CheckRun[]; reviews: PRReview[] }>;
-  pollNow?: () => Promise<{ minted: number; resurfaced: number }>;
+  pollNow?: () => Promise<{ minted: number; resurfaced: number; removed: number }>;
 };
 
 function setup(opts: SetupOpts = {}) {
@@ -417,11 +417,11 @@ describe('POST /api/poll (manual refresh)', () => {
     expect(((await res.json()) as { error: string }).error).toContain('GitHub is not configured');
   });
 
-  it('passes the mint/resurface counts through on success', async () => {
-    const { app } = setup({ pollNow: async () => ({ minted: 2, resurfaced: 1 }) });
+  it('passes the mint/resurface/removed counts through on success', async () => {
+    const { app } = setup({ pollNow: async () => ({ minted: 2, resurfaced: 1, removed: 3 }) });
     const res = await poll(app);
     expect(res.status).toBe(200);
-    expect((await res.json()) as unknown).toEqual({ ok: true, minted: 2, resurfaced: 1 });
+    expect((await res.json()) as unknown).toEqual({ ok: true, minted: 2, resurfaced: 1, removed: 3 });
   });
 
   it('502s and logs one line when pollNow throws', async () => {
@@ -446,8 +446,8 @@ describe('POST /api/poll (manual refresh)', () => {
 
   it('single-flights concurrent POSTs into one pollNow, then polls again after it settles', async () => {
     let invocations = 0;
-    let resolve!: (v: { minted: number; resurfaced: number }) => void;
-    let deferred = new Promise<{ minted: number; resurfaced: number }>((r) => {
+    let resolve!: (v: { minted: number; resurfaced: number; removed: number }) => void;
+    let deferred = new Promise<{ minted: number; resurfaced: number; removed: number }>((r) => {
       resolve = r;
     });
     const { app } = setup({
@@ -462,16 +462,16 @@ describe('POST /api/poll (manual refresh)', () => {
     const second = poll(app);
     // Let both handlers reach the shared `await inflight` before the poll settles.
     await new Promise((r) => setTimeout(r, 0));
-    resolve({ minted: 3, resurfaced: 0 });
+    resolve({ minted: 3, resurfaced: 0, removed: 0 });
     const [r1, r2] = await Promise.all([first, second]);
     expect(r1.status).toBe(200);
     expect(r2.status).toBe(200);
-    expect((await r1.json()) as unknown).toEqual({ ok: true, minted: 3, resurfaced: 0 });
-    expect((await r2.json()) as unknown).toEqual({ ok: true, minted: 3, resurfaced: 0 });
+    expect((await r1.json()) as unknown).toEqual({ ok: true, minted: 3, resurfaced: 0, removed: 0 });
+    expect((await r2.json()) as unknown).toEqual({ ok: true, minted: 3, resurfaced: 0, removed: 0 });
     expect(invocations).toBe(1); // coalesced into a single GitHub search
 
     // In-flight cleared once it settled → a later request runs a fresh poll.
-    deferred = Promise.resolve({ minted: 0, resurfaced: 0 });
+    deferred = Promise.resolve({ minted: 0, resurfaced: 0, removed: 0 });
     const r3 = await poll(app);
     expect(r3.status).toBe(200);
     expect(invocations).toBe(2);
@@ -479,7 +479,7 @@ describe('POST /api/poll (manual refresh)', () => {
 
   it('logs one line when concurrent POSTs coalesce onto a single failing poll', async () => {
     let reject!: (e: Error) => void;
-    const deferred = new Promise<{ minted: number; resurfaced: number }>((_, r) => {
+    const deferred = new Promise<{ minted: number; resurfaced: number; removed: number }>((_, r) => {
       reject = r;
     });
     const { app } = setup({ pollNow: () => deferred });

@@ -36,12 +36,16 @@ export const copy = {
   shortcutsFooter: 'Measure twice, commit once.',
   brandTooltip: "I'm not mad, just diff-appointed.",
 
-  // Manual refresh outcome — minted = brand-new units, resurfaced = ones back for another pass.
-  refreshResult: (minted: number, resurfaced: number): string => {
-    if (minted === 0 && resurfaced === 0) return "Nothing new. You're all caught up.";
+  // Manual refresh outcome — minted = brand-new units, resurfaced = ones back for another pass,
+  // removed = ones reconciled off your plate (reviewed / closed / merged / no longer requested).
+  refreshResult: (minted: number, resurfaced: number, removed: number): string => {
     const parts: string[] = [];
     if (minted > 0) parts.push(`${minted} new`);
     if (resurfaced > 0) parts.push(`${resurfaced} back for another look`);
+    if (removed > 0) parts.push(`${removed} cleared out`);
+    if (parts.length === 0) return "Nothing new. You're all caught up.";
+    // Removed-only reads as caught-up-with-a-cleanup; any incoming work leads with that work.
+    if (minted === 0 && resurfaced === 0) return `Nothing new. ${removed} cleared out.`;
     return `${parts.join(', ')}.`;
   },
   refreshUnreachable: 'Could not reach the daemon.',
