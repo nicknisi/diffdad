@@ -1,8 +1,8 @@
 import { rm } from 'fs/promises';
-import { streamText } from 'ai';
+import { streamText, wrapLanguageModel } from 'ai';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createOpenAI } from '@ai-sdk/openai';
-import type { FinishReason, LanguageModelUsage, LanguageModelV1 } from 'ai';
+import type { FinishReason, LanguageModelUsage, LanguageModelV1, LanguageModelV1Middleware } from 'ai';
 import { DEFAULT_CLI_MODELS, LOCAL_CLIS, type DiffDadConfig, type LocalCli } from '../config';
 
 export type AiChunkHandler = (delta: string) => void;
@@ -102,13 +102,26 @@ export async function resolveProviderKey(config: DiffDadConfig): Promise<string>
   return slugify(model ? `${cli}-${model}` : cli);
 }
 
+/**
+ * ai@4 injects `temperature: 0` into every call when none is set, and Claude
+ * models from Sonnet 5 / Opus 4.7 onward reject any non-default sampling
+ * params with a 400 ("`temperature` is deprecated for this model"). We never
+ * set temperature ourselves, so drop it and let the API default apply.
+ */
+const stripTemperature: LanguageModelV1Middleware = {
+  transformParams: async ({ params }) => ({ ...params, temperature: undefined }),
+};
+
 export function getModel(config: DiffDadConfig): LanguageModelV1 {
   const provider = config.aiProvider ?? 'anthropic';
 
   switch (provider) {
     case 'anthropic': {
       const anthropic = createAnthropic({ apiKey: config.aiApiKey });
-      return anthropic(config.aiModel ?? DEFAULT_ANTHROPIC_MODEL);
+      return wrapLanguageModel({
+        model: anthropic(config.aiModel ?? DEFAULT_ANTHROPIC_MODEL),
+        middleware: stripTemperature,
+      });
     }
     case 'openai': {
       const openai = createOpenAI({ apiKey: config.aiApiKey });
