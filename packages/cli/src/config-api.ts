@@ -117,7 +117,10 @@ const defaultTestAi: NonNullable<ConfigRouteTesters['testAi']> = async (config) 
     const result = await Promise.race([
       callAi(config, 'Reply with the word ok.', 'ping', 16),
       new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error(`AI did not respond within ${AI_TEST_TIMEOUT_MS / 1000}s`)), AI_TEST_TIMEOUT_MS),
+        setTimeout(
+          () => reject(new Error(`AI did not respond within ${AI_TEST_TIMEOUT_MS / 1000}s`)),
+          AI_TEST_TIMEOUT_MS,
+        ),
       ),
     ]);
     const detail = result.text.trim();

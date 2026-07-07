@@ -165,7 +165,8 @@ export function buildGitHubWiring(
     commentPoster: makeCommentPoster(client),
     reviewSubmitter: makeReviewSubmitter(client),
     statusFetcher: makeStatusFetcher(client),
-    pollNow: () => pollOnce({ search: () => client.searchReviewRequested(), store, broadcast, fetchPrState, missStreaks }),
+    pollNow: () =>
+      pollOnce({ search: () => client.searchReviewRequested(), store, broadcast, fetchPrState, missStreaks }),
   };
 }
 
@@ -389,7 +390,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<number> {
     setPoller: (p) => {
       poller = p;
     },
-    rebuildWiring: (token) => buildGitHubWiring(token ? new GitHubClient(token) : null, store, hub.broadcast, missStreaks),
+    rebuildWiring: (token) =>
+      buildGitHubWiring(token ? new GitHubClient(token) : null, store, hub.broadcast, missStreaks),
     restartPoller: (ms) => (wiring.current.pollNow ? startPoller(wiring.current.pollNow, ms) : null),
     resolveToken: () => resolveGitHubToken(),
   });
