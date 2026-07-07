@@ -136,11 +136,8 @@ describe('GET /api/narrative', () => {
     expect(data.narrative.title).toBe('Test PR');
     expect(data.narrative.chapters).toHaveLength(1);
     expect(data.repoUrl).toBe('https://github.com/test/test');
-    expect(data.config).toMatchObject({
-      theme: 'auto',
-      storyStructure: 'chapters',
-      layoutMode: 'toc',
-    });
+    // Display prefs moved to GET /api/config in Phase 2 — the narrative payload no longer carries them.
+    expect(data.config).toBeUndefined();
   });
 
   it('returns generating=true when narrative is still in progress', async () => {

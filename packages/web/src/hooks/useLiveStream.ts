@@ -14,6 +14,7 @@ import type {
   Unit,
 } from '../state/types';
 import type { RecapResponse } from '../state/recap-types';
+import type { ConfigResponse } from '../lib/config-client';
 
 function makeEventId(): string {
   return `ev-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -131,6 +132,20 @@ export function useLiveStream() {
       }
     };
 
+    // A config PUT (from another tab, or the same-server saving tab) broadcasts the fresh
+    // ConfigResponse. Funnel it through `applyConfigResponse` so open settings tabs and the header
+    // theme/accent controls converge — this is also what brings a token-less daemon's UI alive when a
+    // token is saved elsewhere (the `github` flag flips without a reload).
+    const onConfig = (e: MessageEvent) => {
+      try {
+        const res = JSON.parse(e.data) as ConfigResponse;
+        useReviewStore.getState().applyConfigResponse(res);
+        setLastEventAt(Date.now());
+      } catch {
+        // ignore malformed event
+      }
+    };
+
     const onPr = (e: MessageEvent) => {
       try {
         const pr = JSON.parse(e.data) as PRData;
@@ -195,7 +210,6 @@ export function useLiveStream() {
           data.comments,
           state.repoUrl,
           state.checkRuns,
-          null,
           state.reviews,
         );
         useReviewStore.getState().setRegenerating(false);
@@ -259,6 +273,7 @@ export function useLiveStream() {
     es.addEventListener('comments', onComments as EventListener);
     es.addEventListener('checks', onChecks as EventListener);
     es.addEventListener('reviews', onReviews as EventListener);
+    es.addEventListener('config', onConfig as EventListener);
     es.addEventListener('pr', onPr as EventListener);
     es.addEventListener('units', onUnits as EventListener);
     es.addEventListener('regenerating', onRegenerating as EventListener);
@@ -286,6 +301,7 @@ export function useLiveStream() {
       es.removeEventListener('comments', onComments as EventListener);
       es.removeEventListener('checks', onChecks as EventListener);
       es.removeEventListener('reviews', onReviews as EventListener);
+      es.removeEventListener('config', onConfig as EventListener);
       es.removeEventListener('pr', onPr as EventListener);
       es.removeEventListener('units', onUnits as EventListener);
       es.removeEventListener('regenerating', onRegenerating as EventListener);

@@ -82,15 +82,6 @@ export function createServer(ctx: ServerContext) {
         repoUrl: `https://github.com/${ctx.owner}/${ctx.repo}`,
         mode: 'pr',
         aiPath,
-        config: {
-          theme: config.theme ?? 'auto',
-          storyStructure: config.storyStructure ?? 'chapters',
-          layoutMode: config.layoutMode ?? 'toc',
-          displayDensity: config.displayDensity ?? 'comfortable',
-          defaultNarrationDensity: config.defaultNarrationDensity ?? 'normal',
-          clusterBots: config.clusterBots ?? true,
-          accent: config.accent ?? 'classic',
-        },
       });
     }
     const commentPaths = [...new Set(ctx.comments.map((cm) => cm.path).filter((p): p is string => Boolean(p)))];
@@ -112,15 +103,6 @@ export function createServer(ctx: ServerContext) {
       repoUrl: `https://github.com/${ctx.owner}/${ctx.repo}`,
       mode: 'pr',
       aiPath,
-      config: {
-        theme: config.theme ?? 'auto',
-        storyStructure: config.storyStructure ?? 'chapters',
-        layoutMode: config.layoutMode ?? 'toc',
-        displayDensity: config.displayDensity ?? 'comfortable',
-        defaultNarrationDensity: config.defaultNarrationDensity ?? 'normal',
-        clusterBots: config.clusterBots ?? true,
-        accent: config.accent ?? 'classic',
-      },
       _debug: {
         totalComments: ctx.comments.length,
         commentPaths,

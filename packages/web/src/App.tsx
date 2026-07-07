@@ -10,11 +10,13 @@ import { CommandCenter } from './components/CommandCenter';
 import { GeneratingScreen } from './components/GeneratingScreen';
 import { PRHeader } from './components/PRHeader';
 import { RecapView } from './components/RecapView';
+import { SettingsView } from './components/SettingsView';
 import { ShortcutsHelp } from './components/ShortcutsHelp';
 import { StoryView } from './components/StoryView';
 import { SubmitBar } from './components/SubmitBar';
 import { UnitReview } from './components/UnitReview';
 import { selectReviewReady } from './state/selectors';
+import { fetchConfig } from './lib/config-client';
 import { parseRoute } from './lib/units-view';
 import { copy } from './lib/microcopy';
 import { getAccentMeta } from './lib/accents';
@@ -32,6 +34,8 @@ export default function App() {
   const setRoute = useReviewStore((s) => s.setRoute);
   const shortcutsHelpOpen = useReviewStore((s) => s.shortcutsHelpOpen);
   const setShortcutsHelpOpen = useReviewStore((s) => s.setShortcutsHelpOpen);
+  const settingsOpen = useReviewStore((s) => s.settingsOpen);
+  const applyConfigResponse = useReviewStore((s) => s.applyConfigResponse);
   const { loading, generating, setGenerating, error } = useNarrative();
 
   // Command-center routing: keep the store's route in sync with browser back/forward.
@@ -40,6 +44,21 @@ export default function App() {
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, [setRoute]);
+
+  // Bootstrap prefs for both modes — GET /api/config is the single source of display prefs + the
+  // effective GitHub state (it replaced the narrative payload's config block in Phase 2). A failure
+  // leaves defaults in place; the settings page shows a retry banner.
+  useEffect(() => {
+    let cancelled = false;
+    void fetchConfig()
+      .then((res) => {
+        if (!cancelled) applyConfigResponse(res);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [applyConfigResponse]);
 
   useEffect(() => {
     if (pr) {
@@ -133,11 +152,15 @@ export default function App() {
     );
   }
 
-  // Command-center mode (the daemon): a cross-repo dashboard, or a per-unit review drill-in.
-  // Its own self-contained shells — no single-PR chrome — routed by the client-side path.
+  // Command-center mode (the daemon): a cross-repo dashboard, a per-unit review drill-in, or the
+  // settings page. Its own self-contained shells — no single-PR chrome — routed by the client path.
   if (mode === 'command-center') {
+    if (route.name === 'settings') return <SettingsView />;
     return route.name === 'unit' ? <UnitReview /> : <CommandCenter />;
   }
+
+  // PR mode has no URL routing, so settings opens as a store-driven full-screen view.
+  if (settingsOpen) return <SettingsView />;
 
   // Diff-first gate: block on the brief pre-files instant only. The moment there's a diff
   // to show or a guide to render, fall through — the walkthrough streams in over the diff,

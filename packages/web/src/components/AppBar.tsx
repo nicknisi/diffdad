@@ -4,7 +4,7 @@ import { AccentPicker } from './AccentPicker';
 import { DadMark } from './DadMark';
 import { LivePill } from './LivePill';
 import { ThemeToggle } from './ThemeToggle';
-import { IconArrowRight } from './Icons';
+import { IconArrowRight, IconGear } from './Icons';
 
 function repoSlug(repoUrl: string | null): string | null {
   if (!repoUrl) return null;
@@ -20,6 +20,7 @@ export function AppBar({ onOpenActivity }: AppBarProps) {
   const pr = useReviewStore((s) => s.pr);
   const accent = useReviewStore((s) => s.accent);
   const repoUrl = useReviewStore((s) => s.repoUrl);
+  const setSettingsOpen = useReviewStore((s) => s.setSettingsOpen);
 
   const slug = repoSlug(repoUrl);
   const { markBg } = getAccentMeta(accent);
@@ -78,6 +79,18 @@ export function AppBar({ onOpenActivity }: AppBarProps) {
 
         {/* Theme toggle: light → dark → auto */}
         <ThemeToggle />
+
+        {/* Settings */}
+        <button
+          type="button"
+          aria-label="Settings"
+          title="Settings"
+          onClick={() => setSettingsOpen(true)}
+          className="inline-flex h-[30px] w-[30px] items-center justify-center rounded-[6px] bg-[var(--bg-panel)] text-[var(--fg-2)] hover:bg-[var(--gray-2)] hover:text-[var(--fg-1)]"
+          style={{ boxShadow: 'inset 0 0 0 1px var(--gray-a5)' }}
+        >
+          <IconGear className="h-[15px] w-[15px]" />
+        </button>
       </div>
     </header>
   );
