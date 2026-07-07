@@ -48,8 +48,10 @@ export function UnitRow({ unit, now, onOpen, onRemove, busy }: Props) {
 
   const meta: string[] = [];
   if (isNeedsYou) meta.push(unit.toResolve === 1 ? '1 to resolve' : `${unit.toResolve} to resolve`);
-  const fileCount = unit.metadata?.changedFiles ?? unit.files?.length;
-  if (typeof fileCount === 'number') meta.push(fileCount === 1 ? '1 file' : `${fileCount} files`);
+  // Search-minted units carry changedFiles:0 until hydrated, so `??` would assert "0 files". Prefer a
+  // truthy PR count, fall back to a hydrated diff's length, and otherwise omit — an unknown beats a lie.
+  const fileCount = unit.metadata?.changedFiles || unit.files?.length;
+  if (fileCount) meta.push(fileCount === 1 ? '1 file' : `${fileCount} files`);
   if (!isNeedsYou) meta.unshift(status.label);
   if (elapsed) meta.push(elapsed);
 

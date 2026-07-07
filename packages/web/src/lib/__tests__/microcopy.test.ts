@@ -29,3 +29,15 @@ describe('copy.refreshResult', () => {
     expect(copy.refreshResult(2, 1, 3)).toBe('2 new, 1 back for another look, 3 cleared out.');
   });
 });
+
+describe('github-off copy', () => {
+  it('names both remedies and the restart in the banner', () => {
+    expect(copy.githubOffBanner).toContain('gh auth login');
+    expect(copy.githubOffBanner).toContain('DIFFDAD_GITHUB_TOKEN');
+    expect(copy.githubOffBanner).toContain('dad daemon install');
+  });
+
+  it('keeps the chip label short', () => {
+    expect(copy.githubOff).toBe('GitHub off');
+  });
+});

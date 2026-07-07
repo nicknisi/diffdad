@@ -5,9 +5,10 @@ import type { PolledPr, ReviewUnit } from '../units/types';
 import type { PRMetadata } from '../github/types';
 
 /**
- * Build the `PRMetadata` a freshly-minted `github` unit carries from the cheap PR metadata the poller
- * fetched. The diff/line counts are unknown until the lazy on-open fetch, so they start at zero; the
- * `headSha`/`branch`/`title`/`author`/`updatedAt` are the load-bearing fields (freshness + the row).
+ * Build the `PRMetadata` a freshly-minted `github` unit carries from the PR metadata the poller
+ * fetched. The diff/line counts ride along on the `PolledPr` (the search already fetched each PR), so
+ * the row shows real numbers at mint — no zero-fill until the lazy on-open hydrate. The
+ * `headSha`/`branch`/`title`/`author`/`updatedAt` remain the load-bearing freshness fields.
  */
 function metadataFromPr(pr: PolledPr): PRMetadata {
   return {
@@ -22,12 +23,22 @@ function metadataFromPr(pr: PolledPr): PRMetadata {
     labels: [],
     createdAt: pr.updatedAt,
     updatedAt: pr.updatedAt,
-    additions: 0,
-    deletions: 0,
-    changedFiles: 0,
-    commits: 0,
+    additions: pr.additions,
+    deletions: pr.deletions,
+    changedFiles: pr.changedFiles,
+    commits: pr.commits,
     headSha: pr.headSha,
   };
+}
+
+/** Whether a unit's stored diff/line counts drift from the freshly-polled PR (so a heal is worth a write). */
+function countsDiffer(meta: PRMetadata, pr: PolledPr): boolean {
+  return (
+    meta.additions !== pr.additions ||
+    meta.deletions !== pr.deletions ||
+    meta.changedFiles !== pr.changedFiles ||
+    meta.commits !== pr.commits
+  );
 }
 
 /**
@@ -82,6 +93,17 @@ export async function pollOnce(deps: {
       if (unit && shouldResurface(unit, pr.headSha)) {
         store.resurfaceForNewPush(c.unitId, pr.headSha);
         resurfaced++;
+      }
+      // Heal a unit whose stored counts drift from the live PR — minted before the counts rode along,
+      // or the author pushed since. The search already fetched the PR, so this is free. Counts ONLY:
+      // never status / reviewedSha / headSha. Skip when equal so an unchanged PR isn't rewritten each poll.
+      if (unit && countsDiffer(unit.metadata, pr)) {
+        store.setMetadataCounts(unit.unitId, {
+          additions: pr.additions,
+          deletions: pr.deletions,
+          changedFiles: pr.changedFiles,
+          commits: pr.commits,
+        });
       }
     }
   }

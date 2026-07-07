@@ -16,6 +16,10 @@ export function useUnits() {
   // Distinguish "still fetching the first snapshot" from "fetched, genuinely empty" so the command
   // center can show a loader instead of flashing the all-clear empty state on every cold load.
   const [loaded, setLoaded] = useState(false);
+  // Whether the daemon has GitHub credentials. Only the initial fetch carries this; SSE `units`
+  // snapshots omit it, and it can't change without a daemon restart, so we capture it once. Default
+  // true so an older daemon (no field) never shows a false "GitHub off" warning.
+  const [github, setGithub] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -24,8 +28,11 @@ export function useUnits() {
         const res = await fetch('/api/units');
         if (cancelled) return;
         if (res.ok) {
-          const data = (await res.json()) as { units: Unit[] };
-          if (!cancelled) setUnits(data.units ?? []);
+          const data = (await res.json()) as { units: Unit[]; github?: boolean };
+          if (!cancelled) {
+            setUnits(data.units ?? []);
+            if (typeof data.github === 'boolean') setGithub(data.github);
+          }
         }
       } catch {
         // ignore — the SSE stream backfills the queue
@@ -50,7 +57,7 @@ export function useUnits() {
   // Facets are derived from the UNFILTERED list so selecting a repo never changes the counts.
   const facets: RepoFacets = useMemo(() => buildRepoFacets(units), [units]);
 
-  return { groups, repos, facets, repoFilter, setRepoFilter, total: units.length, loaded };
+  return { groups, repos, facets, repoFilter, setRepoFilter, total: units.length, loaded, github };
 }
 
 /** Remove a unit from the queue (manual cleanup of stale work). SSE repaints the list. */

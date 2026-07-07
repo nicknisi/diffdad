@@ -328,6 +328,37 @@ describe('UnitStore', () => {
     });
   });
 
+  describe('setMetadataCounts', () => {
+    it('patches only the diff/line counts, leaving status/headSha/reviewedSha/taskLabel/narrative untouched', async () => {
+      const store = new UnitStore([], det());
+      const u = mkGithub(store); // queued, headSha sha-1, mkMetadata counts (additions 1, …)
+      store.setReviewedSha(u.unitId, 'sha-1');
+      store.attachReview(u.unitId, [{ path: 'a.ts' }] as unknown as ReviewUnit['files'], NARRATIVE, 3);
+      const before = store.get(u.unitId)!;
+      const headShaBefore = before.metadata.headSha;
+      const taskLabelBefore = before.taskLabel;
+
+      const after = store.setMetadataCounts(u.unitId, { additions: 42, deletions: 7, changedFiles: 5, commits: 3 });
+      expect(after.metadata.additions).toBe(42);
+      expect(after.metadata.deletions).toBe(7);
+      expect(after.metadata.changedFiles).toBe(5);
+      expect(after.metadata.commits).toBe(3);
+      // Everything the poller's heal must NOT touch:
+      expect(after.status).toBe('queued');
+      expect(after.metadata.headSha).toBe(headShaBefore);
+      expect(after.lastReviewedSha).toBe('sha-1');
+      expect(after.taskLabel).toBe(taskLabelBefore);
+      expect(after.narrative).toEqual(NARRATIVE);
+    });
+
+    it('throws UnknownUnitError for an unknown id', () => {
+      const store = new UnitStore([], det());
+      expect(() =>
+        store.setMetadataCounts('nope', { additions: 0, deletions: 0, changedFiles: 0, commits: 0 }),
+      ).toThrow(UnknownUnitError);
+    });
+  });
+
   describe('resurfaceForNewPush', () => {
     async function approvedGithubUnit() {
       const store = new UnitStore([], det());

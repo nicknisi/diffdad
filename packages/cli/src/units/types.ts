@@ -64,8 +64,9 @@ export type ReviewUnit = {
 };
 
 /**
- * A PR returned by the background review-request poller — only the cheap metadata needed to mint or
- * link a `github` unit (the diff/narrative are fetched lazily on open, not here).
+ * A PR returned by the background review-request poller. The full diff/narrative are fetched lazily on
+ * open, but the diff/line counts ride along here: `searchReviewRequested` already fetches each PR (for
+ * head branch/sha), so the counts are free at poll time and let the queue row show real numbers at mint.
  */
 export type PolledPr = {
   owner: string;
@@ -79,6 +80,11 @@ export type PolledPr = {
   author: string;
   url: string;
   updatedAt: string;
+  /** Diff/line counts from the per-item `getPR` the search already makes — no extra API call. */
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+  commits: number;
 };
 
 /** Thrown when a mutation references a unit id the store doesn't hold. */

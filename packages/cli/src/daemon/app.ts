@@ -51,9 +51,17 @@ export type DaemonAppDeps = {
   store: UnitStore;
   hub: SseHub;
   /**
+   * Whether the daemon resolved GitHub credentials. Emitted on GET /api/units so the command center
+   * can surface the degraded state (poller dark, hydrate/review/comments disabled) instead of silently
+   * 503ing on Refresh. Fixed for the process lifetime — a token can't appear without a restart — so the
+   * web hook reads it once from that snapshot; SSE `units` broadcasts omit it.
+   */
+  github: boolean;
+  /**
    * Lazily hydrates a `github` unit on open: fetch the PR diff, generate the narrative, store it, and
    * return the updated unit. Injected so tests fake it and the daemon wires the real fetch+generate
-   * path. Absent → the hydrate route is a graceful no-op (the unit is returned unchanged).
+   * path. Absent (no GitHub credentials) → the hydrate route 503s with a credential hint, since it
+   * cannot fetch the diff or narrate — a unit that already has a narrative still no-ops with 200.
    *
    * `force` (the per-PR re-read) regenerates even when a narrative already exists: it advances the unit
    * to the live head SHA and bypasses the cache read. The route passes it through from the POST body.
@@ -121,7 +129,7 @@ function resolveWebDist(override?: string): string {
  * unit-scoped store is a cleaner seam.
  */
 export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
-  const { store, hub, hydrate } = deps;
+  const { store, hub, github, hydrate } = deps;
   const { commentFetcher, commentPoster, reviewSubmitter, ai, statusFetcher, pollNow } = deps;
   const app = new Hono();
   const broadcast = hub.broadcast;
@@ -143,7 +151,9 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
   app.get('/api/units', (c) => {
     const status = c.req.query('status') as ReviewUnit['status'] | undefined;
     const repo = c.req.query('repo');
-    return c.json({ units: store.list({ status, repo }) });
+    // `github` rides the snapshot so the command center learns a credential-less daemon can't poll —
+    // it can't come off the SSE `units` stream, which carries only the list.
+    return c.json({ units: store.list({ status, repo }), github });
   });
 
   app.get('/api/units/:id', (c) => {
@@ -199,8 +209,9 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
   // Lazy narrative — generated on open, not on poll, so dad never burns tokens narrating PRs you
   // never click. The web drill-in POSTs this once when it opens a unit with no narrative; the
   // `hydrate` dep fetches the PR diff + generates the walkthrough and stores it (without a status
-  // transition). No-op for already-hydrated units or when no hydrate dep is wired. Must precede the
-  // static catch-all or serveStatic swallows it.
+  // transition). No-op (200) for already-narrated units; 503 when no hydrate dep is wired (a
+  // credential-less daemon can't fetch/narrate — say so instead of a silent no-op the UI reads as a
+  // generic "no narrative"). Must precede the static catch-all or serveStatic swallows it.
   //
   // The per-PR re-read POSTs an optional `{ force: true }` body: it regenerates even when a narrative
   // exists (advancing to the live head SHA + bypassing the cache read). The body is optional — the
@@ -219,10 +230,21 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
       // No body / not JSON — the lazy first-open path posts nothing. Treat it as a non-force hydrate.
     }
 
-    // No GitHub wired → graceful no-op (unit returned unchanged). A non-force hydrate on an already
-    // narrated unit is also a no-op (the lazy path fires once per open); `force` bypasses that guard.
-    if (!hydrate) return c.json({ unit });
+    // An already-narrated unit is a legitimate no-op regardless of wiring (the lazy path fires once
+    // per open); `force` bypasses this to regenerate. Check it FIRST so a narrated unit returns 200
+    // even on a credential-less daemon.
     if (!force && unit.narrative) return c.json({ unit });
+    // No GitHub wired → we can't fetch the diff or narrate. Fail honestly (503) with a fix-it hint,
+    // rather than a silent 200 no-op the drill-in renders as a generic "no narrative".
+    if (!hydrate) {
+      return c.json(
+        {
+          error:
+            'The daemon has no GitHub credentials — run `gh auth login` or set DIFFDAD_GITHUB_TOKEN, then restart the daemon.',
+        },
+        503,
+      );
+    }
 
     // Single-flight per unit: coalesce concurrent hydrates for this id onto one run. The first caller's
     // `force` wins the shared run — a follow-on that rides it gets the same result, which is the intent

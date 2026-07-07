@@ -293,6 +293,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<number> {
   const { app } = createDaemonApp({
     store,
     hub,
+    github: Boolean(githubClient),
     hydrate: githubClient ? makeHydrate(githubClient, store) : undefined,
     commentFetcher: githubClient ? makeCommentFetcher(githubClient) : undefined,
     commentPoster: githubClient ? makeCommentPoster(githubClient) : undefined,

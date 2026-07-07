@@ -523,10 +523,10 @@ describe('GitHubClient.searchReviewRequested', () => {
       labels: [],
       created_at: '2026-01-01T00:00:00Z',
       updated_at: '2026-02-01T00:00:00Z',
-      additions: 0,
-      deletions: 0,
-      changed_files: 0,
-      commits: 0,
+      additions: 12,
+      deletions: 4,
+      changed_files: 3,
+      commits: 2,
       ...over,
     };
   }
@@ -562,6 +562,11 @@ describe('GitHubClient.searchReviewRequested', () => {
       author: 'author',
       url: 'https://github.com/octo/repo/pull/7',
       updatedAt: '2026-02-01T00:00:00Z',
+      // Counts ride along from the same getPR fetch — no extra API call, real numbers at mint time.
+      additions: 12,
+      deletions: 4,
+      changedFiles: 3,
+      commits: 2,
     });
   });
 
