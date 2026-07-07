@@ -2,6 +2,7 @@ import { existsSync } from 'fs';
 import { Hono } from 'hono';
 import { serveStatic } from 'hono/bun';
 import { dirname, resolve } from 'path';
+import { registerConfigRoutes } from './config-api';
 import { readConfig } from './config';
 import type { GitHubClient } from './github/client';
 import { mapCommentsToChapters } from './github/comments';
@@ -565,6 +566,11 @@ export function createServer(ctx: ServerContext) {
     broadcast('review', { event: ghEvent, body: payload.body });
     return c.json({ ok: true });
   });
+
+  // Shared GET/PUT /api/config + POST /api/config/test. No re-wire hook — the PR server persists only
+  // (a single-PR process has nothing to re-wire); the daemon passes `onConfigChange`. Must precede the
+  // static catch-all below or serveStatic swallows it.
+  registerConfigRoutes(app, { broadcast });
 
   const candidates = [
     resolve(import.meta.dir, '../../web/dist'),

@@ -22,6 +22,9 @@ export type NarrationDensity = 'terse' | 'normal' | 'verbose';
 export type ThemePreference = 'light' | 'dark' | 'auto';
 export type AccentId = 'classic' | 'paprika' | 'tomato' | 'forest' | 'plum' | 'sky' | 'dadcore';
 
+/** Default GitHub review-request poll cadence (ms) when `pollIntervalMs` is unset. */
+export const DEFAULT_POLL_INTERVAL_MS = 60_000;
+
 export interface DiffDadConfig {
   githubToken?: string;
   aiProvider?: AiProvider;
@@ -37,6 +40,8 @@ export interface DiffDadConfig {
   clusterBots?: boolean;
   theme?: ThemePreference;
   accent?: AccentId;
+  /** Daemon GitHub poll cadence (ms). Promoted from the old `--poll=` flag; live-reconfigurable. */
+  pollIntervalMs?: number;
 }
 
 export function getConfigPath(): string {

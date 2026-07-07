@@ -1,21 +1,20 @@
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { resolveGitHubToken } from '../auth';
+import { type OnConfigChange } from '../config-api';
 import { dataDir } from '../paths';
-import { readConfig } from '../config';
+import { DEFAULT_POLL_INTERVAL_MS, readConfig } from '../config';
 import { GitHubClient, type PostCommentOptions } from '../github/client';
 import { parseDiff } from '../github/diff-parser';
 import type { CheckRun, PRComment, PRReview } from '../github/types';
 import { callAi, generateNarrative } from '../narrative/engine';
 import { UnitStore } from '../units/store';
 import type { ReviewUnit } from '../units/types';
-import { createDaemonApp, type ReviewInlineComment, SseHub } from './app';
+import { createDaemonApp, type GitHubWiring, type ReviewInlineComment, SseHub } from './app';
 import { pollOnce } from './poller';
 
 /** Stable default port so launchd (Phase #23) and manual launches agree. Override with `--port=`. */
 export const DEFAULT_DAEMON_PORT = 4319;
-/** Cadence for the GitHub review-request poller. One search per tick — well within auth'd rate limits. */
-const DEFAULT_POLL_MS = 60_000;
 
 /** Single-instance pidfile. Beside the rest of dad's state so a stale file is easy to find/clear. */
 const PIDFILE = join(dataDir(), 'daemon.pid');
@@ -95,29 +94,103 @@ const a = {
 
 export type DaemonOptions = { port?: number; open?: boolean; pollMs?: number };
 
+/** A running poller's stop handle. `stop()` is idempotent — safe to call twice. */
+export interface PollerHandle {
+  stop(): void;
+}
+
 /**
- * Start the GitHub review-request poller on an interval. Runs one pass at startup, then every
+ * Start the GitHub review-request poller on an interval. Runs one pass immediately, then every
  * `pollMs`. Each pass is wrapped so a transient GitHub/network failure logs a one-line warning and
- * never crashes the daemon. The authenticated client is resolved once by the caller and shared with
- * the review/hydrate deps, so there is a single source of truth for "is GitHub wired".
+ * never crashes the daemon.
+ *
+ * `poll` is the same on-demand pass `POST /api/poll` runs (`wiring.current.pollNow`), so the interval
+ * poller and the manual refresh share one code path. Returns a stop handle — required so a live
+ * re-wire can stop the old poller before starting a new one (avoiding two overlapping loops). The
+ * first tick fires without being awaited so a re-wire's PUT never blocks on a full GitHub search.
  */
-async function startPoller(
-  client: GitHubClient,
-  store: UnitStore,
-  broadcast: SseHub['broadcast'],
-  pollMs: number,
-  fetchPrState: (unit: ReviewUnit) => Promise<{ open: boolean }>,
-  missStreaks: Map<string, number>,
-): Promise<void> {
+export function startPoller(poll: () => Promise<unknown>, pollMs: number): PollerHandle {
+  let stopped = false;
   const tick = async () => {
     try {
-      await pollOnce({ search: () => client.searchReviewRequested(), store, broadcast, fetchPrState, missStreaks });
+      await poll();
     } catch (err) {
       console.warn(`[diffdad] review poll failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
-  await tick();
-  setInterval(tick, pollMs);
+  void tick();
+  const handle = setInterval(() => void tick(), pollMs);
+  return {
+    stop() {
+      if (stopped) return;
+      stopped = true;
+      clearInterval(handle);
+    },
+  };
+}
+
+/**
+ * Assemble the GitHub-bound wiring from an (optional) authenticated client. `null` client → a dark
+ * wiring (`github: false`, all deps absent) so the routes 503 / return empties. A live client wires
+ * every GitHub-touching dep, including `pollNow` — the single pass the interval poller AND the manual
+ * `/api/poll` both run over the shared search+store+broadcast+missStreaks state.
+ */
+export function buildGitHubWiring(
+  client: GitHubClient | null,
+  store: UnitStore,
+  broadcast: SseHub['broadcast'],
+  missStreaks: Map<string, number>,
+): GitHubWiring {
+  if (!client) return { github: false };
+  const fetchPrState = makePrStateFetcher(client);
+  return {
+    github: true,
+    hydrate: makeHydrate(client, store),
+    commentFetcher: makeCommentFetcher(client),
+    commentPoster: makeCommentPoster(client),
+    reviewSubmitter: makeReviewSubmitter(client),
+    statusFetcher: makeStatusFetcher(client),
+    pollNow: () => pollOnce({ search: () => client.searchReviewRequested(), store, broadcast, fetchPrState, missStreaks }),
+  };
+}
+
+/**
+ * The daemon's `OnConfigChange`: the piece that makes a saved token bring GitHub online without a
+ * restart. Re-resolves and re-wires only when a relevant key changed:
+ *   - `githubToken` changed → re-resolve (env → gh → config priority, so an env token still wins),
+ *     rebuild the wiring, and stop+restart the poller (start-from-nothing when it just came online,
+ *     stop when it went dark). Display-pref saves never shell out to `gh`.
+ *   - `pollIntervalMs` changed (and GitHub is wired) → stop+restart the poller at the new cadence.
+ * Returns `{ githubActive }` so the PUT response tells the saving tab the new effective state.
+ * Extracted with injected collaborators so the re-wire is unit-testable without network or timers.
+ */
+export function makeConfigChangeHandler(deps: {
+  wiring: { current: GitHubWiring };
+  getPoller: () => PollerHandle | null;
+  setPoller: (p: PollerHandle | null) => void;
+  rebuildWiring: (token: string | null) => GitHubWiring;
+  restartPoller: (pollMs: number) => PollerHandle | null;
+  resolveToken: () => Promise<string | null>;
+}): OnConfigChange {
+  return async (prev, next) => {
+    const tokenChanged = (prev.githubToken ?? '') !== (next.githubToken ?? '');
+    const pollMs = next.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
+    if (tokenChanged) {
+      const token = await deps.resolveToken();
+      deps.wiring.current = deps.rebuildWiring(token);
+      // Always restart: a daemon that just came online must start polling; a cleared token stops it.
+      deps.getPoller()?.stop();
+      deps.setPoller(deps.restartPoller(pollMs));
+    } else if (deps.wiring.current.github) {
+      const intervalChanged =
+        (prev.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS) !== (next.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS);
+      if (intervalChanged) {
+        deps.getPoller()?.stop();
+        deps.setPoller(deps.restartPoller(pollMs));
+      }
+    }
+    return { githubActive: deps.wiring.current.github };
+  };
 }
 
 /**
@@ -253,9 +326,6 @@ function splitRepo(repo: string): { owner: string; name: string } {
  */
 export async function startDaemon(opts: DaemonOptions = {}): Promise<number> {
   const port = opts.port ?? DEFAULT_DAEMON_PORT;
-  const pollFlag = Bun.argv.find((f) => f.startsWith('--poll='));
-  const pollMs =
-    opts.pollMs ?? (pollFlag ? parseInt(pollFlag.split('=')[1] ?? '0', 10) || undefined : undefined) ?? DEFAULT_POLL_MS;
 
   // Single-instance guard (FailureModes: launchd + a manual `dad daemon` → split queue / port conflict).
   // Refusing is an intentional, *successful* outcome — a daemon is already up — so we exit 0. The plist's
@@ -280,40 +350,43 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<number> {
   const store = await UnitStore.load();
   const hub = new SseHub();
 
-  // Resolve GitHub auth once: the same client drives the poller AND the github review/hydrate deps.
-  // No token → the deps are undefined and the routes no-op gracefully.
+  // Resolve GitHub auth once at startup, then keep it live: the wiring holder lets a config PUT swap
+  // in a new client (or a dark set) without a restart. No token → a dark wiring whose routes no-op.
+  const config = await readConfig();
   const githubToken = await resolveGitHubToken();
   const githubClient = githubToken ? new GitHubClient(githubToken) : null;
+
+  // Poll cadence: config wins, then the test seam, then the default. Promoted from the old `--poll=`.
+  const pollMs = config.pollIntervalMs ?? opts.pollMs ?? DEFAULT_POLL_INTERVAL_MS;
 
   // One shared miss-streak map so the interval poller and the manual /api/poll reconcile against the
   // same streak state (a unit missing on one path then the other still removes at two total misses).
   const missStreaks = new Map<string, number>();
-  const fetchPrState = githubClient ? makePrStateFetcher(githubClient) : undefined;
+
+  // The mutable GitHub wiring + a poller handle the re-wire hook can stop/restart. `poller` is null
+  // whenever GitHub is dark, so the handler can both start-from-nothing and restart.
+  const wiring = { current: buildGitHubWiring(githubClient, store, hub.broadcast, missStreaks) };
+  let poller: PollerHandle | null = null;
+
+  const onConfigChange = makeConfigChangeHandler({
+    wiring,
+    getPoller: () => poller,
+    setPoller: (p) => {
+      poller = p;
+    },
+    rebuildWiring: (token) => buildGitHubWiring(token ? new GitHubClient(token) : null, store, hub.broadcast, missStreaks),
+    restartPoller: (ms) => (wiring.current.pollNow ? startPoller(wiring.current.pollNow, ms) : null),
+    resolveToken: () => resolveGitHubToken(),
+  });
 
   const { app } = createDaemonApp({
     store,
     hub,
-    github: Boolean(githubClient),
-    hydrate: githubClient ? makeHydrate(githubClient, store) : undefined,
-    commentFetcher: githubClient ? makeCommentFetcher(githubClient) : undefined,
-    commentPoster: githubClient ? makeCommentPoster(githubClient) : undefined,
-    reviewSubmitter: githubClient ? makeReviewSubmitter(githubClient) : undefined,
-    statusFetcher: githubClient ? makeStatusFetcher(githubClient) : undefined,
-    // Manual refresh runs the identical pass startPoller does — one on-demand `pollOnce` over the same
-    // search+store+broadcast. No token → undefined and the /api/poll route 503s.
-    pollNow: githubClient
-      ? () =>
-          pollOnce({
-            search: () => githubClient.searchReviewRequested(),
-            store,
-            broadcast: hub.broadcast,
-            fetchPrState,
-            missStreaks,
-          })
-      : undefined,
+    wiring,
     // AI works without a GitHub token (the default provider shells out to `claude -p`), so it's
     // always wired — the route reads config per-call, mirroring the PR server's /api/ai.
     ai: async (system, user) => callAi(await readConfig(), system, user),
+    onConfigChange,
   });
 
   let server: ReturnType<typeof Bun.serve>;
@@ -336,10 +409,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<number> {
   console.log(`\n  ${a.dim}Watching GitHub for review requests.${a.reset}`);
 
   // Open the GitHub "reviews requested of me" door: poll on an interval, mint/link/resurface units.
-  // Awaited only through the initial pass; the interval then runs detached. With no token the whole
-  // GitHub door is closed (no poll, no review-post, no lazy-narrate) — local units still flow.
-  if (githubClient) {
-    await startPoller(githubClient, store, hub.broadcast, pollMs, fetchPrState!, missStreaks);
+  // The first pass runs detached (not awaited); the interval then runs until re-wired or killed. With
+  // no token the whole GitHub door is closed (no poll, no review-post, no lazy-narrate) — local units
+  // still flow, and a token saved via PUT /api/config brings the poller online through onConfigChange.
+  if (wiring.current.pollNow) {
+    poller = startPoller(wiring.current.pollNow, pollMs);
   } else {
     console.log(
       `  ${a.gray}○${a.reset} ${a.dim}GitHub poller off — no token. Set ${a.reset}${a.cyan}DIFFDAD_GITHUB_TOKEN${a.reset}` +
