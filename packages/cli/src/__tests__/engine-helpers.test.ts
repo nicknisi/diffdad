@@ -150,4 +150,38 @@ describe('getModel', () => {
     const m = getModel({ aiProvider: 'openai-compatible', aiBaseUrl: 'https://example.com/v1' });
     expect(m).toBeTruthy();
   });
+
+  it('does not send temperature to anthropic (ai@4 injects a default 0 that Sonnet 5+ rejects)', async () => {
+    const m = getModel({ aiProvider: 'anthropic', aiApiKey: 'k', aiModel: 'claude-sonnet-5' });
+    let capturedBody: string | undefined;
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+      capturedBody = init?.body as string;
+      return new Response(
+        JSON.stringify({
+          id: 'msg_01',
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'text', text: 'ok' }],
+          model: 'claude-sonnet-5',
+          stop_reason: 'end_turn',
+          stop_sequence: null,
+          usage: { input_tokens: 1, output_tokens: 1 },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }) as typeof fetch;
+    try {
+      await m.doGenerate({
+        inputFormat: 'messages',
+        mode: { type: 'regular' },
+        prompt: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+        temperature: 0, // what ai@4's streamText/generateText inject when unset
+      });
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+    expect(capturedBody).toBeDefined();
+    expect(JSON.parse(capturedBody!)).not.toHaveProperty('temperature');
+  });
 });
