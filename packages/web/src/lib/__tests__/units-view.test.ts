@@ -197,10 +197,19 @@ describe('parseRoute / routePath', () => {
     expect(parseRoute('/units/u_123/')).toEqual({ name: 'unit', unitId: 'u_123' });
     expect(parseRoute('/units/a%2Fb')).toEqual({ name: 'unit', unitId: 'a/b' });
   });
+  it('parses the settings route (with or without a trailing slash)', () => {
+    expect(parseRoute('/settings')).toEqual({ name: 'settings' });
+    expect(parseRoute('/settings/')).toEqual({ name: 'settings' });
+  });
+  it('falls back to center for an unknown path', () => {
+    expect(parseRoute('/nope')).toEqual({ name: 'center' });
+  });
   it('round-trips through routePath', () => {
     expect(routePath({ name: 'center' })).toBe('/');
     expect(routePath({ name: 'unit', unitId: 'u_123' })).toBe('/units/u_123');
+    expect(routePath({ name: 'settings' })).toBe('/settings');
     expect(parseRoute(routePath({ name: 'unit', unitId: 'a/b' }))).toEqual({ name: 'unit', unitId: 'a/b' });
+    expect(parseRoute(routePath({ name: 'settings' }))).toEqual({ name: 'settings' });
   });
 });
 

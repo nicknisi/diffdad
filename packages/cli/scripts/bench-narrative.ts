@@ -17,7 +17,7 @@
  *   bun packages/cli/scripts/bench-narrative.ts --write     # also write bench-baseline.json
  *   bun packages/cli/scripts/bench-narrative.ts --diff      # diff against bench-baseline.json
  *
- * Requires an AI provider configured via `dad config` or env vars
+ * Requires an AI provider configured on the settings page or via env vars
  * (ANTHROPIC_API_KEY / OPENAI_API_KEY) — otherwise it falls back to local CLI
  * and may be slow.
  */

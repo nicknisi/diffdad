@@ -2,6 +2,7 @@ import { existsSync } from 'fs';
 import { Hono } from 'hono';
 import { serveStatic } from 'hono/bun';
 import { dirname, resolve } from 'path';
+import { type OnConfigChange, registerConfigRoutes } from '../config-api';
 import type { PostCommentOptions } from '../github/client';
 import { mapCommentsToChapters } from '../github/comments';
 import type { PRComment } from '../github/types';
@@ -47,41 +48,40 @@ export class SseHub {
   }
 }
 
-export type DaemonAppDeps = {
-  store: UnitStore;
-  hub: SseHub;
-  /**
-   * Whether the daemon resolved GitHub credentials. Emitted on GET /api/units so the command center
-   * can surface the degraded state (poller dark, hydrate/review/comments disabled) instead of silently
-   * 503ing on Refresh. Fixed for the process lifetime — a token can't appear without a restart — so the
-   * web hook reads it once from that snapshot; SSE `units` broadcasts omit it.
-   */
+/**
+ * The GitHub-bound dependency set, held behind `{ current }` so a config PUT can swap the whole set
+ * atomically — a token saved into a dark daemon brings GitHub online without a restart. Every route
+ * reads `wiring.current.X` at request time (never destructures at construction), so a request always
+ * sees a fully-old or fully-new set, never a half-swapped mix.
+ *
+ * `github` is whether the daemon currently has GitHub credentials (emitted on GET /api/units so the
+ * command center can surface the degraded state). When false, the optional deps are absent and the
+ * matching routes 503 / return empties.
+ */
+export interface GitHubWiring {
+  /** Whether GitHub is currently wired. Live now (was "fixed for the process lifetime"). */
   github: boolean;
   /**
    * Lazily hydrates a `github` unit on open: fetch the PR diff, generate the narrative, store it, and
-   * return the updated unit. Injected so tests fake it and the daemon wires the real fetch+generate
-   * path. Absent (no GitHub credentials) → the hydrate route 503s with a credential hint, since it
-   * cannot fetch the diff or narrate — a unit that already has a narrative still no-ops with 200.
-   *
-   * `force` (the per-PR re-read) regenerates even when a narrative already exists: it advances the unit
-   * to the live head SHA and bypasses the cache read. The route passes it through from the POST body.
+   * return the updated unit. Absent (no GitHub credentials) → the hydrate route 503s with a credential
+   * hint. `force` (the per-PR re-read) regenerates even when a narrative exists, advancing the unit to
+   * the live head SHA and bypassing the cache read.
    */
   hydrate?: (unit: ReviewUnit, force?: boolean) => Promise<ReviewUnit>;
   /**
-   * Fetches a `github` unit's live comments from GitHub (review + issue comments). Injected so tests
-   * fake it and the daemon wires the authenticated client. Absent → the comments route returns []
-   * (no GitHub, no comments). Comments are never stored on the unit — fetched live, like PR mode.
+   * Fetches a `github` unit's live comments from GitHub (review + issue comments). Absent → the
+   * comments route returns []. Comments are never stored on the unit — fetched live, like PR mode.
    */
   commentFetcher?: (unit: ReviewUnit) => Promise<PRComment[]>;
   /**
-   * Posts a comment to a `github` unit's PR (inline or top-level). Injected like `commentFetcher`.
-   * Must throw on failure — the route then 502s so a comment never appears locally but not on GitHub.
+   * Posts a comment to a `github` unit's PR (inline or top-level). Must throw on failure — the route
+   * then 502s so a comment never appears locally but not on GitHub.
    */
   commentPoster?: (unit: ReviewUnit, body: string, opts: PostCommentOptions) => Promise<PRComment>;
   /**
    * Submits a full GitHub review for a `github` unit — event (COMMENT/APPROVE/REQUEST_CHANGES) + body
-   * + batched inline comments, in one call. Injected like the other GitHub deps. Must throw on failure
-   * so the review route 502s and records nothing locally (dad ⇄ GitHub never disagree).
+   * + batched inline comments, in one call. Must throw on failure so the review route 502s and records
+   * nothing locally (dad ⇄ GitHub never disagree).
    */
   reviewSubmitter?: (
     unit: ReviewUnit,
@@ -90,22 +90,31 @@ export type DaemonAppDeps = {
     comments: ReviewInlineComment[],
   ) => Promise<void>;
   /**
-   * The unified AI entry point (`callAi`), for the review-summary draft (and, later, ask/renarrate).
-   * Injected so tests fake it and the daemon wires the configured provider. Absent → the AI route 503s.
-   */
-  ai?: (systemPrompt: string, userPrompt: string) => Promise<{ text: string }>;
-  /**
-   * Fetches a `github` unit's CI checks + GitHub reviews (the PR's merge-readiness context). Injected
-   * like the other GitHub deps; absent → the status route returns empties. Read live, not stored.
+   * Fetches a `github` unit's CI checks + GitHub reviews (the PR's merge-readiness context). Absent →
+   * the status route returns empties. Read live, not stored.
    */
   statusFetcher?: (unit: ReviewUnit) => Promise<{ checks: CheckRun[]; reviews: PRReview[] }>;
   /**
    * Runs one GitHub review-request poll on demand — the same `pollOnce` pass the interval poller runs
-   * (search GitHub, mint/resurface units, broadcast a `units` snapshot), returning the counts. Injected
-   * so tests fake it and the daemon wires the authenticated search+store+broadcast. Absent → the manual
-   * poll route 503s (no GitHub token, nothing to poll).
+   * (search GitHub, mint/resurface units, broadcast a `units` snapshot), returning the counts. Absent →
+   * the manual poll route 503s (no GitHub token, nothing to poll).
    */
   pollNow?: () => Promise<{ minted: number; resurfaced: number; removed: number }>;
+}
+
+export type DaemonAppDeps = {
+  store: UnitStore;
+  hub: SseHub;
+  /** GitHub-bound deps behind a mutable holder so a config PUT can re-wire them live. */
+  wiring: { current: GitHubWiring };
+  /**
+   * The unified AI entry point (`callAi`), for the review-summary draft (and, later, ask/renarrate).
+   * Injected so tests fake it and the daemon wires the configured provider. Absent → the AI route 503s.
+   * Stays OUTSIDE the wiring — it re-reads config per call and needs no GitHub token, so it never swaps.
+   */
+  ai?: (systemPrompt: string, userPrompt: string) => Promise<{ text: string }>;
+  /** Daemon re-wire hook, passed through to the config PUT route. The PR server omits it. */
+  onConfigChange?: OnConfigChange;
   /** Override the command-center static root (defaults to the same fallbacks as `server.ts`). */
   webDist?: string;
 };
@@ -129,8 +138,7 @@ function resolveWebDist(override?: string): string {
  * unit-scoped store is a cleaner seam.
  */
 export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
-  const { store, hub, github, hydrate } = deps;
-  const { commentFetcher, commentPoster, reviewSubmitter, ai, statusFetcher, pollNow } = deps;
+  const { store, hub, ai, wiring } = deps;
   const app = new Hono();
   const broadcast = hub.broadcast;
   // Single-flight state for POST /api/poll: concurrent manual refreshes share one in-flight poll.
@@ -152,8 +160,9 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
     const status = c.req.query('status') as ReviewUnit['status'] | undefined;
     const repo = c.req.query('repo');
     // `github` rides the snapshot so the command center learns a credential-less daemon can't poll —
-    // it can't come off the SSE `units` stream, which carries only the list.
-    return c.json({ units: store.list({ status, repo }), github });
+    // it can't come off the SSE `units` stream, which carries only the list. Read live from the wiring
+    // holder so a token saved after startup flips it without a restart.
+    return c.json({ units: store.list({ status, repo }), github: wiring.current.github });
   });
 
   app.get('/api/units/:id', (c) => {
@@ -181,6 +190,7 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
   // this file's tests can cover it. Must precede the static catch-all.
   app.post('/api/poll', async (c) => {
     // A poll we can't run is meaningless — refuse rather than pretend the list is fresh.
+    const pollNow = wiring.current.pollNow;
     if (!pollNow) {
       return c.json({ error: 'GitHub is not configured — cannot poll for review requests' }, 503);
     }
@@ -236,6 +246,7 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
     if (!force && unit.narrative) return c.json({ unit });
     // No GitHub wired → we can't fetch the diff or narrate. Fail honestly (503) with a fix-it hint,
     // rather than a silent 200 no-op the drill-in renders as a generic "no narrative".
+    const hydrate = wiring.current.hydrate;
     if (!hydrate) {
       return c.json(
         {
@@ -287,6 +298,7 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
     const id = c.req.param('id');
     const unit = store.get(id);
     if (!unit) return c.json({ error: new UnknownUnitError(id).message }, 404);
+    const commentFetcher = wiring.current.commentFetcher;
     if (!commentFetcher) return c.json([] as PRComment[]);
     const raw = await commentFetcher(unit);
     // Map to chapters once the walkthrough exists (the drill-in hydrates on open); before that, the
@@ -299,6 +311,7 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
     const unit = store.get(id);
     if (!unit) return c.json({ error: new UnknownUnitError(id).message }, 404);
     // A comment we can't post is worse than no comment — refuse rather than show a local ghost.
+    const commentPoster = wiring.current.commentPoster;
     if (!commentPoster) return c.json({ error: 'GitHub is not configured — cannot post a comment' }, 503);
 
     let body: {
@@ -352,6 +365,7 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
     const id = c.req.param('id');
     const unit = store.get(id);
     if (!unit) return c.json({ error: new UnknownUnitError(id).message }, 404);
+    const reviewSubmitter = wiring.current.reviewSubmitter;
     if (!reviewSubmitter) return c.json({ error: 'GitHub is not configured — cannot submit a review' }, 503);
 
     let body: { event?: string; body?: string; comments?: ReviewInlineComment[] };
@@ -470,6 +484,7 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
     const id = c.req.param('id');
     const unit = store.get(id);
     if (!unit) return c.json({ error: new UnknownUnitError(id).message }, 404);
+    const statusFetcher = wiring.current.statusFetcher;
     if (!statusFetcher) {
       return c.json({ checks: [] as CheckRun[], reviews: [] as PRReview[] });
     }
@@ -506,6 +521,12 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
       headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' },
     });
   });
+
+  // --- Config API -----------------------------------------------------------
+  // Shared GET/PUT /api/config + POST /api/config/test. The daemon passes `onConfigChange` so a saved
+  // token re-wires GitHub live (see daemon.ts). Registered before the static catch-all, like the other
+  // /api routes, or serveStatic would swallow it.
+  registerConfigRoutes(app, { broadcast, onConfigChange: deps.onConfigChange });
 
   // --- Command-center SPA ---------------------------------------------------
   const webDist = resolveWebDist(deps.webDist);

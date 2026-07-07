@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useReviewStore, type BackendConfig } from '../state/review-store';
+import { useReviewStore } from '../state/review-store';
 import type { CheckRun, DiffFile, NarrativeResponse, PRComment, PRData, PRReview, Unit } from '../state/types';
 
 type NarrativeApiResponse = {
@@ -13,7 +13,6 @@ type NarrativeApiResponse = {
   repoUrl?: string;
   mode?: 'pr' | 'command-center';
   aiPath?: 'api' | 'local-cli';
-  config?: BackendConfig;
   /** Command-center bootstrap: the daemon seeds the initial queue so the dashboard paints at once. */
   units?: Unit[];
 };
@@ -58,16 +57,8 @@ export function useNarrative() {
             repoUrl: data.repoUrl ?? null,
             aiPath: data.aiPath ?? null,
           });
-          if (data.config) {
-            const next: Partial<typeof useReviewStore extends { getState: () => infer S } ? S : never> = {};
-            if (data.config.theme && !localStorage.getItem('diffdad.theme'))
-              next.theme = data.config.theme as 'light' | 'dark' | 'auto';
-            if (data.config.accent && !localStorage.getItem('diffdad.accent')) next.accent = data.config.accent as any;
-            if (data.config.storyStructure) next.storyStructure = data.config.storyStructure as any;
-            if (data.config.layoutMode) next.layoutMode = data.config.layoutMode as any;
-            if (data.config.displayDensity) next.displayDensity = data.config.displayDensity as any;
-            useReviewStore.setState(next);
-          }
+          // Display prefs come from `GET /api/config` (bootstrapped in App via `applyConfigResponse`),
+          // not the narrative payload — the config block was removed from `/api/narrative` in Phase 2.
         } else if (data.narrative) {
           setGenerating(false);
           setData(
@@ -77,7 +68,6 @@ export function useNarrative() {
             data.comments,
             data.repoUrl ?? null,
             data.checkRuns ?? [],
-            data.config ?? null,
             data.reviews ?? [],
           );
           useReviewStore.getState().setAiPath(data.aiPath ?? null);

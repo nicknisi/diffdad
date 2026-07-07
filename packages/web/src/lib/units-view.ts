@@ -182,17 +182,20 @@ export function relativeTime(iso: string, nowMs: number): string {
 
 // --- Client-side routing (the daemon serves index.html for any path, so deep links work) ------
 
-export type Route = { name: 'center' } | { name: 'unit'; unitId: string };
+export type Route = { name: 'center' } | { name: 'unit'; unitId: string } | { name: 'settings' };
 
 export function parseRoute(pathname: string): Route {
   const trimmed = pathname.replace(/\/+$/, ''); // drop trailing slashes
   const match = trimmed.match(/^\/units\/(.+)$/);
   if (match) return { name: 'unit', unitId: decodeURIComponent(match[1]!) };
+  if (trimmed === '/settings') return { name: 'settings' };
   return { name: 'center' };
 }
 
 export function routePath(route: Route): string {
-  return route.name === 'unit' ? `/units/${encodeURIComponent(route.unitId)}` : '/';
+  if (route.name === 'unit') return `/units/${encodeURIComponent(route.unitId)}`;
+  if (route.name === 'settings') return '/settings';
+  return '/';
 }
 
 /**

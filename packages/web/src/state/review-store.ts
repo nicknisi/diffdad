@@ -18,6 +18,7 @@ import type { RecapResponse } from './recap-types';
 import type { AccentId } from '../lib/accents';
 import { parseRoute, routePath, type Route } from '../lib/units-view';
 import type { Theme } from '../lib/theme';
+import { type ConfigResponse, type GitHubState, type RedactedConfig, saveConfig } from '../lib/config-client';
 
 type Density = 'terse' | 'normal' | 'verbose';
 type View = 'story' | 'files' | 'recap';
@@ -26,16 +27,6 @@ type VisualStyle = 'stripe' | 'linear' | 'github';
 type LayoutMode = 'toc' | 'linear';
 type DisplayDensity = 'comfortable' | 'compact';
 export type RecapStatus = 'idle' | 'generating' | 'ready' | 'error';
-
-export type BackendConfig = {
-  theme?: Theme;
-  accent?: AccentId;
-  storyStructure?: StoryStructure;
-  layoutMode?: LayoutMode;
-  displayDensity?: DisplayDensity;
-  defaultNarrationDensity?: Density;
-  clusterBots?: boolean;
-};
 
 type ReviewState = {
   pr: PRData | null;
@@ -79,6 +70,14 @@ type ReviewState = {
   lastEventAt: number;
   shortcutsHelpOpen: boolean;
   submitOpen: boolean;
+  /** PR-mode settings mount: PR mode has no URL routing, so a full-screen settings view rides this flag. */
+  settingsOpen: boolean;
+  /** The redacted server config — the settings page's source of truth for field values (null until loaded). */
+  serverConfig: RedactedConfig | null;
+  /** Effective GitHub state from the server (env → gh → config). Null until the first config load. */
+  github: GitHubState | null;
+  /** True once `GET /api/config` has landed at least once — the single bootstrap source for prefs. */
+  configLoaded: boolean;
   storyStructure: StoryStructure;
   visualStyle: VisualStyle;
   layoutMode: LayoutMode;
@@ -110,7 +109,6 @@ type ReviewState = {
     comments: PRComment[],
     repoUrl?: string | null,
     checkRuns?: CheckRun[],
-    config?: BackendConfig | null,
     reviews?: PRReview[],
   ) => void;
   setActiveChapter: (id: string) => void;
@@ -157,6 +155,13 @@ type ReviewState = {
   setReviews: (reviews: PRReview[]) => void;
   setShortcutsHelpOpen: (open: boolean) => void;
   setSubmitOpen: (open: boolean) => void;
+  setSettingsOpen: (open: boolean) => void;
+  /**
+   * The single funnel for applying server config to state — used by bootstrap, PUT responses, and the
+   * SSE `config` event alike, so no two settings tabs can drift. Maps the redacted config onto the
+   * display prefs and stores the raw config + effective `github` state for the settings page.
+   */
+  applyConfigResponse: (res: ConfigResponse) => void;
   setStoryStructure: (s: StoryStructure) => void;
   setVisualStyle: (s: VisualStyle) => void;
   setLayoutMode: (m: LayoutMode) => void;
@@ -286,7 +291,7 @@ export function pendingReviewComments(drafts: DraftComment[]): InlineComment[] {
   }));
 }
 
-export const useReviewStore = create<ReviewState>((set) => ({
+export const useReviewStore = create<ReviewState>((set, get) => ({
   pr: null,
   narrative: null,
   files: [],
@@ -304,8 +309,11 @@ export const useReviewStore = create<ReviewState>((set) => ({
   openLine: null,
   commentRangeStart: null,
   commentDrag: null,
-  theme: (safeStorage.getItem('diffdad.theme') as Theme) || 'auto',
-  accent: (safeStorage.getItem('diffdad.accent') as AccentId) || 'classic',
+  // Prefs are no longer read from localStorage — `GET /api/config` (applied via `applyConfigResponse`
+  // at bootstrap) is the single source. Start on `auto`/`classic` so a cold load tracks the OS theme
+  // until config lands (a sub-100ms flash to the configured theme is accepted).
+  theme: 'auto',
+  accent: 'classic',
   density: 'normal',
   chapterDensity: {},
   view: 'story',
@@ -314,6 +322,10 @@ export const useReviewStore = create<ReviewState>((set) => ({
   lastEventAt: Date.now(),
   shortcutsHelpOpen: false,
   submitOpen: false,
+  settingsOpen: false,
+  serverConfig: null,
+  github: null,
+  configLoaded: false,
   storyStructure: 'chapters',
   visualStyle: 'stripe',
   layoutMode: 'toc',
@@ -334,7 +346,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
   plan: null,
   pendingChapterThemeIds: new Set<string>(),
 
-  setData: (pr, narrative, files, comments, repoUrl = null, checkRuns = [], config = null, reviews = []) => {
+  setData: (pr, narrative, files, comments, repoUrl = null, checkRuns = [], reviews = []) => {
     const safeNarrative = sanitizeNarrative(narrative);
     const storageKey = `diffdad.reviewed.${pr.number}`;
     let saved: Record<string, ChapterState> = {};
@@ -360,15 +372,8 @@ export const useReviewStore = create<ReviewState>((set) => ({
       activeChapterId: safeNarrative.chapters.length > 0 ? 'ch-0' : null,
       chapterDensity: {},
     };
-    if (config) {
-      if (config.theme && !safeStorage.getItem('diffdad.theme')) next.theme = config.theme;
-      if (config.accent && !safeStorage.getItem('diffdad.accent')) next.accent = config.accent;
-      if (config.storyStructure) next.storyStructure = config.storyStructure;
-      if (config.layoutMode) next.layoutMode = config.layoutMode;
-      if (config.displayDensity) next.displayDensity = config.displayDensity;
-      if (config.defaultNarrationDensity) next.density = config.defaultNarrationDensity;
-      if (typeof config.clusterBots === 'boolean') next.clusterBots = config.clusterBots;
-    }
+    // Display prefs are seeded by `applyConfigResponse` (from `GET /api/config`), not from the
+    // narrative payload — see Phase 2. `setData` no longer touches theme/accent/etc.
     set(next);
   },
 
@@ -469,14 +474,22 @@ export const useReviewStore = create<ReviewState>((set) => ({
       return { drafts: [] };
     }),
 
+  // Theme/accent write through to the server config: flip the store optimistically (the UI reacts
+  // instantly), then PUT the one-key patch and reconcile via `applyConfigResponse` (last write wins;
+  // Phase 1 serializes writes server-side). A failed save keeps the optimistic value — the user can
+  // retry by re-toggling — and never throws out of the fire-and-forget promise.
   setTheme: (theme) => {
-    safeStorage.setItem('diffdad.theme', theme);
     set({ theme });
+    void saveConfig({ theme })
+      .then((res) => get().applyConfigResponse(res))
+      .catch(() => {});
   },
 
   setAccent: (accent) => {
-    safeStorage.setItem('diffdad.accent', accent);
     set({ accent });
+    void saveConfig({ accent })
+      .then((res) => get().applyConfigResponse(res))
+      .catch(() => {});
   },
 
   setDensity: (density) => set({ density }),
@@ -502,6 +515,26 @@ export const useReviewStore = create<ReviewState>((set) => ({
 
   setShortcutsHelpOpen: (shortcutsHelpOpen) => set({ shortcutsHelpOpen }),
   setSubmitOpen: (submitOpen) => set({ submitOpen }),
+  setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+
+  applyConfigResponse: (res) => {
+    const cfg = res.config;
+    const next: Partial<ReviewState> = {
+      serverConfig: cfg,
+      github: res.github,
+      configLoaded: true,
+    };
+    // Map the redacted config onto the display-pref state. Guard each key so a partial config never
+    // clobbers a good default with `undefined`. `defaultNarrationDensity` lands on the store's `density`.
+    if (cfg.theme) next.theme = cfg.theme;
+    if (cfg.accent) next.accent = cfg.accent;
+    if (cfg.storyStructure) next.storyStructure = cfg.storyStructure;
+    if (cfg.layoutMode) next.layoutMode = cfg.layoutMode;
+    if (cfg.displayDensity) next.displayDensity = cfg.displayDensity;
+    if (cfg.defaultNarrationDensity) next.density = cfg.defaultNarrationDensity;
+    if (typeof cfg.clusterBots === 'boolean') next.clusterBots = cfg.clusterBots;
+    set(next);
+  },
 
   setStoryStructure: (storyStructure) => set({ storyStructure }),
   setVisualStyle: (visualStyle) => set({ visualStyle }),

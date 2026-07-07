@@ -39,9 +39,7 @@ Requires [Bun](https://bun.sh) when building from source. The Homebrew install i
 ```sh
 dad <pr>                     # Open a PR as a narrated review
 dad review <pr>              # Same as above (explicit subcommand)
-dad config                   # Configure AI provider, GitHub token, display settings
-dad config show              # Print current config with secrets redacted
-dad config reset [--yes]     # Delete saved config
+dad config                   # Print a link to the in-app settings page (opens it if the daemon is up)
 dad cache clear              # Clear cached narratives
 dad daemon                   # Start the per-machine review command center
 dad --version                # Print version
@@ -96,11 +94,11 @@ Instead of reviewing files one by one, Diff Dad groups code changes into **chapt
 Diff Dad picks a provider in this order:
 
 1. `--with=<cli>` flag (forces a local CLI)
-2. Provider configured via `dad config`
+2. Provider configured on the settings page
 3. **API key env vars** — `ANTHROPIC_API_KEY`, then `OPENAI_API_KEY`, auto-route through the matching API when no provider is configured
 4. `claude -p` (Claude Code CLI), `codex`, then `pi` — uses your existing subscriptions, no API key needed, but significantly slower due to harness overhead
 
-Run `dad config` to choose between:
+Open the settings page (`/settings` in the command center, or the Settings view in a PR review) to choose between:
 
 - **Anthropic API** — requires `ANTHROPIC_API_KEY` (recommended)
 - **OpenAI** — requires OpenAI API key
@@ -117,7 +115,7 @@ Diff Dad needs a GitHub token to fetch PR data and post comments. It checks, in 
 
 1. `DIFFDAD_GITHUB_TOKEN` environment variable
 2. `gh auth token` (GitHub CLI)
-3. Token saved via `dad config`
+3. Token saved on the settings page
 
 ### Caching
 
@@ -186,7 +184,7 @@ Submit reviews directly from the UI — Comment, Approve, or Request Changes. In
 
 ### Display Options
 
-Configurable via `dad config`:
+Configurable on the settings page:
 
 - **Story structure** — chapters (cards), linear (continuous flow), outline (collapsed)
 - **Layout** — TOC sidebar or full-width linear

@@ -5,18 +5,28 @@ export interface ResolveGitHubTokenOptions {
   skipConfig?: boolean;
 }
 
-export async function resolveGitHubToken(opts: ResolveGitHubTokenOptions = {}): Promise<string | null> {
+/** Which source a resolved GitHub token came from (or null when none was found). */
+export type GitHubTokenSource = 'env' | 'gh' | 'config' | null;
+
+/**
+ * Resolve the GitHub token AND report where it came from (env → gh CLI → config file, in priority
+ * order). The settings surface needs the source so it can show "authenticated via gh" instead of
+ * falsely claiming "no token" whenever the config file itself holds no token.
+ */
+export async function resolveGitHubTokenWithSource(
+  opts: ResolveGitHubTokenOptions = {},
+): Promise<{ token: string | null; source: GitHubTokenSource }> {
   // Priority 1: env var
   const envToken = process.env.DIFFDAD_GITHUB_TOKEN;
   if (envToken && envToken.trim().length > 0) {
-    return envToken.trim();
+    return { token: envToken.trim(), source: 'env' };
   }
 
   // Priority 2: gh auth token
   if (!opts.skipGhCli) {
     const ghToken = await tryGhAuthToken();
     if (ghToken) {
-      return ghToken;
+      return { token: ghToken, source: 'gh' };
     }
   }
 
@@ -25,14 +35,18 @@ export async function resolveGitHubToken(opts: ResolveGitHubTokenOptions = {}): 
     try {
       const config = await readConfig();
       if (config.githubToken && config.githubToken.trim().length > 0) {
-        return config.githubToken.trim();
+        return { token: config.githubToken.trim(), source: 'config' };
       }
     } catch {
       // ignore
     }
   }
 
-  return null;
+  return { token: null, source: null };
+}
+
+export async function resolveGitHubToken(opts: ResolveGitHubTokenOptions = {}): Promise<string | null> {
+  return (await resolveGitHubTokenWithSource(opts)).token;
 }
 
 async function tryGhAuthToken(): Promise<string | null> {

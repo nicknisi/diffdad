@@ -5,6 +5,7 @@ import { useReviewStore } from '../state/review-store';
 import { removeUnit, useUnits } from '../hooks/useUnits';
 import { AccentPicker } from './AccentPicker';
 import { DadMark } from './DadMark';
+import { IconGear } from './Icons';
 import { RepoFacets } from './RepoFacets';
 import { ThemeToggle } from './ThemeToggle';
 import { UnitRow } from './UnitRow';
@@ -55,8 +56,13 @@ function Panel({ children }: { children: React.ReactNode[] }) {
  * Live via the shared SSE stream; a row click drills into that unit's review.
  */
 export function CommandCenter() {
-  const { groups, repos, facets, repoFilter, setRepoFilter, total, loaded, github } = useUnits();
+  const { groups, repos, facets, repoFilter, setRepoFilter, total, loaded } = useUnits();
   const navigate = useReviewStore((s) => s.navigate);
+  // Effective GitHub state now lives in the store (fed by GET /api/config + the SSE `config` event),
+  // so a token saved from the settings page brings the daemon UI alive without a restart. Default
+  // active until the first config load so a cold start never flashes a false "GitHub off".
+  const githubState = useReviewStore((s) => s.github);
+  const githubActive = githubState ? githubState.active : true;
   const liveStatus = useReviewStore((s) => s.liveStatus);
   const accent = useReviewStore((s) => s.accent);
   const { markBg } = getAccentMeta(accent);
@@ -149,23 +155,26 @@ export function CommandCenter() {
           Diff Dad <span className="font-medium text-[var(--fg-3)]">· command center</span>
         </span>
         {/* GitHub-off chip — the poller is dark without credentials. Amber (not the live green) so it
-            reads as a degraded state, not an outage; the banner below carries the remedy. */}
-        {!github && (
-          <span
+            reads as a degraded state, not an outage. Now a button: it links to settings, where a token
+            can be added to bring the daemon online without a restart. */}
+        {!githubActive && (
+          <button
+            type="button"
+            onClick={() => navigate({ name: 'settings' })}
             className="ml-auto inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[12px] font-medium"
             style={{
               background: 'var(--amber-3)',
               color: 'var(--amber-11)',
               boxShadow: 'inset 0 0 0 1px var(--amber-9)',
             }}
-            title={copy.githubOffHint}
+            title={`${copy.githubOffHint} Click to open settings.`}
           >
             <span className="inline-block h-2 w-2 rounded-full" style={{ background: 'var(--amber-9)' }} aria-hidden />
             {copy.githubOff}
-          </span>
+          </button>
         )}
         <span
-          className={`inline-flex items-center gap-1.5 text-[12px] font-medium ${github ? 'ml-auto' : ''}`}
+          className={`inline-flex items-center gap-1.5 text-[12px] font-medium ${githubActive ? 'ml-auto' : ''}`}
           style={{ color: live.fg }}
         >
           <span
@@ -186,8 +195,8 @@ export function CommandCenter() {
             type="button"
             onClick={refresh}
             // Polling is off without GitHub credentials — /api/poll 503s, so don't invite a dead click.
-            disabled={refreshing || !github}
-            title={!github ? copy.githubOffHint : undefined}
+            disabled={refreshing || !githubActive}
+            title={!githubActive ? copy.githubOffHint : undefined}
             className="inline-flex items-center gap-1.5 rounded-md bg-[var(--bg-page)] px-2 py-1 text-[12.5px] font-medium text-[var(--fg-1)] transition-opacity disabled:opacity-50"
             style={{ boxShadow: 'inset 0 0 0 1px var(--gray-a5)' }}
           >
@@ -231,6 +240,16 @@ export function CommandCenter() {
         )}
         <AccentPicker />
         <ThemeToggle />
+        <button
+          type="button"
+          aria-label="Settings"
+          title="Settings"
+          onClick={() => navigate({ name: 'settings' })}
+          className="inline-flex h-[30px] w-[30px] items-center justify-center rounded-[6px] bg-[var(--bg-panel)] text-[var(--fg-2)] hover:bg-[var(--gray-2)] hover:text-[var(--fg-1)]"
+          style={{ boxShadow: 'inset 0 0 0 1px var(--gray-a5)' }}
+        >
+          <IconGear className="h-[15px] w-[15px]" />
+        </button>
       </header>
 
       {/* Two columns under the sticky header: the repo facet rail (md+, only when there's more than
@@ -240,7 +259,7 @@ export function CommandCenter() {
         {repos.length > 1 && <RepoFacets facets={facets} value={repoFilter} onSelect={setRepoFilter} />}
         <div className="min-w-0 flex-1">
           <div className="mx-auto max-w-[1100px]">
-            {!github && (
+            {!githubActive && (
               <div
                 role="status"
                 className="mt-4 flex items-start gap-2 rounded-lg px-3.5 py-2.5 text-[13px]"

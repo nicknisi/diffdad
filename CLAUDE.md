@@ -50,7 +50,7 @@ Bun workspaces monorepo with two packages:
 
 ### AI Provider
 
-Default: shells out to `claude -p` (Claude Code CLI, uses existing subscription). Falls back to Vercel AI SDK providers (Anthropic/OpenAI/Ollama) when configured via `dad config`. The `callAi()` function in `src/narrative/engine.ts` is the unified entry point — both narrative generation and in-app AI features (ask, renarrate) go through it.
+Default: shells out to `claude -p` (Claude Code CLI, uses existing subscription). Falls back to Vercel AI SDK providers (Anthropic/OpenAI/Ollama) when configured in the app's settings page (`/settings`). The `callAi()` function in `src/narrative/engine.ts` is the unified entry point — both narrative generation and in-app AI features (ask, renarrate) go through it.
 
 ### Key Concepts
 

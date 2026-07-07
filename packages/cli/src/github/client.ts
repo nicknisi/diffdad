@@ -96,6 +96,13 @@ export class GitHubClient {
     return res;
   }
 
+  /** The authenticated user (GET /user) — a cheap credential probe for the settings test-connection. */
+  async whoAmI(): Promise<{ login: string }> {
+    const res = await this.fetch('/user');
+    const data = (await res.json()) as { login: string };
+    return { login: data.login };
+  }
+
   async getPR(owner: string, repo: string, number: number): Promise<PRMetadata> {
     const res = await this.fetch(`/repos/${owner}/${repo}/pulls/${number}`);
     const data = (await res.json()) as GhPullResponse;

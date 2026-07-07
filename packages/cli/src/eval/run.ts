@@ -11,8 +11,8 @@
  *   bun packages/cli/src/eval/run.ts --fixture=auth-token-validation
  *   bun packages/cli/src/eval/run.ts --output=path.json
  *
- * Requires an AI provider configured via `dad config` (or env vars consumed by
- * readConfig). The same provider is used for both the narrative under test
+ * Requires an AI provider configured on the settings page (or env vars consumed
+ * by readConfig). The same provider is used for both the narrative under test
  * and the judge — for stronger isolation, set DIFFDAD_JUDGE_PROVIDER /
  * DIFFDAD_JUDGE_MODEL to use a different model for judging.
  */

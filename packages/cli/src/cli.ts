@@ -1,13 +1,13 @@
 #!/usr/bin/env bun
 import { resolveGitHubToken } from './auth';
-import { LOCAL_CLIS, readConfig, resetConfig, runConfig, showConfig } from './config';
+import { getConfigPath, LOCAL_CLIS, readConfig } from './config';
 import { GitHubClient } from './github/client';
 import { cacheNarrative, clearCache, computePromptMetaHash, getCachedNarrative } from './narrative/cache';
 import { generateNarrative, resolveAiPath, resolveProviderKey, setCliOverride } from './narrative/engine';
 import { migrateLegacyData } from './paths';
 import { getCachedRecap } from './recap/cache';
 import { createServer } from './server';
-import { daemonStatus, startDaemon } from './daemon/daemon';
+import { daemonStatus, DEFAULT_DAEMON_PORT, isDaemonAlive, startDaemon } from './daemon/daemon';
 
 const a = {
   reset: '\x1b[0m',
@@ -66,9 +66,8 @@ Usage:
                                      survives terminal close and starts at login
                                      (macOS). Idempotent.
   dad daemon uninstall               Remove the launchd agent.
-  dad config                         Configure dad (interactive)
-  dad config show                    Print the current config (secrets redacted)
-  dad config reset [--yes]           Delete the saved config
+  dad config                         Print a link to the in-app settings page
+                                     (and open it when the daemon is running)
   dad cache clear                    Clear all cached narratives
   dad --help, -h                     Show this help
 
@@ -176,7 +175,7 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
   if (!token) {
     console.error(`\n  ${a.red}${a.bold}error:${a.reset} no GitHub token found.`);
     console.error(
-      `  ${a.dim}set DIFFDAD_GITHUB_TOKEN, run ${a.cyan}gh auth login${a.reset}${a.dim}, or run ${a.cyan}dad config${a.reset}\n`,
+      `  ${a.dim}set DIFFDAD_GITHUB_TOKEN, run ${a.cyan}gh auth login${a.reset}${a.dim}, or add one on the Settings page (${a.cyan}dad config${a.reset}${a.dim})\n`,
     );
     return 1;
   }
@@ -409,18 +408,45 @@ async function daemonCommand(sub?: string): Promise<number> {
   }
 }
 
+/**
+ * Render the `dad config` pointer: configuration now lives on the in-app settings page, so the CLI
+ * just hands over the URL and the on-disk config path. Pure (no I/O) so its output is unit-tested
+ * without spawning a process. When the daemon is up the caller also opens the URL — the "(opening…)"
+ * suffix says so; when it's down we point at `dad daemon` instead and open nothing.
+ *
+ * The URL assumes the default daemon port: the pidfile records liveness, not the port, so a daemon
+ * started with a custom `--port` gets a slightly-wrong URL. The printed config path is always right.
+ */
+export function formatConfigPointer(opts: { url: string; configPath: string; daemonUp: boolean }): string {
+  const { url, configPath, daemonUp } = opts;
+  const settingsSuffix = daemonUp
+    ? `  ${a.dim}(opening…)${a.reset}`
+    : `  ${a.dim}(run ${a.cyan}dad daemon${a.reset}${a.dim} to open it)${a.reset}`;
+  return [
+    `\n  ${a.purple}${a.bold}Diff Dad${a.reset} ${a.dim}is configured in the app now.${a.reset}`,
+    `  ${a.dim}Settings:${a.reset}  ${a.purple}${url}${a.reset}${settingsSuffix}`,
+    `  ${a.dim}File:${a.reset}      ${a.cyan}${configPath}${a.reset}\n`,
+  ].join('\n');
+}
+
 async function configCommand(sub?: string): Promise<number> {
-  if (sub === 'show') return await showConfig();
-  if (sub === 'reset') {
-    const yes = Bun.argv.includes('--yes') || Bun.argv.includes('-y');
-    return await resetConfig({ yes });
-  }
+  const daemonUp = isDaemonAlive();
+  const url = `http://localhost:${DEFAULT_DAEMON_PORT}/settings`;
+  console.log(formatConfigPointer({ url, configPath: getConfigPath(), daemonUp }));
+  // `show`/`reset` (and any other muscle-memory subcommand) redirect here rather than error — the
+  // page covers viewing values, and reset is `rm` on the printed path.
   if (sub) {
-    console.error(`error: unknown config subcommand: ${sub}`);
-    console.error('usage: dad config [show|reset]');
-    return 2;
+    console.log(`  ${a.dim}(\`config ${sub}\` moved into the app — the settings page covers it now)${a.reset}\n`);
   }
-  return await runConfig();
+  if (daemonUp) {
+    try {
+      const { default: open } = await import('open');
+      await open(url);
+    } catch {
+      // Headless / no browser available — the printed URL is the fallback. Exit 0 regardless.
+    }
+  }
+  return 0;
 }
 
 export type Command = 'review' | 'daemon' | 'config' | 'cache' | 'pr-shorthand';

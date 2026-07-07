@@ -85,14 +85,19 @@ function setup(opts: SetupOpts = {}) {
   const { app } = createDaemonApp({
     store,
     hub,
-    github: opts.github ?? false,
-    hydrate,
-    commentFetcher,
-    commentPoster,
-    reviewSubmitter,
+    // GitHub-bound deps now live behind a mutable holder read at request time (was flat deps).
+    wiring: {
+      current: {
+        github: opts.github ?? false,
+        hydrate,
+        commentFetcher,
+        commentPoster,
+        reviewSubmitter,
+        statusFetcher,
+        pollNow,
+      },
+    },
     ai,
-    statusFetcher,
-    pollNow,
   });
   return { store, hub, events, messages, app };
 }
