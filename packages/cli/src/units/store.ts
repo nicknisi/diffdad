@@ -213,6 +213,30 @@ export class UnitStore {
   }
 
   /**
+   * Patch a unit's diff/line counts (additions/deletions/changedFiles/commits) in place — the poller's
+   * heal for a unit whose stored counts drift from the live PR (minted before the counts rode along, or
+   * the author pushed since). Deliberately narrow: it touches ONLY these four metadata fields, never
+   * status / lastReviewedSha / headSha / taskLabel / narrative or any resurface semantics. Synchronous;
+   * persistence is best-effort via `save()`.
+   */
+  setMetadataCounts(
+    unitId: string,
+    counts: { additions: number; deletions: number; changedFiles: number; commits: number },
+  ): ReviewUnit {
+    const unit = this.require(unitId);
+    unit.metadata = {
+      ...unit.metadata,
+      additions: counts.additions,
+      deletions: counts.deletions,
+      changedFiles: counts.changedFiles,
+      commits: counts.commits,
+    };
+    unit.updatedAt = this.now();
+    void this.save(unit);
+    return unit;
+  }
+
+  /**
    * Lazy-hydration write for `github` units: attach the fetched diff + generated narrative WITHOUT a
    * status transition (a github unit stays `queued`). The unit is already `queued`; this only fills in
    * the deferred walkthrough. Synchronous; persistence is best-effort via `save()`.

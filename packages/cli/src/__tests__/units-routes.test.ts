@@ -68,6 +68,7 @@ type SetupOpts = {
   ai?: (system: string, user: string) => Promise<{ text: string }>;
   statusFetcher?: (unit: ReviewUnit) => Promise<{ checks: CheckRun[]; reviews: PRReview[] }>;
   pollNow?: () => Promise<{ minted: number; resurfaced: number; removed: number }>;
+  github?: boolean;
 };
 
 function setup(opts: SetupOpts = {}) {
@@ -84,6 +85,7 @@ function setup(opts: SetupOpts = {}) {
   const { app } = createDaemonApp({
     store,
     hub,
+    github: opts.github ?? false,
     hydrate,
     commentFetcher,
     commentPoster,
@@ -162,6 +164,13 @@ describe('GET /api/units', () => {
     const byRepo = (await (await app.request('/api/units?repo=owner/a')).json()) as { units: { unitId: string }[] };
     expect(byRepo.units.map((u) => u.unitId)).toEqual(['unit-1']);
   });
+
+  it('emits the daemon GitHub-credential flag so the command center can flag the degraded state', async () => {
+    const off = (await (await setup({ github: false }).app.request('/api/units')).json()) as { github: boolean };
+    expect(off.github).toBe(false);
+    const on = (await (await setup({ github: true }).app.request('/api/units')).json()) as { github: boolean };
+    expect(on.github).toBe(true);
+  });
 });
 
 describe('GET /api/units/:id', () => {
@@ -230,14 +239,25 @@ describe('POST /api/units/:id/hydrate (lazy narrative on open)', () => {
     expect(events).not.toContain('units'); // no broadcast for a no-op
   });
 
-  it('returns the unit unchanged when no hydrate dep is wired', async () => {
+  it('503s with the credential hint when no hydrate dep is wired and the unit has no narrative', async () => {
+    const { store, app } = setup(); // credential-less daemon: no hydrate injected (github: false)
+    const gh = seedGithubUnit(store);
+    const res = await post(app, gh.unitId);
+    expect(res.status).toBe(503); // honest failure, not a silent 200 no-op the UI reads as "no narrative"
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain('no GitHub credentials');
+    expect(store.get(gh.unitId)!.narrative).toBeUndefined(); // unchanged
+  });
+
+  it('no-ops (200) an already-narrated unit even when no hydrate dep is wired', async () => {
     const { store, app } = setup(); // no hydrate injected
     const gh = seedGithubUnit(store);
+    store.attachReview(gh.unitId, [], NARRATIVE, 1); // a legitimate prior narrative — a no-op regardless of wiring
     const res = await post(app, gh.unitId);
     expect(res.status).toBe(200);
     const body = (await res.json()) as { unit: ReviewUnit };
     expect(body.unit.unitId).toBe(gh.unitId);
-    expect(body.unit.narrative).toBeUndefined();
+    expect(body.unit.narrative).toEqual(NARRATIVE);
   });
 
   it('404s for an unknown unit', async () => {

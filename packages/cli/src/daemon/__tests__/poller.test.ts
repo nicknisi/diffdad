@@ -50,6 +50,10 @@ function mkPr(o: Partial<PolledPr> = {}): PolledPr {
     author: 'octocat',
     url: 'https://github.com/octo/demo/pull/42',
     updatedAt: '2026-06-26T00:00:00.000Z',
+    additions: 5,
+    deletions: 2,
+    changedFiles: 3,
+    commits: 1,
     ...o,
   };
 }
@@ -94,6 +98,120 @@ describe('pollOnce', () => {
     expect(u.metadata.branch).toBe('feat/widgets');
     expect(u.metadata.base).toBe('main'); // real base ref propagated, not hardcoded
     expect(u.baseRef).toBe('main');
+  });
+
+  it('mints a unit carrying the polled diff/line counts (not zero-filled)', async () => {
+    const store = new UnitStore([], det());
+    await pollOnce({
+      search: search([mkPr({ additions: 20, deletions: 9, changedFiles: 4, commits: 3 })]),
+      store,
+      broadcast: () => {},
+    });
+    const u = store.list()[0]!;
+    expect(u.metadata.additions).toBe(20);
+    expect(u.metadata.deletions).toBe(9);
+    expect(u.metadata.changedFiles).toBe(4);
+    expect(u.metadata.commits).toBe(3);
+  });
+
+  it('heals a stale existing unit’s counts on the next poll (same head, no resurface)', async () => {
+    const store = new UnitStore([], det());
+    // A unit minted before counts rode along: metadata counts all zero, head sha-1, still queued.
+    const u = store.addGithubUnit({
+      owner: 'octo',
+      repo: 'demo',
+      number: 42,
+      title: 'Add widgets',
+      headBranch: 'feat/widgets',
+      headSha: 'sha-1',
+      author: 'octocat',
+      url: 'https://github.com/octo/demo/pull/42',
+      metadata: { ...mkMetadata('feat/widgets'), headSha: 'sha-1' }, // additions/deletions/... = 0
+    });
+
+    const result = await pollOnce({
+      search: search([
+        mkPr({ number: 42, headSha: 'sha-1', additions: 12, deletions: 4, changedFiles: 3, commits: 2 }),
+      ]),
+      store,
+      broadcast: () => {},
+    });
+
+    expect(result).toEqual({ minted: 0, resurfaced: 0, removed: 0 }); // same PR, same head → no mint/resurface
+    const after = store.get(u.unitId)!;
+    expect(after.metadata.additions).toBe(12);
+    expect(after.metadata.deletions).toBe(4);
+    expect(after.metadata.changedFiles).toBe(3);
+    expect(after.metadata.commits).toBe(2);
+    expect(after.status).toBe('queued'); // heal does not transition
+    expect(after.metadata.headSha).toBe('sha-1'); // heal does not move the head
+  });
+
+  it('does not rewrite an existing unit whose counts already match (no pointless persist per poll)', async () => {
+    const store = new UnitStore([], det());
+    store.addGithubUnit({
+      owner: 'octo',
+      repo: 'demo',
+      number: 42,
+      title: 'Add widgets',
+      headBranch: 'feat/widgets',
+      headSha: 'sha-1',
+      author: 'octocat',
+      url: 'https://github.com/octo/demo/pull/42',
+      metadata: {
+        ...mkMetadata('feat/widgets'),
+        headSha: 'sha-1',
+        additions: 7,
+        deletions: 1,
+        changedFiles: 2,
+        commits: 1,
+      },
+    });
+    const spy = vi.spyOn(store, 'setMetadataCounts');
+    try {
+      await pollOnce({
+        search: search([
+          mkPr({ number: 42, headSha: 'sha-1', additions: 7, deletions: 1, changedFiles: 2, commits: 1 }),
+        ]),
+        store,
+        broadcast: () => {},
+      });
+      expect(spy).not.toHaveBeenCalled(); // equal counts → no heal write
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('a count heal never changes status, reviewedSha, or headSha (decided unit, same head)', async () => {
+    const store = new UnitStore([], det());
+    const u = store.addGithubUnit({
+      owner: 'octo',
+      repo: 'demo',
+      number: 42,
+      title: 'Add widgets',
+      headBranch: 'feat/widgets',
+      headSha: 'sha-1',
+      author: 'octocat',
+      url: 'https://github.com/octo/demo/pull/42',
+      metadata: { ...mkMetadata('feat/widgets'), headSha: 'sha-1' }, // counts = 0
+    });
+    store.setReviewedSha(u.unitId, 'sha-1');
+    (store.get(u.unitId) as { decision?: unknown }).decision = { kind: 'approved' };
+    (store.get(u.unitId) as { status: string }).status = 'approved';
+
+    await pollOnce({
+      search: search([
+        mkPr({ number: 42, headSha: 'sha-1', additions: 15, deletions: 6, changedFiles: 5, commits: 4 }),
+      ]),
+      store,
+      broadcast: () => {},
+    });
+
+    const after = store.get(u.unitId)!;
+    expect(after.metadata.additions).toBe(15); // healed
+    expect(after.status).toBe('approved'); // unchanged — a decided unit at the same head isn't resurfaced
+    expect(after.lastReviewedSha).toBe('sha-1'); // unchanged
+    expect(after.metadata.headSha).toBe('sha-1'); // unchanged
   });
 
   it("mints a github unit carrying the PR's real (non-default) base ref", async () => {

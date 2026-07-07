@@ -59,6 +59,10 @@ function mkPr(o: Partial<PolledPr> = {}): PolledPr {
     author: 'octocat',
     url: 'https://github.com/octo/demo/pull/42',
     updatedAt: 'now',
+    additions: 0,
+    deletions: 0,
+    changedFiles: 0,
+    commits: 0,
     ...o,
   };
 }

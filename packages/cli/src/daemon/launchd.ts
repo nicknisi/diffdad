@@ -58,11 +58,31 @@ function xmlEscape(s: string): string {
  * starts it at login; `KeepAlive` {SuccessfulExit:false} restarts it only on a *non-zero* exit (a
  * crash) — never on the single-instance guard's clean exit-0 refusal, so a launchd copy and a manual
  * `dad daemon` can't fight in a respawn loop. `ThrottleInterval` caps respawn frequency at 10s.
+ *
+ * CONSTRAINT: launchd starts the agent with a bare PATH (/usr/bin:/bin:/usr/sbin:/sbin), not the
+ * user's shell PATH. The daemon spawns `gh auth token` (auth.ts) and `claude -p` (narrative), which
+ * for most users live in custom dirs (Homebrew, asdf/mise, npm-global, ~/.local/bin). Absent PATH,
+ * those spawns fail → no token → the poller never starts. So the installing shell's PATH is baked
+ * into the agent via EnvironmentVariables. `path` defaults to `process.env.PATH` (the install-time
+ * shell's PATH); tests pass it explicitly. An empty/undefined value omits the block.
  */
-export function buildPlist(programArgs: string[] = resolveProgramArgs(), logs: string = logDir()): string {
+export function buildPlist(
+  programArgs: string[] = resolveProgramArgs(),
+  logs: string = logDir(),
+  path: string | undefined = process.env.PATH,
+): string {
   const argXml = programArgs.map((arg) => `    <string>${xmlEscape(arg)}</string>`).join('\n');
   const out = xmlEscape(join(logs, 'daemon.out.log'));
   const err = xmlEscape(join(logs, 'daemon.err.log'));
+  const envXml =
+    path && path.length > 0
+      ? `  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>${xmlEscape(path)}</string>
+  </dict>
+`
+      : '';
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -73,7 +93,7 @@ export function buildPlist(programArgs: string[] = resolveProgramArgs(), logs: s
   <array>
 ${argXml}
   </array>
-  <key>RunAtLoad</key>
+${envXml}  <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
   <dict>

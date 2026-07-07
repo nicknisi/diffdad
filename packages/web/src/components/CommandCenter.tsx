@@ -55,7 +55,7 @@ function Panel({ children }: { children: React.ReactNode[] }) {
  * Live via the shared SSE stream; a row click drills into that unit's review.
  */
 export function CommandCenter() {
-  const { groups, repos, facets, repoFilter, setRepoFilter, total, loaded } = useUnits();
+  const { groups, repos, facets, repoFilter, setRepoFilter, total, loaded, github } = useUnits();
   const navigate = useReviewStore((s) => s.navigate);
   const liveStatus = useReviewStore((s) => s.liveStatus);
   const accent = useReviewStore((s) => s.accent);
@@ -148,7 +148,26 @@ export function CommandCenter() {
         <span className="text-[15px] font-bold tracking-tight">
           Diff Dad <span className="font-medium text-[var(--fg-3)]">· command center</span>
         </span>
-        <span className="ml-auto inline-flex items-center gap-1.5 text-[12px] font-medium" style={{ color: live.fg }}>
+        {/* GitHub-off chip — the poller is dark without credentials. Amber (not the live green) so it
+            reads as a degraded state, not an outage; the banner below carries the remedy. */}
+        {!github && (
+          <span
+            className="ml-auto inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[12px] font-medium"
+            style={{
+              background: 'var(--amber-3)',
+              color: 'var(--amber-11)',
+              boxShadow: 'inset 0 0 0 1px var(--amber-9)',
+            }}
+            title={copy.githubOffHint}
+          >
+            <span className="inline-block h-2 w-2 rounded-full" style={{ background: 'var(--amber-9)' }} aria-hidden />
+            {copy.githubOff}
+          </span>
+        )}
+        <span
+          className={`inline-flex items-center gap-1.5 text-[12px] font-medium ${github ? 'ml-auto' : ''}`}
+          style={{ color: live.fg }}
+        >
           <span
             className={`inline-block h-2 w-2 rounded-full ${liveStatus === 'connected' ? 'live-ping-dot' : ''}`}
             style={{ background: live.dot }}
@@ -166,7 +185,9 @@ export function CommandCenter() {
           <button
             type="button"
             onClick={refresh}
-            disabled={refreshing}
+            // Polling is off without GitHub credentials — /api/poll 503s, so don't invite a dead click.
+            disabled={refreshing || !github}
+            title={!github ? copy.githubOffHint : undefined}
             className="inline-flex items-center gap-1.5 rounded-md bg-[var(--bg-page)] px-2 py-1 text-[12.5px] font-medium text-[var(--fg-1)] transition-opacity disabled:opacity-50"
             style={{ boxShadow: 'inset 0 0 0 1px var(--gray-a5)' }}
           >
@@ -219,6 +240,21 @@ export function CommandCenter() {
         {repos.length > 1 && <RepoFacets facets={facets} value={repoFilter} onSelect={setRepoFilter} />}
         <div className="min-w-0 flex-1">
           <div className="mx-auto max-w-[1100px]">
+            {!github && (
+              <div
+                role="status"
+                className="mt-4 flex items-start gap-2 rounded-lg px-3.5 py-2.5 text-[13px]"
+                style={{
+                  background: 'var(--amber-3)',
+                  color: 'var(--amber-11)',
+                  boxShadow: 'inset 0 0 0 1px var(--amber-9)',
+                }}
+              >
+                <span aria-hidden>⚠</span>
+                <span>{copy.githubOffBanner}</span>
+              </div>
+            )}
+
             {error && (
               <div
                 className="mt-4 flex items-center justify-between rounded-lg px-3.5 py-2.5 text-[13px]"

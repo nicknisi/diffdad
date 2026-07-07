@@ -49,4 +49,11 @@ export const copy = {
     return `${parts.join(', ')}.`;
   },
   refreshUnreachable: 'Could not reach the daemon.',
+
+  // Daemon has no GitHub credentials: poller off, hydrate/review/comments disabled. Remedy copy stays
+  // literal — the fix is a real shell command, not a dad joke.
+  githubOff: 'GitHub off',
+  githubOffBanner:
+    "GitHub isn't wired up — the daemon can't poll, hydrate, or post. Run `gh auth login` or set DIFFDAD_GITHUB_TOKEN, then restart the agent with `dad daemon install`.",
+  githubOffHint: "GitHub isn't wired up — the daemon can't poll until it restarts with credentials.",
 } as const;

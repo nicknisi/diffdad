@@ -510,6 +510,11 @@ export class GitHubClient {
           author: pr.author.login,
           url: item.html_url,
           updatedAt: pr.updatedAt,
+          // The counts come free from the getPR above — carry them so the row shows real numbers at mint.
+          additions: pr.additions,
+          deletions: pr.deletions,
+          changedFiles: pr.changedFiles,
+          commits: pr.commits,
         });
       } catch (err) {
         console.warn(
