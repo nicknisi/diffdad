@@ -40,8 +40,8 @@ export function inferProviderFromEnv(): Pick<DiffDadConfig, 'aiProvider' | 'aiAp
 /**
  * Resolves whether to take the API or local-CLI path. Priority:
  *   1. `--with=` flag (cliOverride) — explicit, wins always.
- *   2. Configured `aiProvider` — user picked an API path in `dad config`.
- *   3. Configured `defaultCli` — user picked local CLI in `dad config`.
+ *   2. Configured `aiProvider` — user picked an API path on the settings page.
+ *   3. Configured `defaultCli` — user picked local CLI on the settings page.
  *   4. Env-inferred API key (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY`) — only
  *      kicks in for users who haven't expressed a preference.
  *   5. `DIFFDAD_CLI` env — legacy local-CLI fallback preference, also only
@@ -299,7 +299,7 @@ async function callLocalCli(
   }
 
   throw new Error(
-    'No AI CLI found. Install Claude Code (claude), Codex (codex), or pi, or run `dad config` to set an API provider.',
+    'No AI CLI found. Install Claude Code (claude), Codex (codex), or pi, or set an API provider on the settings page.',
   );
 }
 

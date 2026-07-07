@@ -43,7 +43,7 @@ export function AiSection() {
       // Phase 1's PUT schema can't unset `aiProvider`, so an API→local switch can't be done from here.
       if (current !== 'local') {
         setSwitchNote(
-          'To switch back to the local CLI, run `dad config` in a terminal — the daemon API can’t clear a saved provider yet.',
+          'To switch back to the local CLI, remove the `aiProvider` key from your config file (run `dad config` to print its path) — the daemon API can’t clear a saved provider yet.',
         );
       }
       return;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { classifyCommand, parsePrArg } from '../cli';
+import { classifyCommand, formatConfigPointer, parsePrArg } from '../cli';
 
 describe('classifyCommand', () => {
   it('recognizes daemon as a subcommand', () => {
@@ -13,6 +13,35 @@ describe('classifyCommand', () => {
     expect(classifyCommand('owner/repo#1')).toBe('pr-shorthand');
     expect(classifyCommand('139')).toBe('pr-shorthand');
     expect(classifyCommand(undefined)).toBe('pr-shorthand');
+  });
+
+  it('classifies `config` regardless of subcommand (show/reset route to the same stub)', () => {
+    // The subcommand token is the second positional; classifyCommand only sees `config`, so
+    // `config`, `config show`, and `config reset` all dispatch to the one pointer stub.
+    expect(classifyCommand('config')).toBe('config');
+  });
+});
+
+describe('formatConfigPointer', () => {
+  const base = { url: 'http://localhost:4319/settings', configPath: '/home/dad/.config/diffdad/config.json' };
+
+  it('includes the settings URL and config path when the daemon is up', () => {
+    const out = formatConfigPointer({ ...base, daemonUp: true });
+    expect(out).toContain('/settings');
+    expect(out).toContain(base.configPath);
+    expect(out).toContain('opening');
+  });
+
+  it('includes the settings URL and config path when the daemon is down', () => {
+    const out = formatConfigPointer({ ...base, daemonUp: false });
+    expect(out).toContain('/settings');
+    expect(out).toContain(base.configPath);
+  });
+
+  it('names `dad daemon` and omits the opening copy when the daemon is down', () => {
+    const out = formatConfigPointer({ ...base, daemonUp: false });
+    expect(out).toContain('dad daemon');
+    expect(out).not.toContain('opening');
   });
 });
 

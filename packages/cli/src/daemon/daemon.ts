@@ -30,6 +30,21 @@ function isProcessAlive(pid: number): boolean {
   }
 }
 
+/**
+ * True if the pidfile points at a live daemon process. Signal-0 probes the pid (as `dad daemon`'s
+ * own guard does) rather than trusting mere file existence, so a stale pidfile from a crashed daemon
+ * reads as down. Used by `dad config` to decide whether to open the settings URL in the browser.
+ */
+export function isDaemonAlive(): boolean {
+  try {
+    const pid = Number(readFileSync(PIDFILE, 'utf-8').trim());
+    return Number.isInteger(pid) && pid > 0 && isProcessAlive(pid);
+  } catch {
+    // missing / unreadable / corrupt — no live daemon.
+    return false;
+  }
+}
+
 /** The live, foreign pid the pidfile points at, or null (missing / stale / unreadable / ours). */
 function readConflictingPid(): number | null {
   try {
@@ -417,8 +432,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<number> {
   } else {
     console.log(
       `  ${a.gray}○${a.reset} ${a.dim}GitHub poller off — no token. Set ${a.reset}${a.cyan}DIFFDAD_GITHUB_TOKEN${a.reset}` +
-        `${a.dim}, run ${a.reset}${a.cyan}gh auth login${a.reset}${a.dim}, or ${a.reset}${a.cyan}dad config${a.reset}` +
-        `${a.dim} to watch review requests.${a.reset}`,
+        `${a.dim}, run ${a.reset}${a.cyan}gh auth login${a.reset}${a.dim}, or open Settings in the command center` +
+        ` (${a.reset}${a.cyan}${url}/settings${a.reset}${a.dim}) to watch review requests.${a.reset}`,
     );
   }
 
