@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/nicknisi/diffdad/compare/v0.11.1...v0.12.0) (2026-07-07)
+
+
+### Features
+
+* Settings page: in-app config with live daemon re-wire ([#45](https://github.com/nicknisi/diffdad/issues/45)) ([b409892](https://github.com/nicknisi/diffdad/commit/b40989292d438268de3db62f9f50c69de1084552))
+
 ## [0.11.1](https://github.com/nicknisi/diffdad/compare/v0.11.0...v0.11.1) (2026-07-07)
 
 
