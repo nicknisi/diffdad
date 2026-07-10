@@ -102,13 +102,16 @@ export function validateNarrative(narrative: NarrativeResponse, files: DiffFile[
   });
 
   for (const [key, chapters] of primaryRefs) {
-    if (chapters.length > 1) {
+    // Multiple sections in the SAME chapter legitimately re-window one hunk (the writer prompt says
+    // to slice a big hunk with startLine/endLine), so only distinct chapters count as duplicates.
+    const distinct = [...new Set(chapters)];
+    if (distinct.length > 1) {
       const sep = key.lastIndexOf(':');
       violations.push({
         kind: 'duplicate-primary',
         file: key.slice(0, sep),
         hunkIndex: Number(key.slice(sep + 1)),
-        chapters,
+        chapters: distinct,
       });
     }
   }

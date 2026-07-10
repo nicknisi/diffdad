@@ -39,7 +39,7 @@ export async function writeChapter(input: WriterInput): Promise<WriterResult> {
 
   const result = await callAi(config, prompt.system, prompt.user, WRITER_MAX_TOKENS);
   const parsed = parseChapterResponse(result.text, theme.id);
-  const chapter = normalizeChapter(parsed, theme);
+  const chapter = normalizeChapter(parsed, theme, files);
   return { chapter, provider: result.provider, usage: result.usage };
 }
 
@@ -81,11 +81,30 @@ export function buildSuppressedChapter(theme: PlanTheme): NarrativeChapter {
   };
 }
 
+/** The hunk's full display range: new side, or old side for a deletion-only hunk (newCount 0). */
+function hunkRange(
+  files: DiffFile[] | undefined,
+  file: string,
+  hunkIndex: number,
+): {
+  startLine: number;
+  endLine: number;
+} {
+  const norm = normalizePath(file);
+  const h = files?.find((f) => normalizePath(f.file) === norm)?.hunks[hunkIndex];
+  if (!h) return { startLine: 1, endLine: 1 };
+  return h.newCount > 0
+    ? { startLine: h.newStart, endLine: h.newStart + h.newCount - 1 }
+    : { startLine: h.oldStart, endLine: h.oldStart + Math.max(h.oldCount - 1, 0) };
+}
+
 /**
- * Coerce a parsed writer output into a valid NarrativeChapter, filtering
- * sections to those that reference this theme's hunks.
+ * Coerce a parsed writer output into a valid NarrativeChapter: filter sections to those that
+ * reference this theme's hunks, then backfill any planned hunk the output lost (truncation at
+ * WRITER_MAX_TOKENS, fabricated-ref filtering) as a bare full-range diff section — a hunk the plan
+ * assigned to this theme must never silently vanish from the walkthrough.
  */
-export function normalizeChapter(input: unknown, theme: PlanTheme): NarrativeChapter {
+export function normalizeChapter(input: unknown, theme: PlanTheme, files?: DiffFile[]): NarrativeChapter {
   const obj = (input ?? {}) as Record<string, unknown>;
   const allowedKeys = new Set(theme.hunkRefs.map((r) => `${normalizePath(r.file)}:${r.hunkIndex}`));
   const fileByNorm = new Map<string, string>();
@@ -93,6 +112,7 @@ export function normalizeChapter(input: unknown, theme: PlanTheme): NarrativeCha
 
   const sectionsRaw = Array.isArray(obj.sections) ? (obj.sections as Record<string, unknown>[]) : [];
   const sections: NarrativeSection[] = [];
+  const covered = new Set<string>();
   for (const s of sectionsRaw) {
     if (s.type === 'narrative' && typeof s.content === 'string') {
       sections.push({ type: 'narrative', content: s.content });
@@ -106,6 +126,7 @@ export function normalizeChapter(input: unknown, theme: PlanTheme): NarrativeCha
       const norm = normalizePath(s.file);
       const key = `${norm}:${s.hunkIndex}`;
       if (!allowedKeys.has(key)) continue; // silently drop fabricated refs
+      covered.add(key);
       sections.push({
         type: 'diff',
         file: fileByNorm.get(norm) ?? s.file,
@@ -114,6 +135,12 @@ export function normalizeChapter(input: unknown, theme: PlanTheme): NarrativeCha
         endLine: s.endLine,
       });
     }
+  }
+
+  for (const r of theme.hunkRefs) {
+    const key = `${normalizePath(r.file)}:${r.hunkIndex}`;
+    if (covered.has(key)) continue;
+    sections.push({ type: 'diff', file: r.file, hunkIndex: r.hunkIndex, ...hunkRange(files, r.file, r.hunkIndex) });
   }
 
   return {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildSuppressedChapter, normalizeChapter, parseChapterResponse } from '../narrative/writer';
 import type { PlanTheme } from '../narrative/plan-types';
+import type { DiffFile, DiffHunk } from '../github/types';
 
 const baseTheme: PlanTheme = {
   id: 'theme-0',
@@ -12,6 +13,25 @@ const baseTheme: PlanTheme = {
     { file: 'src/middleware.ts', hunkIndex: 2 },
   ],
 };
+
+function hunk(o: Partial<DiffHunk> = {}): DiffHunk {
+  return { header: '@@', oldStart: 1, oldCount: 1, newStart: 1, newCount: 1, lines: [], ...o };
+}
+
+const themeFiles: DiffFile[] = [
+  {
+    file: 'src/auth.ts',
+    isNewFile: false,
+    isDeleted: false,
+    hunks: [hunk({ newStart: 10, newCount: 8 })],
+  },
+  {
+    file: 'src/middleware.ts',
+    isNewFile: false,
+    isDeleted: false,
+    hunks: [hunk(), hunk(), hunk({ newStart: 30, newCount: 4 })],
+  },
+];
 
 describe('normalizeChapter', () => {
   it('keeps narrative and valid diff sections, drops fabricated diff refs', () => {
@@ -45,13 +65,76 @@ describe('normalizeChapter', () => {
     expect(out.risk).toBe('high');
   });
 
-  it('coerces missing fields to safe defaults', () => {
+  it('coerces missing fields to safe defaults (planned hunks still backfilled)', () => {
     const out = normalizeChapter({}, baseTheme);
     expect(out.title).toBe('Auth boundary');
     expect(out.summary).toBe('');
     expect(out.whyMatters).toBe('');
-    expect(out.sections).toEqual([]);
+    // No sections came back at all — the theme's hunks are backfilled so they still surface.
+    expect(out.sections).toEqual([
+      { type: 'diff', file: 'src/auth.ts', hunkIndex: 0, startLine: 1, endLine: 1 },
+      { type: 'diff', file: 'src/middleware.ts', hunkIndex: 2, startLine: 1, endLine: 1 },
+    ]);
     expect(out.themeId).toBe('theme-0');
+  });
+
+  it('backfills a planned hunk the output lost, at the full new-side range', () => {
+    const out = normalizeChapter(
+      {
+        title: 'Auth boundary',
+        sections: [
+          { type: 'narrative', content: 'only covers auth' },
+          { type: 'diff', file: 'src/auth.ts', hunkIndex: 0, startLine: 11, endLine: 14 },
+        ],
+      },
+      baseTheme,
+      themeFiles,
+    );
+    // The writer's own window on auth.ts is preserved verbatim; the lost middleware hunk is
+    // appended spanning its whole new-side range.
+    expect(out.sections).toEqual([
+      { type: 'narrative', content: 'only covers auth' },
+      { type: 'diff', file: 'src/auth.ts', hunkIndex: 0, startLine: 11, endLine: 14 },
+      { type: 'diff', file: 'src/middleware.ts', hunkIndex: 2, startLine: 30, endLine: 33 },
+    ]);
+  });
+
+  it('backfills a deletion-only hunk using the old-side range', () => {
+    const files: DiffFile[] = [
+      { file: 'src/auth.ts', isNewFile: false, isDeleted: false, hunks: [hunk({ newStart: 10, newCount: 8 })] },
+      {
+        file: 'src/middleware.ts',
+        isNewFile: false,
+        isDeleted: false,
+        hunks: [hunk(), hunk(), hunk({ oldStart: 40, oldCount: 6, newCount: 0 })],
+      },
+    ];
+    const out = normalizeChapter(
+      { sections: [{ type: 'diff', file: 'src/auth.ts', hunkIndex: 0, startLine: 10, endLine: 17 }] },
+      baseTheme,
+      files,
+    );
+    expect(out.sections.at(-1)).toEqual({
+      type: 'diff',
+      file: 'src/middleware.ts',
+      hunkIndex: 2,
+      startLine: 40,
+      endLine: 45,
+    });
+  });
+
+  it('does not backfill a hunk the writer covered under an a/-prefixed path', () => {
+    const out = normalizeChapter(
+      {
+        sections: [
+          { type: 'diff', file: 'a/src/auth.ts', hunkIndex: 0, startLine: 1, endLine: 2 },
+          { type: 'diff', file: 'src/middleware.ts', hunkIndex: 2, startLine: 30, endLine: 31 },
+        ],
+      },
+      baseTheme,
+      themeFiles,
+    );
+    expect(out.sections).toHaveLength(2); // normalized paths match — nothing re-appended
   });
 });
 

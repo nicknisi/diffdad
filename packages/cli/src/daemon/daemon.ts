@@ -7,7 +7,8 @@ import { DEFAULT_POLL_INTERVAL_MS, readConfig } from '../config';
 import { GitHubClient, type PostCommentOptions } from '../github/client';
 import { parseDiff } from '../github/diff-parser';
 import type { CheckRun, PRComment, PRReview } from '../github/types';
-import { callAi, generateNarrative } from '../narrative/engine';
+import { cacheNarrative, computePromptMetaHash, getCachedNarrative } from '../narrative/cache';
+import { callAi, generateNarrative, resolveProviderKey } from '../narrative/engine';
 import { UnitStore } from '../units/store';
 import type { ReviewUnit } from '../units/types';
 import { createDaemonApp, type GitHubWiring, type ReviewInlineComment, SseHub } from './app';
@@ -214,6 +215,10 @@ export function makeConfigChangeHandler(deps: {
  * Phase-1 narrative, attach both to the unit (no status transition — it stays `queued`), and return
  * the updated unit. Wired only when a GitHub client exists; otherwise the hydrate route no-ops.
  *
+ * The narrative round-trips through the shared cache (`~/.cache/diffdad`) under the same key scheme
+ * as `dad <pr>` — the unit file is not the only copy, so a reconciled/deleted unit costs a cache read
+ * to restore, not a full regeneration, and daemon and CLI reuse each other's walkthroughs.
+ *
  * `force` powers the per-PR re-read: fetch the PR live first to advance the unit to the current head
  * SHA (+ fresh title/branch), then bypass the narrative cache READ so a same-SHA regeneration yields
  * new prose instead of replaying the cached walkthrough. The non-force path is unchanged.
@@ -228,23 +233,45 @@ function makeHydrate(
     if (prNumber === undefined) {
       throw new Error(`unit ${unit.unitId} has no PR number`);
     }
-    // Re-read: pull the live PR to advance the head SHA (+ refresh title/branch) so the cache key and
-    // diff track the current push, not the SHA frozen at mint.
+    // Pull the live PR: on force it advances the head SHA (+ refreshes title/branch) so the cache key
+    // and diff track the current push; on both paths it supplies the real title/body/labels — the
+    // mint-time metadata has an empty body, which would both starve the prompt and hash to a metaHash
+    // no `dad <pr>` run ever produces.
+    const meta = await client.getPR(owner, name, prNumber);
     let target = unit;
     if (force) {
-      const meta = await client.getPR(owner, name, prNumber);
       target = store.advanceHead(unit.unitId, meta.headSha, meta);
     }
+    const config = await readConfig();
+    const metaHash = computePromptMetaHash(meta);
+    const providerKey = await resolveProviderKey(config);
+    const sha = target.diffContentKey;
+
     const diff = await client.getPRDiff(owner, name, prNumber);
     const files = parseDiff(diff);
-    const { narrative } = await generateNarrative(target.metadata, files, [], await readConfig(), undefined, {
+
+    if (!force) {
+      const cached = await getCachedNarrative(owner, name, prNumber, sha, metaHash, providerKey);
+      if (cached) {
+        store.attachReview(unit.unitId, files, cached, cached.concerns?.length ?? 0);
+        return store.get(unit.unitId)!;
+      }
+    }
+
+    const promptMeta = { ...target.metadata, title: meta.title, body: meta.body, labels: meta.labels };
+    const { narrative } = await generateNarrative(promptMeta, files, [], config, undefined, {
       // contentKey-style cache key: keyed on the head SHA carried in diffContentKey (advanced above on
       // a re-read). `force` skips the cache read but still writes, so the fresh prose replaces it.
-      cacheKey: { owner, repo: name, number: prNumber, sha: target.diffContentKey },
+      cacheKey: { owner, repo: name, number: prNumber, sha },
       comments: [],
       force,
     });
     store.attachReview(unit.unitId, files, narrative, narrative.concerns?.length ?? 0);
+    try {
+      await cacheNarrative(owner, name, prNumber, sha, metaHash, providerKey, narrative);
+    } catch {
+      // best-effort: the unit carries the narrative; a failed cache write must not fail the hydrate
+    }
     return store.get(unit.unitId)!;
   };
 }

@@ -74,6 +74,41 @@ describe('validateNarrative', () => {
     expect(dups[0]).toMatchObject({ file: 'a.ts', hunkIndex: 0, chapters: [0, 1] });
   });
 
+  it('does not flag duplicate-primary when one chapter re-windows the same hunk in multiple sections', () => {
+    const files = [file('a.ts', 1)];
+    const n = narrative([
+      {
+        title: '1',
+        summary: '',
+        whyMatters: '',
+        risk: 'low',
+        // Progressive reveal of one big hunk — the writer prompt tells the model to do exactly this.
+        sections: [diffSection('a.ts', 0), diffSection('a.ts', 0), diffSection('a.ts', 0)],
+      },
+    ]);
+    const r = validateNarrative(n, files);
+    expect(findKind(r.violations, 'duplicate-primary')).toHaveLength(0);
+    expect(r.ok).toBe(true);
+  });
+
+  it('lists each chapter once when a cross-chapter duplicate is also re-windowed', () => {
+    const files = [file('a.ts', 1)];
+    const n = narrative([
+      {
+        title: '1',
+        summary: '',
+        whyMatters: '',
+        risk: 'low',
+        sections: [diffSection('a.ts', 0), diffSection('a.ts', 0)],
+      },
+      { title: '2', summary: '', whyMatters: '', risk: 'low', sections: [diffSection('a.ts', 0)] },
+    ]);
+    const r = validateNarrative(n, files);
+    const dups = findKind(r.violations, 'duplicate-primary');
+    expect(dups).toHaveLength(1);
+    expect(dups[0]!.chapters).toEqual([0, 1]); // distinct chapters, not one entry per section
+  });
+
   it('flags orphan-hunk for hunks no chapter references', () => {
     const files = [file('a.ts', 3)];
     const n = narrative([{ title: '1', summary: '', whyMatters: '', risk: 'low', sections: [diffSection('a.ts', 0)] }]);
