@@ -51,7 +51,8 @@ function countsDiffer(meta: PRMetadata, pr: PolledPr): boolean {
  *
  * With `fetchPrState` wired, the pass also reconciles the store against the search: a github unit whose
  * PR the search stopped returning is dropped — immediately if GitHub reports it closed/merged, else
- * after two consecutive missing polls (the miss streak absorbs the search's eventual consistency). The
+ * after two consecutive missing polls (the miss streak absorbs the search's eventual consistency).
+ * Exception: a still-open unit that is hydrated but undecided (mid-review) is never dropped. The
  * streak map is caller-owned so the interval poller and the manual /api/poll share one streak state.
  * Without the dep, reconciliation is skipped entirely (mint/resurface behavior is byte-identical).
  *
@@ -136,6 +137,12 @@ export async function pollOnce(deps: {
         streaks.delete(unit.unitId);
         removals.push(`${key} (closed)`);
         removed++;
+      } else if (unit.status === 'queued' && unit.narrative) {
+        // Mid-review: hydrated but undecided. "Unrequested" here is usually the reviewer's own
+        // doing — submitting comments or a review dismisses the review request on GitHub — so
+        // removal would destroy the walkthrough under the person reading it. Keep the unit; it
+        // retires through the normal paths (a decision, the PR closing, or a manual delete).
+        streaks.delete(unit.unitId);
       } else {
         // Still open but unrequested (withdrawn / reviewed off-plate / search lag) → remove only
         // after two consecutive missing polls.

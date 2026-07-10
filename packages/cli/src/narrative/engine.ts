@@ -303,7 +303,9 @@ async function generateNarrativeTwoPass(
   await runWithConcurrency(tasks, writerConcurrency);
 
   const narrative = normalizeNarrative(assembleNarrative(plan, chapters));
-  logNarrativeViolations(narrative, fullFiles);
+  // Validate against the same filtered set the plan was built from — mechanical files (lockfiles,
+  // generated) are deliberately unplanned, so checking fullFiles would report them all as orphans.
+  logNarrativeViolations(narrative, narrate);
   const provider = writerProvider ? `${plannerProvider} + ${writerProvider}` : plannerProvider;
   return { narrative, provider };
 }

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { pollOnce } from '../poller';
 import { UnitStore } from '../../units/store';
 import type { PRMetadata } from '../../github/types';
+import type { NarrativeResponse } from '../../narrative/types';
 import type { PolledPr, ReviewUnit } from '../../units/types';
 
 // --- fixtures -------------------------------------------------------------
@@ -329,6 +330,11 @@ function seedUnit(store: UnitStore, over: { number?: number; headSha?: string } 
 const openState = () => Promise.resolve({ open: true });
 const closedState = () => Promise.resolve({ open: false });
 
+/** Minimal walkthrough — what `attachReview` stores when a unit hydrates. */
+function mkNarrative(): NarrativeResponse {
+  return { title: 't', tldr: '', verdict: 'safe', readingPlan: [], concerns: [], chapters: [] };
+}
+
 describe('pollOnce reconciliation', () => {
   it('removes a github unit immediately when its PR is closed/merged', async () => {
     const store = new UnitStore([], det());
@@ -448,6 +454,72 @@ describe('pollOnce reconciliation', () => {
     expect(result.removed).toBe(0);
     expect(store.get(u.unitId)!.status).toBe('approved'); // kept: it's the resurface machinery's memory
     expect(fetched).toBe(0); // present in the search → no direct fetch needed
+  });
+
+  it('never removes an open-but-unrequested unit that is hydrated and undecided (mid-review)', async () => {
+    const store = new UnitStore([], det());
+    const u = seedUnit(store);
+    store.attachReview(u.unitId, [], mkNarrative(), 0); // reviewer opened it — walkthrough generated
+    const streaks = new Map<string, number>();
+
+    // Well past the two-miss threshold: reviewing the PR (comments/review submit) dismisses the
+    // review request on GitHub, so the search stops listing it while the reviewer is still reading.
+    for (let pass = 0; pass < 3; pass++) {
+      const r = await pollOnce({
+        search: search([]),
+        store,
+        broadcast: () => {},
+        fetchPrState: openState,
+        missStreaks: streaks,
+      });
+      expect(r.removed).toBe(0);
+    }
+    expect(store.get(u.unitId)).toBeDefined(); // the walkthrough survives the whole time
+    expect(streaks.size).toBe(0); // no streak accrues against a mid-review unit
+  });
+
+  it('still removes a hydrated mid-review unit when its PR closes', async () => {
+    const store = new UnitStore([], det());
+    const u = seedUnit(store);
+    store.attachReview(u.unitId, [], mkNarrative(), 0);
+
+    const result = await pollOnce({
+      search: search([]),
+      store,
+      broadcast: () => {},
+      fetchPrState: closedState,
+      missStreaks: new Map(),
+    });
+
+    expect(result.removed).toBe(1);
+    expect(store.get(u.unitId)).toBeUndefined(); // closed/merged is unambiguous — the work is moot
+  });
+
+  it('removes a hydrated unit normally once decided (reviewed off-plate)', async () => {
+    const store = new UnitStore([], det());
+    const u = seedUnit(store);
+    store.attachReview(u.unitId, [], mkNarrative(), 0);
+    (store.get(u.unitId) as { decision?: unknown }).decision = { kind: 'approved' };
+    (store.get(u.unitId) as { status: string }).status = 'approved';
+    const streaks = new Map<string, number>();
+
+    const p1 = await pollOnce({
+      search: search([]),
+      store,
+      broadcast: () => {},
+      fetchPrState: openState,
+      missStreaks: streaks,
+    });
+    expect(p1.removed).toBe(0); // first miss — not evidence yet
+    const p2 = await pollOnce({
+      search: search([]),
+      store,
+      broadcast: () => {},
+      fetchPrState: openState,
+      missStreaks: streaks,
+    });
+    expect(p2.removed).toBe(1); // decided units keep the two-miss cleanup
+    expect(store.get(u.unitId)).toBeUndefined();
   });
 
   it('removes nothing when no fetchPrState dep is wired (reconciliation skipped)', async () => {
