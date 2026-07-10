@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.12.1](https://github.com/nicknisi/diffdad/compare/v0.12.0...v0.12.1) (2026-07-10)
+
+
+### Bug Fixes
+
+* **cli:** stop sending temperature to Anthropic models ([#47](https://github.com/nicknisi/diffdad/issues/47)) ([64a7699](https://github.com/nicknisi/diffdad/commit/64a7699090157e1a21586b64189d90168e8b5610))
+* stop losing reviews mid-flight and quiet false-positive narrative validation ([#50](https://github.com/nicknisi/diffdad/issues/50)) ([2606fbd](https://github.com/nicknisi/diffdad/commit/2606fbdbdd32dba6b6238466bc1bac4e56d29016))
+
 ## [0.12.0](https://github.com/nicknisi/diffdad/compare/v0.11.1...v0.12.0) (2026-07-07)
 
 
