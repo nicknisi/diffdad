@@ -11,6 +11,8 @@ function mkConfigResponse(over: Partial<ConfigResponse> = {}): ConfigResponse {
     config: {
       githubTokenSet: false,
       aiApiKeySet: false,
+      aiSecretAccessKeySet: false,
+      aiBedrockApiKeySet: false,
       theme: 'dark',
       accent: 'forest',
       storyStructure: 'linear',
@@ -69,7 +71,7 @@ describe('applyConfigResponse', () => {
 
   it('does not clobber a good default when a key is absent from the config', () => {
     useReviewStore.getState().applyConfigResponse({
-      config: { githubTokenSet: false, aiApiKeySet: false },
+      config: { githubTokenSet: false, aiApiKeySet: false, aiSecretAccessKeySet: false, aiBedrockApiKeySet: false },
       github: { active: false, source: null },
     });
     const s = useReviewStore.getState();
@@ -81,11 +83,19 @@ describe('applyConfigResponse', () => {
 
 describe('setTheme write-through', () => {
   it('flips the store optimistically AND issues exactly one PUT with a one-key body', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(
-        jsonResponse(mkConfigResponse({ config: { githubTokenSet: false, aiApiKeySet: false, theme: 'dark' } })),
-      );
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse(
+        mkConfigResponse({
+          config: {
+            githubTokenSet: false,
+            aiApiKeySet: false,
+            aiSecretAccessKeySet: false,
+            aiBedrockApiKeySet: false,
+            theme: 'dark',
+          },
+        }),
+      ),
+    );
     vi.stubGlobal('fetch', fetchMock);
 
     useReviewStore.getState().setTheme('dark');

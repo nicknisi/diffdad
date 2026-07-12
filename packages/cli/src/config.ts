@@ -2,7 +2,7 @@ import { mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
-export type AiProvider = 'anthropic' | 'openai' | 'openai-compatible' | 'ollama';
+export type AiProvider = 'anthropic' | 'openai' | 'openai-compatible' | 'ollama' | 'amazon-bedrock';
 
 export type LocalCli = 'claude' | 'codex' | 'pi';
 export const LOCAL_CLIS: readonly LocalCli[] = ['claude', 'codex', 'pi'] as const;
@@ -29,6 +29,16 @@ export interface DiffDadConfig {
   aiApiKey?: string;
   aiModel?: string;
   aiBaseUrl?: string;
+  /** AWS region for the amazon-bedrock provider (blank → resolve from the ambient chain / AWS_REGION). */
+  aiRegion?: string;
+  /** AWS access key id for amazon-bedrock. NOT a secret (an identifier, like a username). Blank → ambient chain. */
+  aiAccessKeyId?: string;
+  /** AWS secret access key for amazon-bedrock. Secret. Blank → ambient chain. */
+  aiSecretAccessKey?: string;
+  /** Named AWS profile (from `~/.aws/config`) for amazon-bedrock. Used only when no explicit keys are set. */
+  aiProfile?: string;
+  /** Bedrock bearer API key for amazon-bedrock. Secret. Dedicated field (not `aiApiKey`) so another provider's lingering key can never flip the Bedrock auth mode. */
+  aiBedrockApiKey?: string;
   defaultCli?: LocalCli;
   cliModels?: Partial<Record<LocalCli, string>>;
   storyStructure?: StoryStructure;

@@ -50,6 +50,19 @@ describe('writeConfig / readConfig round-trip', () => {
     expect(await readConfig()).toEqual(config);
   });
 
+  it('round-trips the amazon-bedrock provider and AWS credential fields', async () => {
+    const config: DiffDadConfig = {
+      aiProvider: 'amazon-bedrock',
+      aiRegion: 'us-east-1',
+      aiProfile: 'my-sso',
+      aiAccessKeyId: 'AKIAEXAMPLE',
+      aiSecretAccessKey: 'secret',
+      aiModel: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',
+    };
+    await writeConfig(config);
+    expect(await readConfig()).toEqual(config);
+  });
+
   it('creates the parent directory when it does not exist', async () => {
     // mkdtemp dir exists, but the diffdad/ subdir does not until writeConfig makes it.
     await writeConfig({ theme: 'light' });
