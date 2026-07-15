@@ -3,29 +3,30 @@ import { mergeAwsProfiles } from '../narrative/aws-profiles';
 
 describe('mergeAwsProfiles', () => {
   it('lists config-file profiles with their region', () => {
-    const out = mergeAwsProfiles({ default: { region: 'us-east-1' }, PlatformDev: { region: 'us-west-2' } }, {});
-    // localeCompare sorts case-insensitively, so 'default' precedes 'PlatformDev'.
+    const out = mergeAwsProfiles({ default: { region: 'us-east-1' }, Production: { region: 'us-west-2' } }, {});
+    // localeCompare orders by base letter (d before p), using case only as a tiebreak, so 'default'
+    // precedes 'Production'. Code-unit order would invert this ('P' < 'd').
     expect(out).toEqual([
       { name: 'default', region: 'us-east-1' },
-      { name: 'PlatformDev', region: 'us-west-2' },
+      { name: 'Production', region: 'us-west-2' },
     ]);
   });
 
   it('surfaces credentials-only profiles with no region', () => {
-    const out = mergeAwsProfiles({}, { 'platform-dev': { aws_access_key_id: 'AKIA' } });
-    expect(out).toEqual([{ name: 'platform-dev' }]);
+    const out = mergeAwsProfiles({}, { staging: { aws_access_key_id: 'AKIA' } });
+    expect(out).toEqual([{ name: 'staging' }]);
   });
 
   it('filters out sso-session and services sections (they are not profiles)', () => {
     const out = mergeAwsProfiles(
       {
-        PlatformDev: { region: 'us-east-1' },
-        'sso-session.arbol-sso': { sso_region: 'us-east-1' },
+        Production: { region: 'us-east-1' },
+        'sso-session.my-sso': { sso_region: 'us-east-1' },
         'services.my-services': { s3: 'x' },
       },
       {},
     );
-    expect(out.map((p) => p.name)).toEqual(['PlatformDev']);
+    expect(out.map((p) => p.name)).toEqual(['Production']);
   });
 
   it('dedupes a profile present in both files, keeping the config-file region', () => {

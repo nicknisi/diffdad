@@ -153,7 +153,7 @@ describe('listBedrockModels', () => {
 
 describe('listAwsProfiles', () => {
   it('GETs the profiles endpoint and returns the profile array', async () => {
-    const profiles = [{ name: 'default', region: 'us-east-1' }, { name: 'platform-dev' }];
+    const profiles = [{ name: 'default', region: 'us-east-1' }, { name: 'staging' }];
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ profiles }));
     vi.stubGlobal('fetch', fetchMock);
     const res = await listAwsProfiles();

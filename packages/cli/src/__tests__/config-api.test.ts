@@ -446,13 +446,13 @@ describe('GET /api/config/aws/profiles', () => {
   it('returns the injected profile list', async () => {
     const { app } = makeApp({
       testers: {
-        listAwsProfiles: async () => [{ name: 'default', region: 'us-east-1' }, { name: 'platform-dev' }],
+        listAwsProfiles: async () => [{ name: 'default', region: 'us-east-1' }, { name: 'staging' }],
       },
     });
     const res = await app.request('/api/config/aws/profiles');
     expect(res.status).toBe(200);
     const body = (await res.json()) as { profiles: { name: string; region?: string }[] };
-    expect(body.profiles).toEqual([{ name: 'default', region: 'us-east-1' }, { name: 'platform-dev' }]);
+    expect(body.profiles).toEqual([{ name: 'default', region: 'us-east-1' }, { name: 'staging' }]);
   });
 
   it('returns an empty list (200, not an error) when profile enumeration yields nothing', async () => {

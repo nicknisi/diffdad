@@ -230,8 +230,8 @@ describe('listBedrockModels', () => {
     const profileRegion = spyOn(awsProfiles, 'resolveProfileRegion').mockResolvedValue('us-east-1');
     try {
       // No aiRegion — the profile mode UI has no region field, so this is the real-world shape.
-      const out = await listBedrockModels({ aiProvider: 'amazon-bedrock', aiProfile: 'PlatformDev' });
-      expect(profileRegion).toHaveBeenCalledWith('PlatformDev');
+      const out = await listBedrockModels({ aiProvider: 'amazon-bedrock', aiProfile: 'Production' });
+      expect(profileRegion).toHaveBeenCalledWith('Production');
       // The profile's region flows into the client and back out for the UI to prefill.
       expect(out.region).toBe('us-east-1');
     } finally {
