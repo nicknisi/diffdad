@@ -88,7 +88,7 @@ function findHunkForConcern(files: DiffFile[], file: string, line: number) {
 
 function ConcernRow({ concern, onDismiss, dimmed }: { concern: Concern; onDismiss: () => void; dimmed?: boolean }) {
   const files = useReviewStore((s) => s.files);
-  const addDraft = useReviewStore((s) => s.addDraft);
+  const upsertDraft = useReviewStore((s) => s.upsertDraft);
   const drafts = useReviewStore((s) => s.drafts);
   const setOpenLine = useReviewStore((s) => s.setOpenLine);
   const { postComment } = useComments();
@@ -142,7 +142,7 @@ function ConcernRow({ concern, onDismiss, dimmed }: { concern: Concern; onDismis
   function handleAddToReview() {
     const trimmed = body.trim();
     if (!trimmed) return;
-    addDraft({
+    upsertDraft({
       id: `draft-concern-${draftKey}-${Date.now()}`,
       body: trimmed,
       path: concern.file,

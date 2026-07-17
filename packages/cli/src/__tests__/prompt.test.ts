@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { buildNarrativePrompt } from '../narrative/prompt';
+import { buildNarrativePrompt, buildWriterPrompt } from '../narrative/prompt';
 import { isMechanicalFile, partitionMechanicalFiles } from '../narrative/diff-filter';
 import type { DiffFile } from '../github/types';
+import type { Plan } from '../narrative/plan-types';
 
 function fakeFile(file: string): DiffFile {
   return { file, isNewFile: false, isDeleted: false, hunks: [] };
@@ -54,6 +55,66 @@ describe('buildNarrativePrompt', () => {
     expect(user).toContain('Add y constant');
     expect(user).toContain('src/constants.ts');
     expect(user).toContain('export const y = 2;');
+  });
+
+  it('uses the same concise chapter contract in single-pass and writer prompts', () => {
+    const files = [bigFile('src/a.ts', 1, 2)];
+    const singlePass = buildNarrativePrompt({
+      title: 'Tighten stories',
+      description: '',
+      labels: [],
+      files,
+      fileTree: ['src/a.ts'],
+    });
+    const plan: Plan = {
+      schemaVersion: 1,
+      prTitle: 'Tighten stories',
+      prTldr: 'Makes review stories easier to scan.',
+      prVerdict: 'caution',
+      themes: [
+        {
+          id: 'theme-0',
+          title: 'Concise narration',
+          riskLevel: 'medium',
+          rationale: 'The prompt controls visible review prose.',
+          hunkRefs: [{ file: 'src/a.ts', hunkIndex: 0 }],
+        },
+      ],
+      readingPlan: [],
+      concerns: [],
+    };
+    const writer = buildWriterPrompt({ plan, theme: plan.themes[0]!, files, fullFileTree: ['src/a.ts'] });
+
+    for (const system of [singlePass.system, writer.system]) {
+      const contract = system.toLowerCase();
+      expect(contract).toContain('at most one');
+      expect(contract).toContain('never put prose between every hunk');
+      expect(contract).toContain('do not repeat');
+    }
+  });
+
+  it('writer prompt carries no suppressed-theme instructions (engine synthesizes those chapters)', () => {
+    const files = [bigFile('src/a.ts', 1, 2)];
+    const plan: Plan = {
+      schemaVersion: 1,
+      prTitle: 'T',
+      prTldr: 'tldr',
+      prVerdict: 'safe',
+      themes: [
+        {
+          id: 'theme-0',
+          title: 'Mechanical',
+          riskLevel: 'low',
+          rationale: 'imports only',
+          suppress: true,
+          hunkRefs: [{ file: 'src/a.ts', hunkIndex: 0 }],
+        },
+      ],
+      readingPlan: [],
+      concerns: [],
+    };
+    const { system, user } = buildWriterPrompt({ plan, theme: plan.themes[0]!, files, fullFileTree: ['src/a.ts'] });
+    expect(`${system}\n${user}`.toLowerCase()).not.toContain('marked suppress');
   });
 
   it('truncates the file tree to 200 entries', () => {

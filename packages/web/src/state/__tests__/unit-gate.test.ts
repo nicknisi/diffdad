@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach } from 'vitest';
-import { useReviewStore } from '../review-store';
+import { applyUnitToStore, draftAnchorKey, reviewDraftKey, useReviewStore } from '../review-store';
 import { selectReviewReady, selectWalkthrough, selectOpenToResolve } from '../selectors';
-import type { DiffFile, NarrativeResponse, Plan } from '../types';
+import type { DiffFile, NarrativeResponse, Plan, Unit } from '../types';
 
 function mkFile(file: string): DiffFile {
   return {
@@ -18,10 +18,22 @@ beforeEach(() => {
     narrative: null,
     files: [],
     resolved: {},
+    reviewKey: null,
+    drafts: [],
     plan: null,
     pendingChapterThemeIds: new Set(),
     chapterStates: {},
     activeChapterId: null,
+    view: 'story',
+    narrationOverrides: {},
+    chapterDensity: {},
+    openLine: null,
+    commentRangeStart: null,
+    commentDrag: null,
+    submitOpen: false,
+    recap: null,
+    recapStatus: 'idle',
+    recapError: null,
   });
 });
 
@@ -55,6 +67,135 @@ describe('diff-first gate', () => {
     expect(after!.beats).toHaveLength(1);
     expect(after!.beats[0]!.title).toBe('Theme One');
     expect(after!.beats[0]!.risk).toBe('risk'); // high-risk theme
+  });
+});
+
+describe('review draft isolation', () => {
+  it('scopes same-number PR drafts by repository', () => {
+    expect(reviewDraftKey('owner-a/repo', 42)).not.toBe(reviewDraftKey('owner-b/repo', 42));
+    expect(reviewDraftKey('https://github.com/owner-a/repo', 42)).toBe('owner-a/repo#42');
+  });
+
+  it('upserts a single draft per inline anchor', () => {
+    useReviewStore.setState({ reviewKey: 'owner/repo#42', drafts: [] });
+    const store = useReviewStore.getState();
+    store.upsertDraft({ id: 'one', body: 'First', path: 'src/a.ts', line: 2, side: 'RIGHT' });
+    store.upsertDraft({ id: 'two', body: 'Second', path: 'src/a.ts', line: 2, side: 'RIGHT' });
+
+    expect(useReviewStore.getState().drafts).toEqual([
+      { id: 'two', body: 'Second', path: 'src/a.ts', line: 2, side: 'RIGHT' },
+    ]);
+  });
+
+  it('keeps drafts at different anchors independent', () => {
+    useReviewStore.setState({ reviewKey: 'owner/repo#42', drafts: [] });
+    const store = useReviewStore.getState();
+    // Same line number in two different files must not collide, nor with a chapter anchor.
+    store.upsertDraft({ id: 'a', body: 'A', path: 'src/a.ts', line: 2, side: 'RIGHT' });
+    store.upsertDraft({ id: 'b', body: 'B', path: 'src/b.ts', line: 2, side: 'RIGHT' });
+    store.upsertDraft({ id: 'c', body: 'C', chapterIndex: 2 });
+
+    expect(useReviewStore.getState().drafts.map((d) => d.id)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('removeDraftsAt removes only the matching logical anchor', () => {
+    useReviewStore.setState({ reviewKey: 'owner/repo#42', drafts: [] });
+    const store = useReviewStore.getState();
+    store.upsertDraft({ id: 'a', body: 'A', path: 'src/a.ts', line: 2, side: 'RIGHT' });
+    store.upsertDraft({ id: 'b', body: 'B', path: 'src/b.ts', line: 2, side: 'RIGHT' });
+
+    store.removeDraftsAt({ path: 'src/a.ts', line: 2 });
+
+    expect(useReviewStore.getState().drafts.map((d) => d.id)).toEqual(['b']);
+  });
+
+  it('draftAnchorKey distinguishes file:line anchors from chapter anchors', () => {
+    expect(draftAnchorKey({ path: 'src/a.ts', line: 2 })).not.toBe(draftAnchorKey({ path: 'src/b.ts', line: 2 }));
+    expect(draftAnchorKey({ path: 'src/a.ts', line: 2 })).not.toBe(draftAnchorKey({ chapterIndex: 2 }));
+    expect(draftAnchorKey({ body: 'no anchor' } as never)).toBeNull();
+  });
+});
+
+describe('daemon unit transitions', () => {
+  function mkUnit(over: Partial<Unit> = {}): Unit {
+    return {
+      unitId: 'u1',
+      repo: 'owner/repo',
+      taskLabel: 'PR #1',
+      intent: '',
+      status: 'queued',
+      prNumber: 1,
+      toResolve: 0,
+      createdAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-01T00:00:00Z',
+      ...over,
+    };
+  }
+
+  it('coerces a stale recap view to story (units have no recap endpoint)', () => {
+    useReviewStore.setState({ view: 'recap' });
+    applyUnitToStore(mkUnit());
+    expect(useReviewStore.getState().view).toBe('story');
+  });
+
+  it('preserves a files view across unit applies', () => {
+    useReviewStore.setState({ view: 'files' });
+    applyUnitToStore(mkUnit());
+    expect(useReviewStore.getState().view).toBe('files');
+  });
+
+  it('a same-unit re-apply (SSE tick / hydrate) preserves in-flight review work', () => {
+    applyUnitToStore(mkUnit());
+    useReviewStore.setState({
+      resolved: { 'beat-1': true },
+      narrationOverrides: { 'ch-0': 'security lens prose' },
+      chapterDensity: { 'ch-0': 'terse' },
+      openLine: 'src/a.ts:R2',
+    });
+    useReviewStore.getState().upsertDraft({ id: 'd1', body: 'draft', path: 'src/a.ts', line: 2, side: 'RIGHT' });
+
+    applyUnitToStore(mkUnit({ updatedAt: '2026-01-01T00:05:00Z' }));
+
+    const s = useReviewStore.getState();
+    expect(s.resolved).toEqual({ 'beat-1': true });
+    expect(s.narrationOverrides).toEqual({ 'ch-0': 'security lens prose' });
+    expect(s.chapterDensity).toEqual({ 'ch-0': 'terse' });
+    expect(s.openLine).toBe('src/a.ts:R2');
+  });
+
+  it('switching to a different unit resets PR-scoped transient state', () => {
+    applyUnitToStore(mkUnit());
+    useReviewStore.setState({
+      resolved: { 'beat-1': true },
+      narrationOverrides: { 'ch-0': 'override' },
+      chapterDensity: { 'ch-0': 'terse' },
+      openLine: 'src/a.ts:R2',
+      submitOpen: true,
+      recapStatus: 'ready',
+    });
+    useReviewStore.getState().upsertDraft({ id: 'd1', body: 'draft', path: 'src/a.ts', line: 2, side: 'RIGHT' });
+
+    applyUnitToStore(mkUnit({ unitId: 'u2', repo: 'owner/other', prNumber: 9 }));
+
+    const s = useReviewStore.getState();
+    expect(s.reviewKey).toBe('owner/other#9');
+    expect(s.resolved).toEqual({});
+    expect(s.narrationOverrides).toEqual({});
+    expect(s.chapterDensity).toEqual({});
+    expect(s.openLine).toBeNull();
+    expect(s.submitOpen).toBe(false);
+    expect(s.recapStatus).toBe('idle');
+    expect(s.drafts).toEqual([]);
+  });
+
+  it('the same PR number in a different repository gets a fresh draft scope', () => {
+    applyUnitToStore(mkUnit({ repo: 'owner-a/repo', prNumber: 42 }));
+    useReviewStore.getState().upsertDraft({ id: 'a', body: 'A', path: 'f.ts', line: 1, side: 'RIGHT' });
+
+    applyUnitToStore(mkUnit({ unitId: 'u2', repo: 'owner-b/repo', prNumber: 42 }));
+
+    expect(useReviewStore.getState().reviewKey).toBe('owner-b/repo#42');
+    expect(useReviewStore.getState().drafts).toEqual([]);
   });
 });
 

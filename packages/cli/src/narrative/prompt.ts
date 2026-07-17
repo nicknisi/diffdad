@@ -48,6 +48,17 @@ const MAX_LINES_PER_FILE = 800;
 const MAX_TOTAL_DIFF_LINES = 12000;
 const MAX_THEMES = 7;
 
+/**
+ * Prompt-contract revisions. Cache filenames key on these so a prompt change regenerates
+ * stale output without pretending the serialized schema changed (that's SCHEMA_VERSION in cache.ts).
+ * - PLANNER_PROMPT_REVISION — bump when planner instructions/schema change what plans contain
+ *   (themes, concerns, tldr, verdict). Invalidates cached plans AND completed narratives.
+ * - NARRATIVE_PROMPT_REVISION — bump when single-pass/writer prose instructions change.
+ *   Invalidates completed narratives while leaving still-valid plans cached.
+ */
+export const PLANNER_PROMPT_REVISION = 1;
+export const NARRATIVE_PROMPT_REVISION = 2;
+
 const RESPONSE_SCHEMA = `{
   "title": "string — short title for the PR's review story",
   "tldr": "string — exactly 1 sentence summarizing what this PR does",
@@ -71,11 +82,11 @@ const RESPONSE_SCHEMA = `{
   "chapters": [
     {
       "title": "string — chapter title",
-      "summary": "string — exactly 1 sentence: what this chapter covers",
-      "whyMatters": "string — 1-2 sentences: what breaks if this is wrong",
+      "summary": "string — 1 short sentence, at most 20 words: the behavioral delta",
+      "whyMatters": "string — 1 short sentence, at most 30 words: consequence or reviewer focus",
       "risk": "low | medium | high",
       "sections": [
-        { "type": "narrative", "content": "string — prose explaining the behavioral delta" },
+        { "type": "narrative", "content": "string — optional; at most ONE block of 1-2 short sentences for context not visible in the diff" },
         {
           "type": "diff",
           "file": "string — file path",
@@ -145,11 +156,11 @@ const PLAN_RESPONSE_SCHEMA = `{
 
 const CHAPTER_RESPONSE_SCHEMA = `{
   "title": "string — should match the theme title verbatim",
-  "summary": "string — exactly 1 sentence: what this chapter covers",
-  "whyMatters": "string — 1-2 sentences: what breaks if this is wrong",
+  "summary": "string — 1 short sentence, at most 20 words: the behavioral delta",
+  "whyMatters": "string — 1 short sentence, at most 30 words: consequence or reviewer focus",
   "risk": "low | medium | high",
   "sections": [
-    { "type": "narrative", "content": "string — prose. Aim for 1-3 sentences per narrative section." },
+    { "type": "narrative", "content": "string — optional; at most ONE block of 1-2 short sentences for context not visible in the diff" },
     {
       "type": "diff",
       "file": "string — must be one of the files listed in this theme",
@@ -209,10 +220,10 @@ If you have nothing real to say, return an empty array. Do not pad.
 
 ### chapters (max ${MAX_CHAPTERS}, ideally 3-5)
 Group hunks by behavior, not by file. A reviewer will skim chapter titles and read whyMatters before diving in.
-- **summary** — exactly 1 sentence: what this chapter covers.
-- **whyMatters** — 1-2 sentences: what breaks if this is wrong, or what guarantee this enforces. THIS IS THE MOST IMPORTANT FIELD. Don't just describe — explain consequence.
+- **summary** — one short scan line (at most 20 words): the behavioral delta.
+- **whyMatters** — one short sentence (at most 30 words): the consequence or invariant to verify. Don't just describe.
 - **risk** — low/medium/high (proportional to slip-set exposure, not line count).
-- **sections** — alternate \`narrative\` and \`diff\` sections.
+- **sections** — include every relevant \`diff\` section. Add at most ONE \`narrative\` section only when cross-file intent is not visible from the summary and diff. Never put prose between every hunk.
 - **callouts** — line-level review guidance: \`nit\` (style), \`concern\` (worth discussing), \`warning\` (likely bug). Skip nits. Use concerns/warnings sparingly — the top-level \`concerns\` array is the primary surface.
 
 Order chapters by risk descending. The first chapter should be the highest-risk slice; mechanical changes go last.
@@ -238,7 +249,7 @@ But the signals are heuristics. Do not invent concerns just because the score is
 
 ## Brevity
 
-You are output-token-bound, and the diff is already on screen beside your prose. Every chapter and sentence costs the reader real wait time. Aim for **3-6 chapters total**, never more than ${MAX_CHAPTERS}, even on large PRs — group aggressively. Keep narrative sections to **1-2 sentences**. Cut anything restating what the diff already shows — spend words only on intent, consequence, and what to verify.
+You are output-token-bound, and the diff is already on screen beside your prose. Every sentence costs the reviewer attention. Aim for **3-6 chapters total**, never more than ${MAX_CHAPTERS}, even on large PRs — group aggressively. Use at most one optional narrative block per chapter, limited to 1-2 short sentences. Each insight belongs in one place: do not repeat the title, summary, whyMatters, concerns, callouts, or visible code. Lead with what the reviewer should verify; cut everything else.
 
 ## Output
 
@@ -378,16 +389,17 @@ ${SHARED_PRINCIPLES}
 
 ## Your job in this pass
 
-You produce ONE chapter: title, 1-sentence summary, 1-2-sentence whyMatters, sections alternating narrative and diff, optional callouts.
+You produce ONE chapter: title, a short 1-sentence summary, a short 1-sentence whyMatters, every planned diff section, at most one optional narrative section, and optional callouts.
 
 ### Hard rules
 
 1. **Use the title from the plan verbatim.** Don't rename the theme.
 2. **Reference only this theme's hunks.** \`sections[].file\` and \`sections[].hunkIndex\` must come from the \`hunkRefs\` you were given. Do not invent or refer to other files.
 3. **Anchor everything.** Every concern and callout MUST have a real file:line from the diff.
-4. **Be brief.** Narrative sections are 1-2 sentences; whyMatters is 1-2 sentences. The diff renders beside your prose — cut anything restating what it shows; spend words only on intent and consequence.
-5. **Phrase questions as questions.** Don't assert what you can't prove from the diff.
-6. **Lead with the highest-risk hunk** within this theme. Order diff sections so a reviewer who stops after section 2 still has the gist.
+4. **Be brief.** Summary is at most 20 words; whyMatters is at most 30 words. Add at most one narrative block of 1-2 short sentences, and only for context not visible in the diff. Never put prose between every hunk.
+5. **Do not repeat yourself.** Each insight belongs in one field. Never restate the title, summary, whyMatters, callouts, plan rationale, or visible code.
+6. **Phrase questions as questions.** Don't assert what you can't prove from the diff.
+7. **Lead with the highest-risk hunk** within this theme. Order diff sections so a reviewer who stops after section 2 still has the gist.
 
 ### whyMatters
 
@@ -699,12 +711,8 @@ export function buildWriterPrompt(input: WriterPromptInput): NarrativePrompt {
     parts.push(`(Project file tree, first 50: ${tree})`, '');
   }
 
-  if (theme.suppress) {
-    parts.push(
-      '',
-      'NOTE: this theme is marked suppress. Produce a minimal chapter: 1-sentence summary, no callouts, no narrative sections beyond a single short note.',
-    );
-  }
+  // Suppressed themes never reach the writer — the engine synthesizes them via
+  // buildSuppressedChapter without an LLM call — so no suppress instructions here.
 
   // Stats for the writer pass aren't strictly meaningful (we don't apply caps
   // to the small per-theme diff), but we return a placeholder so the

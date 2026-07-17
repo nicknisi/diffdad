@@ -371,7 +371,14 @@ export function createServer(ctx: ServerContext) {
                         previousChapterTitles: prevChapterTitles,
                       },
                       {
-                        cacheKey: { owner: ctx.owner, repo: ctx.repo, number: ctx.pr.number, sha: ctx.headSha },
+                        cacheKey: {
+                          owner: ctx.owner,
+                          repo: ctx.repo,
+                          number: ctx.pr.number,
+                          sha: ctx.headSha,
+                          metaHash,
+                          providerKey,
+                        },
                         comments: ctx.comments,
                         onProgress: ({ chars }) => {
                           totalChars = chars;

@@ -48,6 +48,8 @@ type ReviewState = {
   repoUrl: string | null;
   chapterStates: Record<string, ChapterState>;
   activeChapterId: string | null;
+  /** Stable repository + PR identity used to isolate browser-local review drafts. */
+  reviewKey: string | null;
   drafts: DraftComment[];
   openLine: string | null;
   /** Anchor of an in-progress multi-line selection. `lineKey` of the first
@@ -141,7 +143,9 @@ type ReviewState = {
   /** Sync the route from the address bar without pushing history (popstate / initial load). */
   setRoute: (route: Route) => void;
   addDraft: (draft: DraftComment) => void;
+  upsertDraft: (draft: DraftComment) => void;
   removeDraft: (id: string) => void;
+  removeDraftsAt: (draft: Pick<DraftComment, 'path' | 'line' | 'chapterIndex'>) => void;
   clearDrafts: () => void;
   setTheme: (theme: Theme) => void;
   setAccent: (accent: AccentId) => void;
@@ -213,14 +217,29 @@ const safeStorage = {
   },
 };
 
-function draftStorageKey(prNumber: number): string {
+export function reviewDraftKey(repo: string | null, prNumber: number): string {
+  const normalizedRepo = repo?.replace(/^https:\/\/github\.com\//, '').replace(/\/$/, '') || 'local';
+  return `${normalizedRepo}#${prNumber}`;
+}
+
+function draftStorageKey(reviewKey: string): string {
+  return `diffdad.drafts.${reviewKey}`;
+}
+
+function legacyDraftStorageKey(prNumber: number): string {
   return `diffdad.drafts.${prNumber}`;
 }
 
+export function draftAnchorKey(draft: Pick<DraftComment, 'path' | 'line' | 'chapterIndex'>): string | null {
+  if (draft.path && draft.line != null) return `${draft.path}:${draft.line}`;
+  if (draft.chapterIndex != null) return `chapter:${draft.chapterIndex}`;
+  return null;
+}
+
 function persistDrafts(state: ReviewState) {
-  if (!state.pr) return;
+  if (!state.reviewKey) return;
   try {
-    safeStorage.setItem(draftStorageKey(state.pr.number), JSON.stringify(state.drafts));
+    safeStorage.setItem(draftStorageKey(state.reviewKey), JSON.stringify(state.drafts));
   } catch {}
 }
 
@@ -230,12 +249,26 @@ function isValidDraft(d: unknown): d is DraftComment {
   return typeof obj.id === 'string' && typeof obj.body === 'string';
 }
 
-export function loadDrafts(prNumber: number): DraftComment[] {
+export function loadDrafts(reviewKey: string, legacyPrNumber?: number): DraftComment[] {
   try {
-    const raw = safeStorage.getItem(draftStorageKey(prNumber));
-    if (raw) {
-      const parsed = JSON.parse(raw);
+    const scopedRaw = safeStorage.getItem(draftStorageKey(reviewKey));
+    if (scopedRaw) {
+      const parsed = JSON.parse(scopedRaw);
       if (Array.isArray(parsed)) return parsed.filter(isValidDraft);
+    }
+
+    if (legacyPrNumber !== undefined) {
+      const legacyKey = legacyDraftStorageKey(legacyPrNumber);
+      const legacyRaw = safeStorage.getItem(legacyKey);
+      if (legacyRaw) {
+        const parsed = JSON.parse(legacyRaw);
+        if (Array.isArray(parsed)) {
+          const drafts = parsed.filter(isValidDraft);
+          safeStorage.setItem(draftStorageKey(reviewKey), JSON.stringify(drafts));
+          safeStorage.removeItem(legacyKey);
+          return drafts;
+        }
+      }
     }
   } catch {}
   return [];
@@ -305,6 +338,7 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
   repoUrl: null,
   chapterStates: {},
   activeChapterId: null,
+  reviewKey: null,
   drafts: [],
   openLine: null,
   commentRangeStart: null,
@@ -359,6 +393,7 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
       const key = `ch-${idx}`;
       chapterStates[key] = saved[key] === 'reviewed' ? 'reviewed' : 'reading';
     });
+    const nextReviewKey = reviewDraftKey(repoUrl, pr.number);
     const next: Partial<ReviewState> = {
       pr,
       narrative: safeNarrative,
@@ -368,9 +403,15 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
       reviews,
       repoUrl,
       chapterStates,
-      drafts: loadDrafts(pr.number),
+      reviewKey: nextReviewKey,
+      drafts: loadDrafts(nextReviewKey, pr.number),
       activeChapterId: safeNarrative.chapters.length > 0 ? 'ch-0' : null,
       chapterDensity: {},
+      resolved: {},
+      narrationOverrides: {},
+      openLine: null,
+      commentRangeStart: null,
+      commentDrag: null,
     };
     // Display prefs are seeded by `applyConfigResponse` (from `GET /api/config`), not from the
     // narrative payload — see Phase 2. `setData` no longer touches theme/accent/etc.
@@ -457,6 +498,17 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
       return next;
     }),
 
+  upsertDraft: (draft) =>
+    set((state) => {
+      const key = draftAnchorKey(draft);
+      const drafts = key
+        ? [...state.drafts.filter((existing) => draftAnchorKey(existing) !== key), draft]
+        : [...state.drafts, draft];
+      const next = { drafts };
+      persistDrafts({ ...state, ...next });
+      return next;
+    }),
+
   removeDraft: (id) =>
     set((state) => {
       const next = { drafts: state.drafts.filter((d) => d.id !== id) };
@@ -464,11 +516,20 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
       return next;
     }),
 
+  removeDraftsAt: (draft) =>
+    set((state) => {
+      const key = draftAnchorKey(draft);
+      if (!key) return state;
+      const next = { drafts: state.drafts.filter((existing) => draftAnchorKey(existing) !== key) };
+      persistDrafts({ ...state, ...next });
+      return next;
+    }),
+
   clearDrafts: () =>
     set((state) => {
-      if (state.pr) {
+      if (state.reviewKey) {
         try {
-          safeStorage.removeItem(draftStorageKey(state.pr.number));
+          safeStorage.removeItem(draftStorageKey(state.reviewKey));
         } catch {}
       }
       return { drafts: [] };
@@ -609,6 +670,9 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
         narrative: safeNarrative,
         chapterStates,
         pendingChapterThemeIds: pending,
+        narrationOverrides: {},
+        chapterDensity: {},
+        resolved: {},
         activeChapterId: state.activeChapterId ?? (placeholderChapters.length > 0 ? 'ch-0' : null),
       };
     }),
@@ -643,4 +707,54 @@ export function useResolvedTheme(): 'light' | 'dark' {
   const theme = useReviewStore((s) => s.theme);
   if (theme !== 'auto') return theme;
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
+/**
+ * Feed a daemon unit's diff slice + brief into the review store so the existing review surface
+ * (StoryView / ClassicView, both store-driven) renders it. Set directly rather than via `setData`
+ * so PR-mode-only behaviors (legacy draft migration, reviewed-chapter restore) can't bleed in.
+ *
+ * Drafts are keyed by repo+PR (`reviewKey`). Switching to a DIFFERENT review resets the PR-scoped
+ * transient state (resolve work, narration overrides, open composers, recap); a same-unit re-apply
+ * (SSE tick, hydrate response) preserves all of it. A stale `recap` view coerces to `story` because
+ * units have no unit-scoped recap endpoint.
+ *
+ * Comments are intentionally NOT set here: they're loaded live from GitHub by the drill-in's
+ * comment effect. Clobbering them on every live re-apply would wipe the loaded thread each time
+ * the unit's `updatedAt` ticks.
+ */
+export function applyUnitToStore(unit: Unit): void {
+  const narrative = unit.narrative ?? null;
+  const chapterStates: Record<string, ChapterState> = {};
+  if (narrative) narrative.chapters.forEach((_, i) => (chapterStates[`ch-${i}`] = 'reading'));
+
+  const current = useReviewStore.getState();
+  const nextReviewKey = reviewDraftKey(unit.repo, unit.metadata?.number ?? unit.prNumber ?? 0);
+  const switchingReview = current.reviewKey !== nextReviewKey;
+
+  useReviewStore.setState({
+    pr: unit.metadata ?? null,
+    files: unit.files ?? [],
+    narrative,
+    repoUrl: `https://github.com/${unit.repo}`,
+    reviewKey: nextReviewKey,
+    chapterStates,
+    activeChapterId: narrative && narrative.chapters.length > 0 ? 'ch-0' : null,
+    view: current.view === 'recap' ? 'story' : current.view,
+    drafts: loadDrafts(nextReviewKey),
+    ...(switchingReview
+      ? {
+          resolved: {},
+          narrationOverrides: {},
+          chapterDensity: {},
+          openLine: null,
+          commentRangeStart: null,
+          commentDrag: null,
+          submitOpen: false,
+          recap: null,
+          recapStatus: 'idle' as const,
+          recapError: null,
+        }
+      : {}),
+  });
 }

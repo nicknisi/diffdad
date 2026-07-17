@@ -108,8 +108,12 @@ export type NarrativeGenerationOptions = {
   onPlan?: PlanReadyHandler;
   /** Fires whenever a writer-pass chapter completes (two-pass pipeline only). */
   onChapter?: ChapterReadyHandler;
-  /** Optional cache key for storing the plan separately from the assembled narrative. */
-  cacheKey?: { owner: string; repo: string; number: number; sha: string };
+  /**
+   * Optional cache key for storing the plan separately from the assembled narrative.
+   * `metaHash`/`providerKey` are the same values the caller uses for narrative caching —
+   * a plan depends on the PR metadata and the model just like the finished prose does.
+   */
+  cacheKey?: { owner: string; repo: string; number: number; sha: string; metaHash: string; providerKey: string };
   /** Existing inline review comments — fed to the planner as hints (hot-zone signal). */
   comments?: PRComment[];
   /**
@@ -230,6 +234,8 @@ async function generateNarrativeTwoPass(
       options.cacheKey.repo,
       options.cacheKey.number,
       options.cacheKey.sha,
+      options.cacheKey.metaHash,
+      options.cacheKey.providerKey,
     );
   }
 
@@ -269,6 +275,8 @@ async function generateNarrativeTwoPass(
         options.cacheKey.repo,
         options.cacheKey.number,
         options.cacheKey.sha,
+        options.cacheKey.metaHash,
+        options.cacheKey.providerKey,
         plan,
       );
     }

@@ -1,4 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { homedir } from 'os';
+import { join } from 'path';
+import { readdir, rm } from 'fs/promises';
 import { createServer, type ServerContext } from '../server';
 import type { NarrativeResponse } from '../narrative/types';
 import type { CheckRun, DiffFile, PRComment, PRMetadata, PRReview } from '../github/types';
@@ -89,6 +92,19 @@ class StreamReader {
 }
 
 // Fixtures --------------------------------------------------------------------
+
+/**
+ * Remove every cache file this test wrote, whatever schema/prompt-revision/provider suffix
+ * production currently uses. Each test's sha embeds Date.now(), so the owner-repo-number-sha
+ * prefix is unique to that test run and can never match an unrelated user cache entry.
+ */
+async function cleanFixtureCache(sha: string): Promise<void> {
+  const dir = join(homedir(), '.cache', 'diffdad');
+  const entries = await readdir(dir).catch(() => [] as string[]);
+  await Promise.all(
+    entries.filter((e) => e.startsWith(`o-r-1-${sha}`)).map((e) => rm(join(dir, e), { force: true }).catch(() => {})),
+  );
+}
 
 const baseNarrative: NarrativeResponse = {
   title: 'PR title',
@@ -405,12 +421,7 @@ describe('GET /api/events — polling cycle', () => {
     ctrl.abort();
     await reader.cancel();
 
-    const { rm } = await import('fs/promises');
-    const { homedir } = await import('os');
-    const { join } = await import('path');
-    await rm(join(homedir(), '.cache', 'diffdad', `o-r-1-${newSha}-${metaHash}.v3.${providerKey}.json`), {
-      force: true,
-    }).catch(() => {});
+    await cleanFixtureCache(newSha);
   });
 
   it('regenerates when only PR title changed (SHA unchanged)', async () => {
@@ -450,12 +461,7 @@ describe('GET /api/events — polling cycle', () => {
     ctrl.abort();
     await reader.cancel();
 
-    const { rm } = await import('fs/promises');
-    const { homedir } = await import('os');
-    const { join } = await import('path');
-    await rm(join(homedir(), '.cache', 'diffdad', `o-r-1-${sha}-${newMetaHash}.v3.${providerKey}.json`), {
-      force: true,
-    }).catch(() => {});
+    await cleanFixtureCache(sha);
   });
 
   it('regenerates when only PR body changed (SHA unchanged)', async () => {
@@ -492,12 +498,7 @@ describe('GET /api/events — polling cycle', () => {
     ctrl.abort();
     await reader.cancel();
 
-    const { rm } = await import('fs/promises');
-    const { homedir } = await import('os');
-    const { join } = await import('path');
-    await rm(join(homedir(), '.cache', 'diffdad', `o-r-1-${sha}-${newMetaHash}.v3.${providerKey}.json`), {
-      force: true,
-    }).catch(() => {});
+    await cleanFixtureCache(sha);
   });
 
   it('on SHA change with a cached narrative, broadcasts "narrative" without re-generating', async () => {
@@ -543,13 +544,7 @@ describe('GET /api/events — polling cycle', () => {
     ctrl.abort();
     await reader.cancel();
 
-    // cleanup the fixture cache file
-    const { rm } = await import('fs/promises');
-    const { homedir } = await import('os');
-    const { join } = await import('path');
-    await rm(join(homedir(), '.cache', 'diffdad', `o-r-1-${sha}-${metaHash}.v3.${providerKey}.json`), {
-      force: true,
-    }).catch(() => {});
+    await cleanFixtureCache(sha);
   });
 
   it('regenerates when only PR labels changed (SHA unchanged)', async () => {
@@ -586,12 +581,7 @@ describe('GET /api/events — polling cycle', () => {
     ctrl.abort();
     await reader.cancel();
 
-    const { rm } = await import('fs/promises');
-    const { homedir } = await import('os');
-    const { join } = await import('path');
-    await rm(join(homedir(), '.cache', 'diffdad', `o-r-1-${sha}-${newMetaHash}.v3.${providerKey}.json`), {
-      force: true,
-    }).catch(() => {});
+    await cleanFixtureCache(sha);
   });
 
   it('does NOT regenerate when only draft/state changed (no prompt impact)', async () => {
@@ -688,12 +678,7 @@ describe('GET /api/events — polling cycle', () => {
     ctrl.abort();
     await reader.cancel();
 
-    const { rm } = await import('fs/promises');
-    const { homedir } = await import('os');
-    const { join } = await import('path');
-    await rm(join(homedir(), '.cache', 'diffdad', `o-r-1-${newSha}-${editedMeta}.v3.${providerKey}.json`), {
-      force: true,
-    }).catch(() => {});
+    await cleanFixtureCache(newSha);
   });
 
   it('swallows polling errors and keeps the loop alive', async () => {

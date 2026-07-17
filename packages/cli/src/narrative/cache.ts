@@ -4,13 +4,12 @@ import { createHash } from 'crypto';
 import { readdir, readFile, rm, writeFile, mkdir } from 'fs/promises';
 import { normalizeNarrative, type NarrativeResponse } from './types';
 import { isPlan, type Plan } from './plan-types';
+import { NARRATIVE_PROMPT_REVISION, PLANNER_PROMPT_REVISION } from './prompt';
 
 const CACHE_DIR = join(homedir(), '.cache', 'diffdad');
 
-// Cache schema version. Bump when the NarrativeResponse shape OR cache key
-// format changes in a way that would make older cached entries unreadable. v3
-// adds: prompt-meta hash in the key so PR title/body/label edits regenerate;
-// optional themeId on chapters; a sibling .plan.v3.json for planner output.
+// Cache schema version tracks serialized compatibility. Prompt revisions are keyed
+// separately so prose-contract changes regenerate without pretending the shape changed.
 const SCHEMA_VERSION = 3;
 
 export type PromptRelevantMeta = {
@@ -30,7 +29,12 @@ export function computePromptMetaHash(meta: PromptRelevantMeta): string {
   return createHash('sha256').update(canonical).digest('hex').slice(0, 12);
 }
 
-function cachePath(
+/**
+ * Exact on-disk path for a completed narrative. Keyed on both prompt revisions: two-pass
+ * output depends on the plan (planner revision) and the prose contract (narrative revision).
+ * Exported so tests construct fixture paths the same way production reads them.
+ */
+export function narrativeCachePath(
   owner: string,
   repo: string,
   number: number,
@@ -38,11 +42,31 @@ function cachePath(
   metaHash: string,
   providerKey: string,
 ): string {
-  return join(CACHE_DIR, `${owner}-${repo}-${number}-${sha}-${metaHash}.v${SCHEMA_VERSION}.${providerKey}.json`);
+  return join(
+    CACHE_DIR,
+    `${owner}-${repo}-${number}-${sha}-${metaHash}.v${SCHEMA_VERSION}.p${PLANNER_PROMPT_REVISION}-${NARRATIVE_PROMPT_REVISION}.${providerKey}.json`,
+  );
 }
 
-function planCachePath(owner: string, repo: string, number: number, sha: string): string {
-  return join(CACHE_DIR, `${owner}-${repo}-${number}-${sha}.plan.v${SCHEMA_VERSION}.json`);
+/**
+ * Exact on-disk path for a cached plan. A plan is a function of the diff (sha), the PR
+ * metadata fed to the planner prompt (metaHash), the model that produced it (providerKey),
+ * and the planner prompt contract (planner revision) — all of them key the filename so a
+ * same-SHA title/body/label edit or provider switch regenerates instead of replaying a
+ * stale plan. Writer-only prompt changes deliberately do NOT invalidate plans.
+ */
+export function planCachePath(
+  owner: string,
+  repo: string,
+  number: number,
+  sha: string,
+  metaHash: string,
+  providerKey: string,
+): string {
+  return join(
+    CACHE_DIR,
+    `${owner}-${repo}-${number}-${sha}-${metaHash}.plan.v${SCHEMA_VERSION}.p${PLANNER_PROMPT_REVISION}.${providerKey}.json`,
+  );
 }
 
 export async function getCachedNarrative(
@@ -54,7 +78,7 @@ export async function getCachedNarrative(
   providerKey: string,
 ): Promise<NarrativeResponse | null> {
   try {
-    const path = cachePath(owner, repo, number, sha, metaHash, providerKey);
+    const path = narrativeCachePath(owner, repo, number, sha, metaHash, providerKey);
     const raw = await readFile(path, 'utf-8');
     return normalizeNarrative(JSON.parse(raw));
   } catch {
@@ -84,14 +108,21 @@ export async function cacheNarrative(
   providerKey: string,
   narrative: NarrativeResponse,
 ): Promise<void> {
-  const path = cachePath(owner, repo, number, sha, metaHash, providerKey);
+  const path = narrativeCachePath(owner, repo, number, sha, metaHash, providerKey);
   await mkdir(CACHE_DIR, { recursive: true });
   await writeFile(path, JSON.stringify(narrative));
 }
 
-export async function getCachedPlan(owner: string, repo: string, number: number, sha: string): Promise<Plan | null> {
+export async function getCachedPlan(
+  owner: string,
+  repo: string,
+  number: number,
+  sha: string,
+  metaHash: string,
+  providerKey: string,
+): Promise<Plan | null> {
   try {
-    const path = planCachePath(owner, repo, number, sha);
+    const path = planCachePath(owner, repo, number, sha, metaHash, providerKey);
     const raw = await readFile(path, 'utf-8');
     const parsed = JSON.parse(raw);
     return isPlan(parsed) ? parsed : null;
@@ -100,8 +131,16 @@ export async function getCachedPlan(owner: string, repo: string, number: number,
   }
 }
 
-export async function cachePlan(owner: string, repo: string, number: number, sha: string, plan: Plan): Promise<void> {
-  const path = planCachePath(owner, repo, number, sha);
+export async function cachePlan(
+  owner: string,
+  repo: string,
+  number: number,
+  sha: string,
+  metaHash: string,
+  providerKey: string,
+  plan: Plan,
+): Promise<void> {
+  const path = planCachePath(owner, repo, number, sha, metaHash, providerKey);
   await mkdir(CACHE_DIR, { recursive: true });
   await writeFile(path, JSON.stringify(plan));
 }

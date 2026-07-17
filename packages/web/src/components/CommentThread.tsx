@@ -76,8 +76,8 @@ export function CommentThread({
 }: Props) {
   const { postComment } = useComments();
   const drafts = useReviewStore((s) => s.drafts);
-  const addDraft = useReviewStore((s) => s.addDraft);
-  const removeDraft = useReviewStore((s) => s.removeDraft);
+  const upsertDraft = useReviewStore((s) => s.upsertDraft);
+  const removeDraftsAt = useReviewStore((s) => s.removeDraftsAt);
   // Where this comment lands drives the composer's copy. `github` (a daemon PR unit) keeps the
   // GitHub-comment flow but says so plainly ("Comment on PR"); `review` is PR mode's batch flow.
   const target = useReviewStore((s) => commentTarget(s.mode, s.route, s.units));
@@ -135,18 +135,7 @@ export function CommentThread({
   function saveDraft() {
     const trimmed = body.trim();
     if (!trimmed || !draftKey) return;
-    // Replace any existing draft for this key.
-    if (existingDraft) {
-      removeDraft(existingDraft.id);
-    }
-    // Also clear any other draft pointing at the same logical key (in case
-    // existingDraft memo is stale because we only resolve it on mount).
-    for (const d of drafts) {
-      if (draftKeyFor(d.path, d.line, d.chapterIndex) === draftKey) {
-        removeDraft(d.id);
-      }
-    }
-    addDraft({
+    upsertDraft({
       id: `draft-${draftKey}-${Date.now()}`,
       body: trimmed,
       path,
@@ -161,11 +150,7 @@ export function CommentThread({
 
   function clearDraftForKey() {
     if (!draftKey) return;
-    for (const d of drafts) {
-      if (draftKeyFor(d.path, d.line, d.chapterIndex) === draftKey) {
-        removeDraft(d.id);
-      }
-    }
+    removeDraftsAt({ path, line, chapterIndex });
   }
 
   async function submit() {

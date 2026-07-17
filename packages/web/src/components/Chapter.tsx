@@ -179,6 +179,7 @@ export function Chapter({ index, chapter, resolve }: Props) {
   const storyStructure = useReviewStore((s) => s.storyStructure);
   const displayDensity = useReviewStore((s) => s.displayDensity);
   const narrative = useReviewStore((s) => s.narrative);
+  const narrationOverrides = useReviewStore((s) => s.narrationOverrides);
   const pendingChapterThemeIds = useReviewStore((s) => s.pendingChapterThemeIds);
   const id = `ch-${index}`;
   const reviewed = chapterStates[id] === 'reviewed';
@@ -341,7 +342,15 @@ export function Chapter({ index, chapter, resolve }: Props) {
     </button>
   );
 
+  const summary = chapter.summary?.trim();
   const whyMatters = chapter.whyMatters?.trim();
+  const narrativeSections = chapter.sections.filter(
+    (section): section is Extract<ChapterType['sections'][number], { type: 'narrative' }> =>
+      section.type === 'narrative',
+  );
+  const firstNarrativeIndex = chapter.sections.findIndex((section) => section.type === 'narrative');
+  const hasNarrationOverride = id in narrationOverrides;
+  const extraNarration = hasNarrationOverride ? [] : narrativeSections.slice(1);
   const streamingIndicator = isStreaming ? (
     <div
       className="ml-[34px] mb-[14px] flex items-center gap-2 rounded-[8px] px-3.5 py-2.5 text-[13px]"
@@ -372,6 +381,10 @@ export function Chapter({ index, chapter, resolve }: Props) {
   const body = (
     <div className={compact ? 'space-y-3' : 'space-y-4'}>
       {streamingIndicator}
+      {summary ? (
+        <p className="ml-[34px] m-0 text-[14px] font-medium leading-[21px] text-[var(--fg-1)]">{summary}</p>
+      ) : null}
+      {hasNarrationOverride && firstNarrativeIndex === -1 ? <NarrationBlock content="" chapterKey={id} /> : null}
       {whyMatters ? (
         <div
           className="ml-[34px] rounded-[8px] px-3.5 py-2.5 text-[13.5px] leading-[20px]"
@@ -392,12 +405,8 @@ export function Chapter({ index, chapter, resolve }: Props) {
       ) : null}
       {chapter.sections.map((section, i) => {
         if (section.type === 'narrative') {
-          return (
-            <div key={i}>
-              <NarrationBlock content={section.content} chapterKey={id} />
-              <NarrationAnchor chapterIndex={index} />
-            </div>
-          );
+          if (i !== firstNarrativeIndex) return null;
+          return <NarrationBlock key={i} content={section.content} chapterKey={id} />;
         }
         const flat = findHunk(files, section.file, section.hunkIndex);
         if (!flat) {
@@ -439,6 +448,16 @@ export function Chapter({ index, chapter, resolve }: Props) {
           />
         );
       })}
+      {extraNarration.length > 0 && (
+        <details className="ml-[34px] rounded-[8px] bg-[var(--gray-2)] px-3 py-2 text-[12.5px] text-[var(--fg-2)]">
+          <summary className="cursor-pointer font-semibold text-[var(--fg-3)]">More context</summary>
+          <div className="mt-3 space-y-3">
+            {extraNarration.map((section, i) => (
+              <NarrationBlock key={i} content={section.content} flush />
+            ))}
+          </div>
+        </details>
+      )}
       {chapter.reshow?.map((entry, i) => {
         const refFile = entry.file || refToFileFallback.get(entry.ref);
         if (!refFile) {
@@ -472,6 +491,7 @@ export function Chapter({ index, chapter, resolve }: Props) {
           ))}
         </div>
       )}
+      <NarrationAnchor chapterIndex={index} />
     </div>
   );
 

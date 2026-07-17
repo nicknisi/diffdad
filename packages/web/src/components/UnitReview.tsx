@@ -1,43 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
 import { getAccentMeta } from '../lib/accents';
 import { copy } from '../lib/microcopy';
-import { loadDrafts, pendingReviewComments, useReviewStore } from '../state/review-store';
+import { applyUnitToStore, pendingReviewComments, useReviewStore } from '../state/review-store';
 import { reviewEndpoint, summarizeChecks, summarizeReviews } from '../lib/units-view';
+import { selectOpenToResolve } from '../state/selectors';
 import { useComments } from '../hooks/useComments';
 import { AccentPicker } from './AccentPicker';
 import { ClassicView } from './ClassicView';
 import { DadMark } from './DadMark';
 import { ReviewProgress } from './ReviewProgress';
+import { ReviewViewTabs } from './ReviewViewTabs';
+import { ShortcutsHelp } from './ShortcutsHelp';
 import { StoryView } from './StoryView';
 import { SubmitDialog } from './SubmitDialog';
 import { ThemeToggle } from './ThemeToggle';
-import type { ChapterState, CheckRun, PRReview, Unit } from '../state/types';
-
-/**
- * Feed a unit's diff slice + brief into the review store so the existing review surface
- * (StoryView / ClassicView, both store-driven) renders it. We set state directly rather than
- * via `setData` so the per-unit reviewed/draft localStorage (keyed by `pr.number`) can't bleed
- * across units — each open starts fresh.
- *
- * Comments are intentionally NOT set here: they're loaded live from GitHub by the drill-in's
- * comment effect. Clobbering them on every live re-apply would wipe the loaded thread each time
- * the unit's `updatedAt` ticks.
- */
-function applyUnitToStore(unit: Unit): void {
-  const narrative = unit.narrative ?? null;
-  const chapterStates: Record<string, ChapterState> = {};
-  if (narrative) narrative.chapters.forEach((_, i) => (chapterStates[`ch-${i}`] = 'reading'));
-  useReviewStore.setState({
-    pr: unit.metadata ?? null,
-    files: unit.files ?? [],
-    narrative,
-    chapterStates,
-    activeChapterId: narrative && narrative.chapters.length > 0 ? 'ch-0' : null,
-    // Load this unit's batched draft comments (persisted per PR number). Idempotent on live re-apply,
-    // so an SSE tick can't wipe drafts mid-review — and switching units loads the right PR's drafts.
-    drafts: loadDrafts(unit.metadata?.number ?? 0),
-  });
-}
+import type { CheckRun, PRReview, Unit } from '../state/types';
 
 /**
  * Make a raw hydrate failure safe to show under Dad's folksy heading. Server-side generation errors
@@ -82,10 +59,16 @@ export function UnitReview() {
   const unitId = route.name === 'unit' ? route.unitId : null;
   const liveUnit = useReviewStore((s) => (unitId ? s.units.find((u) => u.unitId === unitId) : undefined));
   const narrative = useReviewStore((s) => s.narrative);
+  const view = useReviewStore((s) => s.view);
   const mode = useReviewStore((s) => s.mode);
   const setComments = useReviewStore((s) => s.setComments);
   const draftCount = useReviewStore((s) => pendingReviewComments(s.drafts).length);
+  const openToResolve = useReviewStore(selectOpenToResolve);
   const clearDrafts = useReviewStore((s) => s.clearDrafts);
+  const submitOpen = useReviewStore((s) => s.submitOpen);
+  const setSubmitOpen = useReviewStore((s) => s.setSubmitOpen);
+  const shortcutsHelpOpen = useReviewStore((s) => s.shortcutsHelpOpen);
+  const setShortcutsHelpOpen = useReviewStore((s) => s.setShortcutsHelpOpen);
   const setCheckRuns = useReviewStore((s) => s.setCheckRuns);
   const setReviews = useReviewStore((s) => s.setReviews);
   const checkRuns = useReviewStore((s) => s.checkRuns);
@@ -93,7 +76,6 @@ export function UnitReview() {
   const { refreshComments } = useComments();
 
   const [unit, setUnit] = useState<Unit | null>(null);
-  const [reviewOpen, setReviewOpen] = useState(false);
   // Dedupe the lazy-hydrate POST: a github unit with no narrative triggers generation once per open.
   const hydratedRef = useRef<string | null>(null);
   const [notFound, setNotFound] = useState(false);
@@ -295,7 +277,7 @@ export function UnitReview() {
         throw new Error(`Submit failed (${res.status})${detail ? `: ${detail}` : ''}`);
       }
       clearDrafts();
-      setReviewOpen(false);
+      setSubmitOpen(false);
       if (resolution === 'comment') {
         await refreshComments(); // the drafts are real GitHub comments now — surface them
         setBusy(false);
@@ -321,8 +303,11 @@ export function UnitReview() {
         {unit?.metadata?.branch && (
           <span className="font-mono text-[12.5px] text-[var(--fg-3)]">{unit.metadata.branch}</span>
         )}
-        <span className="truncate text-[13.5px] font-semibold text-[var(--fg-1)]">{unit?.taskLabel}</span>
-        <div className="ml-auto flex items-center gap-2">
+        <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold text-[var(--fg-1)]">
+          {unit?.taskLabel}
+        </span>
+        <ReviewViewTabs showRecap={false} />
+        <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={reRead}
@@ -388,7 +373,9 @@ export function UnitReview() {
         </div>
       )}
 
-      {narrative ? (
+      {view === 'files' ? (
+        <ClassicView />
+      ) : narrative ? (
         <StoryView />
       ) : hydrateError ? (
         <>
@@ -454,14 +441,14 @@ export function UnitReview() {
             <span className="text-[12.5px] text-[var(--fg-3)]">
               {draftCount > 0
                 ? `${draftCount} inline ${draftCount === 1 ? 'comment' : 'comments'} ready to ship`
-                : unit && unit.toResolve > 0
-                  ? `${unit.toResolve} to resolve before approving`
+                : openToResolve > 0
+                  ? `${openToResolve} to resolve before approving`
                   : 'Ready for your review'}
             </span>
             <div className="ml-auto">
               <button
                 type="button"
-                onClick={() => setReviewOpen(true)}
+                onClick={() => setSubmitOpen(true)}
                 disabled={busy}
                 aria-keyshortcuts="s"
                 className="rounded-md px-4 py-1.5 text-[13px] font-semibold text-white disabled:opacity-50"
@@ -474,7 +461,8 @@ export function UnitReview() {
         </div>
       )}
 
-      <SubmitDialog open={reviewOpen} onClose={() => setReviewOpen(false)} onSubmit={submitReview} />
+      <SubmitDialog open={submitOpen} onClose={() => setSubmitOpen(false)} onSubmit={submitReview} />
+      <ShortcutsHelp open={shortcutsHelpOpen} onClose={() => setShortcutsHelpOpen(false)} />
     </div>
   );
 }

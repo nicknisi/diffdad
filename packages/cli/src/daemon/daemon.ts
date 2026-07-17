@@ -262,7 +262,7 @@ function makeHydrate(
     const { narrative } = await generateNarrative(promptMeta, files, [], config, undefined, {
       // contentKey-style cache key: keyed on the head SHA carried in diffContentKey (advanced above on
       // a re-read). `force` skips the cache read but still writes, so the fresh prose replaces it.
-      cacheKey: { owner, repo: name, number: prNumber, sha },
+      cacheKey: { owner, repo: name, number: prNumber, sha, metaHash, providerKey },
       comments: [],
       force,
     });

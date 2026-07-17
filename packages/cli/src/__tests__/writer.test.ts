@@ -169,4 +169,14 @@ describe('buildSuppressedChapter', () => {
     expect(ch.sections.every((s) => s.type === 'diff')).toBe(true);
     expect(ch.themeId).toBe('theme-0');
   });
+
+  it('stays minimal: no narrative prose, no callouts, one canned summary sentence', () => {
+    // Suppressed themes never reach the writer LLM — this synthetic output is the ONLY
+    // contract for them, so it must not reintroduce the verbose prose the prompts banned.
+    const ch = buildSuppressedChapter({ ...baseTheme, suppress: true });
+    expect(ch.sections.some((s) => s.type === 'narrative')).toBe(false);
+    expect(ch.callouts).toBeUndefined();
+    expect(ch.whyMatters).toBe('');
+    expect(ch.summary.length).toBeLessThan(100);
+  });
 });
