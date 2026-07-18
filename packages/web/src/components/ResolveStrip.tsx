@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { aiEndpoint } from '../lib/units-view';
 import { useReviewStore } from '../state/review-store';
 import { Markdown } from './markdown/Markdown';
+import { InlineCommentComposer } from './InlineCommentComposer';
 import type { ResolveItem, ResolveSeverity } from '../lib/walkthrough';
 
 // Strip surface tokens per severity — louder than the inline flag glyph, quieter than a banner.
@@ -37,8 +38,8 @@ const actionBtn =
 
 /**
  * The inline "surface what I should be sure about" strip on a flagged beat. Poses the
- * resolve item's question and offers two exits: clear it locally (Looks fine) or interrogate
- * the diff (Ask dad → /api/ai). Reuses endpoints that already exist; nothing new server-side.
+ * resolve item's question and offers explicit exits: clear it locally, interrogate the diff,
+ * comment immediately, or batch an editable comment into the pending review.
  */
 export function ResolveStrip({ item, inset = false }: { item: ResolveItem; inset?: boolean }) {
   const resolved = useReviewStore((s) => !!s.resolved[item.id]);
@@ -47,9 +48,12 @@ export function ResolveStrip({ item, inset = false }: { item: ResolveItem; inset
   const [answer, setAnswer] = useState<string | null>(null);
   const [asking, setAsking] = useState(false);
   const [askError, setAskError] = useState<string | null>(null);
+  const [commentOpen, setCommentOpen] = useState(false);
+  const [commentSeed, setCommentSeed] = useState(item.question);
 
   const sev = STRIP[item.severity];
   const canAsk = item.chapterIndex >= 0; // orphan beats have no chapter to ask about
+  const canComment = !!item.file && item.line != null;
 
   if (resolved) {
     return (
@@ -108,6 +112,19 @@ export function ResolveStrip({ item, inset = false }: { item: ResolveItem; inset
         >
           ✓ Looks fine
         </button>
+        {canComment && (
+          <button
+            type="button"
+            onClick={() => {
+              setCommentSeed(item.question);
+              setCommentOpen((open) => !open);
+            }}
+            className={actionBtn}
+            style={{ color: 'var(--blue-11)', boxShadow: 'inset 0 0 0 1px var(--blue-a6)' }}
+          >
+            {commentOpen ? 'Cancel comment' : 'Comment'}
+          </button>
+        )}
         {canAsk && (
           <button
             type="button"
@@ -121,6 +138,20 @@ export function ResolveStrip({ item, inset = false }: { item: ResolveItem; inset
         )}
       </div>
 
+      {commentOpen && item.file && item.line != null && (
+        <div className="mt-2 ml-6">
+          <InlineCommentComposer
+            key={commentSeed}
+            path={item.file}
+            line={item.line}
+            initialBody={commentSeed}
+            autoFocus
+            onCancel={() => setCommentOpen(false)}
+            onHandled={() => setResolved(item.id, true)}
+          />
+        </div>
+      )}
+
       {askError && (
         <div className="mt-2 pl-6 text-[12px]" style={{ color: 'var(--red-11)' }}>
           {askError}
@@ -132,6 +163,19 @@ export function ResolveStrip({ item, inset = false }: { item: ResolveItem; inset
           style={{ background: 'var(--bg-panel)', boxShadow: 'inset 0 0 0 1px var(--gray-a5)' }}
         >
           <Markdown source={answer} />
+          {canComment && (
+            <button
+              type="button"
+              onClick={() => {
+                setCommentSeed(answer);
+                setCommentOpen(true);
+              }}
+              className="mt-2 rounded-md px-2.5 py-1 text-[11.5px] font-semibold"
+              style={{ color: 'var(--blue-11)', boxShadow: 'inset 0 0 0 1px var(--blue-a6)' }}
+            >
+              Use in comment
+            </button>
+          )}
         </div>
       )}
     </div>

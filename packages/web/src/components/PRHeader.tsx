@@ -3,6 +3,7 @@ import { copy } from '../lib/microcopy';
 import { pendingReviewComments, useReviewStore } from '../state/review-store';
 import type { CheckRun } from '../state/types';
 import { IconCheck } from './Icons';
+import { ReviewViewTabs } from './ReviewViewTabs';
 import { SubmitDialog } from './SubmitDialog';
 import { Toast } from './Toast';
 
@@ -109,8 +110,6 @@ export function PRHeader() {
   const repoUrl = useReviewStore((s) => s.repoUrl);
   const checkRuns = useReviewStore((s) => s.checkRuns);
   const reviews = useReviewStore((s) => s.reviews);
-  const view = useReviewStore((s) => s.view);
-  const setView = useReviewStore((s) => s.setView);
   const drafts = useReviewStore((s) => s.drafts);
   const clearDrafts = useReviewStore((s) => s.clearDrafts);
   const [open, setOpen] = useState(false);
@@ -123,14 +122,6 @@ export function PRHeader() {
 
   // pr.number is 0 in watch mode (local working tree) — no GitHub PR to link to.
   const prUrl = repoUrl && pr.number > 0 ? `${repoUrl}/pull/${pr.number}` : null;
-
-  const baseBtn =
-    'h-[26px] inline-flex items-center gap-1 px-2.5 text-[12.5px] font-medium rounded-[5px] transition-colors';
-  const activeBtn = 'bg-[var(--bg-panel)] text-[var(--fg-1)]';
-  const activeBtnStyle: React.CSSProperties = {
-    boxShadow: '0 1px 2px rgba(3,2,13,0.06), inset 0 0 0 1px var(--gray-a5)',
-  };
-  const inactiveBtn = 'bg-transparent text-[var(--fg-2)] hover:text-[var(--fg-1)]';
 
   let checksLabel: { text: string; className: string } | null = null;
   if (summary.total > 0) {
@@ -207,44 +198,7 @@ export function PRHeader() {
           {pr.title}
         </h1>
         <div className="flex shrink-0 items-center gap-2">
-          <div
-            role="tablist"
-            aria-label="View mode"
-            className="inline-flex items-center rounded-[7px] bg-[var(--gray-2)] p-[2px]"
-            style={{ boxShadow: 'inset 0 0 0 1px var(--gray-a4)' }}
-          >
-            <button
-              type="button"
-              role="tab"
-              aria-selected={view === 'story'}
-              onClick={() => setView('story')}
-              className={`${baseBtn} ${view === 'story' ? activeBtn : inactiveBtn}`}
-              style={view === 'story' ? activeBtnStyle : undefined}
-            >
-              Story
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={view === 'files'}
-              onClick={() => setView('files')}
-              className={`${baseBtn} ${view === 'files' ? activeBtn : inactiveBtn}`}
-              style={view === 'files' ? activeBtnStyle : undefined}
-            >
-              Files
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={view === 'recap'}
-              onClick={() => setView('recap')}
-              className={`${baseBtn} ${view === 'recap' ? activeBtn : inactiveBtn}`}
-              style={view === 'recap' ? activeBtnStyle : undefined}
-              title="Goal, decisions, blockers — for landing on someone else's WIP"
-            >
-              Recap
-            </button>
-          </div>
+          <ReviewViewTabs />
           <button
             type="button"
             onClick={() => setSubmitOpen(true)}

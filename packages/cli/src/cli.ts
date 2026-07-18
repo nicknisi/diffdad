@@ -329,7 +329,16 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
     let usedProvider: string;
     try {
       const result = await generateNarrative(metadata, files, [], config, undefined, {
-        cacheKey: { owner: parsed.owner, repo: parsed.repo, number: parsed.number, sha: metadata.headSha },
+        cacheKey: {
+          owner: parsed.owner,
+          repo: parsed.repo,
+          number: parsed.number,
+          sha: metadata.headSha,
+          metaHash,
+          providerKey,
+        },
+        // --no-cache must skip the cached plan too, not just the completed narrative.
+        force: noCache,
         comments,
         onProgress: ({ chars }) => {
           totalChars = chars;

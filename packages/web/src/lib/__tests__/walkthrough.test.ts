@@ -132,6 +132,16 @@ describe('buildWalkthrough', () => {
       expect(item.chapterIndex).toBe(0);
     });
 
+    it('normalizes git-style path prefixes so comment posting targets repo-relative paths', () => {
+      const files = [mkFile('src/a.ts', 1)];
+      const narrative = mkNarrative(
+        [mkChapter({ sections: [diff('src/a.ts', 0)] })],
+        [mkConcern({ file: 'a/src/a.ts' })],
+      );
+      const item = buildWalkthrough(narrative, files).beats[0]!.resolve[0]!;
+      expect(item.file).toBe('src/a.ts'); // GitHub rejects the raw `a/`-prefixed planner path
+    });
+
     it('counts many concerns across beats in toResolve', () => {
       const files = [mkFile('src/a.ts', 1), mkFile('src/b.ts', 1)];
       const narrative = mkNarrative(

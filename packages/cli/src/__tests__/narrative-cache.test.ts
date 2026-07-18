@@ -1,11 +1,32 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { homedir } from 'os';
 import { join } from 'path';
-import { rm } from 'fs/promises';
-import { cacheNarrative, computePromptMetaHash, getCachedNarrative } from '../narrative/cache';
+import { mkdir, rm, writeFile } from 'fs/promises';
+import {
+  cacheNarrative,
+  cachePlan,
+  computePromptMetaHash,
+  getCachedNarrative,
+  getCachedPlan,
+  narrativeCachePath,
+  planCachePath,
+} from '../narrative/cache';
+import { NARRATIVE_PROMPT_REVISION, PLANNER_PROMPT_REVISION } from '../narrative/prompt';
+import type { Plan } from '../narrative/plan-types';
 import type { NarrativeResponse } from '../narrative/types';
 
 const CACHE_DIR = join(homedir(), '.cache', 'diffdad');
+
+/**
+ * Rewrite one revision segment of a production cache path into an older revision, guarding
+ * that the segment actually matched — so a filename-format change breaks these tests loudly
+ * instead of letting them pass on ENOENT against a path production never reads.
+ */
+function withOlderRevision(path: string, currentSegment: string, olderSegment: string): string {
+  const older = path.replace(currentSegment, olderSegment);
+  expect(older).not.toBe(path);
+  return older;
+}
 
 function mkResponse(overrides: Partial<NarrativeResponse> = {}): NarrativeResponse {
   return {
@@ -150,12 +171,134 @@ describe('narrative cache', () => {
     expect(got?.title).toBe('second');
   });
 
-  it('returns null when the cached file is corrupt JSON', async () => {
-    const { mkdir, writeFile } = await import('fs/promises');
+  it('does not reuse prose from an older narrative prompt revision', async () => {
+    const sha = 'sha-old-prompt';
+    const currentPath = narrativeCachePath(FIXTURE_OWNER, FIXTURE_REPO, 98, sha, META, FIXTURE_PROVIDER);
+    const oldPath = withOlderRevision(
+      currentPath,
+      `.p${PLANNER_PROMPT_REVISION}-${NARRATIVE_PROMPT_REVISION}.`,
+      `.p${PLANNER_PROMPT_REVISION}-${NARRATIVE_PROMPT_REVISION - 1}.`,
+    );
     await mkdir(CACHE_DIR, { recursive: true });
-    const path = join(CACHE_DIR, `${FIXTURE_OWNER}-${FIXTURE_REPO}-99-sha-corrupt-${META}.v3.${FIXTURE_PROVIDER}.json`);
+    await writeFile(oldPath, JSON.stringify(mkResponse({ title: 'Old prompt prose' })));
+
+    expect(await getCachedNarrative(FIXTURE_OWNER, FIXTURE_REPO, 98, sha, META, FIXTURE_PROVIDER)).toBeNull();
+
+    // Positive control: the same payload at the current path IS returned, proving the
+    // miss above was the revision segment and nothing else.
+    await writeFile(currentPath, JSON.stringify(mkResponse({ title: 'Current prose' })));
+    expect((await getCachedNarrative(FIXTURE_OWNER, FIXTURE_REPO, 98, sha, META, FIXTURE_PROVIDER))?.title).toBe(
+      'Current prose',
+    );
+  });
+
+  it('does not reuse prose from an older planner prompt revision', async () => {
+    const sha = 'sha-old-planner';
+    const currentPath = narrativeCachePath(FIXTURE_OWNER, FIXTURE_REPO, 97, sha, META, FIXTURE_PROVIDER);
+    const oldPath = withOlderRevision(
+      currentPath,
+      `.p${PLANNER_PROMPT_REVISION}-`,
+      `.p${PLANNER_PROMPT_REVISION - 1}-`,
+    );
+    await mkdir(CACHE_DIR, { recursive: true });
+    await writeFile(oldPath, JSON.stringify(mkResponse({ title: 'Old planner prose' })));
+
+    expect(await getCachedNarrative(FIXTURE_OWNER, FIXTURE_REPO, 97, sha, META, FIXTURE_PROVIDER)).toBeNull();
+  });
+
+  it('returns null when the cached file is corrupt JSON at the current filename', async () => {
+    const sha = 'sha-corrupt';
+    const path = narrativeCachePath(FIXTURE_OWNER, FIXTURE_REPO, 99, sha, META, FIXTURE_PROVIDER);
+    await mkdir(CACHE_DIR, { recursive: true });
+
+    // Prove the path is the one production reads — a valid payload roundtrips…
+    await writeFile(path, JSON.stringify(mkResponse({ title: 'valid' })));
+    expect((await getCachedNarrative(FIXTURE_OWNER, FIXTURE_REPO, 99, sha, META, FIXTURE_PROVIDER))?.title).toBe(
+      'valid',
+    );
+
+    // …then corrupt JSON at the same path must fail on parsing, not filename mismatch.
     await writeFile(path, '{ not valid json');
-    const got = await getCachedNarrative(FIXTURE_OWNER, FIXTURE_REPO, 99, 'sha-corrupt', META, FIXTURE_PROVIDER);
-    expect(got).toBeNull();
+    expect(await getCachedNarrative(FIXTURE_OWNER, FIXTURE_REPO, 99, sha, META, FIXTURE_PROVIDER)).toBeNull();
+  });
+});
+
+function mkPlan(overrides: Partial<Plan> = {}): Plan {
+  return {
+    schemaVersion: 1,
+    prTitle: 'A PR',
+    prTldr: 'Adds X.',
+    prVerdict: 'safe',
+    themes: [
+      { id: 'theme-0', title: 'Theme', riskLevel: 'low', rationale: 'r', hunkRefs: [{ file: 'a.ts', hunkIndex: 0 }] },
+    ],
+    readingPlan: [],
+    concerns: [],
+    ...overrides,
+  };
+}
+
+describe('plan cache', () => {
+  afterEach(async () => {
+    await cleanFixture();
+  });
+
+  it('roundtrips a plan under owner/repo/number/sha/metaHash/provider', async () => {
+    const sha = 'sha-plan-roundtrip';
+    await cachePlan(FIXTURE_OWNER, FIXTURE_REPO, 21, sha, META, FIXTURE_PROVIDER, mkPlan({ prTitle: 'planned' }));
+    const got = await getCachedPlan(FIXTURE_OWNER, FIXTURE_REPO, 21, sha, META, FIXTURE_PROVIDER);
+    expect(got?.prTitle).toBe('planned');
+    expect(got?.themes).toHaveLength(1);
+  });
+
+  it('misses the cached plan when prompt-relevant metadata changes on the same SHA', async () => {
+    const sha = 'sha-plan-meta';
+    const original = computePromptMetaHash({ title: 'Original', body: 'desc', labels: [] });
+    const edited = computePromptMetaHash({ title: 'Edited', body: 'desc', labels: [] });
+    await cachePlan(FIXTURE_OWNER, FIXTURE_REPO, 22, sha, original, FIXTURE_PROVIDER, mkPlan());
+
+    expect(await getCachedPlan(FIXTURE_OWNER, FIXTURE_REPO, 22, sha, original, FIXTURE_PROVIDER)).not.toBeNull();
+    expect(await getCachedPlan(FIXTURE_OWNER, FIXTURE_REPO, 22, sha, edited, FIXTURE_PROVIDER)).toBeNull();
+  });
+
+  it('misses the cached plan when the provider changes', async () => {
+    const sha = 'sha-plan-provider';
+    await cachePlan(FIXTURE_OWNER, FIXTURE_REPO, 23, sha, META, 'claude-sonnet', mkPlan());
+
+    expect(await getCachedPlan(FIXTURE_OWNER, FIXTURE_REPO, 23, sha, META, 'claude-sonnet')).not.toBeNull();
+    expect(await getCachedPlan(FIXTURE_OWNER, FIXTURE_REPO, 23, sha, META, 'claude-haiku')).toBeNull();
+  });
+
+  it('does not reuse a plan from an older planner prompt revision', async () => {
+    const sha = 'sha-plan-old-rev';
+    const currentPath = planCachePath(FIXTURE_OWNER, FIXTURE_REPO, 24, sha, META, FIXTURE_PROVIDER);
+    const oldPath = withOlderRevision(
+      currentPath,
+      `.p${PLANNER_PROMPT_REVISION}.`,
+      `.p${PLANNER_PROMPT_REVISION - 1}.`,
+    );
+    await mkdir(CACHE_DIR, { recursive: true });
+    await writeFile(oldPath, JSON.stringify(mkPlan({ prTitle: 'stale plan' })));
+
+    expect(await getCachedPlan(FIXTURE_OWNER, FIXTURE_REPO, 24, sha, META, FIXTURE_PROVIDER)).toBeNull();
+
+    // Positive control: the same payload at the current path IS returned.
+    await writeFile(currentPath, JSON.stringify(mkPlan({ prTitle: 'current plan' })));
+    expect((await getCachedPlan(FIXTURE_OWNER, FIXTURE_REPO, 24, sha, META, FIXTURE_PROVIDER))?.prTitle).toBe(
+      'current plan',
+    );
+  });
+
+  it('returns null for corrupt or non-plan JSON at the current filename', async () => {
+    const sha = 'sha-plan-corrupt';
+    const path = planCachePath(FIXTURE_OWNER, FIXTURE_REPO, 25, sha, META, FIXTURE_PROVIDER);
+    await mkdir(CACHE_DIR, { recursive: true });
+
+    await writeFile(path, '{ not valid json');
+    expect(await getCachedPlan(FIXTURE_OWNER, FIXTURE_REPO, 25, sha, META, FIXTURE_PROVIDER)).toBeNull();
+
+    // Valid JSON that fails the isPlan guard is also rejected.
+    await writeFile(path, JSON.stringify({ schemaVersion: 999 }));
+    expect(await getCachedPlan(FIXTURE_OWNER, FIXTURE_REPO, 25, sha, META, FIXTURE_PROVIDER)).toBeNull();
   });
 });

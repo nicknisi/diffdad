@@ -1,4 +1,5 @@
 import type { Chapter, Concern, DiffFile, NarrativeResponse } from '../state/types';
+import { hashKey } from './hash';
 import { normalizePath } from './paths';
 
 /** Rail flag level. Reuses TriageSeverity's vocabulary plus an unflagged state. */
@@ -36,6 +37,34 @@ export type WalkthroughModel = { beats: Beat[]; toResolve: number };
 /** Synthetic beat that collects concerns matching no chapter, so they're never invisible. */
 export const ORPHAN_BEAT_ID = 'other';
 
+/**
+ * Content-addressed identity for a finding: hash of file + normalized question stem.
+ * Deliberately excludes the anchor line (lines shift on every rebase) and the concern's
+ * array position (regeneration reorders), so a resolved finding stays resolved when the
+ * planner re-raises the same question about the same file in a fresh narrative.
+ */
+export function findingKey(file: string | undefined, question: string): string {
+  const stem = (question ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 12)
+    .join(' ');
+  return hashKey(`${normalizePath(file ?? '')}|${stem}`);
+}
+
+/** Open resolve items = walkthrough items minus the ones the reviewer marked resolved.
+ * The single count every progress surface (rail, submit bars, overview) derives from. */
+export function countOpenResolve(walkthrough: WalkthroughModel | null, resolved: Record<string, boolean>): number {
+  if (!walkthrough) return 0;
+  let n = 0;
+  for (const beat of walkthrough.beats) {
+    for (const item of beat.resolve) if (!resolved[item.id]) n++;
+  }
+  return n;
+}
+
 const RANK: Record<BeatRisk, number> = { none: 0, info: 1, warn: 2, risk: 3 };
 
 /** A chapter's own risk contribution to its beat flag — low contributes nothing ("quiet"). */
@@ -59,20 +88,31 @@ function hunkResolves(files: DiffFile[], file: string, hunkIndex: number): boole
   return !!match && hunkIndex >= 0 && hunkIndex < match.hunks.length;
 }
 
-/** Shared factory so owned and orphaned concerns produce identically-shaped resolve items. */
+/**
+ * Shared factory so owned and orphaned concerns produce identically-shaped resolve items.
+ * Ids are content-addressed (see {@link findingKey}) so resolved-state survives regeneration;
+ * `seen` disambiguates the pathological duplicate (same file, same question twice in one
+ * narrative) with a positional suffix so React keys stay unique.
+ */
 function makeResolveItem(
   concern: Concern,
   beatId: string,
   chapterIndex: number,
   severity: ResolveSeverity,
-  i: number,
+  seen: Map<string, number>,
 ): ResolveItem {
+  const base = findingKey(concern.file, concern.question);
+  const n = (seen.get(base) ?? 0) + 1;
+  seen.set(base, n);
   return {
-    id: `${beatId}::r${i}`,
+    id: n === 1 ? base : `${base}~${n}`,
     beatId,
     chapterIndex,
     question: concern.question,
-    file: concern.file,
+    // GitHub's comment APIs require repository-relative paths, but the planner may emit tolerated
+    // git-style prefixes (`a/src/foo.ts`). Normalize once here so every consumer — display,
+    // chapter anchoring, and the comment composer that posts to GitHub — sees the canonical path.
+    file: concern.file ? normalizePath(concern.file) : undefined,
     line: concern.line,
     severity,
     status: 'open',
@@ -85,7 +125,7 @@ function makeResolveItem(
  * Orphans default to 'info': there's no owning chapter risk to synthesize from, and an unplaced
  * concern is treated as low-confidence noise rather than amplified (keeps the rail quiet).
  */
-function buildOtherBeat(orphans: { concern: Concern; i: number }[]): Beat | null {
+function buildOtherBeat(orphans: Concern[], seen: Map<string, number>): Beat | null {
   if (orphans.length === 0) return null;
   return {
     id: ORPHAN_BEAT_ID,
@@ -93,7 +133,7 @@ function buildOtherBeat(orphans: { concern: Concern; i: number }[]): Beat | null
     title: 'Other',
     risk: 'info',
     sections: [],
-    resolve: orphans.map(({ concern, i }) => makeResolveItem(concern, ORPHAN_BEAT_ID, -1, 'info', i)),
+    resolve: orphans.map((concern) => makeResolveItem(concern, ORPHAN_BEAT_ID, -1, 'info', seen)),
     status: 'unread',
   };
 }
@@ -138,21 +178,22 @@ export function buildWalkthrough(narrative: NarrativeResponse, files: DiffFile[]
 
   // Fold each concern into its owning beat (first chapter referencing the concern's file);
   // concerns matching no chapter are collected as orphans.
-  const orphans: { concern: Concern; i: number }[] = [];
-  concerns.forEach((concern, i) => {
+  const orphans: Concern[] = [];
+  const seenFindingKeys = new Map<string, number>();
+  concerns.forEach((concern) => {
     const owner = chapterFiles.findIndex((set) => set.has(normalizePath(concern.file)));
     const beat = owner >= 0 ? beats[owner] : undefined;
     const chapter = owner >= 0 ? chapters[owner] : undefined;
     if (!beat || !chapter) {
-      orphans.push({ concern, i });
+      orphans.push(concern);
       return;
     }
     const severity = concernSeverity(chapter.risk);
-    beat.resolve.push(makeResolveItem(concern, beat.id, owner, severity, i));
+    beat.resolve.push(makeResolveItem(concern, beat.id, owner, severity, seenFindingKeys));
     beat.risk = higher(beat.risk, severity);
   });
 
-  const other = buildOtherBeat(orphans);
+  const other = buildOtherBeat(orphans, seenFindingKeys);
   if (other) beats.push(other);
 
   const toResolve = beats.reduce((n, b) => n + b.resolve.filter((r) => r.status === 'open').length, 0);
