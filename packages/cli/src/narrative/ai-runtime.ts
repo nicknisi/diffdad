@@ -1,9 +1,12 @@
 import { rm } from 'fs/promises';
 import { streamText, wrapLanguageModel } from 'ai';
+import { createAmazonBedrock } from '@ai-sdk/amazon-bedrock';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createOpenAI } from '@ai-sdk/openai';
 import type { FinishReason, LanguageModelUsage, LanguageModelV1, LanguageModelV1Middleware } from 'ai';
 import { DEFAULT_CLI_MODELS, LOCAL_CLIS, type DiffDadConfig, type LocalCli } from '../config';
+import { resolveBedrockCreds } from './bedrock-credentials';
+import { resolveBedrockRegion, toInvokeAuth } from './bedrock-models';
 
 export type AiChunkHandler = (delta: string) => void;
 export type AiUsage = { inputTokens?: number; outputTokens?: number };
@@ -14,6 +17,9 @@ const DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-6';
 const DEFAULT_OPENAI_MODEL = 'gpt-4o';
 const DEFAULT_OLLAMA_MODEL = 'llama3.1';
 const DEFAULT_OLLAMA_BASE_URL = 'http://localhost:11434/v1';
+// Cross-region inference profile id — current Claude Sonnet on Bedrock. Fallback only; the settings
+// UI populates the model from the live account, so this applies when aiModel is unset.
+const DEFAULT_BEDROCK_MODEL = 'us.anthropic.claude-sonnet-4-5-20250929-v1:0';
 
 let cliOverride: string | undefined;
 
@@ -141,11 +147,67 @@ export function getModel(config: DiffDadConfig): LanguageModelV1 {
       });
       return compatible(config.aiModel ?? DEFAULT_OPENAI_MODEL);
     }
+    case 'amazon-bedrock': {
+      const bedrock = createAmazonBedrock({
+        // `''` (a profile-mode save clears aiRegion by storing the empty string) must become
+        // undefined: the SDK treats any string as a set region and would build the malformed host
+        // `bedrock-runtime..amazonaws.com` instead of falling back to AWS_REGION / its clear
+        // "region is missing" error.
+        region: config.aiRegion || undefined,
+        // The invoke half of the lockstep choice→auth mapping in bedrock-models.ts, so "Load
+        // models" and invoke can't authenticate differently. For an API key this carries a
+        // bearer-injecting fetch; otherwise a credentialProvider the SDK uses over its own env.
+        ...toInvokeAuth(resolveBedrockCreds(config)),
+      });
+      return wrapLanguageModel({
+        // Bedrock-hosted Claude has the same temperature-deprecation behavior as the direct API.
+        // `||` not `??`: the settings form saves '' to mean "use the default model".
+        model: bedrock(config.aiModel || DEFAULT_BEDROCK_MODEL),
+        middleware: stripTemperature,
+      });
+    }
     default: {
       const exhaustive: never = provider;
       throw new Error(`Unsupported aiProvider: ${exhaustive as string}`);
     }
   }
+}
+
+/**
+ * Fill a blank Bedrock region from the profile / ambient chain before `getModel` runs. `getModel` is a
+ * synchronous factory and `createAmazonBedrock` needs region as a resolved string (unlike the raw
+ * `BedrockClient`, which resolves region itself). So the invoke path resolves region here first — a
+ * profile-only config then generates without the user ever typing a region. A no-op for every other
+ * provider, and for a Bedrock config that already has an explicit region.
+ */
+export async function withResolvedBedrockRegion(config: DiffDadConfig): Promise<DiffDadConfig> {
+  if (config.aiProvider !== 'amazon-bedrock' || config.aiRegion) return config;
+  const region = await resolveBedrockRegion(config);
+  return region ? { ...config, aiRegion: region } : config;
+}
+
+// One narrative fans out a callAi per chapter (plus the planner), and rebuilding the Bedrock model
+// each time re-runs region resolution and discards the credential chain's per-instance memoization —
+// re-reading ~/.aws (and re-doing SSO/STS exchanges) N+1 times per PR. Cache the model keyed by the
+// fields that shape it; a settings save changes the key and so invalidates. The chain itself
+// refreshes expired credentials internally, so holding one instance long-term is safe.
+let bedrockModelCache: { key: string; model: LanguageModelV1 } | undefined;
+
+async function getBedrockModel(config: DiffDadConfig): Promise<LanguageModelV1> {
+  const key = [
+    config.aiModel,
+    config.aiRegion,
+    config.aiProfile,
+    config.aiAccessKeyId,
+    config.aiSecretAccessKey,
+    config.aiBedrockApiKey,
+  ]
+    .map((v) => v ?? '')
+    .join('\u0000');
+  if (bedrockModelCache?.key !== key) {
+    bedrockModelCache = { key, model: getModel(await withResolvedBedrockRegion(config)) };
+  }
+  return bedrockModelCache.model;
 }
 
 async function whichExists(cmd: string): Promise<boolean> {
@@ -350,7 +412,9 @@ export async function callAi(
   }
 
   const provider = effectiveConfig.aiProvider ?? 'anthropic';
-  const model = getModel(effectiveConfig);
+  // Bedrock invoke path needs region as a resolved string; fill it from the profile/chain when blank
+  // (cached across calls — see getBedrockModel).
+  const model = provider === 'amazon-bedrock' ? await getBedrockModel(effectiveConfig) : getModel(effectiveConfig);
   const cacheSystem = provider === 'anthropic';
   const stream = streamText({
     model,

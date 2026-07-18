@@ -4,6 +4,8 @@ import { type GitHubTokenSource, resolveGitHubTokenWithSource } from './auth';
 import { type DiffDadConfig, readConfig, writeConfig } from './config';
 import { GitHubClient } from './github/client';
 import type { Broadcast } from './mcp/broadcast';
+import { type AwsProfile, listAwsProfiles as defaultListAwsProfiles } from './narrative/aws-profiles';
+import { type BedrockModelOption, listBedrockModels as defaultListBedrockModels } from './narrative/bedrock-models';
 import { callAi } from './narrative/engine';
 
 /**
@@ -17,9 +19,14 @@ import { callAi } from './narrative/engine';
  */
 
 /** Wire shape sent to the browser — secrets reduced to flags. */
-export interface RedactedConfig extends Omit<DiffDadConfig, 'githubToken' | 'aiApiKey'> {
+export interface RedactedConfig extends Omit<
+  DiffDadConfig,
+  'githubToken' | 'aiApiKey' | 'aiSecretAccessKey' | 'aiBedrockApiKey'
+> {
   githubTokenSet: boolean;
   aiApiKeySet: boolean;
+  aiSecretAccessKeySet: boolean;
+  aiBedrockApiKeySet: boolean;
 }
 
 export interface ConfigResponse {
@@ -34,10 +41,15 @@ export interface ConfigResponse {
 export const configPatchSchema = z
   .object({
     githubToken: z.string(),
-    aiProvider: z.enum(['anthropic', 'openai', 'openai-compatible', 'ollama']),
+    aiProvider: z.enum(['anthropic', 'openai', 'openai-compatible', 'ollama', 'amazon-bedrock']),
     aiApiKey: z.string(),
     aiModel: z.string(),
     aiBaseUrl: z.string(),
+    aiRegion: z.string(),
+    aiProfile: z.string(),
+    aiAccessKeyId: z.string(),
+    aiSecretAccessKey: z.string(),
+    aiBedrockApiKey: z.string(),
     defaultCli: z.enum(['claude', 'codex', 'pi']),
     cliModels: z.record(z.enum(['claude', 'codex', 'pi']), z.string()),
     storyStructure: z.enum(['chapters', 'linear', 'outline']),
@@ -62,19 +74,57 @@ export type ConfigPatch = z.infer<typeof configPatchSchema>;
  */
 export type OnConfigChange = (prev: DiffDadConfig, next: DiffDadConfig) => Promise<{ githubActive: boolean }>;
 
-const SECRET_KEYS = ['githubToken', 'aiApiKey'] as const;
+// The candidate fields the test/list seams accept and overlay on the saved config (undefined =
+// keep saved). One list per endpoint, derived not hand-copied, so a new field (e.g. a session
+// token) can't be added to one seam and silently ignored by the other — that failure mode is
+// invisible: the test would quietly run against the stale saved value.
+const BEDROCK_OVERLAY_KEYS = [
+  'aiRegion',
+  'aiProfile',
+  'aiAccessKeyId',
+  'aiSecretAccessKey',
+  'aiBedrockApiKey',
+] as const;
+const AI_TEST_OVERLAY_KEYS = [
+  'aiProvider',
+  'aiApiKey',
+  'aiModel',
+  'aiBaseUrl',
+  'defaultCli',
+  ...BEDROCK_OVERLAY_KEYS,
+] as const;
+
+type OverlayBody<K extends keyof DiffDadConfig> = Partial<Pick<DiffDadConfig, K>>;
+
+/** Overlay the body's defined candidate keys on the saved config. */
+function overlayDefined<K extends keyof DiffDadConfig>(
+  saved: DiffDadConfig,
+  body: OverlayBody<K>,
+  keys: readonly K[],
+): DiffDadConfig {
+  const overlay: DiffDadConfig = { ...saved };
+  for (const key of keys) {
+    const value = body[key];
+    if (value !== undefined) (overlay as Record<string, unknown>)[key] = value;
+  }
+  return overlay;
+}
+
+const SECRET_KEYS = ['githubToken', 'aiApiKey', 'aiSecretAccessKey', 'aiBedrockApiKey'] as const;
 type SecretKey = (typeof SECRET_KEYS)[number];
 function isSecretKey(key: string): key is SecretKey {
-  return key === 'githubToken' || key === 'aiApiKey';
+  return (SECRET_KEYS as readonly string[]).includes(key);
 }
 
 /** Reduce a stored config to its redacted wire shape (secrets → `*Set` booleans). */
 export function redactConfig(config: DiffDadConfig): RedactedConfig {
-  const { githubToken, aiApiKey, ...rest } = config;
+  const { githubToken, aiApiKey, aiSecretAccessKey, aiBedrockApiKey, ...rest } = config;
   return {
     ...rest,
     githubTokenSet: typeof githubToken === 'string' && githubToken.length > 0,
     aiApiKeySet: typeof aiApiKey === 'string' && aiApiKey.length > 0,
+    aiSecretAccessKeySet: typeof aiSecretAccessKey === 'string' && aiSecretAccessKey.length > 0,
+    aiBedrockApiKeySet: typeof aiBedrockApiKey === 'string' && aiBedrockApiKey.length > 0,
   };
 }
 
@@ -92,10 +142,12 @@ function mergeConfig(prev: DiffDadConfig, patch: ConfigPatch): DiffDadConfig {
   return next;
 }
 
-/** Injectable connection testers — real implementations shell out; tests fake them. */
+/** Injectable connection testers — real implementations shell out / hit AWS; tests fake them. */
 export interface ConfigRouteTesters {
   testGitHub?: (token: string) => Promise<{ ok: boolean; detail: string }>;
   testAi?: (config: DiffDadConfig) => Promise<{ ok: boolean; detail: string }>;
+  listBedrockModels?: (config: DiffDadConfig) => Promise<{ models: BedrockModelOption[]; region: string | undefined }>;
+  listAwsProfiles?: () => Promise<AwsProfile[]>;
 }
 
 /** Injectable effective-token resolver (default probes env → gh → config); tests fake it. */
@@ -172,6 +224,8 @@ export function registerConfigRoutes(
   const resolveGitHub: ResolveGitHub = opts.resolveGitHub ?? (() => resolveGitHubTokenWithSource());
   const testGitHub = opts.testers?.testGitHub ?? defaultTestGitHub;
   const testAi = opts.testers?.testAi ?? defaultTestAi;
+  const listBedrockModels = opts.testers?.listBedrockModels ?? defaultListBedrockModels;
+  const listAwsProfiles = opts.testers?.listAwsProfiles ?? defaultListAwsProfiles;
 
   // Effective GitHub state rides every response. `active`/`source` come from probing env → gh →
   // config; when the daemon hook ran, its authoritative `githubActive` overrides (both derive from
@@ -240,15 +294,7 @@ export function registerConfigRoutes(
   });
 
   app.post('/api/config/test', async (c) => {
-    let body: {
-      kind?: string;
-      token?: string;
-      aiProvider?: DiffDadConfig['aiProvider'];
-      aiApiKey?: string;
-      aiModel?: string;
-      aiBaseUrl?: string;
-      defaultCli?: DiffDadConfig['defaultCli'];
-    };
+    let body: { kind?: string; token?: string } & OverlayBody<(typeof AI_TEST_OVERLAY_KEYS)[number]>;
     try {
       body = (await c.req.json()) as typeof body;
     } catch {
@@ -264,16 +310,41 @@ export function registerConfigRoutes(
 
     if (body.kind === 'ai') {
       // Overlay the candidate fields on the saved config, then run one live call.
-      const saved = await readConfig();
-      const overlay: DiffDadConfig = { ...saved };
-      if (body.aiProvider !== undefined) overlay.aiProvider = body.aiProvider;
-      if (body.aiApiKey !== undefined) overlay.aiApiKey = body.aiApiKey;
-      if (body.aiModel !== undefined) overlay.aiModel = body.aiModel;
-      if (body.aiBaseUrl !== undefined) overlay.aiBaseUrl = body.aiBaseUrl;
-      if (body.defaultCli !== undefined) overlay.defaultCli = body.defaultCli;
-      return c.json(await testAi(overlay));
+      return c.json(await testAi(overlayDefined(await readConfig(), body, AI_TEST_OVERLAY_KEYS)));
     }
 
     return c.json({ error: `unknown test kind: ${body.kind ?? '(none)'}` }, 400);
+  });
+
+  // List available Bedrock text models (foundation + inference profiles). Overlays candidate
+  // region/creds on the saved config so the UI can list BEFORE saving (same seam as /config/test).
+  // Failure returns 502 with the AWS message — the contract chose "block until fixed" (no free-text
+  // fallback), so the UI surfaces this and cannot proceed.
+  app.post('/api/config/bedrock/models', async (c) => {
+    let body: OverlayBody<(typeof BEDROCK_OVERLAY_KEYS)[number]>;
+    try {
+      body = (await c.req.json()) as typeof body;
+    } catch {
+      body = {};
+    }
+
+    const overlay = overlayDefined(await readConfig(), body, BEDROCK_OVERLAY_KEYS);
+
+    try {
+      // listBedrockModels returns { models, region } — pass it straight through so the UI can prefill
+      // the region field with what the SDK actually resolved (from the profile / chain when blank).
+      return c.json(await listBedrockModels(overlay));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // This path was silent before — a hang or AWS error left no trace in the daemon log.
+      console.error(`  \x1b[38;5;204m✗\x1b[0m Bedrock model list failed: ${msg}`);
+      return c.json({ error: msg }, 502);
+    }
+  });
+
+  // List the AWS profiles on this machine (name + region) so the Bedrock settings form can offer a
+  // dropdown instead of a free-text profile field. Never fails — an unreadable ~/.aws yields [].
+  app.get('/api/config/aws/profiles', async (c) => {
+    return c.json({ profiles: await listAwsProfiles() });
   });
 }

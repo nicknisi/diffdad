@@ -1,5 +1,7 @@
-import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
-import { callAi } from '../narrative/ai-runtime';
+import { afterAll, beforeAll, describe, expect, it, spyOn } from 'bun:test';
+import * as credentialProviders from '@aws-sdk/credential-providers';
+import { callAi, getModel, withResolvedBedrockRegion } from '../narrative/ai-runtime';
+import * as bedrockModels from '../narrative/bedrock-models';
 import type { DiffDadConfig } from '../config';
 
 /**
@@ -122,4 +124,106 @@ describe('callAi API path', () => {
     },
     { timeout: 10000 },
   );
+});
+
+describe('getModel amazon-bedrock case', () => {
+  it('builds a model from explicit keys without throwing (uses the configured model id)', () => {
+    const model = getModel({
+      aiProvider: 'amazon-bedrock',
+      aiRegion: 'us-east-1',
+      aiAccessKeyId: 'AKIAEXAMPLE',
+      aiSecretAccessKey: 'secret',
+      aiModel: 'us.anthropic.claude-custom-v1:0',
+    });
+    expect(model.modelId).toBe('us.anthropic.claude-custom-v1:0');
+  });
+
+  it('builds a model chain-first (no keys) and falls back to the default model id', () => {
+    const model = getModel({ aiProvider: 'amazon-bedrock', aiRegion: 'us-east-1' });
+    // Default Bedrock model is a current Claude Sonnet cross-region inference profile.
+    expect(model.modelId).toMatch(/^us\.anthropic\.claude-sonnet/);
+  });
+
+  it("treats an empty-string model as unset (the settings form saves '' to mean the default)", () => {
+    const model = getModel({ aiProvider: 'amazon-bedrock', aiRegion: 'us-east-1', aiModel: '' });
+    expect(model.modelId).toMatch(/^us\.anthropic\.claude-sonnet/);
+  });
+
+  it('keeps the default provider switch exhaustive (bedrock does not hit the unreachable default)', () => {
+    // If the switch fell through to `default`, this would throw "Unsupported aiProvider".
+    expect(() => getModel({ aiProvider: 'amazon-bedrock' })).not.toThrow();
+  });
+
+  it('scopes the credential chain to a named profile when one is set (no explicit keys)', () => {
+    const chain = spyOn(credentialProviders, 'fromNodeProviderChain').mockReturnValue((async () => ({
+      accessKeyId: 'x',
+      secretAccessKey: 'y',
+    })) as ReturnType<typeof credentialProviders.fromNodeProviderChain>);
+    try {
+      getModel({ aiProvider: 'amazon-bedrock', aiRegion: 'us-east-1', aiProfile: 'my-sso' });
+      expect(chain).toHaveBeenCalledWith({ profile: 'my-sso' });
+    } finally {
+      chain.mockRestore();
+    }
+  });
+});
+
+describe('withResolvedBedrockRegion', () => {
+  it('leaves a non-bedrock config untouched (no region resolution)', async () => {
+    const spy = spyOn(bedrockModels, 'resolveBedrockRegion');
+    try {
+      const config: DiffDadConfig = { aiProvider: 'anthropic', aiApiKey: 'k' };
+      expect(await withResolvedBedrockRegion(config)).toBe(config);
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('leaves a bedrock config with an explicit region untouched', async () => {
+    const spy = spyOn(bedrockModels, 'resolveBedrockRegion');
+    try {
+      const config: DiffDadConfig = { aiProvider: 'amazon-bedrock', aiRegion: 'us-east-1' };
+      expect(await withResolvedBedrockRegion(config)).toBe(config);
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('fills a blank region for a profile-only bedrock config from the resolved region', async () => {
+    const spy = spyOn(bedrockModels, 'resolveBedrockRegion').mockResolvedValue('eu-central-1');
+    try {
+      const result = await withResolvedBedrockRegion({ aiProvider: 'amazon-bedrock', aiProfile: 'my-sso' });
+      expect(result.aiRegion).toBe('eu-central-1');
+      expect(spy).toHaveBeenCalledTimes(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("treats an empty-string region as blank (a profile-mode save stores aiRegion as '')", async () => {
+    const spy = spyOn(bedrockModels, 'resolveBedrockRegion').mockResolvedValue('eu-central-1');
+    try {
+      const result = await withResolvedBedrockRegion({
+        aiProvider: 'amazon-bedrock',
+        aiProfile: 'my-sso',
+        aiRegion: '',
+      });
+      expect(result.aiRegion).toBe('eu-central-1');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('leaves the config unchanged when no region can be resolved', async () => {
+    const spy = spyOn(bedrockModels, 'resolveBedrockRegion').mockResolvedValue(undefined);
+    try {
+      const config: DiffDadConfig = { aiProvider: 'amazon-bedrock', aiProfile: 'my-sso' };
+      const result = await withResolvedBedrockRegion(config);
+      expect(result.aiRegion).toBeUndefined();
+    } finally {
+      spy.mockRestore();
+    }
+  });
 });

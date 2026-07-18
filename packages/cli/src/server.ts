@@ -430,6 +430,9 @@ export function createServer(ctx: ServerContext) {
               } catch (err) {
                 const msg = err instanceof Error ? err.message : String(err);
                 console.error(`  \x1b[38;5;204m✗\x1b[0m Regeneration failed: ${msg}`);
+                // The terminal log is invisible to the browser tab, which otherwise keeps showing stale
+                // content with no hint that the refresh failed. Push the error so the UI can surface it.
+                broadcast('narrative-error', { message: msg });
               } finally {
                 regenerating = false;
               }
