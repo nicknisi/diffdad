@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.0](https://github.com/nicknisi/diffdad/compare/v0.12.1...v0.13.0) (2026-07-18)
+
+
+### Features
+
+* daemon review parity, resolve-strip comments, concise stories ([#51](https://github.com/nicknisi/diffdad/issues/51)) ([1ca92ee](https://github.com/nicknisi/diffdad/commit/1ca92eeb8070b56fda587263a1624c153fc95af9))
+
 ## [0.12.1](https://github.com/nicknisi/diffdad/compare/v0.12.0...v0.12.1) (2026-07-10)
 
 
