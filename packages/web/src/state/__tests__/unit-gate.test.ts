@@ -197,6 +197,55 @@ describe('daemon unit transitions', () => {
     expect(useReviewStore.getState().reviewKey).toBe('owner-b/repo#42');
     expect(useReviewStore.getState().drafts).toEqual([]);
   });
+
+  function mkUnitNarrative(chapterCount: number): NarrativeResponse {
+    return {
+      title: 't',
+      tldr: '',
+      verdict: 'safe',
+      readingPlan: [],
+      concerns: [],
+      chapters: Array.from({ length: chapterCount }, (_, i) => ({
+        title: `Ch ${i}`,
+        summary: '',
+        whyMatters: '',
+        risk: 'low' as const,
+        sections: [],
+      })),
+    };
+  }
+
+  it('a same-unit re-apply keeps the reviewer’s active chapter', () => {
+    applyUnitToStore(mkUnit({ narrative: mkUnitNarrative(3) }));
+    useReviewStore.getState().setActiveChapter('ch-2');
+
+    applyUnitToStore(mkUnit({ narrative: mkUnitNarrative(3), updatedAt: '2026-01-01T00:05:00Z' }));
+
+    expect(useReviewStore.getState().activeChapterId).toBe('ch-2');
+  });
+
+  it('a same-unit re-apply keeps non-positional selections like the discussion section', () => {
+    applyUnitToStore(mkUnit({ narrative: mkUnitNarrative(2) }));
+    useReviewStore.getState().setActiveChapter('discussion');
+
+    applyUnitToStore(mkUnit({ narrative: mkUnitNarrative(2), updatedAt: '2026-01-01T00:05:00Z' }));
+
+    expect(useReviewStore.getState().activeChapterId).toBe('discussion');
+  });
+
+  it('resets the active chapter when it no longer resolves or when switching units', () => {
+    applyUnitToStore(mkUnit({ narrative: mkUnitNarrative(3) }));
+    useReviewStore.getState().setActiveChapter('ch-2');
+
+    // A regeneration shrank the narrative — ch-2 is out of range.
+    applyUnitToStore(mkUnit({ narrative: mkUnitNarrative(2), updatedAt: '2026-01-01T00:05:00Z' }));
+    expect(useReviewStore.getState().activeChapterId).toBe('ch-0');
+
+    // Switching to a different unit always starts at the top.
+    useReviewStore.getState().setActiveChapter('ch-1');
+    applyUnitToStore(mkUnit({ unitId: 'u2', repo: 'owner/other', prNumber: 9, narrative: mkUnitNarrative(2) }));
+    expect(useReviewStore.getState().activeChapterId).toBe('ch-0');
+  });
 });
 
 describe('resolved overlay', () => {

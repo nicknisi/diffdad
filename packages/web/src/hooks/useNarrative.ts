@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useReviewStore } from '../state/review-store';
+import { loadDrafts, loadResolved, reviewDraftKey, useReviewStore } from '../state/review-store';
 import type { CheckRun, DiffFile, NarrativeResponse, PRComment, PRData, PRReview, Unit } from '../state/types';
 
 type NarrativeApiResponse = {
@@ -16,6 +16,31 @@ type NarrativeApiResponse = {
   /** Command-center bootstrap: the daemon seeds the initial queue so the dashboard paints at once. */
   units?: Unit[];
 };
+
+/**
+ * Exported for direct unit testing. Seeds the store while the server is still generating the
+ * narrative. The review scope (`reviewKey`) must be established HERE, not at the final `narrative`
+ * event: the diff-first UI is already interactive during generation, and every persistence path
+ * (drafts, resolved findings, reviewed chapters) silently no-ops without a reviewKey — the final
+ * setData would then reload the empty persisted state over the reviewer's in-memory work.
+ */
+export function seedGeneratingReview(
+  data: Pick<NarrativeApiResponse, 'pr' | 'files' | 'comments' | 'checkRuns' | 'reviews' | 'repoUrl' | 'aiPath'>,
+): void {
+  const reviewKey = reviewDraftKey(data.repoUrl ?? null, data.pr.number);
+  useReviewStore.setState({
+    pr: data.pr,
+    files: data.files,
+    comments: data.comments,
+    checkRuns: data.checkRuns ?? [],
+    reviews: data.reviews ?? [],
+    repoUrl: data.repoUrl ?? null,
+    aiPath: data.aiPath ?? null,
+    reviewKey,
+    drafts: loadDrafts(reviewKey, data.pr.number),
+    resolved: loadResolved(reviewKey),
+  });
+}
 
 export function useNarrative() {
   const setData = useReviewStore((s) => s.setData);
@@ -48,15 +73,7 @@ export function useNarrative() {
 
         if (data.generating && !data.narrative) {
           setGenerating(true);
-          useReviewStore.setState({
-            pr: data.pr,
-            files: data.files,
-            comments: data.comments,
-            checkRuns: data.checkRuns ?? [],
-            reviews: data.reviews ?? [],
-            repoUrl: data.repoUrl ?? null,
-            aiPath: data.aiPath ?? null,
-          });
+          seedGeneratingReview(data);
           // Display prefs come from `GET /api/config` (bootstrapped in App via `applyConfigResponse`),
           // not the narrative payload — the config block was removed from `/api/narrative` in Phase 2.
         } else if (data.narrative) {

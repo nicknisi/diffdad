@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import { chapterContentKey, loadResolved, useReviewStore } from '../review-store';
+import { seedGeneratingReview } from '../../hooks/useNarrative';
 import { buildWalkthrough, findingKey } from '../../lib/walkthrough';
 import type { DiffFile, NarrativeResponse, Plan, PRData } from '../types';
 
@@ -271,5 +272,67 @@ describe('reviewed-state identity', () => {
     useReviewStore.getState().applyChapter(0, mkNarrative().chapters[0]!, 'theme-0');
     expect(useReviewStore.getState().chapterStates['ch-0']).toBe('reviewed');
     expect(useReviewStore.getState().chapterStates['ch-1']).toBe('reading');
+  });
+
+  it('migrates a review made on a streaming placeholder to the chapter’s real identity', () => {
+    useReviewStore.getState().setData(mkPR(), mkNarrative(), FILES, [], 'https://github.com/o/r');
+    const plan: Plan = {
+      schemaVersion: 1,
+      prTitle: 'T',
+      prTldr: 't',
+      prVerdict: 'caution',
+      themes: [
+        { id: 'theme-0', title: 'Auth', riskLevel: 'high', rationale: 'r', hunkRefs: [] },
+        { id: 'theme-1', title: 'DB', riskLevel: 'low', rationale: 'r', hunkRefs: [] },
+      ],
+      readingPlan: [],
+      concerns: [],
+      missing: [],
+    };
+    useReviewStore.getState().applyPlan(plan);
+
+    // Reviewer marks the still-streaming placeholder — its identity at this point is the
+    // title-based fallback key, because no diff sections have landed yet.
+    useReviewStore.getState().toggleReviewed(0);
+    expect(useReviewStore.getState().chapterStates['ch-0']).toBe('reviewed');
+
+    // Real hunks land, then the final narrative rebuild (reload-equivalent) re-derives states
+    // from persistence: the marker must have followed the chapter to its content identity.
+    useReviewStore.getState().applyChapter(0, mkNarrative().chapters[0]!, 'theme-0');
+    useReviewStore.getState().setData(mkPR(), mkNarrative(), FILES, [], 'https://github.com/o/r');
+    expect(useReviewStore.getState().chapterStates['ch-0']).toBe('reviewed');
+
+    // The stale placeholder marker was migrated, not duplicated.
+    const persisted = JSON.parse(localStorage.getItem('diffdad.reviewed.o/r#7') ?? '{}') as Record<string, string>;
+    expect(Object.keys(persisted)).toHaveLength(1);
+  });
+});
+
+describe('review scope during generation', () => {
+  it('establishes reviewKey at generation start so mid-generation work survives the final setData', () => {
+    seedGeneratingReview({ pr: mkPR(), files: FILES, comments: [], repoUrl: 'https://github.com/o/r' });
+    expect(useReviewStore.getState().reviewKey).toBe('o/r#7');
+
+    // Reviewer works the diff before any narrative lands: a draft and a resolved finding.
+    useReviewStore.getState().upsertDraft({ id: 'd1', body: 'draft', path: 'src/auth.ts', line: 1, side: 'RIGHT' });
+    useReviewStore.getState().setResolved('finding-1', true);
+
+    // The final narrative event rebuilds the store from persisted state — nothing may be lost.
+    useReviewStore.getState().setData(mkPR(), mkNarrative(), FILES, [], 'https://github.com/o/r');
+    const s = useReviewStore.getState();
+    expect(s.drafts.map((d) => d.id)).toEqual(['d1']);
+    expect(s.resolved['finding-1']).toBe(true);
+  });
+
+  it('restores previously persisted drafts and resolved findings while still generating', () => {
+    // A prior session persisted work under this scope.
+    useReviewStore.getState().setData(mkPR(), mkNarrative(), FILES, [], 'https://github.com/o/r');
+    useReviewStore.getState().upsertDraft({ id: 'old', body: 'earlier', path: 'src/auth.ts', line: 1, side: 'RIGHT' });
+    useReviewStore.getState().setResolved('finding-1', true);
+    useReviewStore.setState({ reviewKey: null, drafts: [], resolved: {} }); // fresh page load
+
+    seedGeneratingReview({ pr: mkPR(), files: FILES, comments: [], repoUrl: 'https://github.com/o/r' });
+    expect(useReviewStore.getState().drafts.map((d) => d.id)).toEqual(['old']);
+    expect(useReviewStore.getState().resolved['finding-1']).toBe(true);
   });
 });

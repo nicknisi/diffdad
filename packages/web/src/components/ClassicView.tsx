@@ -1,6 +1,5 @@
 import { useReviewStore } from '../state/review-store';
 import { fileStats } from '../lib/file-tree';
-import type { DiffFile } from '../state/types';
 import { FileTree, fileAnchorId } from './FileTree';
 import { Hunk } from './Hunk';
 

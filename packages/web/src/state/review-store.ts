@@ -772,8 +772,22 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
       const result: Partial<ReviewState> = { narrative: sanitizeNarrative(next), pendingChapterThemeIds: pending };
       // The chapter's content identity is only known once its real hunks land — restore any
       // persisted reviewed-state now, so an unchanged chapter stays reviewed across regeneration.
-      if (state.reviewKey && loadReviewed(state.reviewKey)[chapterContentKey(chapter, state.files)] === 'reviewed') {
-        result.chapterStates = { ...state.chapterStates, [`ch-${index}`]: 'reviewed' };
+      if (state.reviewKey) {
+        try {
+          const saved = loadReviewed(state.reviewKey);
+          const contentKey = chapterContentKey(chapter, state.files);
+          if (saved[contentKey] === 'reviewed') {
+            result.chapterStates = { ...state.chapterStates, [`ch-${index}`]: 'reviewed' };
+          } else if (state.chapterStates[`ch-${index}`] === 'reviewed') {
+            // The reviewer marked the streaming placeholder, whose identity was its title-based
+            // fallback key. Migrate the marker to the real content key — otherwise the final
+            // setData rebuild looks up the content key, misses, and flips the chapter back to
+            // reading even though the UI showed it reviewed all along.
+            delete saved[chapterContentKey(state.narrative.chapters[index]!, state.files)];
+            saved[contentKey] = 'reviewed';
+            safeStorage.setItem(reviewedStorageKey(state.reviewKey), JSON.stringify(saved));
+          }
+        } catch {}
       }
       return result;
     }),
@@ -825,6 +839,14 @@ export function applyUnitToStore(unit: Unit): void {
   const nextReviewKey = reviewDraftKey(unit.repo, unit.metadata?.number ?? unit.prNumber ?? 0);
   const switchingReview = current.reviewKey !== nextReviewKey;
 
+  // Same-unit re-applies must not yank the reviewer back to chapter one: keep the active selection
+  // unless it's a positional `ch-N` id that no longer resolves. Non-positional ids ('discussion',
+  // 'other') always survive — scroll tracking re-syncs them on the next scroll anyway.
+  const chapterCount = narrative?.chapters.length ?? 0;
+  const positional = current.activeChapterId ? /^ch-(\d+)$/.exec(current.activeChapterId) : null;
+  const keepActive =
+    !switchingReview && current.activeChapterId !== null && (!positional || Number(positional[1]) < chapterCount);
+
   useReviewStore.setState({
     pr: unit.metadata ?? null,
     files,
@@ -834,7 +856,7 @@ export function applyUnitToStore(unit: Unit): void {
     // Rebuilt from the persisted content-keyed map — lossless on same-unit re-applies because
     // toggleReviewed writes through on every change.
     chapterStates: narrative ? buildChapterStates(narrative, files, nextReviewKey) : {},
-    activeChapterId: narrative && narrative.chapters.length > 0 ? 'ch-0' : null,
+    activeChapterId: keepActive ? current.activeChapterId : chapterCount > 0 ? 'ch-0' : null,
     view: current.view === 'recap' ? 'story' : current.view,
     drafts: loadDrafts(nextReviewKey),
     ...(switchingReview

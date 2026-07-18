@@ -109,7 +109,10 @@ function makeResolveItem(
     beatId,
     chapterIndex,
     question: concern.question,
-    file: concern.file,
+    // GitHub's comment APIs require repository-relative paths, but the planner may emit tolerated
+    // git-style prefixes (`a/src/foo.ts`). Normalize once here so every consumer — display,
+    // chapter anchoring, and the comment composer that posts to GitHub — sees the canonical path.
+    file: concern.file ? normalizePath(concern.file) : undefined,
     line: concern.line,
     severity,
     status: 'open',
