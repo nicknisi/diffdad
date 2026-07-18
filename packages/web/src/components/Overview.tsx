@@ -23,44 +23,23 @@ function jumpTo(chid: string, setActiveChapter: (id: string) => void) {
   if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-/** One digest row: severity dot · question (click = jump to its chapter) · anchor · resolve toggle. */
-function FindingRow({
-  id,
-  question,
-  severity,
-  anchor,
-  jumpChid,
-}: {
-  id: string;
-  question: string;
-  severity: ResolveItem['severity'];
-  anchor?: string;
-  jumpChid?: string;
-}) {
+/**
+ * One unanchored-finding row: severity dot · observation · resolve toggle. Only `missing`-style
+ * items render here — anchored findings live inline at their hunks, never in the pane.
+ */
+function FindingRow({ id, question, severity }: { id: string; question: string; severity: ResolveItem['severity'] }) {
   const resolved = useReviewStore((s) => !!s.resolved[id]);
   const setResolved = useReviewStore((s) => s.setResolved);
-  const setActiveChapter = useReviewStore((s) => s.setActiveChapter);
   const sev = SEVERITY[severity];
 
   return (
     <li className="flex items-start gap-2.5 py-[5px]" style={{ opacity: resolved ? 0.55 : 1 }}>
       <span className="mt-[6px] h-[7px] w-[7px] flex-shrink-0 rounded-full" style={{ background: sev.color }} />
-      {jumpChid ? (
-        <button
-          type="button"
-          onClick={() => jumpTo(jumpChid, setActiveChapter)}
-          className={`min-w-0 flex-1 cursor-pointer bg-transparent text-left text-[13.5px] leading-[19px] text-[var(--fg-1)] hover:underline ${resolved ? 'line-through' : ''}`}
-        >
-          {question}
-        </button>
-      ) : (
-        <span
-          className={`min-w-0 flex-1 text-[13.5px] leading-[19px] text-[var(--fg-1)] ${resolved ? 'line-through' : ''}`}
-        >
-          {question}
-        </span>
-      )}
-      {anchor && <span className="mt-[2px] flex-shrink-0 font-mono text-[11px] text-[var(--fg-3)]">{anchor}</span>}
+      <span
+        className={`min-w-0 flex-1 text-[13.5px] leading-[19px] text-[var(--fg-1)] ${resolved ? 'line-through' : ''}`}
+      >
+        {question}
+      </span>
       <button
         type="button"
         onClick={() => setResolved(id, !resolved)}
@@ -87,9 +66,14 @@ function FindingRow({
 
 /**
  * The story's first screen — the 30-second orientation the reviewer reads before any prose:
- * verdict + tldr (plain text, never collapsible), the findings digest (every open question with
- * a resolve toggle and a jump to its chapter), and the chapter table, which IS the reading plan
- * (planner order = risk descending). Everything below it is drill-down.
+ * verdict + tldr (plain text, never collapsible), an open-findings COUNT, and the chapter table,
+ * which IS the reading plan (planner order = risk descending). Everything below is drill-down.
+ *
+ * Anchored findings deliberately do NOT list here: a Socratic question is meaningless away from
+ * its hunk (and a toggle up here would invite resolving without reading the code), so they render
+ * only inline at their anchors — the Overview carries their aggregate signal (count + per-chapter
+ * dots). Unanchored `missing` items are the exception: self-contained observations about absence
+ * with no inline home, so they stay listed.
  */
 export function Overview() {
   const narrative = useReviewStore((s) => s.narrative);
@@ -104,38 +88,26 @@ export function Overview() {
   const config = VERDICT_CONFIG[narrative.verdict ?? 'caution'];
   const chapters = narrative.chapters;
 
-  // Digest = every walkthrough resolve item (chapter order), severity-ranked, then the narrative's
-  // `missing` entries as unanchored info rows. Open items sort above resolved ones.
-  type DigestItem = {
-    id: string;
-    question: string;
-    severity: ResolveItem['severity'];
-    anchor?: string;
-    jumpChid?: string;
-  };
-  const items: DigestItem[] = (walkthrough?.beats ?? []).flatMap((beat) =>
-    beat.resolve.map((item) => ({
-      id: item.id,
-      question: item.question,
-      severity: item.severity,
-      anchor: item.file ? `${item.file}${item.line != null ? `:${item.line}` : ''}` : undefined,
-      jumpChid: beat.id,
-    })),
-  );
-  const seenIds = new Set(items.map((i) => i.id));
+  // Unanchored `missing` entries — the only findings listed in the pane (see docblock).
+  type DigestItem = { id: string; question: string; severity: ResolveItem['severity'] };
+  const missingItems: DigestItem[] = [];
+  const seenIds = new Set<string>();
   for (const text of narrative.missing ?? []) {
     // Suffix duplicates so React keys stay unique even if the LLM repeats a missing item.
     let id = findingKey(undefined, text);
     for (let n = 2; seenIds.has(id); n++) id = `${findingKey(undefined, text)}~${n}`;
     seenIds.add(id);
-    items.push({ id, question: text, severity: 'info' });
+    missingItems.push({ id, question: text, severity: 'info' });
   }
-  items.sort((a, b) => {
-    const openDelta = Number(!!resolved[a.id]) - Number(!!resolved[b.id]);
-    if (openDelta !== 0) return openDelta;
-    return SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity];
-  });
-  const openCount = items.filter((i) => !resolved[i.id]).length;
+
+  // Aggregate signal for the anchored findings that render inline at their hunks.
+  const anchoredItems = (walkthrough?.beats ?? []).flatMap((b) => b.resolve);
+  const openAnchored = anchoredItems.filter((i) => !resolved[i.id]);
+  const orphanOpen = openAnchored.filter((i) => i.chapterIndex < 0).length;
+  const maxOpenSeverity = openAnchored.reduce<ResolveItem['severity']>(
+    (max, i) => (SEVERITY_RANK[i.severity] > SEVERITY_RANK[max] ? i.severity : max),
+    'info',
+  );
 
   // Per-chapter open-finding counts drive the table's severity dots.
   const openByChapter = new Map<number, { count: number; severity: ResolveItem['severity'] }>();
@@ -169,18 +141,22 @@ export function Overview() {
         </p>
       )}
 
-      {items.length > 0 && (
-        <div className="mt-4">
-          <div className="mb-1 text-[11px] font-bold uppercase tracking-[0.06em] text-[var(--fg-3)]">
-            Findings{openCount > 0 ? ` · ${openCount} open` : ' · all resolved'}
-          </div>
-          <ul className="m-0 list-none p-0">
-            {items.map((item) => (
-              <FindingRow key={item.id} {...item} />
-            ))}
-          </ul>
-        </div>
-      )}
+      {anchoredItems.length > 0 &&
+        (openAnchored.length > 0 ? (
+          <p className="m-0 mt-2 flex items-center gap-2 text-[13px] font-medium text-[var(--fg-1)]">
+            <span
+              className="h-[7px] w-[7px] flex-shrink-0 rounded-full"
+              style={{ background: SEVERITY[maxOpenSeverity].color }}
+            />
+            {openAnchored.length} to resolve
+            <span className="font-normal text-[var(--fg-3)]">— flagged inline at the code</span>
+          </p>
+        ) : (
+          <p className="m-0 mt-2 text-[13px] text-[var(--fg-3)]">
+            <span style={{ color: 'var(--green-11)' }}>✓</span> all {anchoredItems.length}{' '}
+            {anchoredItems.length === 1 ? 'finding' : 'findings'} resolved
+          </p>
+        ))}
 
       {chapters.length > 1 && (
         <div className="mt-4">
@@ -227,7 +203,40 @@ export function Overview() {
                 </li>
               );
             })}
+            {orphanOpen > 0 && (
+              <li>
+                <button
+                  type="button"
+                  onClick={() => jumpTo('other', setActiveChapter)}
+                  className="flex w-full cursor-pointer items-baseline gap-2.5 rounded-md bg-transparent px-1.5 py-[5px] text-left transition-colors hover:bg-[var(--gray-2)]"
+                >
+                  <span className="w-4 flex-shrink-0 text-right font-mono text-[11px] text-[var(--fg-3)]">·</span>
+                  <span className="flex-shrink-0 text-[13.5px] font-semibold text-[var(--fg-2)]">Other</span>
+                  <span className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--fg-3)]">
+                    concerns not tied to a chapter
+                  </span>
+                  <span
+                    className="flex-shrink-0 text-[11.5px] font-semibold tabular-nums"
+                    style={{ color: SEVERITY.info.color }}
+                  >
+                    ● {orphanOpen}
+                  </span>
+                  <span className="w-3 flex-shrink-0" />
+                </button>
+              </li>
+            )}
           </ol>
+        </div>
+      )}
+
+      {missingItems.length > 0 && (
+        <div className="mt-4">
+          <div className="mb-1 text-[11px] font-bold uppercase tracking-[0.06em] text-[var(--fg-3)]">Also flagged</div>
+          <ul className="m-0 list-none p-0">
+            {missingItems.map((item) => (
+              <FindingRow key={item.id} {...item} />
+            ))}
+          </ul>
         </div>
       )}
     </section>
