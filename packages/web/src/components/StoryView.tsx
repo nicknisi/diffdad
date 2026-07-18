@@ -3,16 +3,15 @@ import { useScrollTracker } from '../hooks/useScrollTracker';
 import { normalizePath } from '../lib/paths';
 import { useReviewStore } from '../state/review-store';
 import { useInlineComments } from '../hooks/useInlineComments';
+import { useWalkthrough } from '../hooks/useWalkthrough';
 import type { CommentId, DiffFile } from '../state/types';
 import { BeatRail } from './BeatRail';
-import { buildWalkthrough } from '../lib/walkthrough';
 import type { ResolveItem } from '../lib/walkthrough';
 import { Chapter } from './Chapter';
 import { Comment } from './Comment';
 import { Hunk } from './Hunk';
-import { MissingItems } from './MissingItems';
+import { Overview } from './Overview';
 import { ResolveStrip } from './ResolveStrip';
-import { VerdictBanner } from './VerdictBanner';
 import { IconChat } from './Icons';
 
 function OrphanedInlineComments() {
@@ -240,13 +239,12 @@ function OtherConcerns({ items }: { items: ResolveItem[] }) {
 export function StoryView() {
   useScrollTracker();
   const narrative = useReviewStore((s) => s.narrative);
-  const files = useReviewStore((s) => s.files);
   const layoutMode = useReviewStore((s) => s.layoutMode);
   const displayDensity = useReviewStore((s) => s.displayDensity);
   const railCollapsed = useReviewStore((s) => s.railCollapsed);
   const setRailCollapsed = useReviewStore((s) => s.setRailCollapsed);
 
-  const walkthrough = useMemo(() => (narrative ? buildWalkthrough(narrative, files) : null), [narrative, files]);
+  const walkthrough = useWalkthrough();
   const resolveByChapter = useMemo(() => {
     const map: Record<number, ResolveItem[]> = {};
     walkthrough?.beats.forEach((b) => {
@@ -260,23 +258,25 @@ export function StoryView() {
 
   const compact = displayDensity === 'compact';
   const padY = compact ? 'py-4' : 'pt-[18px] pb-20';
+  // A one-chapter story gets no rail and no chapter table — the diff below the Overview IS the
+  // story, and a map of one destination is chrome (small-PR chapterless path).
+  const solo = narrative.chapters.length <= 1;
 
-  if (layoutMode === 'linear') {
-    return (
-      <div className={`mx-auto max-w-[880px] px-6 ${padY}`}>
-        <main>
-          <RegeneratingBanner />
-          <VerdictBanner />
-          {narrative.chapters.map((ch, idx) => (
-            <Chapter key={`ch-${idx}`} index={idx} chapter={ch} resolve={resolveByChapter[idx]} />
-          ))}
-          <OtherConcerns items={orphanItems} />
-          <MissingItems />
-          <OrphanedInlineComments />
-          <Discussion />
-        </main>
-      </div>
-    );
+  const body = (
+    <main className="min-w-0">
+      <RegeneratingBanner />
+      <Overview />
+      {narrative.chapters.map((ch, idx) => (
+        <Chapter key={`ch-${idx}`} index={idx} chapter={ch} resolve={resolveByChapter[idx]} />
+      ))}
+      <OtherConcerns items={orphanItems} />
+      <OrphanedInlineComments />
+      <Discussion />
+    </main>
+  );
+
+  if (layoutMode === 'linear' || solo) {
+    return <div className={`mx-auto max-w-[880px] px-6 ${padY}`}>{body}</div>;
   }
 
   const gridCols = railCollapsed ? 'grid-cols-[28px_minmax(0,1fr)]' : 'grid-cols-[220px_minmax(0,1fr)]';
@@ -298,16 +298,7 @@ export function StoryView() {
       ) : (
         <BeatRail />
       )}
-      <main className="min-w-0">
-        <RegeneratingBanner />
-        <VerdictBanner />
-        {narrative.chapters.map((ch, idx) => (
-          <Chapter key={`ch-${idx}`} index={idx} chapter={ch} resolve={resolveByChapter[idx]} />
-        ))}
-        <OtherConcerns items={orphanItems} />
-        <MissingItems />
-        <Discussion />
-      </main>
+      {body}
     </div>
   );
 }

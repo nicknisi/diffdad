@@ -1,33 +1,23 @@
-import { useMemo } from 'react';
 import { useReviewStore } from '../state/review-store';
-import { buildWalkthrough } from '../lib/walkthrough';
+import { useWalkthrough } from '../hooks/useWalkthrough';
+import { countOpenResolve } from '../lib/walkthrough';
 import { SEVERITY } from '../lib/severity';
 
 /**
- * The walkthrough's beat rail (evolves ChapterTOC). Reads the derived walkthrough model:
- * lists beats, tracks the active one (reusing the `activeChapterId` + `[data-chid]` contract),
- * carries a per-beat risk flag (⚠) or reviewed check (✓), and a header "N to resolve" count
- * that reflects which resolve items the reviewer has already cleared.
+ * The walkthrough's beat rail (evolves ChapterTOC). Reads the SAME derived walkthrough model and
+ * open-count helper as the Overview and submit bars — one progress system, no drift: lists beats,
+ * tracks the active one (reusing the `activeChapterId` + `[data-chid]` contract), and carries a
+ * per-beat risk flag (⚠) or reviewed check (✓).
  */
 export function BeatRail() {
-  const narrative = useReviewStore((s) => s.narrative);
-  const files = useReviewStore((s) => s.files);
   const resolved = useReviewStore((s) => s.resolved);
   const activeChapterId = useReviewStore((s) => s.activeChapterId);
   const chapterStates = useReviewStore((s) => s.chapterStates);
   const setActiveChapter = useReviewStore((s) => s.setActiveChapter);
   const setRailCollapsed = useReviewStore((s) => s.setRailCollapsed);
 
-  const walkthrough = useMemo(() => (narrative ? buildWalkthrough(narrative, files) : null), [narrative, files]);
-
-  const toResolve = useMemo(() => {
-    if (!walkthrough) return 0;
-    let n = 0;
-    for (const beat of walkthrough.beats) {
-      for (const item of beat.resolve) if (!resolved[item.id]) n++;
-    }
-    return n;
-  }, [walkthrough, resolved]);
+  const walkthrough = useWalkthrough();
+  const toResolve = countOpenResolve(walkthrough, resolved);
 
   if (!walkthrough) return null;
   const beats = walkthrough.beats;

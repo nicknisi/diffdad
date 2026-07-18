@@ -1,5 +1,5 @@
 import type { DiffFile, NarrativeResponse } from './types';
-import { buildWalkthrough } from '../lib/walkthrough';
+import { buildWalkthrough, countOpenResolve } from '../lib/walkthrough';
 import type { WalkthroughModel } from '../lib/walkthrough';
 
 /** The store slices the review gate + walkthrough derive from. */
@@ -24,13 +24,5 @@ export function selectWalkthrough(s: GateState): WalkthroughModel | null {
 
 /** Open resolve items = walkthrough items minus the ones the reviewer has marked resolved. */
 export function selectOpenToResolve(s: GateState & { resolved: Record<string, boolean> }): number {
-  const walkthrough = selectWalkthrough(s);
-  if (!walkthrough) return 0;
-  let count = 0;
-  for (const beat of walkthrough.beats) {
-    for (const item of beat.resolve) {
-      if (!s.resolved[item.id]) count++;
-    }
-  }
-  return count;
+  return countOpenResolve(selectWalkthrough(s), s.resolved);
 }

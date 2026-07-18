@@ -381,28 +381,16 @@ export function Chapter({ index, chapter, resolve }: Props) {
   const body = (
     <div className={compact ? 'space-y-3' : 'space-y-4'}>
       {streamingIndicator}
-      {summary ? (
-        <p className="ml-[34px] m-0 text-[14px] font-medium leading-[21px] text-[var(--fg-1)]">{summary}</p>
+      {/* One brief, plain prose: summary (the delta) then whyMatters (the consequence) as a
+          continuation sentence — not a labeled tinted box, which scan-readers skip. */}
+      {summary || whyMatters ? (
+        <p className="ml-[34px] m-0 text-[14px] leading-[21px]" style={{ textWrap: 'pretty' }}>
+          {summary ? <span className="font-medium text-[var(--fg-1)]">{summary}</span> : null}
+          {summary && whyMatters ? ' ' : ''}
+          {whyMatters ? <span className="text-[var(--fg-2)]">{whyMatters}</span> : null}
+        </p>
       ) : null}
       {hasNarrationOverride && firstNarrativeIndex === -1 ? <NarrationBlock content="" chapterKey={id} /> : null}
-      {whyMatters ? (
-        <div
-          className="ml-[34px] rounded-[8px] px-3.5 py-2.5 text-[13.5px] leading-[20px]"
-          style={{
-            background: 'var(--gray-2)',
-            boxShadow: 'inset 0 0 0 1px var(--gray-a4)',
-            color: 'var(--fg-2)',
-          }}
-        >
-          <span
-            className="mr-1.5 inline-block text-[10px] font-bold uppercase tracking-[0.06em]"
-            style={{ color: 'var(--fg-3)' }}
-          >
-            Why this matters
-          </span>
-          <span style={{ color: 'var(--fg-1)' }}>{whyMatters}</span>
-        </div>
-      ) : null}
       {chapter.sections.map((section, i) => {
         if (section.type === 'narrative') {
           if (i !== firstNarrativeIndex) return null;
