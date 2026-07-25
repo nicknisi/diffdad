@@ -12,9 +12,13 @@
     "bench:narrative": "bun run scripts/bench-narrative.ts"
   },
   "dependencies": {
+    "@ai-sdk/amazon-bedrock": "^2",
     "@ai-sdk/anthropic": "^1",
     "@ai-sdk/openai": "^1",
+    "@aws-sdk/client-bedrock": "^3",
+    "@aws-sdk/credential-providers": "^3",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@smithy/shared-ini-file-loader": "^4.6.7",
     "ai": "^4",
     "hono": "^4",
     "open": "^10",

@@ -194,6 +194,19 @@ export function useLiveStream() {
       }
     };
 
+    const onNarrativeError = (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data) as { message: string };
+        // Only a successful `narrative` event clears `regenerating`; without this the spinner would spin
+        // forever after a failed regeneration. Surface the reason in the activity feed too.
+        useReviewStore.getState().setRegenerating(false);
+        addLiveEvent(makeEvent('system', `Narrative generation failed: ${data.message}`));
+        setLastEventAt(Date.now());
+      } catch {
+        // ignore
+      }
+    };
+
     const onNarrative = (e: MessageEvent) => {
       try {
         const data = JSON.parse(e.data) as {
@@ -278,6 +291,7 @@ export function useLiveStream() {
     es.addEventListener('units', onUnits as EventListener);
     es.addEventListener('regenerating', onRegenerating as EventListener);
     es.addEventListener('narrative-progress', onNarrativeProgress as EventListener);
+    es.addEventListener('narrative-error', onNarrativeError as EventListener);
     es.addEventListener('narrative.partial', handleNarrativePartialEvent as EventListener);
     es.addEventListener('narrative', onNarrative as EventListener);
     es.addEventListener('plan-ready', onPlanReady as EventListener);
@@ -306,6 +320,7 @@ export function useLiveStream() {
       es.removeEventListener('units', onUnits as EventListener);
       es.removeEventListener('regenerating', onRegenerating as EventListener);
       es.removeEventListener('narrative-progress', onNarrativeProgress as EventListener);
+      es.removeEventListener('narrative-error', onNarrativeError as EventListener);
       es.removeEventListener('narrative.partial', handleNarrativePartialEvent as EventListener);
       es.removeEventListener('narrative', onNarrative as EventListener);
       es.removeEventListener('plan-ready', onPlanReady as EventListener);

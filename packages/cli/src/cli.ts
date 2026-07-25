@@ -325,10 +325,9 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
     };
     render();
     const heartbeat = setInterval(render, 250);
-    let generated;
-    let usedProvider: string;
+    let result: Awaited<ReturnType<typeof generateNarrative>>;
     try {
-      const result = await generateNarrative(metadata, files, [], config, undefined, {
+      result = await generateNarrative(metadata, files, [], config, undefined, {
         cacheKey: {
           owner: parsed.owner,
           repo: parsed.repo,
@@ -354,12 +353,29 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
           broadcast('chapter-ready', { themeId, index, chapter });
         },
       });
-      generated = result.narrative;
-      usedProvider = result.provider;
-    } finally {
+    } catch (err) {
       clearInterval(heartbeat);
       if (isTty) process.stdout.write('\r\x1b[2K');
+      // Without this, a generation failure (expired AWS profile, network drop, model 4xx) escapes as an
+      // unhandled rejection and Bun dumps a raw stack trace — burying the actionable message. Surface it
+      // in the same clean format as the other review errors, and tell any open browser tab too.
+      const msg = err instanceof Error ? err.message : String(err);
+      broadcast('narrative-error', { message: msg });
+      console.error(`\n  ${a.red}${a.bold}error:${a.reset} ${msg}\n`);
+      // Message-only keeps expected failures readable; the stack is one env var away for real bugs.
+      if (process.env.DIFFDAD_DEBUG && err instanceof Error && err.stack) {
+        console.error(`${a.dim}${err.stack}${a.reset}\n`);
+      }
+      // broadcast() only enqueues into the SSE stream controllers; returning 1 hits process.exit(1)
+      // in main() before the socket flushes, and the open tab never sees the error. Give the write an
+      // I/O tick to reach the wire before the server dies.
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      return 1;
     }
+    clearInterval(heartbeat);
+    if (isTty) process.stdout.write('\r\x1b[2K');
+    const generated = result.narrative;
+    const usedProvider = result.provider;
     ctx.narrative = generated;
     await cacheNarrative(parsed.owner, parsed.repo, parsed.number, metadata.headSha, metaHash, providerKey, generated);
     console.log(

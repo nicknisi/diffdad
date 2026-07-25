@@ -68,6 +68,32 @@ describe('redactConfig', () => {
     expect(redactConfig({}).githubTokenSet).toBe(false);
     expect(redactConfig({ githubToken: '' }).githubTokenSet).toBe(false);
   });
+
+  it('reduces the AWS secret access key to *Set and drops the raw value', () => {
+    const redacted = redactConfig({
+      aiProvider: 'amazon-bedrock',
+      aiRegion: 'us-east-1',
+      aiAccessKeyId: 'AKIAEXAMPLE',
+      aiSecretAccessKey: 'super-secret-key',
+    });
+    expect(redacted.aiSecretAccessKeySet).toBe(true);
+    // aiAccessKeyId is an identifier, not a secret — it survives in the clear.
+    expect(redacted.aiAccessKeyId).toBe('AKIAEXAMPLE');
+    expect(redacted.aiRegion).toBe('us-east-1');
+    expect(JSON.stringify(redacted)).not.toContain('super-secret-key');
+  });
+
+  it('reports missing AWS secrets as not-set', () => {
+    expect(redactConfig({}).aiSecretAccessKeySet).toBe(false);
+    expect(redactConfig({ aiSecretAccessKey: '' }).aiSecretAccessKeySet).toBe(false);
+  });
+
+  it('reduces the Bedrock API key to *Set and drops the raw value', () => {
+    const redacted = redactConfig({ aiProvider: 'amazon-bedrock', aiBedrockApiKey: 'bedrock-api-key-abc' });
+    expect(redacted.aiBedrockApiKeySet).toBe(true);
+    expect(JSON.stringify(redacted)).not.toContain('bedrock-api-key-abc');
+    expect(redactConfig({}).aiBedrockApiKeySet).toBe(false);
+  });
 });
 
 describe('GET /api/config', () => {
@@ -123,6 +149,43 @@ describe('PUT /api/config — merge + redaction', () => {
     expect(cleared.config.githubTokenSet).toBe(false);
     expect(cleared.github.active).toBe(false);
     expect((await readConfig()).githubToken).toBeUndefined();
+  });
+
+  it('accepts the amazon-bedrock provider + AWS fields, persisting keys but redacting the secret', async () => {
+    const { app } = makeApp();
+    const res = await put(app, {
+      aiProvider: 'amazon-bedrock',
+      aiRegion: 'us-east-1',
+      aiProfile: 'my-sso',
+      aiAccessKeyId: 'AKIAEXAMPLE',
+      aiSecretAccessKey: 'aws-secret-value',
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as ConfigResponse;
+    expect(body.config.aiProvider).toBe('amazon-bedrock');
+    expect(body.config.aiRegion).toBe('us-east-1');
+    // aiProfile is an identifier, not a secret — it survives redaction in the clear.
+    expect(body.config.aiProfile).toBe('my-sso');
+    expect(body.config.aiAccessKeyId).toBe('AKIAEXAMPLE');
+    expect(body.config.aiSecretAccessKeySet).toBe(true);
+    // Raw AWS secret never crosses the wire…
+    expect(JSON.stringify(body)).not.toContain('aws-secret-value');
+    // …but is persisted on disk.
+    const saved = await readConfig();
+    expect(saved.aiSecretAccessKey).toBe('aws-secret-value');
+  });
+
+  it('persists the Bedrock API key write-only and clears it with an empty string', async () => {
+    const { app } = makeApp();
+    const res = await put(app, { aiProvider: 'amazon-bedrock', aiBedrockApiKey: 'bedrock-api-key-abc' });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as ConfigResponse;
+    expect(body.config.aiBedrockApiKeySet).toBe(true);
+    expect(JSON.stringify(body)).not.toContain('bedrock-api-key-abc');
+    expect((await readConfig()).aiBedrockApiKey).toBe('bedrock-api-key-abc');
+
+    await put(app, { aiBedrockApiKey: '' });
+    expect((await readConfig()).aiBedrockApiKey).toBeUndefined();
   });
 
   it('is a merge patch — unrelated stored keys survive a partial PUT', async () => {
@@ -261,6 +324,32 @@ describe('POST /api/config/test', () => {
     expect(seen[0]!.aiModel).toBe('candidate-model'); // overlaid
   });
 
+  it('ai: overlays candidate bedrock region + AWS creds on the saved config', async () => {
+    await writeConfig({ aiProvider: 'amazon-bedrock', aiRegion: 'us-west-2' });
+    const seen: DiffDadConfig[] = [];
+    const { app } = makeApp({
+      testers: {
+        testAi: async (config) => {
+          seen.push(config);
+          return { ok: true, detail: 'ok' };
+        },
+      },
+    });
+    const res = await post(app, {
+      kind: 'ai',
+      aiRegion: 'eu-central-1',
+      aiProfile: 'my-sso',
+      aiAccessKeyId: 'AKIACAND',
+      aiSecretAccessKey: 'cand-secret',
+    });
+    expect(res.status).toBe(200);
+    expect(seen[0]!.aiProvider).toBe('amazon-bedrock'); // from saved config
+    expect(seen[0]!.aiRegion).toBe('eu-central-1'); // overlaid
+    expect(seen[0]!.aiProfile).toBe('my-sso');
+    expect(seen[0]!.aiAccessKeyId).toBe('AKIACAND');
+    expect(seen[0]!.aiSecretAccessKey).toBe('cand-secret');
+  });
+
   it('400s an unknown kind', async () => {
     const { app } = makeApp();
     expect((await post(app, { kind: 'frobnicate' })).status).toBe(400);
@@ -274,5 +363,102 @@ describe('POST /api/config/test', () => {
       body: '{ not json',
     });
     expect(res.status).toBe(400);
+  });
+});
+
+describe('POST /api/config/bedrock/models', () => {
+  const post = (app: Hono, body: unknown) =>
+    app.request('/api/config/bedrock/models', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+  it('returns the injected model list + resolved region and overlays candidate creds on the saved config', async () => {
+    await writeConfig({ aiProvider: 'amazon-bedrock', aiRegion: 'us-east-1' });
+    const seen: DiffDadConfig[] = [];
+    const { app } = makeApp({
+      testers: {
+        listBedrockModels: async (config) => {
+          seen.push(config);
+          return {
+            models: [{ id: 'us.anthropic.claude-sonnet', label: 'Claude Sonnet (inference profile)' }],
+            region: 'eu-west-1',
+          };
+        },
+      },
+    });
+    const res = await post(app, {
+      aiRegion: 'eu-west-1',
+      aiProfile: 'my-sso',
+      aiAccessKeyId: 'AKIA',
+      aiSecretAccessKey: 'sk',
+      aiBedrockApiKey: 'bedrock-api-key-abc',
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { models: { id: string; label: string }[]; region?: string };
+    expect(body.models).toEqual([{ id: 'us.anthropic.claude-sonnet', label: 'Claude Sonnet (inference profile)' }]);
+    // The resolved region is surfaced so the UI can prefill it.
+    expect(body.region).toBe('eu-west-1');
+    expect(seen[0]!.aiRegion).toBe('eu-west-1'); // candidate overlaid
+    expect(seen[0]!.aiProfile).toBe('my-sso');
+    expect(seen[0]!.aiAccessKeyId).toBe('AKIA');
+    expect(seen[0]!.aiSecretAccessKey).toBe('sk');
+    expect(seen[0]!.aiBedrockApiKey).toBe('bedrock-api-key-abc');
+  });
+
+  it('returns 502 with the AWS message when the lister throws', async () => {
+    const { app } = makeApp({
+      testers: {
+        listBedrockModels: async () => {
+          throw new Error('User is not authorized to perform: bedrock:ListFoundationModels');
+        },
+      },
+    });
+    const res = await post(app, { aiRegion: 'us-east-1' });
+    expect(res.status).toBe(502);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain('not authorized');
+  });
+
+  it('tolerates an empty/missing body (falls back to saved config)', async () => {
+    await writeConfig({ aiProvider: 'amazon-bedrock', aiRegion: 'us-east-1' });
+    const seen: DiffDadConfig[] = [];
+    const { app } = makeApp({
+      testers: {
+        listBedrockModels: async (config) => {
+          seen.push(config);
+          return { models: [], region: 'us-east-1' };
+        },
+      },
+    });
+    const res = await app.request('/api/config/bedrock/models', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{ not json',
+    });
+    expect(res.status).toBe(200);
+    expect(seen[0]!.aiRegion).toBe('us-east-1'); // from saved config
+  });
+});
+
+describe('GET /api/config/aws/profiles', () => {
+  it('returns the injected profile list', async () => {
+    const { app } = makeApp({
+      testers: {
+        listAwsProfiles: async () => [{ name: 'default', region: 'us-east-1' }, { name: 'staging' }],
+      },
+    });
+    const res = await app.request('/api/config/aws/profiles');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { profiles: { name: string; region?: string }[] };
+    expect(body.profiles).toEqual([{ name: 'default', region: 'us-east-1' }, { name: 'staging' }]);
+  });
+
+  it('returns an empty list (200, not an error) when profile enumeration yields nothing', async () => {
+    const { app } = makeApp({ testers: { listAwsProfiles: async () => [] } });
+    const res = await app.request('/api/config/aws/profiles');
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { profiles: unknown[] }).profiles).toEqual([]);
   });
 });
