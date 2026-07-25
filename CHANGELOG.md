@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.0](https://github.com/nicknisi/diffdad/compare/v0.13.0...v0.14.0) (2026-07-25)
+
+
+### Features
+
+* add Amazon Bedrock as an AI provider ([#49](https://github.com/nicknisi/diffdad/issues/49)) ([4c98b9c](https://github.com/nicknisi/diffdad/commit/4c98b9c0baa601ce13a6fa31e6abfac809260cac))
+
 ## [0.13.0](https://github.com/nicknisi/diffdad/compare/v0.12.1...v0.13.0) (2026-07-18)
 
 
