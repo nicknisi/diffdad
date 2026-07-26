@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, spyOn } from 'bun:test';
 import * as credentialProviders from '@aws-sdk/credential-providers';
+import { EventStreamCodec } from '@smithy/eventstream-codec';
+import { fromUtf8, toUtf8 } from '@smithy/util-utf8';
 import { callAi, getModel, withResolvedBedrockRegion } from '../narrative/ai-runtime';
 import * as bedrockModels from '../narrative/bedrock-models';
 import type { DiffDadConfig } from '../config';
@@ -226,4 +228,119 @@ describe('withResolvedBedrockRegion', () => {
       spy.mockRestore();
     }
   });
+});
+
+/**
+ * These tests exercise callAi's Bedrock ConverseStream path against canned AWS
+ * eventstream responses, encoded with the same @smithy codec the provider
+ * decodes with. The frames mirror what Claude Opus 5 actually sends: thinking
+ * is on by default and its display defaults to "omitted", so reasoning blocks
+ * arrive as a bare signature delta with no reasoning text.
+ */
+describe('callAi amazon-bedrock stream path', () => {
+  // Each test gets a distinct access key: the Bedrock model is cached at module scope keyed by the
+  // credential/model fields, and the cached model holds the fetch that was current when it was
+  // built. A shared config would make later tests silently reuse the first test's (restored) fetch
+  // spy instead of their own.
+  function bedrockConfig(cacheBuster: string): DiffDadConfig {
+    return {
+      aiProvider: 'amazon-bedrock',
+      aiRegion: 'us-east-1',
+      aiAccessKeyId: `AKIAEXAMPLE${cacheBuster}`,
+      aiSecretAccessKey: 'secret',
+      aiModel: 'us.anthropic.claude-opus-5',
+    };
+  }
+
+  function eventFrame(eventType: string, payload: unknown): Uint8Array {
+    const codec = new EventStreamCodec(toUtf8, fromUtf8);
+    return codec.encode({
+      headers: {
+        ':event-type': { type: 'string', value: eventType },
+        ':content-type': { type: 'string', value: 'application/json' },
+        ':message-type': { type: 'string', value: 'event' },
+      },
+      body: new TextEncoder().encode(JSON.stringify(payload)),
+    });
+  }
+
+  function converseStreamResponse(frames: Uint8Array[]): Response {
+    const total = frames.reduce((n, f) => n + f.length, 0);
+    const body = new Uint8Array(total);
+    let offset = 0;
+    for (const f of frames) {
+      body.set(f, offset);
+      offset += f.length;
+    }
+    return new Response(body, {
+      headers: { 'content-type': 'application/vnd.amazon.eventstream' },
+    });
+  }
+
+  it(
+    'survives an omitted-thinking stream (reasoning signature with no reasoning text)',
+    async () => {
+      // Opus 5 shape: the model thinks, but display defaults to "omitted" — the
+      // stream carries the reasoning block's signature and never any reasoning
+      // text. ai@4's accumulator throws InvalidStreamPart ("reasoning-signature
+      // without reasoning") on that sequence unless the signature is stripped.
+      const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(async () =>
+        converseStreamResponse([
+          eventFrame('contentBlockDelta', {
+            contentBlockIndex: 0,
+            delta: { reasoningContent: { signature: 'sig-abc' } },
+          }),
+          eventFrame('contentBlockStop', { contentBlockIndex: 0 }),
+          eventFrame('contentBlockDelta', { contentBlockIndex: 1, delta: { text: 'OK' } }),
+          eventFrame('contentBlockStop', { contentBlockIndex: 1 }),
+          eventFrame('messageStop', { stopReason: 'end_turn' }),
+          eventFrame('metadata', { usage: { inputTokens: 5, outputTokens: 2 } }),
+        ]),
+      );
+      try {
+        const deltas: string[] = [];
+        const result = await callAi(bedrockConfig('OMITTED'), 'system', 'user', 256, (d) => deltas.push(d));
+
+        expect(fetchSpy.mock.calls[0]?.[0]).toContain('bedrock-runtime.us-east-1.amazonaws.com');
+        expect(result.text).toBe('OK');
+        expect(deltas).toEqual(['OK']);
+        expect(result.truncated).toBe(false);
+      } finally {
+        fetchSpy.mockRestore();
+      }
+    },
+    { timeout: 10000 },
+  );
+
+  it(
+    'keeps reasoning text out of the returned text when thinking is streamed with content',
+    async () => {
+      // Summarized-display shape: reasoning text deltas precede the signature.
+      // Only the answer text may reach the caller — reasoning is discarded.
+      const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(async () =>
+        converseStreamResponse([
+          eventFrame('contentBlockDelta', {
+            contentBlockIndex: 0,
+            delta: { reasoningContent: { text: 'Let me think about this.' } },
+          }),
+          eventFrame('contentBlockDelta', {
+            contentBlockIndex: 0,
+            delta: { reasoningContent: { signature: 'sig-abc' } },
+          }),
+          eventFrame('contentBlockStop', { contentBlockIndex: 0 }),
+          eventFrame('contentBlockDelta', { contentBlockIndex: 1, delta: { text: 'OK' } }),
+          eventFrame('contentBlockStop', { contentBlockIndex: 1 }),
+          eventFrame('messageStop', { stopReason: 'end_turn' }),
+          eventFrame('metadata', { usage: { inputTokens: 5, outputTokens: 2 } }),
+        ]),
+      );
+      try {
+        const result = await callAi(bedrockConfig('SUMMARIZED'), 'system', 'user', 256);
+        expect(result.text).toBe('OK');
+      } finally {
+        fetchSpy.mockRestore();
+      }
+    },
+    { timeout: 10000 },
+  );
 });
