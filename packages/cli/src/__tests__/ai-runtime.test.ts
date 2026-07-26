@@ -264,6 +264,12 @@ describe('callAi amazon-bedrock stream path', () => {
     });
   }
 
+  // Cast: Bun's `typeof fetch` demands a `preconnect` property that plain mock closures lack and
+  // the AI SDK never touches (same cast as toInvokeAuth in bedrock-models.ts).
+  function mockFetch(impl: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>) {
+    return spyOn(globalThis, 'fetch').mockImplementation(impl as unknown as typeof fetch);
+  }
+
   function converseStreamResponse(frames: Uint8Array[]): Response {
     const total = frames.reduce((n, f) => n + f.length, 0);
     const body = new Uint8Array(total);
@@ -284,7 +290,7 @@ describe('callAi amazon-bedrock stream path', () => {
       // stream carries the reasoning block's signature and never any reasoning
       // text. ai@4's accumulator throws InvalidStreamPart ("reasoning-signature
       // without reasoning") on that sequence unless the signature is stripped.
-      const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(async () =>
+      const fetchSpy = mockFetch(async () =>
         converseStreamResponse([
           eventFrame('contentBlockDelta', {
             contentBlockIndex: 0,
@@ -317,7 +323,7 @@ describe('callAi amazon-bedrock stream path', () => {
     async () => {
       // Summarized-display shape: reasoning text deltas precede the signature.
       // Only the answer text may reach the caller — reasoning is discarded.
-      const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(async () =>
+      const fetchSpy = mockFetch(async () =>
         converseStreamResponse([
           eventFrame('contentBlockDelta', {
             contentBlockIndex: 0,
@@ -351,7 +357,7 @@ describe('callAi amazon-bedrock stream path', () => {
       // a writer-sized budget can be consumed entirely by omitted thinking, yielding the
       // empty-response error (finishReason: length). The request must turn thinking off.
       let requestBody: string | undefined;
-      const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(async (_input, init) => {
+      const fetchSpy = mockFetch(async (_input, init) => {
         requestBody = typeof init?.body === 'string' ? init.body : undefined;
         return converseStreamResponse([
           eventFrame('contentBlockDelta', { contentBlockIndex: 0, delta: { text: 'OK' } }),
@@ -378,7 +384,7 @@ describe('callAi amazon-bedrock stream path', () => {
     'does not send the Anthropic thinking field to non-Claude Bedrock models',
     async () => {
       let requestBody: string | undefined;
-      const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(async (_input, init) => {
+      const fetchSpy = mockFetch(async (_input, init) => {
         requestBody = typeof init?.body === 'string' ? init.body : undefined;
         return converseStreamResponse([
           eventFrame('contentBlockDelta', { contentBlockIndex: 0, delta: { text: 'OK' } }),
@@ -403,7 +409,7 @@ describe('callAi amazon-bedrock stream path', () => {
   it(
     'emits a DIFFDAD_DEBUG_AI summary line with finishReason, usage, and stream part tallies',
     async () => {
-      const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(async () =>
+      const fetchSpy = mockFetch(async () =>
         converseStreamResponse([
           eventFrame('contentBlockDelta', { contentBlockIndex: 0, delta: { text: 'OK' } }),
           eventFrame('contentBlockStop', { contentBlockIndex: 0 }),
