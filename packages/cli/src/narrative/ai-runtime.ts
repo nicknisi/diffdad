@@ -3,7 +3,13 @@ import { streamText, wrapLanguageModel } from 'ai';
 import { createAmazonBedrock } from '@ai-sdk/amazon-bedrock';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createOpenAI } from '@ai-sdk/openai';
-import type { FinishReason, LanguageModelUsage, LanguageModelV1, LanguageModelV1Middleware } from 'ai';
+import type {
+  FinishReason,
+  LanguageModelUsage,
+  LanguageModelV1,
+  LanguageModelV1Middleware,
+  LanguageModelV1StreamPart,
+} from 'ai';
 import { DEFAULT_CLI_MODELS, LOCAL_CLIS, type DiffDadConfig, type LocalCli } from '../config';
 import { resolveBedrockCreds } from './bedrock-credentials';
 import { resolveBedrockRegion, toInvokeAuth } from './bedrock-models';
@@ -118,6 +124,31 @@ const stripTemperature: LanguageModelV1Middleware = {
   transformParams: async ({ params }) => ({ ...params, temperature: undefined }),
 };
 
+/**
+ * Claude Opus 5 thinks by default with its thinking display "omitted": the stream carries a
+ * reasoning block's signature delta but never any reasoning text. ai@4's accumulator throws
+ * InvalidStreamPart ("reasoning-signature without reasoning") on a signature with no preceding
+ * reasoning text, killing the whole generation. We are single-turn and never replay assistant
+ * messages, so the signature (a replay-integrity token) is dead weight — drop it before the
+ * accumulator sees it.
+ */
+const stripReasoningSignature: LanguageModelV1Middleware = {
+  wrapStream: async ({ doStream }) => {
+    const { stream, ...rest } = await doStream();
+    return {
+      stream: stream.pipeThrough(
+        new TransformStream<LanguageModelV1StreamPart, LanguageModelV1StreamPart>({
+          transform(part, controller) {
+            if (part.type === 'reasoning-signature') return;
+            controller.enqueue(part);
+          },
+        }),
+      ),
+      ...rest,
+    };
+  },
+};
+
 export function getModel(config: DiffDadConfig): LanguageModelV1 {
   const provider = config.aiProvider ?? 'anthropic';
 
@@ -163,7 +194,7 @@ export function getModel(config: DiffDadConfig): LanguageModelV1 {
         // Bedrock-hosted Claude has the same temperature-deprecation behavior as the direct API.
         // `||` not `??`: the settings form saves '' to mean "use the default model".
         model: bedrock(config.aiModel || DEFAULT_BEDROCK_MODEL),
-        middleware: stripTemperature,
+        middleware: [stripTemperature, stripReasoningSignature],
       });
     }
     default: {
