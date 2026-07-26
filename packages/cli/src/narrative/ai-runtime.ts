@@ -190,10 +190,20 @@ export function getModel(config: DiffDadConfig): LanguageModelV1 {
         // bearer-injecting fetch; otherwise a credentialProvider the SDK uses over its own env.
         ...toInvokeAuth(resolveBedrockCreds(config)),
       });
+      // `||` not `??`: the settings form saves '' to mean "use the default model".
+      const modelId = config.aiModel || DEFAULT_BEDROCK_MODEL;
+      // Claude thinks by default from Opus 5 onward, and maxTokens caps thinking + visible text
+      // together — our budgets are sized for the deliverable text, so omitted thinking can consume
+      // the whole budget and yield an empty response (finishReason: length). Turn thinking off for
+      // Claude models. Fable/Mythos reject an explicit disable (400) and non-Claude models don't
+      // know the field, so both are skipped.
+      const disableThinking = /anthropic\.claude/.test(modelId) && !/fable|mythos/.test(modelId);
       return wrapLanguageModel({
         // Bedrock-hosted Claude has the same temperature-deprecation behavior as the direct API.
-        // `||` not `??`: the settings form saves '' to mean "use the default model".
-        model: bedrock(config.aiModel || DEFAULT_BEDROCK_MODEL),
+        model: bedrock(
+          modelId,
+          disableThinking ? { additionalModelRequestFields: { thinking: { type: 'disabled' } } } : undefined,
+        ),
         middleware: [stripTemperature, stripReasoningSignature],
       });
     }
@@ -478,16 +488,33 @@ export async function callAi(
   let text = '';
   let finishReason: FinishReason | undefined;
   let usage: LanguageModelUsage | undefined;
-  for await (const part of stream.fullStream) {
-    if (part.type === 'text-delta') {
-      if (part.textDelta.length === 0) continue;
-      text += part.textDelta;
-      onChunk?.(part.textDelta);
-    } else if (part.type === 'error') {
-      throw asError(part.error);
-    } else if (part.type === 'finish') {
-      finishReason = part.finishReason;
-      usage = part.usage;
+  // DIFFDAD_DEBUG_AI=1 prints one stderr summary per AI call — which provider/model ran, why the
+  // stream stopped, token usage, and a tally of every stream part type. The tally is the signal
+  // for model-behavior surprises: e.g. thinking burning the token budget shows up as 'reasoning'
+  // counts next to finishReason=length with textChars=0.
+  const debugAi = Boolean(process.env.DIFFDAD_DEBUG_AI);
+  const partCounts: Record<string, number> = {};
+  try {
+    for await (const part of stream.fullStream) {
+      if (debugAi) partCounts[part.type] = (partCounts[part.type] ?? 0) + 1;
+      if (part.type === 'text-delta') {
+        if (part.textDelta.length === 0) continue;
+        text += part.textDelta;
+        onChunk?.(part.textDelta);
+      } else if (part.type === 'error') {
+        throw asError(part.error);
+      } else if (part.type === 'finish') {
+        finishReason = part.finishReason;
+        usage = part.usage;
+      }
+    }
+  } finally {
+    if (debugAi) {
+      console.error(
+        `[diffdad:ai] provider=${provider} model=${effectiveConfig.aiModel ?? 'default'} maxTokens=${maxTokens ?? 'unset'} ` +
+          `finishReason=${finishReason ?? 'none'} textChars=${text.length} ` +
+          `usage=${usage ? JSON.stringify(usage) : 'none'} parts=${JSON.stringify(partCounts)}`,
+      );
     }
   }
 

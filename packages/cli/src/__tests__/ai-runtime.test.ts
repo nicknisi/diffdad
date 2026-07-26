@@ -343,4 +343,89 @@ describe('callAi amazon-bedrock stream path', () => {
     },
     { timeout: 10000 },
   );
+
+  it(
+    'requests thinking disabled for Claude models (maxTokens must budget visible text, not thinking)',
+    async () => {
+      // From Opus 5 onward Claude thinks by default and maxTokens caps thinking + text together —
+      // a writer-sized budget can be consumed entirely by omitted thinking, yielding the
+      // empty-response error (finishReason: length). The request must turn thinking off.
+      let requestBody: string | undefined;
+      const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(async (_input, init) => {
+        requestBody = typeof init?.body === 'string' ? init.body : undefined;
+        return converseStreamResponse([
+          eventFrame('contentBlockDelta', { contentBlockIndex: 0, delta: { text: 'OK' } }),
+          eventFrame('contentBlockStop', { contentBlockIndex: 0 }),
+          eventFrame('messageStop', { stopReason: 'end_turn' }),
+          eventFrame('metadata', { usage: { inputTokens: 5, outputTokens: 2 } }),
+        ]);
+      });
+      try {
+        await callAi(bedrockConfig('THINKINGOFF'), 'system', 'user', 256);
+        expect(requestBody).toBeDefined();
+        const parsed = JSON.parse(requestBody!) as {
+          additionalModelRequestFields?: { thinking?: { type?: string } };
+        };
+        expect(parsed.additionalModelRequestFields?.thinking?.type).toBe('disabled');
+      } finally {
+        fetchSpy.mockRestore();
+      }
+    },
+    { timeout: 10000 },
+  );
+
+  it(
+    'does not send the Anthropic thinking field to non-Claude Bedrock models',
+    async () => {
+      let requestBody: string | undefined;
+      const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(async (_input, init) => {
+        requestBody = typeof init?.body === 'string' ? init.body : undefined;
+        return converseStreamResponse([
+          eventFrame('contentBlockDelta', { contentBlockIndex: 0, delta: { text: 'OK' } }),
+          eventFrame('contentBlockStop', { contentBlockIndex: 0 }),
+          eventFrame('messageStop', { stopReason: 'end_turn' }),
+          eventFrame('metadata', { usage: { inputTokens: 5, outputTokens: 2 } }),
+        ]);
+      });
+      try {
+        const config = { ...bedrockConfig('NONCLAUDE'), aiModel: 'us.meta.llama4-maverick-17b-instruct-v1:0' };
+        await callAi(config, 'system', 'user', 256);
+        expect(requestBody).toBeDefined();
+        const parsed = JSON.parse(requestBody!) as { additionalModelRequestFields?: Record<string, unknown> };
+        expect(parsed.additionalModelRequestFields?.thinking).toBeUndefined();
+      } finally {
+        fetchSpy.mockRestore();
+      }
+    },
+    { timeout: 10000 },
+  );
+
+  it(
+    'emits a DIFFDAD_DEBUG_AI summary line with finishReason, usage, and stream part tallies',
+    async () => {
+      const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(async () =>
+        converseStreamResponse([
+          eventFrame('contentBlockDelta', { contentBlockIndex: 0, delta: { text: 'OK' } }),
+          eventFrame('contentBlockStop', { contentBlockIndex: 0 }),
+          eventFrame('messageStop', { stopReason: 'end_turn' }),
+          eventFrame('metadata', { usage: { inputTokens: 5, outputTokens: 2 } }),
+        ]),
+      );
+      const errorSpy = spyOn(console, 'error').mockImplementation(() => {});
+      process.env.DIFFDAD_DEBUG_AI = '1';
+      try {
+        await callAi(bedrockConfig('DEBUGLINE'), 'system', 'user', 256);
+        const line = errorSpy.mock.calls.map((c) => String(c[0])).find((s) => s.includes('[diffdad:ai]'));
+        expect(line).toBeDefined();
+        expect(line).toContain('finishReason=stop');
+        expect(line).toContain('textChars=2');
+        expect(line).toContain('"text-delta":1');
+      } finally {
+        delete process.env.DIFFDAD_DEBUG_AI;
+        errorSpy.mockRestore();
+        fetchSpy.mockRestore();
+      }
+    },
+    { timeout: 10000 },
+  );
 });
