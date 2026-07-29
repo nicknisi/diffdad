@@ -2,8 +2,15 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, spyOn } from 'bu
 import * as credentialProviders from '@aws-sdk/credential-providers';
 import { EventStreamCodec } from '@smithy/eventstream-codec';
 import { fromUtf8, toUtf8 } from '@smithy/util-utf8';
-import { callAi, getModel, resetBedrockModelCache, withResolvedBedrockRegion } from '../narrative/ai-runtime';
+import {
+  callAi,
+  disableThinkingFetch,
+  getModel,
+  resetBedrockModelCache,
+  withResolvedBedrockRegion,
+} from '../narrative/ai-runtime';
 import * as bedrockModels from '../narrative/bedrock-models';
+import type { FetchLike } from '../narrative/bedrock-models';
 import type { DiffDadConfig } from '../config';
 
 /**
@@ -432,6 +439,131 @@ describe('callAi amazon-bedrock stream path', () => {
       } finally {
         delete process.env.DIFFDAD_DEBUG_AI;
         errorSpy.mockRestore();
+        fetchSpy.mockRestore();
+      }
+    },
+    { timeout: 10000 },
+  );
+});
+
+describe('disableThinkingFetch', () => {
+  function captureFetch(): { fetch: FetchLike; body: () => string | undefined } {
+    let sent: string | undefined;
+    const fetch: FetchLike = async (_input, init) => {
+      sent = typeof init?.body === 'string' ? init.body : undefined;
+      return new Response('{}', { status: 200 });
+    };
+    return { fetch, body: () => sent };
+  }
+
+  it('injects thinking:{type:disabled} into a JSON message body', async () => {
+    const cap = captureFetch();
+    await disableThinkingFetch(cap.fetch)('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      body: JSON.stringify({ model: 'claude-opus-5', messages: [] }),
+    });
+    expect(JSON.parse(cap.body()!)).toMatchObject({ thinking: { type: 'disabled' } });
+  });
+
+  it('does not clobber a request that already sets thinking', async () => {
+    const cap = captureFetch();
+    await disableThinkingFetch(cap.fetch)('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      body: JSON.stringify({ thinking: { type: 'enabled', budgetTokens: 100 } }),
+    });
+    expect(JSON.parse(cap.body()!).thinking).toEqual({ type: 'enabled', budgetTokens: 100 });
+  });
+
+  it('forwards a non-JSON body untouched', async () => {
+    let sent: unknown;
+    const base: FetchLike = async (_input, init) => {
+      sent = init?.body;
+      return new Response('{}', { status: 200 });
+    };
+    await disableThinkingFetch(base)('https://api.anthropic.com/v1/messages', { method: 'POST', body: 'not-json' });
+    expect(sent).toBe('not-json');
+  });
+});
+
+describe('callAi anthropic disable-thinking wiring', () => {
+  // Cast: Bun's `typeof fetch` demands a `preconnect` property plain mock closures lack (same cast
+  // as the Bedrock stream tests above).
+  function mockFetch(impl: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>) {
+    return spyOn(globalThis, 'fetch').mockImplementation(impl as unknown as typeof fetch);
+  }
+
+  // Minimal Anthropic Messages SSE stream that yields a single text block and ends the turn.
+  function anthropicSse(): Response {
+    const events: [string, unknown][] = [
+      [
+        'message_start',
+        {
+          type: 'message_start',
+          message: {
+            id: 'msg_1',
+            type: 'message',
+            role: 'assistant',
+            model: 'claude-opus-5',
+            content: [],
+            stop_reason: null,
+            stop_sequence: null,
+            usage: { input_tokens: 5, output_tokens: 0 },
+          },
+        },
+      ],
+      ['content_block_start', { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }],
+      ['content_block_delta', { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'OK' } }],
+      ['content_block_stop', { type: 'content_block_stop', index: 0 }],
+      [
+        'message_delta',
+        { type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 1 } },
+      ],
+      ['message_stop', { type: 'message_stop' }],
+    ];
+    const body = events.map(([event, data]) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join('');
+    return new Response(body, { headers: { 'content-type': 'text/event-stream' } });
+  }
+
+  it(
+    'sends thinking disabled in the request body for a Claude model on the direct Anthropic API',
+    async () => {
+      let requestBody: string | undefined;
+      const fetchSpy = mockFetch(async (_input, init) => {
+        requestBody = typeof init?.body === 'string' ? init.body : undefined;
+        return anthropicSse();
+      });
+      try {
+        const result = await callAi(
+          { aiProvider: 'anthropic', aiApiKey: 'k', aiModel: 'claude-opus-5' },
+          'system',
+          'user',
+          256,
+        );
+        expect(result.text).toBe('OK');
+        expect(requestBody).toBeDefined();
+        const parsed = JSON.parse(requestBody!) as { thinking?: { type?: string } };
+        expect(parsed.thinking?.type).toBe('disabled');
+      } finally {
+        fetchSpy.mockRestore();
+      }
+    },
+    { timeout: 10000 },
+  );
+
+  it(
+    'does not disable thinking for Fable/Mythos models (they reject an explicit disable)',
+    async () => {
+      let requestBody: string | undefined;
+      const fetchSpy = mockFetch(async (_input, init) => {
+        requestBody = typeof init?.body === 'string' ? init.body : undefined;
+        return anthropicSse();
+      });
+      try {
+        await callAi({ aiProvider: 'anthropic', aiApiKey: 'k', aiModel: 'claude-fable-5' }, 'system', 'user', 256);
+        expect(requestBody).toBeDefined();
+        const parsed = JSON.parse(requestBody!) as { thinking?: unknown };
+        expect(parsed.thinking).toBeUndefined();
+      } finally {
         fetchSpy.mockRestore();
       }
     },
