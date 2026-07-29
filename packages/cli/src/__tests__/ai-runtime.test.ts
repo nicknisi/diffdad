@@ -1,8 +1,8 @@
-import { afterAll, beforeAll, describe, expect, it, spyOn } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import * as credentialProviders from '@aws-sdk/credential-providers';
 import { EventStreamCodec } from '@smithy/eventstream-codec';
 import { fromUtf8, toUtf8 } from '@smithy/util-utf8';
-import { callAi, getModel, withResolvedBedrockRegion } from '../narrative/ai-runtime';
+import { callAi, getModel, resetBedrockModelCache, withResolvedBedrockRegion } from '../narrative/ai-runtime';
 import * as bedrockModels from '../narrative/bedrock-models';
 import type { DiffDadConfig } from '../config';
 
@@ -238,15 +238,18 @@ describe('withResolvedBedrockRegion', () => {
  * arrive as a bare signature delta with no reasoning text.
  */
 describe('callAi amazon-bedrock stream path', () => {
-  // Each test gets a distinct access key: the Bedrock model is cached at module scope keyed by the
-  // credential/model fields, and the cached model holds the fetch that was current when it was
-  // built. A shared config would make later tests silently reuse the first test's (restored) fetch
-  // spy instead of their own.
-  function bedrockConfig(cacheBuster: string): DiffDadConfig {
+  // The Bedrock model is cached at module scope, and the cached model holds the fetch that was
+  // current when it was built. Reset the cache before each case so a test builds its model against
+  // its own fetch spy rather than reusing a prior test's (restored) one.
+  beforeEach(() => {
+    resetBedrockModelCache();
+  });
+
+  function bedrockConfig(): DiffDadConfig {
     return {
       aiProvider: 'amazon-bedrock',
       aiRegion: 'us-east-1',
-      aiAccessKeyId: `AKIAEXAMPLE${cacheBuster}`,
+      aiAccessKeyId: 'AKIAEXAMPLE',
       aiSecretAccessKey: 'secret',
       aiModel: 'us.anthropic.claude-opus-5',
     };
@@ -305,7 +308,7 @@ describe('callAi amazon-bedrock stream path', () => {
       );
       try {
         const deltas: string[] = [];
-        const result = await callAi(bedrockConfig('OMITTED'), 'system', 'user', 256, (d) => deltas.push(d));
+        const result = await callAi(bedrockConfig(), 'system', 'user', 256, (d) => deltas.push(d));
 
         expect(fetchSpy.mock.calls[0]?.[0]).toContain('bedrock-runtime.us-east-1.amazonaws.com');
         expect(result.text).toBe('OK');
@@ -341,7 +344,7 @@ describe('callAi amazon-bedrock stream path', () => {
         ]),
       );
       try {
-        const result = await callAi(bedrockConfig('SUMMARIZED'), 'system', 'user', 256);
+        const result = await callAi(bedrockConfig(), 'system', 'user', 256);
         expect(result.text).toBe('OK');
       } finally {
         fetchSpy.mockRestore();
@@ -367,7 +370,7 @@ describe('callAi amazon-bedrock stream path', () => {
         ]);
       });
       try {
-        await callAi(bedrockConfig('THINKINGOFF'), 'system', 'user', 256);
+        await callAi(bedrockConfig(), 'system', 'user', 256);
         expect(requestBody).toBeDefined();
         const parsed = JSON.parse(requestBody!) as {
           additionalModelRequestFields?: { thinking?: { type?: string } };
@@ -394,7 +397,7 @@ describe('callAi amazon-bedrock stream path', () => {
         ]);
       });
       try {
-        const config = { ...bedrockConfig('NONCLAUDE'), aiModel: 'us.meta.llama4-maverick-17b-instruct-v1:0' };
+        const config = { ...bedrockConfig(), aiModel: 'us.meta.llama4-maverick-17b-instruct-v1:0' };
         await callAi(config, 'system', 'user', 256);
         expect(requestBody).toBeDefined();
         const parsed = JSON.parse(requestBody!) as { additionalModelRequestFields?: Record<string, unknown> };
@@ -420,7 +423,7 @@ describe('callAi amazon-bedrock stream path', () => {
       const errorSpy = spyOn(console, 'error').mockImplementation(() => {});
       process.env.DIFFDAD_DEBUG_AI = '1';
       try {
-        await callAi(bedrockConfig('DEBUGLINE'), 'system', 'user', 256);
+        await callAi(bedrockConfig(), 'system', 'user', 256);
         const line = errorSpy.mock.calls.map((c) => String(c[0])).find((s) => s.includes('[diffdad:ai]'));
         expect(line).toBeDefined();
         expect(line).toContain('finishReason=stop');
