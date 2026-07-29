@@ -154,6 +154,10 @@ export function getModel(config: DiffDadConfig): LanguageModelV1 {
 
   switch (provider) {
     case 'anthropic': {
+      // Shared caveat with the Bedrock case below: we send no thinking config here either, so a
+      // thinking-by-default Claude (e.g. claude-opus-5) burns the maxTokens budget on hidden
+      // reasoning against writer-sized limits (WRITER_MAX_TOKENS = 3_000). Not Bedrock-specific.
+      // Deferred — the direct-API path has no disable-thinking fix yet.
       const anthropic = createAnthropic({ apiKey: config.aiApiKey });
       return wrapLanguageModel({
         model: anthropic(config.aiModel ?? DEFAULT_ANTHROPIC_MODEL),
@@ -197,6 +201,8 @@ export function getModel(config: DiffDadConfig): LanguageModelV1 {
       // the whole budget and yield an empty response (finishReason: length). Turn thinking off for
       // Claude models. Fable/Mythos reject an explicit disable (400) and non-Claude models don't
       // know the field, so both are skipped.
+      // Safe only while we don't send output_config.effort — Opus 5 accepts thinking:{type:'disabled'}
+      // at effort 'high' or below, but pairing it with 'xhigh'/'max' is a 400.
       const disableThinking = /anthropic\.claude/.test(modelId) && !/fable|mythos/.test(modelId);
       return wrapLanguageModel({
         // Bedrock-hosted Claude has the same temperature-deprecation behavior as the direct API.
@@ -233,6 +239,15 @@ export async function withResolvedBedrockRegion(config: DiffDadConfig): Promise<
 // fields that shape it; a settings save changes the key and so invalidates. The chain itself
 // refreshes expired credentials internally, so holding one instance long-term is safe.
 let bedrockModelCache: { key: string; model: LanguageModelV1 } | undefined;
+
+/**
+ * Clears the module-scoped Bedrock model cache. Exists for tests: the cached model captures the
+ * `fetch` that was current when it was built, so a suite that swaps `fetch` per case must reset
+ * between cases to avoid reusing a prior test's (restored) fetch spy.
+ */
+export function resetBedrockModelCache(): void {
+  bedrockModelCache = undefined;
+}
 
 async function getBedrockModel(config: DiffDadConfig): Promise<LanguageModelV1> {
   const key = [
@@ -492,7 +507,7 @@ export async function callAi(
   // stream stopped, token usage, and a tally of every stream part type. The tally is the signal
   // for model-behavior surprises: e.g. thinking burning the token budget shows up as 'reasoning'
   // counts next to finishReason=length with textChars=0.
-  const debugAi = Boolean(process.env.DIFFDAD_DEBUG_AI);
+  const debugAi = process.env.DIFFDAD_DEBUG_AI === '1' || process.env.DIFFDAD_DEBUG_AI === 'true';
   const partCounts: Record<string, number> = {};
   try {
     for await (const part of stream.fullStream) {
