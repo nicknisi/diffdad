@@ -14,6 +14,7 @@ bun run build            # build web frontend (required before running CLI)
 bun run build:bin        # build standalone binary
 bun run dev              # vite dev server (frontend only)
 bun run test             # run CLI tests
+bun run typecheck        # tsc across cli, web, and site (CI-gating — run before pushing)
 bun run lint             # oxlint
 bun run format           # oxfmt
 bun run release          # bump version, tag, push (triggers CI release)
