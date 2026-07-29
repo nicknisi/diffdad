@@ -12,7 +12,7 @@ import type {
 } from 'ai';
 import { DEFAULT_CLI_MODELS, LOCAL_CLIS, type DiffDadConfig, type LocalCli } from '../config';
 import { resolveBedrockCreds } from './bedrock-credentials';
-import { resolveBedrockRegion, toInvokeAuth } from './bedrock-models';
+import { type FetchLike, resolveBedrockRegion, toInvokeAuth } from './bedrock-models';
 
 export type AiChunkHandler = (delta: string) => void;
 export type AiUsage = { inputTokens?: number; outputTokens?: number };
@@ -149,18 +149,56 @@ const stripReasoningSignature: LanguageModelV1Middleware = {
   },
 };
 
+/**
+ * Injects `thinking: { type: 'disabled' }` into the outgoing Anthropic Messages request body.
+ * @ai-sdk/anthropic only serializes a `thinking` field when its type is 'enabled' (it drops
+ * `{type:'disabled'}` on the floor), so providerOptions can't turn thinking off — this fetch shim
+ * adds the raw field the same way the Bedrock case uses additionalModelRequestFields. A no-op on
+ * any body that isn't a JSON object or that already carries a `thinking` field. `createAnthropic`
+ * exposes `fetch` explicitly as a request-interception hook, so this is the supported seam.
+ */
+export function disableThinkingFetch(fetchImpl?: FetchLike): FetchLike {
+  return (input, init) => {
+    // Resolve the delegate per call rather than binding it once: `createAmazonBedrock`'s fetch is
+    // captured at construction, but this shim is built inside getModel and must honor a later
+    // `globalThis.fetch` swap (a test replacing fetch after the model is built).
+    const base = fetchImpl ?? globalThis.fetch;
+    const body = init?.body;
+    if (typeof body === 'string') {
+      try {
+        const parsed = JSON.parse(body) as Record<string, unknown>;
+        if (parsed !== null && typeof parsed === 'object' && !('thinking' in parsed)) {
+          return base(input, { ...init, body: JSON.stringify({ ...parsed, thinking: { type: 'disabled' } }) });
+        }
+      } catch {
+        // Body isn't JSON we can rewrite — forward it untouched.
+      }
+    }
+    return base(input, init);
+  };
+}
+
 export function getModel(config: DiffDadConfig): LanguageModelV1 {
   const provider = config.aiProvider ?? 'anthropic';
 
   switch (provider) {
     case 'anthropic': {
-      // Shared caveat with the Bedrock case below: we send no thinking config here either, so a
-      // thinking-by-default Claude (e.g. claude-opus-5) burns the maxTokens budget on hidden
-      // reasoning against writer-sized limits (WRITER_MAX_TOKENS = 3_000). Not Bedrock-specific.
-      // Deferred — the direct-API path has no disable-thinking fix yet.
-      const anthropic = createAnthropic({ apiKey: config.aiApiKey });
+      const modelId = config.aiModel ?? DEFAULT_ANTHROPIC_MODEL;
+      // Same token-burn guard as the Bedrock case below, and for the same reason: a
+      // thinking-by-default Claude (e.g. claude-opus-5) spends the shared maxTokens budget on
+      // hidden reasoning against writer-sized limits (WRITER_MAX_TOKENS = 3_000), which can yield
+      // an empty response (finishReason: length). Both providers disable thinking for Claude
+      // models. The direct API can't take the field through providerOptions (see
+      // disableThinkingFetch), so it goes in via the request-body fetch shim — the direct-API
+      // equivalent of Bedrock's additionalModelRequestFields passthrough. Fable/Mythos reject an
+      // explicit disable (400), so they're excluded here just as they are on Bedrock.
+      const disableThinking = /claude/.test(modelId) && !/fable|mythos/.test(modelId);
+      const anthropic = createAnthropic({
+        apiKey: config.aiApiKey,
+        fetch: disableThinking ? (disableThinkingFetch() as typeof globalThis.fetch) : undefined,
+      });
       return wrapLanguageModel({
-        model: anthropic(config.aiModel ?? DEFAULT_ANTHROPIC_MODEL),
+        model: anthropic(modelId),
         middleware: stripTemperature,
       });
     }
