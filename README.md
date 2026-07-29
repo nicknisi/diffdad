@@ -109,6 +109,8 @@ Open the settings page (`/settings` in the command center, or the Settings view 
 dad --with=claude owner/repo#123    # force the Claude CLI even if a key is set
 ```
 
+Set `DIFFDAD_DEBUG_AI=1` (also accepts `true`) to print one stderr summary per AI call — provider, model, why the stream stopped, token usage, and a tally of stream part types. Use it to spot model-behavior surprises, like thinking burning the token budget (a `reasoning` count next to `finishReason=length` and `textChars=0`).
+
 ### GitHub Token
 
 Diff Dad needs a GitHub token to fetch PR data and post comments. It checks, in order:
