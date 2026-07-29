@@ -26,6 +26,8 @@
     "zod": "^3"
   },
   "devDependencies": {
+    "@smithy/eventstream-codec": "^4.4.7",
+    "@smithy/util-utf8": "^4.4.7",
     "@types/bun": "latest",
     "vitest": "^3"
   }
