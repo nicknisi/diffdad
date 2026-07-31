@@ -17,6 +17,10 @@ falsifiable answer to "did this change make Diff Dad better or worse".
 - **Defect recall**: per fixture, what fraction of `expectedConcerns` did the
   narrative actually surface (in tldr / readingPlan / concerns / missing /
   whyMatters / callouts)?
+- **Hotspot placement**: per fixture, how many of the ground-truth `expectedHotspots`
+  landed in a chapter a reader actually sees. Deterministic set membership, no
+  judge call. Fixtures declaring no hotspots report `n/a` and are skipped in the
+  aggregate rather than scored as a miss.
 - **Latency**: time-to-first-partial-parse (streaming only) and total wall time.
 - **Sanity flags**: did chapters end up ordered by risk? was the verdict
   appropriate (e.g. not 'safe' for the deliberately risky fixtures)?

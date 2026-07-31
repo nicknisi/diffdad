@@ -21,8 +21,37 @@ import { dirname, resolve } from 'path';
 import { readConfig } from '../config';
 import { generateNarrative } from '../narrative/engine';
 import { FIXTURES } from './fixtures';
-import { chaptersOrderedByRisk, countProseWords, scoreDefectDetection, scoreNarrative } from './judge';
-import type { Baseline, EvalFixture, EvalRun } from './types';
+import {
+  chaptersOrderedByRisk,
+  countProseWords,
+  scoreDefectDetection,
+  scoreHotspotPlacement,
+  scoreNarrative,
+} from './judge';
+import type { CollapseResult } from '../narrative/collapse';
+import type { Baseline, EvalFixture, EvalRun, HotspotPlacementResult } from './types';
+
+/**
+ * The collapse state every harness run is scored against: available, with nothing collapsed.
+ *
+ * The harness calls `generateNarrative` without `options.repoContext`, and it cannot do otherwise — a
+ * fixture is a synthetic PR and `PRMetadata` carries no owner/repo for `resolveRepoContext` to fetch a
+ * snapshot from. With no snapshot there are no collapse decisions, so `available: true` with an empty
+ * decision list is the literal truth here, where `available: false` would claim a fetch that never
+ * happened had failed.
+ *
+ * Consequence worth stating plainly: `expanded` equals `covered` for every run this harness produces,
+ * so what the probe reports is hotspot *coverage*. The expanded-versus-collapsed distinction is
+ * exercised by `__tests__/eval-judge.test.ts` and by the served path, not from here.
+ */
+const NO_COLLAPSE: CollapseResult = { available: true, decisions: [], dividerBefore: null };
+
+/** No narrative means nothing is scorable — not a zero, which would average in as a real miss. */
+const HOTSPOTS_UNSCORED: HotspotPlacementResult = {
+  status: 'n/a',
+  placements: [],
+  expandedOf: { expanded: 0, total: 0 },
+};
 
 function describeProvider(config: Awaited<ReturnType<typeof readConfig>>): string {
   if (!config.aiProvider) return 'local-cli';
@@ -105,6 +134,7 @@ async function runOne(
       scores,
       scoreNotes,
       defectDetection,
+      hotspotPlacement: scoreHotspotPlacement(result.narrative, fixture, NO_COLLAPSE),
       hasConcerns: result.narrative.concerns.length > 0,
       chaptersOrderedByRisk: chaptersOrderedByRisk(result.narrative),
       verdict: result.narrative.verdict,
@@ -119,6 +149,7 @@ async function runOne(
       scores: { comprehensiveness: 0, rationality: 0, conciseness: 0, expressiveness: 0 },
       scoreNotes: '',
       defectDetection: { surfaced: 0, expected: fixture.groundTruth.expectedConcerns.length, detail: [] },
+      hotspotPlacement: HOTSPOTS_UNSCORED,
       hasConcerns: false,
       chaptersOrderedByRisk: false,
       verdict: 'caution',
@@ -127,7 +158,8 @@ async function runOne(
   }
 }
 
-function aggregate(runs: EvalRun[]): Baseline['aggregate'] {
+/** Exported so a unit test can assert the per-run numbers actually reach the baseline. */
+export function aggregate(runs: EvalRun[]): Baseline['aggregate'] {
   if (runs.length === 0) {
     return {
       avgComprehensiveness: 0,
@@ -138,12 +170,20 @@ function aggregate(runs: EvalRun[]): Baseline['aggregate'] {
       avgTotalMs: 0,
       avgProseWordCount: 0,
       avgDefectRecall: 0,
+      avgHotspotPlacement: 0,
     };
   }
   const ttfp = runs.filter((r) => typeof r.timeToFirstPartialMs === 'number').map((r) => r.timeToFirstPartialMs!);
   const recall = runs
     .filter((r) => r.defectDetection.expected > 0)
     .map((r) => r.defectDetection.surfaced / r.defectDetection.expected);
+  // Macro, like `recall` above: filter the not-applicable runs out, then average the per-run ratios.
+  // A pooled `Σexpanded / Σtotal` would let the one fixture declaring three hotspots outweigh the three
+  // declaring one, and the raw counts stay on each run either way, so nothing is lost by matching the
+  // field this sits beside. `status: 'scored'` guarantees `total >= 1`, so there is no zero divisor.
+  const hotspots = runs
+    .filter((r) => r.hotspotPlacement.status === 'scored')
+    .map((r) => r.hotspotPlacement.expandedOf.expanded / r.hotspotPlacement.expandedOf.total);
   return {
     avgComprehensiveness: avg(runs.map((r) => r.scores.comprehensiveness)),
     avgRationality: avg(runs.map((r) => r.scores.rationality)),
@@ -153,6 +193,7 @@ function aggregate(runs: EvalRun[]): Baseline['aggregate'] {
     avgTotalMs: Math.round(avg(runs.map((r) => r.totalMs))),
     avgProseWordCount: Math.round(avg(runs.map((r) => r.proseWordCount))),
     avgDefectRecall: recall.length > 0 ? Number(avg(recall).toFixed(2)) : 0,
+    avgHotspotPlacement: hotspots.length > 0 ? Number(avg(hotspots).toFixed(2)) : 0,
   };
 }
 
@@ -194,9 +235,18 @@ async function main() {
     const verdictTag = run.verdict;
     const recall =
       run.defectDetection.expected > 0 ? `${run.defectDetection.surfaced}/${run.defectDetection.expected}` : 'n/a';
+    // Printed, not only written to the baseline: the probe is run by hand after a prompt change and the
+    // answer should be readable without opening a file.
+    const hp = run.hotspotPlacement;
+    const hotspots = hp.status === 'scored' ? `${hp.expandedOf.expanded}/${hp.expandedOf.total}` : 'n/a';
     process.stdout.write(
-      `done in ${(elapsed / 1000).toFixed(1)}s — verdict=${verdictTag} concerns=${run.hasConcerns ? 'y' : 'n'} recall=${recall}\n`,
+      `done in ${(elapsed / 1000).toFixed(1)}s — verdict=${verdictTag} concerns=${run.hasConcerns ? 'y' : 'n'} recall=${recall} hotspots=${hotspots}\n`,
     );
+    for (const p of hp.placements) {
+      if (p.covered && p.expanded) continue;
+      const where = p.covered ? `covered by ch${p.chapterIndex} but collapsed` : 'in no chapter';
+      console.log(`  ! hotspot ${p.file} ${where}`);
+    }
     const s = run.scores;
     console.log(
       `  scores: comp=${s.comprehensiveness} rat=${s.rationality} con=${s.conciseness} exp=${s.expressiveness}${run.scoreNotes ? `\n  notes: ${run.scoreNotes}` : ''}`,
@@ -218,8 +268,11 @@ async function main() {
   await writeFile(outputPath, JSON.stringify(baseline, null, 2) + '\n');
   console.log(`\nBaseline written: ${outputPath}`);
   console.log(
-    `Aggregate: comp=${baseline.aggregate.avgComprehensiveness.toFixed(2)} rat=${baseline.aggregate.avgRationality.toFixed(2)} con=${baseline.aggregate.avgConciseness.toFixed(2)} exp=${baseline.aggregate.avgExpressiveness.toFixed(2)} recall=${baseline.aggregate.avgDefectRecall} ttfp=${baseline.aggregate.avgTimeToFirstPartialMs ?? 'n/a'}ms total=${baseline.aggregate.avgTotalMs}ms`,
+    `Aggregate: comp=${baseline.aggregate.avgComprehensiveness.toFixed(2)} rat=${baseline.aggregate.avgRationality.toFixed(2)} con=${baseline.aggregate.avgConciseness.toFixed(2)} exp=${baseline.aggregate.avgExpressiveness.toFixed(2)} recall=${baseline.aggregate.avgDefectRecall} hotspots=${baseline.aggregate.avgHotspotPlacement} ttfp=${baseline.aggregate.avgTimeToFirstPartialMs ?? 'n/a'}ms total=${baseline.aggregate.avgTotalMs}ms`,
   );
 }
 
-void main();
+// Guarded because `aggregate` is now imported by a unit test, following `cli.ts`. Unguarded, importing
+// this module would run every fixture through a real provider, spend tokens and write a baseline file
+// from inside `bun test`.
+if (import.meta.main) void main();
