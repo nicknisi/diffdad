@@ -1,0 +1,430 @@
+<!doctype html>
+<!--
+  Implementation-notes shell — copied VERBATIM from implementation-notes-phase-1.html, which owns the
+  format. Do not restate its structure or styles elsewhere.
+-->
+<html lang="en" data-theme="auto">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Implementation Notes — Phase 3</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #ffffff;
+        --fg: #1a1a2e;
+        --muted: #5a5a72;
+        --border: #d8d8e4;
+        --accent: #0f3460;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #12121c;
+          --fg: #e8e8f0;
+          --muted: #9a9ab0;
+          --border: #2e2e42;
+          --accent: #7fb3ff;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0 auto;
+        max-width: 46rem;
+        padding: 2rem 1.25rem 4rem;
+        background: var(--bg);
+        color: var(--fg);
+        font:
+          16px/1.6 system-ui,
+          -apple-system,
+          'Segoe UI',
+          sans-serif;
+      }
+      .doc-header {
+        border-bottom: 1px solid var(--border);
+        padding-bottom: 1rem;
+        margin-bottom: 2rem;
+      }
+      .doc-header h1 {
+        margin: 0 0 0.25rem;
+        font-size: 1.5rem;
+      }
+      .doc-meta {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.875rem;
+      }
+      .note-entry {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 1rem 1.25rem;
+        margin-bottom: 1.5rem;
+      }
+      .note-entry h3 {
+        margin: 0 0 0.75rem;
+        font-size: 1.05rem;
+        color: var(--accent);
+      }
+      .note-entry dl {
+        margin: 0;
+      }
+      .note-entry dt {
+        font-weight: 600;
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--muted);
+        margin-top: 0.75rem;
+      }
+      .note-entry dt:first-child {
+        margin-top: 0;
+      }
+      .note-entry dd {
+        margin: 0.15rem 0 0;
+      }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.9em;
+        background: color-mix(in srgb, var(--fg) 8%, transparent);
+        padding: 0.1em 0.3em;
+        border-radius: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="doc-header">
+      <h1>Implementation Notes — Phase 3</h1>
+      <p class="doc-meta">
+        Review Triage · 2026-07-31 · Review surfaces: the collapse boundary, the notice, the truncation banner
+      </p>
+    </header>
+
+    <main class="doc-content">
+      <section class="note-entry">
+        <h3>Web tests — a DOM, opted into per file</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            The spec requires two component test files,
+            <code>collapse-render.test.tsx</code> and <code>chapter-precedence.test.tsx</code>. This started as a no-DOM
+            implementation (vitest in the node environment, <code>renderToStaticMarkup</code>, rules asserted as
+            functions in <code>lib/collapse.ts</code>), and review cycle 1 showed why that was the wrong call: the case
+            it could not cover — a decision arriving on an already-mounted chapter — was where the phase's headline bug
+            lived, so the coverage gap was load-bearing rather than cosmetic.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            Added <code>happy-dom</code> as a web devDependency and opted into it per file with
+            <code>// @vitest-environment happy-dom</code> in <code>chapter-precedence.test.tsx</code>, which now mounts
+            a real <code>Chapter</code> through <code>react-dom/client</code> and drives the two levers the live paths
+            pull: the <code>decision</code> prop and the store's <code>chapterStates</code>. The header carries
+            <code>aria-expanded</code> (correct for an element that already had <code>role="button"</code>, and the same
+            attribute the outline variant already sets) so state is queryable without a styling assertion. The
+            pure-function assertions stayed — they are the cheapest way to state the precedence rule.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            Setting <code>test.environment: 'happy-dom'</code> for the whole package — rejected, and
+            <code>vite.config.ts</code> now pins <code>'node'</code> with the reason: the store's
+            <code>safeStorage</code> no-ops without a <code>localStorage</code> global, so
+            <code>durable-review-state.test.ts</code> installs a Map-backed shim by assigning
+            <code>globalThis.localStorage</code>, which a DOM environment already owns as a read-only accessor. Also
+            rejected: <code>@testing-library/react</code>, whose whole surface is unnecessary for one component and six
+            transitions.
+          </dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3>capStats — nothing populated it, on either server</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            The spec requires <code>capStats</code> in the <code>/api/narrative</code> response and a
+            <code>promptCapStats</code> test, but <code>ServerContext</code> had no field for it,
+            <code>cli.ts:386</code> read only <code>result.narrative</code> and <code>result.provider</code> (dropping
+            <code>result.capStats</code>), and <code>cli.ts</code> is not in the Modified Files list. On the daemon side
+            <code>daemon.ts</code> destructured <code>{ narrative }</code> and discarded the stats, and
+            <code>ReviewUnit</code> had no field — so the drill-in could not show the banner at all, while the spec's
+            manual test demands parity with the CLI review.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            Added <code>ServerContext.capStats</code> (set at both generation sites, nulled on a cache hit) and
+            <code>ReviewUnit.capStats</code>, assigned unconditionally by <code>attachReview</code> so a cache-hit
+            hydrate clears the previous run's stats rather than describing the wrong generation. The decision log's
+            "compute at serve time, never persist" applies to <em>collapse</em>, whose snapshot warms and cools
+            independently of the unit; <code>capStats</code> describes the generation that produced the narrative beside
+            it and is valid for exactly as long as that narrative is.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            Leaving the field unpopulated to keep the file list literal — rejected: the required test would then pass
+            against something no real review path ever sets, and the daemon banner would never appear.
+          </dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3>Repo context — resolved outside the request, not inside it</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            Collapse selection needs a <code>RepoContext</code>. <code>resolveRepoContext</code> is a cache read when
+            warm and a whole-tarball download when cold (cap 500&nbsp;MB, staleness bound 24&nbsp;hours), and
+            <code>/api/narrative</code> is the page's bootstrap. <code>cli.ts</code> resolved one already, but only on
+            the generation path — a cached narrative skips it entirely, which is the common case for re-opening a PR.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            The CLI server never resolves inside a request. <code>cli.ts</code> hands over the snapshot it already has,
+            the regenerate path updates it, and the cached path kicks off one background
+            <code>refreshRepoContext()</code> whose result is pushed over a new <code>collapse</code> SSE event. A
+            response with no snapshot answer omits <code>collapse</code> entirely, which the web reads as "not checked"
+            — distinct from <code>{available:false}</code>, "checked and could not tell".
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            Awaiting resolution in the handler (what the spec implies for the daemon) — rejected for the CLI: a stale
+            snapshot would stall first paint on a download. The daemon route does resolve per request, as the spec
+            requires, because a unit minted against a cold snapshot must start collapsing once it warms; the Stretch
+            prefetch exists to keep that read warm.
+          </dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3>The unavailable notice covers four reasons, not two</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            The spec gives copy for <code>size-cap</code> and <code>fetch-failed</code>. The union is four members —
+            <code>extract-failed</code> and <code>empty-tree</code> as well — because
+            <code>CollapseUnavailableReason</code> is <code>Extract</code>ed from <code>RepoContext</code>, and Phase 1
+            added <code>empty-tree</code> precisely so "nothing imports this" and "no index" never render alike.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            <code>COLLAPSE_UNAVAILABLE_TEXT</code> is a <code>Record</code> over the whole union, mirroring the CLI's
+            <code>UNAVAILABLE_REASON_TEXT</code>, so a fifth reason is a type error rather than a blank message. All
+            four are covered by the render test.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            Two cases plus a generic fallback — rejected: a bare "unavailable" is the dead chrome the phase's own key
+            decision rules out.
+          </dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3>The divider is gated on the chapters story structure</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            <code>storyStructure</code> has three values and only <code>chapters</code> has a collapsed state:
+            <code>outline</code> keeps its own per-chapter open flag and <code>linear</code> always renders the body.
+            The spec's divider sketch does not mention the setting.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            The divider renders only under <code>chapters</code>. Drawing a "4 chapters below" boundary above four fully
+            expanded chapters would promise a compression the reader is not getting. The reason line lives on the
+            collapsed row, so it follows the same branch.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            Teaching the other two structures to honor a decision — rejected as scope: <code>outline</code> already
+            collapses everything but the first chapter (collapse adds nothing there) and <code>linear</code> exists
+            specifically to show everything.
+          </dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3>Stretch caller list — placed in the chapter body, not on the evidence line</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            The stretch says to "include the caller paths on the risk payload the server already sends" and add a
+            disclosure to "the evidence line in <code>Chapter.tsx</code>", while also saying it is only meaningful on
+            non-collapsed chapters. There is no risk payload (the web had no reference to risk at all), and the evidence
+            line this phase adds exists only on collapsed rows — where the caller count is zero by construction, since
+            that is the evidence.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            The servers send a new <code>callers</code> array (<code>chapterCallers</code> in
+            <code>narrative/collapse.ts</code>, same index and same exclude set as the collapse evidence, capped at six
+            with the total kept whole). The disclosure renders at the top of the chapter body, which is visible
+            immediately on a non-collapsed chapter, empty on a collapsed one, and cannot fight the header's collapse
+            toggle the way a <code>&lt;details&gt;</code> inside a clickable row would.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            A disclosure beside the collapsed row's reason — rejected: it would only ever appear for
+            <code>test-only</code> and <code>generated</code> chapters, and never for the case the stretch describes.
+          </dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3>Collapse is cleared by every path that replaces chapters</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            <code>CollapseDecision.chapterIndex</code> indexes the chapter array the server computed it against.
+            <code>applyPlan</code>, <code>applyPartialNarrative</code>, <code>setData</code> and a unit switch all
+            replace chapters, and the store already documents this hazard for reviewed-state ("carrying
+            <code>ch-${idx}</code> entries across a plan that reorders chapters would transfer 'reviewed' to the wrong
+            chapter").
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            All four clear <code>collapse</code>, <code>callers</code> and <code>capStats</code>; callers that hold a
+            fresh result call <code>setBlastRadius</code> immediately afterwards. Both servers' <code>narrative</code>
+            broadcasts now carry a recomputed result, so a regeneration replaces the boundary instead of dropping it.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            Re-keying decisions by chapter title or content — rejected: the server already knows the answer for the new
+            array, so recomputing is both cheaper and correct.
+          </dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3>Known limitation — the banners live inside the story view</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            The spec places both banners in <code>StoryView.tsx</code>. <code>App.tsx</code> and
+            <code>UnitReview.tsx</code> mount <code>StoryView</code>, <code>ClassicView</code> or
+            <code>RecapView</code> behind a tab, so a reviewer reading raw files on the Files tab sees neither.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            Followed the spec and left them in <code>StoryView</code>. Both <code>layoutMode</code> values and all three
+            story structures share that <code>body</code>, so only the tab switch loses them.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            Hoisting a notices strip above the tab switch in both hosts — the better home for a fact about the whole
+            review, and a one-line change in each, but it puts the phase's most prominent chrome in two files the spec
+            does not list. Flagged here for the review rather than taken unilaterally.
+          </dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3>Snapshot prefetch runs inside the poll pass</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            The stretch asks for a prefetch after the poll resolves units, best-effort, deduplicated by repo, and
+            bounded by the staleness window.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            <code>prefetchRepoContexts</code> is started (not awaited) at the end of <code>pollNow</code>, keyed by
+            <code>owner/repo@ref</code>, sequential, and guarded by one in-flight flag per wiring. Not awaited because
+            <code>POST /api/poll</code> awaits <code>pollNow</code> for its toast counts, and a cold cache across a
+            dozen repos would leave that button spinning for minutes. The flag matters because the interval poller and
+            the manual route share one <code>pollNow</code>, so overlapping passes would race two downloads of one
+            tarball. <code>resolveRepoContext</code> never throws and no-ops inside its staleness bound, so
+            "best-effort" and "bounded" come for free. One summary log line per pass.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            A separate timer — rejected: a second schedule to reason about, for a job that has exactly one natural
+            trigger.
+          </dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3>Seeding the collapsed state was not enough — the decision arrives after mount</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            The spec says to seed <code>collapsed</code> in <code>useState</code> and warns against a second effect that
+            writes it, and this was implemented literally. Review cycle 1 found that on <em>both</em> live paths the
+            decision lands after the chapters have mounted: the streaming path mounts placeholders from
+            <code>applyPlan</code> under <code>ch-${idx}</code> keys, so React reuses those instances when the finished
+            narrative replaces the array, and a cached narrative gets its boundary from the <code>collapse</code> SSE
+            event. Collapse therefore applied only on a reload, and the common paths rendered the divider above four
+            chapters that were all still expanded — the exact dead chrome this phase exists to avoid.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            Two fixes, because either alone leaves a window. First, every path that has both a narrative and its blast
+            radius now commits them in one <code>set</code>: <code>setData</code> and <code>applyUnitToStore</code> take
+            an optional <code>BlastRadius</code>, so no render sees new chapters beside stale or absent decisions.
+            Second, <code>Chapter</code> mirrors the existing <code>prevReviewed</code> discipline with a
+            <code>prevHadDecision</code> ref that writes <code>collapsed</code> only on the
+            undefined&nbsp;→&nbsp;defined edge, gated on a <code>touched</code> ref set by the header's click and
+            keydown handlers. Two effects, both edge-triggered, neither able to fight the other.
+            <code>reviewed</code> is deliberately <em>not</em> gated on <code>touched</code>: marking a chapter reviewed
+            is the reviewer acting, and it outranks whatever they did to the chevron a moment earlier.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            Keying the chapter list so a collapse change remounts every chapter — rejected: it would also discard scroll
+            position, open comment composers, and narration overrides on every SSE tick that carried a boundary.
+          </dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3>The truncation banner was styling itself with tokens that do not exist</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            <code>TruncationBanner</code> used <code>--yellow-2</code> and <code>--yellow-a5</code>. The scale in
+            <code>index.css</code> defines only <code>--yellow-3</code> and <code>--yellow-11</code>, so the surface the
+            spec calls "the more serious of the two" rendered as bare text with no background and no inset border, in
+            both themes.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            Switched to the defined <code>--amber-2</code> / <code>--amber-a5</code> / <code>--amber-11</code> triple
+            (present in both <code>:root</code> and <code>.dark</code>), matching how the sibling
+            <code>RegeneratingBanner</code> uses <code>--purple-2</code> / <code>--purple-a5</code>. The
+            <code>-11</code> values are identical between the two families, so the text colour is unchanged.
+          </dd>
+          <dt>Note</dt>
+          <dd>
+            The same undefined <code>--yellow-2</code> / <code>--yellow-a5</code> pair is used by pre-existing chrome
+            (<code>MissingHunkBanner</code> and <code>CALLOUT_STYLES.concern</code> in <code>Chapter.tsx</code>). Left
+            alone as outside this phase's diff, but it is a real one-line cleanup for whoever touches those next — or an
+            argument for defining the missing steps in the scale instead.
+          </dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3>Two narrower fixes from the same review cycle</h3>
+        <dl>
+          <dt>SSE replay</dt>
+          <dd>
+            <code>/api/events</code> replayed <code>narrative-progress</code> on connect but not <code>collapse</code>,
+            so a snapshot resolving in the window between the bootstrap <code>GET /api/narrative</code> and the
+            browser's SSE connect was dropped with no recovery short of a reload. The <code>start</code> callback now
+            sends <code>blastRadius()</code> as a <code>collapse</code> event when
+            <code>ctx.repoContext &amp;&amp; ctx.narrative</code>, covered both ways in
+            <code>server-sse.test.ts</code> — the absent-snapshot case must still send nothing, because "not checked" is
+            a different claim from "checked and could not tell".
+          </dd>
+          <dt>Prefetch scope</dt>
+          <dd>
+            The prefetch pass took <code>store.list()</code> unfiltered, so a repo whose every unit was already
+            approved, changes-requested, or done still had a base-branch tarball resolved. Now
+            <code>store.list({ status: 'queued' })</code>: the justification is "warm the snapshot the drill-in will
+            need", and a decided unit has no drill-in ahead of it to pay for a download.
+          </dd>
+        </dl>
+      </section>
+    </main>
+  </body>
+</html>

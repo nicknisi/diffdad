@@ -1,0 +1,419 @@
+<!doctype html>
+<!--
+  Implementation-notes shell — copied VERBATIM from implementation-notes-phase-1.html, which owns the
+  format. Do not restate its structure or styles elsewhere.
+-->
+<html lang="en" data-theme="auto">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Implementation Notes — Phase 2</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #ffffff;
+        --fg: #1a1a2e;
+        --muted: #5a5a72;
+        --border: #d8d8e4;
+        --accent: #0f3460;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #12121c;
+          --fg: #e8e8f0;
+          --muted: #9a9ab0;
+          --border: #2e2e42;
+          --accent: #7fb3ff;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0 auto;
+        max-width: 46rem;
+        padding: 2rem 1.25rem 4rem;
+        background: var(--bg);
+        color: var(--fg);
+        font:
+          16px/1.6 system-ui,
+          -apple-system,
+          'Segoe UI',
+          sans-serif;
+      }
+      .doc-header {
+        border-bottom: 1px solid var(--border);
+        padding-bottom: 1rem;
+        margin-bottom: 2rem;
+      }
+      .doc-header h1 {
+        margin: 0 0 0.25rem;
+        font-size: 1.5rem;
+      }
+      .doc-meta {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.875rem;
+      }
+      .note-entry {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 1rem 1.25rem;
+        margin-bottom: 1.5rem;
+      }
+      .note-entry h3 {
+        margin: 0 0 0.75rem;
+        font-size: 1.05rem;
+        color: var(--accent);
+      }
+      .note-entry dl {
+        margin: 0;
+      }
+      .note-entry dt {
+        font-weight: 600;
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--muted);
+        margin-top: 0.75rem;
+      }
+      .note-entry dt:first-child {
+        margin-top: 0;
+      }
+      .note-entry dd {
+        margin: 0.15rem 0 0;
+      }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.9em;
+        background: color-mix(in srgb, var(--fg) 8%, transparent);
+        padding: 0.1em 0.3em;
+        border-radius: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="doc-header">
+      <h1>Implementation Notes — Phase 2</h1>
+      <p class="doc-meta">Review Triage · 2026-07-31 · Collapse selection, cap stats, and fixtures</p>
+    </header>
+    <main class="doc-content">
+      <section class="note-entry">
+        <h3>selectCollapsible — a risk-signal veto the spec did not name</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            The declared evidence set is three checkable facts, and one of them —
+            <code>no-external-callers</code> — fires on any file with zero unchanged importers. Every brand-new file in
+            a PR has zero unchanged importers, for the trivial reason that it did not exist on the base branch. Two of
+            the five fixtures' ground-truth hotspots are new files (<code>src/auth/token-validator.ts</code>,
+            <code>src/cache/profile-cache.ts</code>), so the literal three-check design collapses the single most
+            important chapter in both.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            Added <code>isVetoed()</code>: a file is eligible for collapse only when its <code>FileRisk</code> is quiet
+            — no criticality keyword in its path, no test gap, and a risk entry present at all. Evidence answers "why is
+            this boring"; the veto answers "is anything here shouting". The veto runs first and applies uniformly to all
+            three evidence kinds, because one uniform rule is verifiable in a way three rules with exceptions are not.
+            Verified non-vacuous by disabling the veto and re-running the gate: the <code>safety</code> test then fails
+            with <em>"auth-token-validation: collapsed chapter 0 hides hotspot src/auth/token-validator.ts"</em>. It
+            also uses signals <code>risk.ts</code> already computes, so it adds no new numbers to tune — the size
+            threshold the contract explicitly rejected.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            Rig each fixture's synthetic import index to give the hotspots callers. Rejected: it is a lie about a new
+            module, and the safety gate would then be testing the index the test author wrote rather than the selection
+            logic. A churn threshold was also considered and rejected for being exactly the tunable number the contract
+            ruled out.
+          </dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3>CollapseEvidence — <code>no-external-callers</code> carries <code>files</code>, not <code>file</code></h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            The spec's union declares <code>{ kind: 'no-external-callers'; file: string; knownCallers: 0 }</code> while
+            the other two members carry <code>files: string[]</code>. But the all-files-agree rule means the evidence
+            has to be true of the <em>whole</em> chapter, and the mechanical tail of the large fixture is one chapter
+            over thirty caller-free components. A single <code>file</code> field there names one of thirty and reads as
+            a complete claim.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            All three members now carry <code>files: string[]</code>; <code>no-external-callers</code> keeps
+            <code>knownCallers: 0</code>. The union stays closed, which is the property the decision log actually argued
+            for. Reason strings adapt to the count:
+            <code>"src/utils/format.ts has 0 known callers outside this PR"</code> for one file,
+            <code>"30 files, 0 known callers outside this PR"</code> for many. <strong>Downstream contract</strong>:
+            Phase 3 mirrors this type by hand in <code>packages/web/src/state/types.ts</code> and must mirror
+            <code>files</code>. The Stretch caller-list disclosure is unaffected — it reads Phase 1's persisted caller
+            list on <em>non</em>-collapsed chapters, not this field.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            Keep <code>file: string</code> and populate it with the chapter's first file. Rejected: the reason line
+            would be true and the evidence object would not, which is the failure mode the closed union exists to
+            prevent.
+          </dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3><code>dividerBefore</code> — withheld when the collapsed set is not a contiguous suffix</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            The spec defines <code>dividerBefore</code> as the lowest collapsed index and Phase 3 draws one divider
+            there. Nothing enforces that collapsed chapters sit at the end: risk-descending chapter order is a prompt
+            instruction (<code>prompt.ts:239</code>) that <code>eval/judge.ts:215</code>
+            records as a baseline boolean rather than asserts, and collapse evidence is orthogonal to the model's risk
+            label anyway. A caller-free chapter at index 1 with a high-risk chapter at index 3 would put an expanded
+            chapter below the collapsed boundary.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            <code>resolveDivider()</code> returns the lowest collapsed index only when every chapter from there to the
+            end is collapsed, and <code>null</code> otherwise. <code>decisions</code> stays authoritative for
+            <em>which</em> chapters collapse; <code>dividerBefore</code> is only the rendering hint, and it exists only
+            when one line can honestly represent the boundary. Covered by
+            <em>"withholds the divider when the collapsed chapters are not a contiguous suffix"</em>. In the contiguous
+            case this is identical to the spec's rule, so Phase 3's <code>dividerBefore === idx</code> check is
+            unchanged.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            Reorder chapters so the collapsed ones form a suffix. Rejected by the contract — chapters are not reordered
+            — and it would break the <code>readingPlan</code> chapter indices too.
+          </dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3><code>filesScanned === 0</code> disables every evidence kind, not just the caller check</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            The spec requires an explicit <code>filesScanned === 0</code> guard producing no decisions. Two of the three
+            evidence kinds (<code>test-only</code>, <code>generated</code>) are path-only and would still be answerable
+            from a broken index.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            The guard returns <code>{ available: true, decisions: [], dividerBefore: null }</code> before any chapter is
+            examined. Answering some of a narrative's chapters from an index that never got built is how a partial
+            failure reads as a complete answer. It returns the <em>available</em>
+            variant rather than a fabricated unavailable reason, because the snapshot layer already owns that mapping
+            (<code>'empty-tree'</code>) and this path only exists for the case where an inconsistent context arrives
+            anyway.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            Let the path-only kinds still fire. Rejected: a reviewer cannot tell which chapters were assessed and which
+            were skipped, and the divider would imply the whole list was.
+          </dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3>Recorded narratives — hand-authored, with mechanically derived section ranges (Open Item resolved)</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            The spec's Open Item asks whether the five recordings come from real generations. There is no recording
+            mechanism: <code>eval/run.ts</code> persists only a scored <code>Baseline</code>, never the narrative. A
+            real <code>large-refactor</code> generation is also a two-pass run with one writer call per theme, i.e. real
+            provider spend, and no provider is configured here.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            All five are hand-authored, and each carries a <code>_provenance</code> string at the top of the JSON saying
+            so (<code>normalizeNarrative</code> ignores unknown fields). Every diff section's
+            <code>startLine</code>/<code>endLine</code>/<code>hunkIndex</code> was derived mechanically from the
+            fixture's own hunks — new-side extent, old-side for deletion-only hunks, the same rule
+            <code>writer.ts</code>'s <code>hunkRange</code> uses — so a range here cannot disagree with the fixture it
+            points at. The <code>recorded</code> test re-checks that invariant: every referenced file is in the fixture,
+            every <code>hunkIndex</code> is in range, and no range is reversed. Deliberately <em>not</em> generated from
+            <code>buildSuppressedChapter</code>-style themes, which hardcode <code>startLine: 1, endLine: 1</code> and
+            would make the compression floor unreachable for reasons unrelated to the implementation.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            Lift narratives out of a warm <code>~/.cache/diffdad</code> narrative cache file. Rejected: the cached
+            shapes are for unrelated PRs, so the fixtures' <code>expectedHotspots</code> would have nothing to bind to,
+            and the compression gate needs a recording of <em>this</em> fixture.
+          </dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3><code>auth-token-validation</code> — the adversarial recording, and what it actually catches</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            The spec requires one recording where the hotspot sits in a chapter that looks collapsible by the other
+            signals, so the safety test cannot pass by accident.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            Chapter 0 holds <code>src/auth/token-validator.ts</code> (the hotspot) together with
+            <code>src/worker/queue.ts</code>, which carries no criticality keyword, and the chapter's own
+            <code>risk</code> label is <code>"low"</code>. Because the validator is a new file, it has zero known
+            callers once the diff's own files are excluded — so the caller signal alone would collapse it. Only the
+            risk-signal veto keeps it open, which is stated in the file's <code>_provenance</code> and confirmed
+            empirically: with the veto removed the <code>safety</code> test fails on exactly this chapter.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            Put the hotspot in an obviously high-risk chapter. Rejected by the spec, and it would make the safety
+            assertion pass without exercising anything.
+          </dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3><code>large-refactor</code> — 43 files, with the mechanical tail generated rather than spelled out</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            The existing fixtures spell every <code>DiffLine</code> literally: 201 lines of source for three diff files.
+            At 43 files that is two to three thousand lines of near-identical object literals.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            A local <code>oneHunkFile(path, markers)</code> helper walks unified-diff marker tuples into
+            <code>DiffLine</code>s with correct old/new numbering. The three hotspots are still written out line by line
+            — their content carries the meaning the ground truth refers to — and only the thirty-component rename and
+            eight spec files are generated. Constraints the tail respects, each for a specific reason: no
+            <code>dist/</code>-style paths (<code>partitionMechanicalFiles</code> drops those before the planner runs,
+            so a real narrative would have no chapter for them at all); unique basenames (<code>callersOf</code> buckets
+            by basename, so a repeated <code>index.tsx</code> would move the ratio for unrelated reasons); no
+            criticality keywords in component names (a mechanical file that trips the veto stops being mechanical); and
+            an adjacent <code>__tests__/</code> directory so the thirty components do not all report a test gap.
+            Measured before the assertion was written: 398 of 533 narrated diff lines collapse, a ratio of
+            <strong>0.747</strong> — comfortably over the 0.4 floor and under the 0.9 ceiling the test also asserts, so
+            the three hotspot chapters genuinely stay open.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            Spell out all 43 files. Rejected: a fixture nobody will read is a fixture nobody will notice is wrong, and
+            the generated half is the half where every entry is identical anyway.
+          </dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3>The synthetic import index is an authored artifact, and it is declared as one</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            <code>selectCollapsible</code> needs <code>risks</code> and a <code>RepoContext</code>. Neither a recording
+            nor an <code>EvalFixture</code> carries either, and the spec never says where they come from. Whether the
+            safety and compression tests do any work is decided by that missing input.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            <code>REPO_CALLERS</code> in <code>collapse.test.ts</code> declares one caller map per fixture, keyed by
+            <strong>module basename</strong> (what <code>callersOf</code> looks up), with the omissions documented
+            inline: <code>profile-cache</code> has no entry because zero callers is the honest answer for a new module,
+            and <code>retry-policy</code> has one because its unchanged callers are the only thing holding that chapter
+            open. <code>risks</code> is always <code>computeRisk(fixture.files, repo)</code> — never hand-built — so the
+            tests read the same <code>inboundScope: 'repo'</code> signals production produces. The implementation never
+            reads <code>FileRisk.inboundRefs</code> for the caller question either: that number is total centrality
+            including importers inside the PR, so callers are derived from <code>repo.index</code> via
+            <code>callersOf(..., changedFiles)</code>, which also makes a <code>risks</code>/<code>repo</code> scope
+            mismatch unable to cause a wrong collapse.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            Extend <code>EvalFixture</code> with a caller map. Rejected: it is test scaffolding, not fixture ground
+            truth, and the eval harness has no use for it.
+          </dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3><code>recordedNarrativePath</code> is absolute, built from <code>import.meta.url</code></h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            The field exists "so tests and the harness resolve recordings the same way", and the two run from different
+            working directories — <code>bun test</code> from wherever it was invoked, <code>bun run eval</code> from the
+            repo root. A cwd-relative path resolves differently for each, which is the bug
+            <code>eval/run.ts:170</code> already has.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            Each fixture builds its own absolute path with
+            <code>fileURLToPath(new URL('./recorded/&lt;id&gt;.narrative.json', import.meta.url))</code> — one
+            resolution rule, no shared helper module, and <code>fileURLToPath</code> rather than
+            <code>.pathname</code> so a percent-encoded path segment does not break it. Safe for <code>build:bin</code>:
+            <code>cli.ts</code> does not import <code>eval/</code>, so none of this is bundled into the compiled binary.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            Store the basename and resolve it in each consumer. Rejected: two consumers means two resolution rules,
+            which is the thing the field exists to prevent.
+          </dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3>Cap-stats plumbing — <code>PlannerResult.stats</code> is required, <code>capStats</code> is optional</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            <code>buildPlannerPrompt</code> already returns <code>stats</code> and <code>runPlanner</code> dropped it.
+            <code>NarrativeGenerationResult</code> had nowhere to put it.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            <code>PlannerResult.stats</code> is non-optional — the planner always builds a prompt, so an optional field
+            there would invite a <code>?? {}</code> somewhere downstream.
+            <code>NarrativeGenerationResult.capStats</code> is optional and left <code>undefined</code> on the
+            plan-cache-hit branch, where no prompt was built and <code>plannerProvider</code> stays
+            <code>'cached'</code>. The single-pass path returns the stats it already destructured for
+            <code>logPromptStats</code>. All six existing <code>generateNarrative</code> call sites either destructure
+            <code>{ narrative }</code> or read named fields, so the addition is inert until Phase 3 reads it.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            Default <code>capStats</code> to an empty <code>PromptCapStats</code> on a cache hit. Rejected by the spec's
+            own failure-mode table: "unknown" and "nothing was truncated" must not render alike, or the UI claims a
+            partial story is complete.
+          </dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3><code>generated</code> evidence is reachable only from outside the narrative pipeline</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            <code>generateNarrative</code> calls <code>partitionMechanicalFiles</code> first, which drops everything
+            <code>classifyPath</code> flags before the planner sees it. Path-classified files therefore never appear in
+            a chapter produced by this pipeline, so the <code>generated</code>
+            evidence kind cannot fire on a real narrative.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            Kept the kind, implemented via <code>classifyPath</code> (the only path-only check available to a pure
+            function — <code>classifyFile</code>'s <code>@generated</code>-header detection needs a
+            <code>DiffFile</code>, which <code>selectCollapsible</code> does not have), and covered by unit test only.
+            It exists for chapters that arrive from a different producer — a watch-mode or daemon path that does not
+            partition first — and costs one <code>every()</code> call. Recorded here so a future reader does not mistake
+            the missing production coverage for an oversight.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            Drop the kind. Rejected: it is part of the declared union Phase 3 renders, and removing a member of a closed
+            union is a downstream contract change for a saving of three lines.
+          </dd>
+        </dl>
+      </section>
+    </main>
+  </body>
+</html>

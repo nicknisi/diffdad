@@ -1,0 +1,278 @@
+<!doctype html>
+<!--
+  Implementation-notes shell — copied VERBATIM from the execute-spec template, which owns the format.
+  Do not restate its structure or styles elsewhere.
+-->
+<html lang="en" data-theme="auto">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Implementation Notes — Phase 4</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #ffffff;
+        --fg: #1a1a2e;
+        --muted: #5a5a72;
+        --border: #d8d8e4;
+        --accent: #0f3460;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #12121c;
+          --fg: #e8e8f0;
+          --muted: #9a9ab0;
+          --border: #2e2e42;
+          --accent: #7fb3ff;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0 auto;
+        max-width: 46rem;
+        padding: 2rem 1.25rem 4rem;
+        background: var(--bg);
+        color: var(--fg);
+        font:
+          16px/1.6 system-ui,
+          -apple-system,
+          'Segoe UI',
+          sans-serif;
+      }
+      .doc-header {
+        border-bottom: 1px solid var(--border);
+        padding-bottom: 1rem;
+        margin-bottom: 2rem;
+      }
+      .doc-header h1 {
+        margin: 0 0 0.25rem;
+        font-size: 1.5rem;
+      }
+      .doc-meta {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.875rem;
+      }
+      .note-entry {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 1rem 1.25rem;
+        margin-bottom: 1.5rem;
+      }
+      .note-entry h3 {
+        margin: 0 0 0.75rem;
+        font-size: 1.05rem;
+        color: var(--accent);
+      }
+      .note-entry dl {
+        margin: 0;
+      }
+      .note-entry dt {
+        font-weight: 600;
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--muted);
+        margin-top: 0.75rem;
+      }
+      .note-entry dt:first-child {
+        margin-top: 0;
+      }
+      .note-entry dd {
+        margin: 0.15rem 0 0;
+      }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.9em;
+        background: color-mix(in srgb, var(--fg) 8%, transparent);
+        padding: 0.1em 0.3em;
+        border-radius: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="doc-header">
+      <h1>Implementation Notes — Phase 4</h1>
+      <p class="doc-meta">Review Triage · 2026-07-31 · Deterministic hotspot placement scoring in the eval harness</p>
+    </header>
+    <main class="doc-content">
+      <section class="note-entry">
+        <h3>Harness reporting — <code>runOne</code> has no <code>CollapseResult</code> to pass</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            The spec says "call <code>scoreHotspotPlacement</code> in <code>runOne</code>", but
+            <code>runOne</code> holds no collapse decisions, no <code>RepoContext</code> and no <code>FileRisk[]</code>,
+            and it cannot resolve one: <code>resolveRepoContext</code> needs an owner/repo and
+            <code>PRMetadata</code> carries neither, because a fixture is a synthetic PR. The harness also calls
+            <code>generateNarrative</code> without <code>options.repoContext</code>.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            Pass a named module constant
+            <code>NO_COLLAPSE = { available: true, decisions: [], dividerBefore: null }</code> with a doc comment
+            stating the consequence plainly: <code>expanded</code> equals <code>covered</code> for every harness run, so
+            what the probe reports is hotspot <em>coverage</em>. The expanded-versus-collapsed distinction is exercised
+            by the unit tests and by the served path instead. Stating it beats letting a reader infer agreement from two
+            booleans that are provably equal.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            <code>{ available: false, reason: 'fetch-failed' }</code> — same numbers, but it claims a fetch that never
+            happened had failed. Or moving <code>collapse.test.ts</code>'s authored <code>REPO_CALLERS</code> table into
+            the fixtures so <code>runOne</code> could run <code>selectCollapsible</code> for real — the only route where
+            <code>expanded</code> measures something, rejected because it re-authors fixture data this phase's decision
+            log explicitly assigns to Phase 2, and touches files outside the spec's list.
+          </dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3>Harness reporting — <code>run.ts</code> had to become import-safe first</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            The spec's only instruction was "export <code>aggregate</code>". <code>run.ts</code> ends in a bare
+            <code>void main();</code> and had zero importers, so nothing had caught it. Exporting alone would mean the
+            new test's import runs the whole harness inside <code>bun test</code>: all five fixtures,
+            <code>readConfig()</code>, a real provider call per fixture, and a written
+            <code>packages/cli/eval-baseline/baseline.json</code> in a directory that is not gitignored.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            Guard it as <code>if (import.meta.main) void main();</code>, following the one existing precedent at
+            <code>cli.ts:554</code>. Verified after the fact that <code>packages/cli/eval-baseline/</code> does not
+            exist following a full <code>bun run test</code>.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            Extracting <code>aggregate</code> into a separate module so <code>run.ts</code> stays a pure script.
+            Rejected: it adds a file the spec does not name, and the guard is one line that also fixes the latent hazard
+            for every future importer.
+          </dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3>Harness reporting — macro average, not pooled counts</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            The spec describes <code>avgHotspotPlacement</code> two ways in one sentence: "the fraction of scored
+            hotspots that landed in expanded chapters" (pooled) and "over runs with <code>status: 'scored'</code> only"
+            (per-run). The two disagree, because <code>large-refactor</code> declares three hotspots and the others
+            declare one.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            Macro: filter to scored runs, then average their per-run ratios, rounded with
+            <code>Number(avg(...).toFixed(2))</code> and defaulting to <code>0</code>. That is exactly the shape of
+            <code>avgDefectRecall</code> two lines above it, and consistency with the field it sits beside is worth more
+            than either reading. <code>expandedOf</code> keeps the raw counts on every run, so a pooled number is still
+            recoverable from a baseline.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            Pooled <code>Σexpanded / Σtotal</code>, which would let the one three-hotspot fixture outweigh the three
+            single-hotspot ones. The aggregate test pins the macro value at 0.67 and asserts it is neither 0.5 (pooled)
+            nor 0.44 (n/a averaged in as zero).
+          </dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3>Placement scoring — the unavailable arm of <code>CollapseResult</code></h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            <code>CollapseResult</code> is a two-arm union and the spec only describes the available one. The
+            <code>available: false</code> arm has no <code>decisions</code> field at all, so "is the covering chapter
+            collapsed" has no direct answer there.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            Read unavailable as nothing collapsed, so a covered hotspot is an expanded one — which is what
+            <code>selectCollapsible</code> actually does, short-circuiting on that arm before weighing any evidence.
+            Written as an explicit ternary producing an empty set, not a <code>?? []</code>
+            default, so the claim is stated rather than reached by a narrowing accident, and pinned by its own test.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            Returning <code>status: 'n/a'</code> when collapse is unavailable. Rejected: coverage is still perfectly
+            measurable without a repo snapshot, and n/a there would silence the metric for every run the harness
+            produces.
+          </dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3>Placement scoring — a generation failure reports <code>n/a</code>, not zero</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            <code>runOne</code>'s catch branch returns a fully-formed <code>EvalRun</code> after a generation failure,
+            with scores zeroed. A required <code>hotspotPlacement</code> forces that site to produce a value with no
+            narrative in hand, and the spec does not say which.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            A module constant <code>HOTSPOTS_UNSCORED</code> with <code>status: 'n/a'</code>. A scored zero there would
+            drag <code>avgHotspotPlacement</code> down on every provider outage — the same "n/a averaged as zero"
+            failure the spec's own table names for <code>safe-rename</code>, arriving through a second door.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            <code>status: 'scored'</code> with <code>expanded: 0</code> over the declared hotspots, which reads as "the
+            narrative missed all of them" when no narrative exists.
+          </dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3>Harness reporting — <code>eval/README.md</code> touched outside the spec's file list</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            The README's "What it measures" section enumerates every number the harness reports, and it is not in the
+            spec's Modified Files. Adding a reported metric without a line there leaves the folder's own documentation
+            stale.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            Four lines under "What it measures", covering the metric, that it is deterministic with no judge call, and
+            that n/a fixtures are skipped rather than scored as a miss.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>Leaving it out to keep the diff inside the spec's declared file list.</dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3>Testing — the interesting cases had to be built, not loaded</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            The spec's experiment asks for an uncovered hotspot and for paths differing only by an
+            <code>a/</code>/<code>b/</code> prefix. Neither exists in the committed data: every recording covers its
+            fixture's hotspots (that is the point), and every recorded section file and every
+            <code>expectedHotspots</code> entry is already a bare path.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            Real recordings for the covered/collapsed/multi-hotspot/n-a cases; synthetic inputs for the two that cannot
+            come from a fixture — a narrative with the hotspot's diff sections stripped (plus a prose section naming the
+            file, to prove prose is not coverage), and a hand-built
+            <code>b/</code>-prefixed narrative against an <code>a/</code>-prefixed ground truth.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            Driving those two cases off fixtures anyway, which would produce a test named for the prefix trap that
+            asserts nothing about it.
+          </dd>
+        </dl>
+      </section>
+    </main>
+  </body>
+</html>

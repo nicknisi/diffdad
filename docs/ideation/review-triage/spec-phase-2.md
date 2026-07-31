@@ -39,26 +39,26 @@ _Carried from the contract; consult before making gap decisions._
 
 ### New Files
 
-| File Path | Purpose |
-| --------- | ------- |
-| `packages/cli/src/narrative/collapse.ts` | `selectCollapsible` and its supporting evidence types; pure, sync, no imports from `engine` or `server` |
-| `packages/cli/src/eval/fixtures/large-refactor.ts` | 40+ file fixture with ground-truth hotspots, the case that motivated the project |
-| `packages/cli/src/eval/fixtures/recorded/auth-token-validation.narrative.json` | Recorded narrative for the existing fixture |
-| `packages/cli/src/eval/fixtures/recorded/cache-race-condition.narrative.json` | Recorded narrative for the existing fixture |
-| `packages/cli/src/eval/fixtures/recorded/migration-without-rollback.narrative.json` | Recorded narrative for the existing fixture |
-| `packages/cli/src/eval/fixtures/recorded/safe-rename.narrative.json` | Recorded narrative; this fixture declares an empty `expectedHotspots`, so it is the everything-collapses case |
-| `packages/cli/src/eval/fixtures/recorded/large-refactor.narrative.json` | Recorded narrative for the large fixture; the compression gate's only input |
-| `packages/cli/src/__tests__/collapse.test.ts` | The hard gate: `safety`, `evidence`, `unavailable`, and `compression` |
+| File Path                                                                           | Purpose                                                                                                       |
+| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `packages/cli/src/narrative/collapse.ts`                                            | `selectCollapsible` and its supporting evidence types; pure, sync, no imports from `engine` or `server`       |
+| `packages/cli/src/eval/fixtures/large-refactor.ts`                                  | 40+ file fixture with ground-truth hotspots, the case that motivated the project                              |
+| `packages/cli/src/eval/fixtures/recorded/auth-token-validation.narrative.json`      | Recorded narrative for the existing fixture                                                                   |
+| `packages/cli/src/eval/fixtures/recorded/cache-race-condition.narrative.json`       | Recorded narrative for the existing fixture                                                                   |
+| `packages/cli/src/eval/fixtures/recorded/migration-without-rollback.narrative.json` | Recorded narrative for the existing fixture                                                                   |
+| `packages/cli/src/eval/fixtures/recorded/safe-rename.narrative.json`                | Recorded narrative; this fixture declares an empty `expectedHotspots`, so it is the everything-collapses case |
+| `packages/cli/src/eval/fixtures/recorded/large-refactor.narrative.json`             | Recorded narrative for the large fixture; the compression gate's only input                                   |
+| `packages/cli/src/__tests__/collapse.test.ts`                                       | The hard gate: `safety`, `evidence`, `unavailable`, and `compression`                                         |
 
 ### Modified Files
 
-| File Path | Changes |
-| --------- | ------- |
-| `packages/cli/src/narrative/types.ts` | Add the `CollapseDecision` type and the response-level `collapse` block; do **not** add fields to `NarrativeChapter` or touch `normalizeNarrative`, since nothing here is serialized into the cache |
-| `packages/cli/src/narrative/planner.ts` | Return `stats` alongside `{plan, provider, usage}` from `runPlanner` |
-| `packages/cli/src/narrative/engine.ts` | Add `capStats` to `NarrativeGenerationResult`, populated on both the single-pass and two-pass paths |
-| `packages/cli/src/eval/types.ts` | Add an optional `recordedNarrativePath` to `EvalFixture` so tests and the harness resolve recordings the same way |
-| `packages/cli/src/eval/fixtures/index.ts` | Register `large-refactor` in the hand-maintained `FIXTURES` array; without this the fixture never runs and the safety gate silently excludes the one fixture the project exists for |
+| File Path                                 | Changes                                                                                                                                                                                             |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/cli/src/narrative/types.ts`     | Add the `CollapseDecision` type and the response-level `collapse` block; do **not** add fields to `NarrativeChapter` or touch `normalizeNarrative`, since nothing here is serialized into the cache |
+| `packages/cli/src/narrative/planner.ts`   | Return `stats` alongside `{plan, provider, usage}` from `runPlanner`                                                                                                                                |
+| `packages/cli/src/narrative/engine.ts`    | Add `capStats` to `NarrativeGenerationResult`, populated on both the single-pass and two-pass paths                                                                                                 |
+| `packages/cli/src/eval/types.ts`          | Add an optional `recordedNarrativePath` to `EvalFixture` so tests and the harness resolve recordings the same way                                                                                   |
+| `packages/cli/src/eval/fixtures/index.ts` | Register `large-refactor` in the hand-maintained `FIXTURES` array; without this the fixture never runs and the safety gate silently excludes the one fixture the project exists for                 |
 
 ## Implementation Details
 
@@ -84,20 +84,19 @@ export type CollapseDecision = {
 
 export type CollapseResult =
   | { available: true; decisions: CollapseDecision[]; dividerBefore: number | null }
-  | { available: false; reason: 'size-cap' | 'fetch-failed' | 'extract-failed' };
+  // Phase 1 shipped a fourth reason, 'empty-tree' (a successful fetch whose tree indexed zero source
+  // files), because the failure-modes table required `filesScanned === 0` to map to unavailable. Mirror
+  // the union from `RepoContext` rather than restating three members, and cover the case in the renderer.
+  | { available: false; reason: 'size-cap' | 'fetch-failed' | 'extract-failed' | 'empty-tree' };
 
-export function selectCollapsible(
-  chapters: NarrativeChapter[],
-  risks: FileRisk[],
-  repo: RepoContext,
-): CollapseResult;
+export function selectCollapsible(chapters: NarrativeChapter[], risks: FileRisk[], repo: RepoContext): CollapseResult;
 ```
 
 **Key decisions**:
 
 - **Unavailable short-circuits before any evidence is considered.** When `repo.available === false`, return the unavailable variant immediately with zero decisions. Collapse is never a guess.
 - **Evidence is a closed union, not a free-text field.** Every collapse traces to one of three checkable facts. A model-authored justification string would reintroduce exactly the meta-output problem `readingPlan` had.
-- **A chapter collapses only if *every* file it touches supports collapse.** Mixed chapters stay open. This is the asymmetry that makes the safety invariant hold: the failure mode is leaving something expanded, which costs attention, not hiding something, which costs correctness.
+- **A chapter collapses only if _every_ file it touches supports collapse.** Mixed chapters stay open. This is the asymmetry that makes the safety invariant hold: the failure mode is leaving something expanded, which costs attention, not hiding something, which costs correctness.
 - **`knownCallers`, not `callers`.** The import index misses dynamic imports and barrel re-exports, so the reason line says "0 known callers." Claiming certainty the index cannot deliver is how a wrong collapse gets trusted.
 - **`filesScanned === 0` is not evidence.** An empty index means the walk failed, not that nothing imports anything. Phase 1 maps that to `available: false`; this function must not paper over it if it arrives anyway.
 - **`dividerBefore` is the lowest collapsed index, or `null`.** When no chapter collapses there is no divider and no chrome, which is the evidence gate rendered.
@@ -126,7 +125,7 @@ export function selectCollapsible(
 - **Record from a real generation where possible.** Run `bun run eval --fixture={id}` with a configured provider and commit the resulting narrative. A hand-authored narrative is a legitimate fallback, but it is authored by the same person writing the assertions, which is how a gate ends up testing its author's expectations rather than the system.
 - **At least one recording must be adversarial.** For `auth-token-validation`, the recording must place the hotspot (`src/auth/token-validator.ts`) in a chapter that looks collapsible by the other signals — low churn, no criticality keyword in the path of its sibling files. If every hotspot sits in an obviously high-risk chapter, the safety test passes without doing any work. Construct this deliberately and say so in a comment at the top of the file.
 - **`safe-rename` declares `expectedHotspots: []`.** It is the fixture where near-total collapse is correct, and it is the only guard against a build that satisfies safety by collapsing nothing.
-- **Recordings are inputs, not expectations.** Nothing asserts a recording is a *good* narrative. They exist so the selection logic has chapters. Narrative quality is the eval probe's job.
+- **Recordings are inputs, not expectations.** Nothing asserts a recording is a _good_ narrative. They exist so the selection logic has chapters. Narrative quality is the eval probe's job.
 
 **Implementation steps**:
 
@@ -198,9 +197,9 @@ export type NarrativeGenerationResult = {
 
 ### Unit Tests
 
-| Test File | Coverage |
-| --------- | -------- |
-| `packages/cli/src/__tests__/collapse.test.ts` | The four gate cases plus recording integrity |
+| Test File                                              | Coverage                                                                   |
+| ------------------------------------------------------ | -------------------------------------------------------------------------- |
+| `packages/cli/src/__tests__/collapse.test.ts`          | The four gate cases plus recording integrity                               |
 | `packages/cli/src/__tests__/engine-plan-cache.test.ts` | Existing; verify `capStats` threading did not break its constructed shapes |
 
 **Key test cases**, with the exact filter tokens the acceptance commands depend on:
@@ -215,15 +214,15 @@ export type NarrativeGenerationResult = {
 
 ## Failure Modes
 
-| Component | Failure Mode | Trigger | Impact | Mitigation |
-| --------- | ------------ | ------- | ------ | ---------- |
-| selectCollapsible | Wrong collapse | Import index undercounts a module (dynamic import, barrel re-export) | A chapter that mattered is hidden; the reviewer never learns it existed | The all-files-agree rule plus "0 known callers" wording; the safety test over adversarial recordings is the standing guard |
-| selectCollapsible | Vacuous safety | Every hotspot happens to sit in an obviously high-risk chapter | Test passes without exercising the logic | The adversarial `auth-token-validation` recording, constructed so the hotspot's chapter looks collapsible by other signals |
-| selectCollapsible | Collapse-nothing build | A bug makes evidence never match | Feature is inert but every safety assertion passes | The `compression` test over `large-refactor` fails, which is exactly why the floor exists |
-| selectCollapsible | Empty index read as certainty | Index build failed, `filesScanned` is 0 | Every chapter reports zero callers and everything collapses | Explicit `filesScanned === 0` guard producing no decisions |
-| Recorded narratives | Drift | A prompt revision changes narrative shape; recordings keep the old one | Gate measures a shape production no longer produces | Recordings are inputs to a pure function, so shape drift surfaces as a type error rather than a silent pass; re-record when `NarrativeChapter` changes |
-| Large fixture | Unreachable floor | Mechanical tail too small relative to hotspot chapters | `compression` fails for authoring reasons, not implementation reasons | Run the selection by hand before writing the assertion |
-| Cap-stats plumbing | Cache hit reports false | `capStats` defaulted to an empty object rather than left undefined | UI claims a truncated diff was complete | Keep it optional and absent on cache hits; Phase 3 renders nothing when absent |
+| Component           | Failure Mode                  | Trigger                                                                | Impact                                                                  | Mitigation                                                                                                                                             |
+| ------------------- | ----------------------------- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| selectCollapsible   | Wrong collapse                | Import index undercounts a module (dynamic import, barrel re-export)   | A chapter that mattered is hidden; the reviewer never learns it existed | The all-files-agree rule plus "0 known callers" wording; the safety test over adversarial recordings is the standing guard                             |
+| selectCollapsible   | Vacuous safety                | Every hotspot happens to sit in an obviously high-risk chapter         | Test passes without exercising the logic                                | The adversarial `auth-token-validation` recording, constructed so the hotspot's chapter looks collapsible by other signals                             |
+| selectCollapsible   | Collapse-nothing build        | A bug makes evidence never match                                       | Feature is inert but every safety assertion passes                      | The `compression` test over `large-refactor` fails, which is exactly why the floor exists                                                              |
+| selectCollapsible   | Empty index read as certainty | Index build failed, `filesScanned` is 0                                | Every chapter reports zero callers and everything collapses             | Explicit `filesScanned === 0` guard producing no decisions                                                                                             |
+| Recorded narratives | Drift                         | A prompt revision changes narrative shape; recordings keep the old one | Gate measures a shape production no longer produces                     | Recordings are inputs to a pure function, so shape drift surfaces as a type error rather than a silent pass; re-record when `NarrativeChapter` changes |
+| Large fixture       | Unreachable floor             | Mechanical tail too small relative to hotspot chapters                 | `compression` fails for authoring reasons, not implementation reasons   | Run the selection by hand before writing the assertion                                                                                                 |
+| Cap-stats plumbing  | Cache hit reports false       | `capStats` defaulted to an empty object rather than left undefined     | UI claims a truncated diff was complete                                 | Keep it optional and absent on cache hits; Phase 3 renders nothing when absent                                                                         |
 
 ## Validation Commands
 
