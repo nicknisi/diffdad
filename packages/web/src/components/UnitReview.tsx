@@ -14,7 +14,35 @@ import { ShortcutsHelp } from './ShortcutsHelp';
 import { StoryView } from './StoryView';
 import { SubmitDialog } from './SubmitDialog';
 import { ThemeToggle } from './ThemeToggle';
-import type { CheckRun, PRReview, Unit } from '../state/types';
+import type { CapStats, ChapterCallers, CheckRun, CollapseResult, PRReview, Unit } from '../state/types';
+
+/**
+ * What the daemon's unit routes answer with. `collapse`/`callers` are recomputed per request from a
+ * freshly resolved snapshot (never stored on the unit, which would go stale as snapshots warm and cool),
+ * while `capStats` rides on the unit because it describes the generation that produced its narrative.
+ */
+type UnitResponse = {
+  unit: Unit;
+  collapse?: CollapseResult;
+  callers?: ChapterCallers[];
+  capStats?: CapStats;
+};
+
+/**
+ * Apply a unit response as one store commit — the unit and its blast radius together.
+ *
+ * Deliberately not two calls: `Chapter` seeds its collapsed state from its decision, so a paint that has
+ * the new chapters but not yet their decisions renders the collapse divider above chapters that are all
+ * still expanded. Absent fields land as cleared rather than as stale, because a dark daemon sends no
+ * `collapse` and that is not the same claim as "we looked and could not tell".
+ */
+function applyUnitResponse(data: UnitResponse): void {
+  applyUnitToStore(data.unit, {
+    collapse: data.collapse ?? null,
+    callers: data.callers ?? [],
+    capStats: data.capStats ?? null,
+  });
+}
 
 /**
  * Make a raw hydrate failure safe to show under Dad's folksy heading. Server-side generation errors
@@ -108,10 +136,10 @@ export function UnitReview() {
           return;
         }
         if (!res.ok) throw new Error(`status ${res.status}`);
-        const data = (await res.json()) as { unit: Unit };
+        const data = (await res.json()) as UnitResponse;
         if (!cancelled) {
           setUnit(data.unit);
-          applyUnitToStore(data.unit);
+          applyUnitResponse(data);
         }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load unit');
@@ -202,11 +230,11 @@ export function UnitReview() {
           if (!cancelled) setHydrateError(message || `HTTP ${res.status}`);
           return;
         }
-        const data = (await res.json()) as { unit: Unit };
+        const data = (await res.json()) as UnitResponse;
         if (cancelled) return;
         if (data.unit?.narrative) {
           setUnit(data.unit);
-          applyUnitToStore(data.unit);
+          applyUnitResponse(data);
         } else {
           // Graceful no-op path (e.g. GitHub not wired): 200 OK but nothing to show — don't spin.
           setHydrateError('The daemon returned no narrative for this PR.');

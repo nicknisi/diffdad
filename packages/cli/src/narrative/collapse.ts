@@ -1,10 +1,11 @@
 // `callersOf` is a value import; `import-index.ts` pulls in nothing from this module, so there is no
 // cycle to worry about here. `RepoContext` stays type-only for the same reason `risk.ts` keeps it
 // type-only: `snapshot.ts` imports `import-index.ts`, so a value import would close a runtime cycle.
+import type { DiffFile } from '../github/types';
 import { callersOf, type ImportIndex } from '../repo/import-index';
 import type { RepoContext } from '../repo/snapshot';
 import { classifyPath } from './diff-filter';
-import type { FileRisk } from './risk';
+import { computeRisk, type FileRisk } from './risk';
 import type { NarrativeChapter } from './types';
 
 /**
@@ -186,6 +187,55 @@ export function selectCollapsible(chapters: NarrativeChapter[], risks: FileRisk[
   });
 
   return { available: true, decisions, dividerBefore: resolveDivider(decisions, chapters.length) };
+}
+
+/**
+ * What both servers call per request: risks and collapse in one step.
+ *
+ * `selectCollapsible` takes `risks` because it is pure and testable that way, but no caller has a
+ * `FileRisk[]` lying around — `NarrativePrompt.risks` is returned and never read, and the two serve
+ * paths (`/api/narrative`, `GET /api/units/:id`) hold only the diff. Deriving risks here rather than at
+ * each call site is what keeps the CLI review and the daemon drill-in from collapsing differently for
+ * the same PR.
+ */
+export function resolveCollapse(chapters: NarrativeChapter[], files: DiffFile[], repo: RepoContext): CollapseResult {
+  return selectCollapsible(chapters, computeRisk(files, repo), repo);
+}
+
+/** How many caller paths ride along per chapter before the rest become a count. */
+export const CALLER_LIST_CAP = 6;
+
+/**
+ * Unchanged repository files that import a chapter's files — the blast radius as an argument for
+ * *reading* a chapter, the mirror image of the collapse evidence.
+ *
+ * Same index and same exclude set as `evidenceFor`, so the two can never disagree: a chapter with
+ * `no-external-callers` evidence necessarily reports `total: 0` here and renders nothing. Capped at
+ * {@link CALLER_LIST_CAP} with `total` kept whole, because a module with 200 importers must state the
+ * number without pasting 200 paths into a chapter.
+ */
+export type ChapterCallers = {
+  chapterIndex: number;
+  /** Up to {@link CALLER_LIST_CAP} caller paths, in index order. */
+  callers: string[];
+  /** How many unchanged callers exist in total (`callers.length` is a capped view of this). */
+  total: number;
+};
+
+export function chapterCallers(chapters: NarrativeChapter[], files: DiffFile[], repo: RepoContext): ChapterCallers[] {
+  if (!repo.available || repo.index.filesScanned === 0) return [];
+  const changedFiles = new Set(files.map((f) => normalizePath(f.file)));
+  const out: ChapterCallers[] = [];
+  chapters.forEach((chapter, chapterIndex) => {
+    const seen = new Set<string>();
+    for (const file of chapterFiles(chapter)) {
+      for (const caller of callersOf(repo.index, file, changedFiles)) seen.add(caller);
+    }
+    if (seen.size === 0) return;
+    const all = [...seen];
+    out.push({ chapterIndex, callers: all.slice(0, CALLER_LIST_CAP), total: all.length });
+  });
+  return out;
 }
 
 /**

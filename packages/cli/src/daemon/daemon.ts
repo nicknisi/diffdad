@@ -9,7 +9,7 @@ import { parseDiff } from '../github/diff-parser';
 import type { CheckRun, PRComment, PRReview } from '../github/types';
 import { cacheNarrative, computePromptMetaHash, getCachedNarrative } from '../narrative/cache';
 import { callAi, generateNarrative, resolveProviderKey } from '../narrative/engine';
-import { describeRepoContext, resolveRepoContext } from '../repo/snapshot';
+import { describeRepoContext, type RepoContext, resolveRepoContext } from '../repo/snapshot';
 import { UnitStore } from '../units/store';
 import type { ReviewUnit } from '../units/types';
 import { createDaemonApp, type GitHubWiring, type ReviewInlineComment, SseHub } from './app';
@@ -160,6 +160,9 @@ export function buildGitHubWiring(
 ): GitHubWiring {
   if (!client) return { github: false };
   const fetchPrState = makePrStateFetcher(client);
+  // One prefetch pass at a time, for the whole wiring: the interval poller and `POST /api/poll` share
+  // `pollNow`, and two overlapping passes would race two downloads of the same tarball.
+  let prefetching = false;
   return {
     github: true,
     hydrate: makeHydrate(client, store),
@@ -167,9 +170,78 @@ export function buildGitHubWiring(
     commentPoster: makeCommentPoster(client),
     reviewSubmitter: makeReviewSubmitter(client),
     statusFetcher: makeStatusFetcher(client),
-    pollNow: () =>
-      pollOnce({ search: () => client.searchReviewRequested(), store, broadcast, fetchPrState, missStreaks }),
+    repoContextFetcher: makeRepoContextFetcher(client),
+    pollNow: async () => {
+      const counts = await pollOnce({
+        search: () => client.searchReviewRequested(),
+        store,
+        broadcast,
+        fetchPrState,
+        missStreaks,
+      });
+      // Warm the snapshots the drill-in will need, so opening a unit is not the first fetch. Started but
+      // NOT awaited: the manual refresh route awaits `pollNow` for its toast counts, and a cold cache
+      // across a dozen repos would leave that button spinning for minutes.
+      if (!prefetching) {
+        prefetching = true;
+        // Queued only. A repo whose every unit is already approved / changes-requested / done has no
+        // drill-in left to warm, and a base-branch tarball can be hundreds of megabytes.
+        void prefetchRepoContexts(client, store.list({ status: 'queued' })).finally(() => {
+          prefetching = false;
+        });
+      }
+      return counts;
+    },
   };
+}
+
+/**
+ * Resolve a unit's base-branch snapshot for serve-time collapse selection.
+ *
+ * A wiring dep rather than an app dep because `app.ts` holds no GitHub client, and optional like every
+ * other member so a dark daemon keeps compiling and simply serves no collapse. Resolution is per
+ * request on purpose: a unit minted while the snapshot was cold must collapse once it warms, and the
+ * reverse — which is exactly what storing the decision on the unit would break.
+ */
+function makeRepoContextFetcher(client: GitHubClient): (unit: ReviewUnit) => Promise<RepoContext> {
+  return (unit) => {
+    const { owner, name } = splitRepo(unit.repo);
+    return resolveRepoContext(client, owner, name, unit.metadata.base || unit.baseRef);
+  };
+}
+
+/**
+ * Warm the base-branch snapshot for the repos still awaiting review, one repo at a time.
+ *
+ * Deduplicated by `owner/repo@ref` because ten PRs on one repo share one snapshot, and sequential
+ * because the point is to be invisible: parallel tarball downloads across a dozen repos would compete
+ * with whatever the reviewer is actually doing. `resolveRepoContext` never throws and is a no-op inside
+ * its staleness bound, so this is both best-effort and cheap on the common cycle.
+ *
+ * The caller passes queued units only — the whole justification is "warm the snapshot the drill-in will
+ * need", and a decided unit has no drill-in ahead of it to pay for a download.
+ */
+async function prefetchRepoContexts(client: GitHubClient, units: ReviewUnit[]): Promise<void> {
+  const targets = new Map<string, { owner: string; name: string; ref: string }>();
+  for (const unit of units) {
+    const ref = unit.metadata.base || unit.baseRef;
+    if (!ref) continue;
+    const { owner, name } = splitRepo(unit.repo);
+    targets.set(`${owner}/${name}@${ref}`, { owner, name, ref });
+  }
+  if (targets.size === 0) return;
+  let warmed = 0;
+  for (const { owner, name, ref } of targets.values()) {
+    try {
+      const context = await resolveRepoContext(client, owner, name, ref);
+      if (context.available) warmed++;
+    } catch {
+      // Documented never to throw, but this runs detached from any request — a rejection here would be
+      // an unhandled rejection in the daemon rather than one cold snapshot.
+    }
+  }
+  // One line for the whole pass: one per repo would drown the daemon's log on every cycle.
+  console.log(`[diffdad] repo context warm for ${warmed}/${targets.size} repos`);
 }
 
 /**
@@ -254,6 +326,8 @@ function makeHydrate(
     if (!force) {
       const cached = await getCachedNarrative(owner, name, prNumber, sha, metaHash, providerKey);
       if (cached) {
+        // No `capStats`: a cached narrative measured no diff, so the drill-in states nothing about
+        // truncation rather than implying the story covered everything.
         store.attachReview(unit.unitId, files, cached, cached.concerns?.length ?? 0);
         return store.get(unit.unitId)!;
       }
@@ -266,7 +340,7 @@ function makeHydrate(
     if (!repoContext.available) console.log(`  \x1b[2m${describeRepoContext(repoContext)}\x1b[0m`);
 
     const promptMeta = { ...target.metadata, title: meta.title, body: meta.body, labels: meta.labels };
-    const { narrative } = await generateNarrative(promptMeta, files, [], config, undefined, {
+    const { narrative, capStats } = await generateNarrative(promptMeta, files, [], config, undefined, {
       repoContext,
       // contentKey-style cache key: keyed on the head SHA carried in diffContentKey (advanced above on
       // a re-read). `force` skips the cache read but still writes, so the fresh prose replaces it.
@@ -274,7 +348,10 @@ function makeHydrate(
       comments: [],
       force,
     });
-    store.attachReview(unit.unitId, files, narrative, narrative.concerns?.length ?? 0);
+    // Stats ride along with the narrative they describe: generation happens in a hydrate that has
+    // already returned by the time the drill-in asks for the unit, sometimes in an earlier process, so
+    // this is the only way the truncation banner reaches daemon parity with `dad review`.
+    store.attachReview(unit.unitId, files, narrative, narrative.concerns?.length ?? 0, capStats);
     try {
       await cacheNarrative(owner, name, prNumber, sha, metaHash, providerKey, narrative);
     } catch {

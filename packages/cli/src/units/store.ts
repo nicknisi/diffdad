@@ -2,6 +2,7 @@ import { mkdir, readdir, readFile, unlink, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { dataDir } from '../paths';
 import type { DiffFile, PRMetadata } from '../github/types';
+import type { PromptCapStats } from '../narrative/prompt';
 import type { NarrativeResponse } from '../narrative/types';
 import { type Decision, IllegalTransitionError, type ReviewUnit, type UnitStatus, UnknownUnitError } from './types';
 
@@ -240,13 +241,23 @@ export class UnitStore {
    * Lazy-hydration write for `github` units: attach the fetched diff + generated narrative WITHOUT a
    * status transition (a github unit stays `queued`). The unit is already `queued`; this only fills in
    * the deferred walkthrough. Synchronous; persistence is best-effort via `save()`.
+   *
+   * `capStats` is assigned unconditionally, including to `undefined`: a cache-hit hydrate measured no
+   * diff, and leaving the previous run's stats in place would describe the wrong generation.
    */
-  attachReview(unitId: string, files: DiffFile[], narrative: NarrativeResponse, toResolve: number): ReviewUnit {
+  attachReview(
+    unitId: string,
+    files: DiffFile[],
+    narrative: NarrativeResponse,
+    toResolve: number,
+    capStats?: PromptCapStats,
+  ): ReviewUnit {
     const unit = this.require(unitId);
     unit.files = files;
     unit.narrative = narrative;
     unit.verdict = narrative.verdict;
     unit.toResolve = toResolve;
+    unit.capStats = capStats;
     unit.updatedAt = this.now();
     void this.save(unit);
     return unit;

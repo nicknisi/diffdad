@@ -7,9 +7,11 @@ import type { PostCommentOptions } from '../github/client';
 import { mapCommentsToChapters } from '../github/comments';
 import type { PRComment } from '../github/types';
 import { buildChapterAiPrompt } from '../narrative/chapter-ai';
+import { type ChapterCallers, chapterCallers, type CollapseResult, resolveCollapse } from '../narrative/collapse';
 import { buildReviewSummaryPrompt } from '../narrative/review-summary';
 import type { CheckRun, PRReview } from '../github/types';
 import type { Broadcast } from '../mcp/broadcast';
+import type { RepoContext } from '../repo/snapshot';
 import type { UnitStore } from '../units/store';
 import { IllegalTransitionError, type ReviewUnit, UnknownUnitError } from '../units/types';
 
@@ -95,6 +97,12 @@ export interface GitHubWiring {
    */
   statusFetcher?: (unit: ReviewUnit) => Promise<{ checks: CheckRun[]; reviews: PRReview[] }>;
   /**
+   * Resolves a unit's base-branch snapshot, for the serve-time collapse selection the drill-in needs.
+   * Absent (no GitHub credentials, so no tarball) → the unit routes omit `collapse` entirely, which the
+   * web reads as "not checked" rather than as an unavailable reason nothing ever looked for.
+   */
+  repoContextFetcher?: (unit: ReviewUnit) => Promise<RepoContext>;
+  /**
    * Runs one GitHub review-request poll on demand — the same `pollOnce` pass the interval poller runs
    * (search GitHub, mint/resurface units, broadcast a `units` snapshot), returning the counts. Absent →
    * the manual poll route 503s (no GitHub token, nothing to poll).
@@ -165,10 +173,37 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
     return c.json({ units: store.list({ status, repo }), github: wiring.current.github });
   });
 
-  app.get('/api/units/:id', (c) => {
+  /**
+   * The blast-radius half of a unit response: which chapters are safe to hide by default, which
+   * unchanged files import each chapter's code, and how much of the diff the model never saw.
+   *
+   * Computed in the request, never read from the unit. A unit minted while its snapshot was cold must
+   * start collapsing once the snapshot warms, and stop if it goes away — storing the decision beside the
+   * unit is precisely the staleness defect that kept it out of the narrative cache. `capStats` is the
+   * exception and is stored, because it describes the generation that produced the narrative next to it.
+   *
+   * An empty object (no `collapse` key) means nothing could look: no narrative yet, or a daemon with no
+   * GitHub credentials and therefore no tarball. That is different from `{available: false}`, which
+   * means we looked and could not tell.
+   */
+  async function blastRadius(
+    unit: ReviewUnit,
+  ): Promise<{ collapse?: CollapseResult; callers?: ChapterCallers[]; capStats?: ReviewUnit['capStats'] }> {
+    const capStats = unit.capStats;
+    const fetchRepoContext = wiring.current.repoContextFetcher;
+    if (!unit.narrative || !fetchRepoContext) return { capStats };
+    const repoContext = await fetchRepoContext(unit);
+    return {
+      collapse: resolveCollapse(unit.narrative.chapters, unit.files, repoContext),
+      callers: chapterCallers(unit.narrative.chapters, unit.files, repoContext),
+      capStats,
+    };
+  }
+
+  app.get('/api/units/:id', async (c) => {
     const unit = store.get(c.req.param('id'));
     if (!unit) return c.json({ error: 'unknown unit' }, 404);
-    return c.json({ unit });
+    return c.json({ unit, ...(await blastRadius(unit)) });
   });
 
   // Remove a unit from the queue (the reviewer's manual cleanup of failed / stale / abandoned units).
@@ -243,7 +278,7 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
     // An already-narrated unit is a legitimate no-op regardless of wiring (the lazy path fires once
     // per open); `force` bypasses this to regenerate. Check it FIRST so a narrated unit returns 200
     // even on a credential-less daemon.
-    if (!force && unit.narrative) return c.json({ unit });
+    if (!force && unit.narrative) return c.json({ unit, ...(await blastRadius(unit)) });
     // No GitHub wired → we can't fetch the diff or narrate. Fail honestly (503) with a fix-it hint,
     // rather than a silent 200 no-op the drill-in renders as a generic "no narrative".
     const hydrate = wiring.current.hydrate;
@@ -287,7 +322,7 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
       return c.json({ error: err instanceof Error ? err.message : String(err) }, 502);
     }
     broadcast('units', { units: store.list() });
-    return c.json({ unit: updated });
+    return c.json({ unit: updated, ...(await blastRadius(updated)) });
   });
 
   // --- Comments -------------------------------------------------------------

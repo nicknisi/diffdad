@@ -1,4 +1,5 @@
 import type { DiffFile, PRMetadata } from '../github/types';
+import type { PromptCapStats } from '../narrative/prompt';
 import type { Concern, NarrativeResponse } from '../narrative/types';
 
 /**
@@ -45,6 +46,15 @@ export type ReviewUnit = {
   metadata: PRMetadata;
   /** Phase-1 narrative; absent until the review worker queues the unit. */
   narrative?: NarrativeResponse;
+  /**
+   * Prompt budget stats for the generation that produced `narrative` — how much of the diff the model
+   * never saw. Stored, unlike collapse: collapse depends on a snapshot that warms and cools
+   * independently of the unit and would go stale beside it, while this describes the generation that
+   * produced the narrative next to it and stays true for exactly as long as that narrative does.
+   * Absent on a cache-hit hydrate (nothing measured the diff) and cleared whenever the narrative is
+   * replaced by one — the truncation banner then renders nothing rather than claim completeness.
+   */
+  capStats?: PromptCapStats;
   /** Cached from `narrative.verdict` for the dashboard's recommended action. */
   verdict?: NarrativeResponse['verdict'];
   decision?: Decision;

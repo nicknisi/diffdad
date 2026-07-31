@@ -33,6 +33,59 @@ export type ReadingPlanStep = {
   why?: string;
 };
 
+/**
+ * Web-side mirror of the CLI's collapse selection (`packages/cli/src/narrative/collapse.ts`),
+ * hand-copied for the same reason `NarrativeResponse` is: `packages/web` never imports from
+ * `packages/cli`. These ride the narrative API payload beside the narrative, not inside it — collapse is
+ * computed per request and must never be cached or sanitized along with the story.
+ *
+ * `reason` arrives pre-rendered from the server, which is deliberate, and the rule it buys is scoped to
+ * the per-chapter reason line: that line states the sentence it was given and never re-derives one from
+ * `evidence`, so a chapter can only ever claim what was actually checked about it. The single divider is
+ * not covered by that rule — it summarizes a *set* of decisions, which no individual `reason` describes,
+ * so it maps `evidence.kind` to a short shared label in `lib/collapse.ts`.
+ */
+export type CollapseEvidence =
+  | { kind: 'no-external-callers'; files: string[]; knownCallers: 0 }
+  | { kind: 'test-only'; files: string[] }
+  | { kind: 'generated'; files: string[] };
+
+export type CollapseDecision = {
+  chapterIndex: number;
+  reason: string;
+  evidence: CollapseEvidence;
+};
+
+/** All four members of the CLI's `CollapseUnavailableReason` — the notice renders every one. */
+export type CollapseUnavailableReason = 'size-cap' | 'fetch-failed' | 'extract-failed' | 'empty-tree';
+
+export type CollapseResult =
+  | { available: true; decisions: CollapseDecision[]; dividerBefore: number | null }
+  | { available: false; reason: CollapseUnavailableReason };
+
+/** Unchanged repository files that import a chapter's files; `callers` is a capped view of `total`. */
+export type ChapterCallers = {
+  chapterIndex: number;
+  callers: string[];
+  total: number;
+};
+
+/**
+ * Prompt budget stats for the generation that produced the narrative — mirror of the CLI's
+ * `PromptCapStats`. Absent whenever a narrative came from cache, and absent is load-bearing: the
+ * truncation banner says nothing rather than imply a story built from a partial diff was complete.
+ */
+export type CapStats = {
+  perFileCap: number;
+  globalCap: number;
+  inputFileCount: number;
+  inputLineCount: number;
+  narratedFileCount: number;
+  narratedLineCount: number;
+  truncatedFiles: { file: string; hunksDropped: number; linesDropped: number }[];
+  droppedFiles: string[];
+};
+
 export type ConcernCategory =
   | 'logic'
   | 'state'

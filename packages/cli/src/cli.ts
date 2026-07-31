@@ -7,7 +7,7 @@ import { generateNarrative, resolveAiPath, resolveProviderKey, setCliOverride } 
 import { migrateLegacyData } from './paths';
 import { getCachedRecap } from './recap/cache';
 import { describeRepoContext, resolveRepoContext } from './repo/snapshot';
-import { createServer } from './server';
+import { createServer, type ServerContext } from './server';
 import { daemonStatus, DEFAULT_DAEMON_PORT, isDaemonAlive, startDaemon } from './daemon/daemon';
 
 const a = {
@@ -255,7 +255,7 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
     : await getCachedNarrative(parsed.owner, parsed.repo, parsed.number, metadata.headSha, metaHash, providerKey);
   const cachedRecap = noCache ? null : await getCachedRecap(parsed.owner, parsed.repo, parsed.number, metadata.headSha);
 
-  const ctx = {
+  const ctx: ServerContext = {
     narrative: cached,
     pr: metadata,
     files,
@@ -269,9 +269,13 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
     recap: cachedRecap,
     recapGenerating: false,
     recapError: null,
+    // Filled in below: on the generation path from the snapshot the prompt was built with, on the
+    // cached path by the server's background refresh.
+    repoContext: null,
+    capStats: null,
   };
 
-  const { app, broadcast } = createServer(ctx);
+  const { app, broadcast, refreshRepoContext, blastRadius } = createServer(ctx);
   const portFlag = Bun.argv.find((f) => f.startsWith('--port='));
   const port = portFlag ? parseInt(portFlag.split('=')[1] ?? '0') : 0;
   const server = Bun.serve({ fetch: app.fetch, port, idleTimeout: 255 });
@@ -279,6 +283,10 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
 
   if (cached) {
     console.log(`\n  ${a.dim}Using cached narrative ${a.gray}(${metadata.headSha.slice(0, 7)})${a.reset}`);
+    // Nothing on this path resolved a snapshot (no prompt was built), and collapse selection needs one.
+    // Deliberately not awaited: a snapshot older than the staleness bound refetches the whole tarball,
+    // and the reviewer should be reading the diff by then, not watching a spinner.
+    void refreshRepoContext();
   }
 
   console.log(`\n  ${a.purple}${a.bold}${url}${a.reset}`);
@@ -303,6 +311,9 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
     // repo is a real download, hence the two status lines — a silent multi-second pause reads as a hang.
     console.log(`  ${a.dim}Resolving repo context ${a.gray}(${metadata.base})${a.reset}`);
     const repoContext = await resolveRepoContext(github, parsed.owner, parsed.repo, metadata.base);
+    // The same snapshot backs the prompt and the collapse boundary, so the reviewer's boundary always
+    // describes the narrative they are reading.
+    ctx.repoContext = repoContext;
     console.log(`  ${repoContext.available ? a.dim : a.yellow}${describeRepoContext(repoContext)}${a.reset}`);
 
     const waitJoke = DAD_JOKES[Math.floor(Math.random() * DAD_JOKES.length)];
@@ -386,6 +397,9 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
     const generated = result.narrative;
     const usedProvider = result.provider;
     ctx.narrative = generated;
+    // Absent when the planner pass came off the plan cache — the banner then says nothing rather than
+    // claim a diff nobody measured was complete.
+    ctx.capStats = result.capStats ?? null;
     await cacheNarrative(parsed.owner, parsed.repo, parsed.number, metadata.headSha, metaHash, providerKey, generated);
     console.log(
       `  ${a.green}✓${a.reset} ${generated.chapters.length} chapters generated ${a.dim}via ${usedProvider} in ${fmtElapsed()}${a.reset}`,
@@ -395,6 +409,10 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
       pr: metadata,
       files,
       comments,
+      // The browser opened before generation finished, so its bootstrap GET carried no narrative and no
+      // collapse. This event is the only place the first review's boundary can arrive.
+      ...blastRadius(),
+      capStats: ctx.capStats ?? undefined,
     });
   }
 

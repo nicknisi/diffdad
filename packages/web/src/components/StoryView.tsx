@@ -1,10 +1,20 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useScrollTracker } from '../hooks/useScrollTracker';
+import {
+  callersByChapter,
+  COLLAPSE_UNAVAILABLE_TEXT,
+  type CollapsedSummary,
+  collapsedSummary,
+  decisionsByChapter,
+  dividerIndex,
+  truncationSummary,
+  unavailableReason,
+} from '../lib/collapse';
 import { normalizePath } from '../lib/paths';
 import { useReviewStore } from '../state/review-store';
 import { useInlineComments } from '../hooks/useInlineComments';
 import { useWalkthrough } from '../hooks/useWalkthrough';
-import type { CommentId, DiffFile } from '../state/types';
+import type { CapStats, CollapseResult, CommentId, DiffFile } from '../state/types';
 import { BeatRail } from './BeatRail';
 import type { ResolveItem } from '../lib/walkthrough';
 import { Chapter } from './Chapter';
@@ -211,6 +221,94 @@ function RegeneratingBanner() {
   );
 }
 
+/**
+ * The one collapse boundary, stated as a fact: how many chapters sit below it, how many diff lines they
+ * hold, and what the collapse rests on. Lines rather than chapters because lines are what a reviewer
+ * actually spends; chapter counts are gameable and say nothing about the reading saved.
+ *
+ * Exported for the render test — the divider's copy is the part of this feature that has to read as an
+ * observation rather than as advice.
+ */
+export function CollapseDivider({ summary }: { summary: CollapsedSummary }) {
+  return (
+    <div className="mb-[18px] mt-[10px] grid grid-cols-[1fr_auto_1fr] items-center gap-3" data-collapse-divider>
+      <span className="h-px" style={{ background: 'var(--gray-a4)' }} />
+      <span
+        className="whitespace-nowrap rounded-full px-2.5 py-[3px] text-[11.5px] font-medium"
+        style={{ background: 'var(--gray-3)', color: 'var(--fg-3)' }}
+      >
+        {summary.count} {summary.count === 1 ? 'chapter' : 'chapters'} below · {summary.lines.toLocaleString()}{' '}
+        {summary.lines === 1 ? 'line' : 'lines'} · {summary.evidence}
+      </span>
+      <span className="h-px" style={{ background: 'var(--gray-a4)' }} />
+    </div>
+  );
+}
+
+/**
+ * Why nothing collapsed. Each reason names its own cause, because they imply different actions — a size
+ * cap is permanent for this repo, a failed fetch is worth retrying. A bare "unavailable" would be dead
+ * chrome, so the reason text comes from a `Record` over the whole union rather than a default string.
+ *
+ * Exported for the render test.
+ */
+export function CollapseUnavailableNotice({ collapse }: { collapse: CollapseResult | null }) {
+  const reason = unavailableReason(collapse);
+  // Null for an available result *and* for no result at all: "not checked" is a different claim from
+  // "checked and could not tell", and only the second one earns a line on screen.
+  if (!reason) return null;
+  return (
+    <div
+      className="mb-4 flex items-center gap-2.5 rounded-[10px] px-4 py-2.5 text-[12.5px]"
+      style={{ background: 'var(--gray-2)', boxShadow: 'inset 0 0 0 1px var(--gray-a5)', color: 'var(--fg-2)' }}
+      data-collapse-notice
+    >
+      <span aria-hidden style={{ color: 'var(--fg-3)' }}>
+        ○
+      </span>
+      <span>Blast radius unavailable — {COLLAPSE_UNAVAILABLE_TEXT[reason]}. Nothing was collapsed.</span>
+    </div>
+  );
+}
+
+/**
+ * The diff the model never saw. Louder than the unavailable notice on purpose: missing repo context
+ * makes the review less helpful, while a truncated diff makes it *incomplete* — the story was built from
+ * a partial input and every conclusion in it inherits that.
+ *
+ * Renders nothing without stats (a cached narrative measured nothing) and nothing when the diff fit.
+ * Exported for the render test.
+ */
+export function TruncationBanner({ capStats }: { capStats: CapStats | null }) {
+  const summary = truncationSummary(capStats);
+  if (!summary) return null;
+  const parts: string[] = [];
+  if (summary.dropped > 0) parts.push(`${summary.dropped} ${summary.dropped === 1 ? 'file' : 'files'} dropped`);
+  if (summary.shortened > 0) {
+    parts.push(`${summary.shortened} ${summary.shortened === 1 ? 'file' : 'files'} shortened`);
+  }
+  return (
+    <div
+      className="mb-4 flex items-center gap-2.5 rounded-[10px] px-4 py-3 text-[13px]"
+      style={{
+        // Amber, not yellow: the scale only defines `--yellow-3` and `--yellow-11`, so a `--yellow-2`
+        // background and a `--yellow-a5` border resolve to nothing and this banner reads as bare text in
+        // both themes. `--amber-2` / `--amber-a5` / `--amber-11` exist in `:root` and `.dark`.
+        background: 'var(--amber-2)',
+        boxShadow: 'inset 0 0 0 1px var(--amber-a5)',
+        color: 'var(--amber-11)',
+      }}
+      data-truncation-banner
+    >
+      <span aria-hidden>⚠</span>
+      <span>
+        <span className="font-semibold">This story was built from a partial diff</span> — {parts.join(', ')} before the
+        model saw them.
+      </span>
+    </div>
+  );
+}
+
 function OtherConcerns({ items }: { items: ResolveItem[] }) {
   if (items.length === 0) return null;
   return (
@@ -243,6 +341,18 @@ export function StoryView() {
   const displayDensity = useReviewStore((s) => s.displayDensity);
   const railCollapsed = useReviewStore((s) => s.railCollapsed);
   const setRailCollapsed = useReviewStore((s) => s.setRailCollapsed);
+  const storyStructure = useReviewStore((s) => s.storyStructure);
+  const collapse = useReviewStore((s) => s.collapse);
+  const callers = useReviewStore((s) => s.callers);
+  const capStats = useReviewStore((s) => s.capStats);
+
+  const decisions = useMemo(() => decisionsByChapter(collapse), [collapse]);
+  const callerMap = useMemo(() => callersByChapter(callers), [callers]);
+  const collapsed = useMemo(() => collapsedSummary(collapse, narrative?.chapters ?? []), [collapse, narrative]);
+  // Only the `chapters` structure has a collapsed state to draw a boundary around: `outline` collapses
+  // everything but the first chapter on its own, and `linear` never collapses. Drawing the divider there
+  // anyway would promise a compression the reader is not getting.
+  const divider = storyStructure === 'chapters' ? dividerIndex(collapse) : null;
 
   const walkthrough = useWalkthrough();
   const resolveByChapter = useMemo(() => {
@@ -265,9 +375,20 @@ export function StoryView() {
   const body = (
     <main className="min-w-0">
       <RegeneratingBanner />
+      <TruncationBanner capStats={capStats} />
+      <CollapseUnavailableNotice collapse={collapse} />
       <Overview />
       {narrative.chapters.map((ch, idx) => (
-        <Chapter key={`ch-${idx}`} index={idx} chapter={ch} resolve={resolveByChapter[idx]} />
+        <Fragment key={`ch-${idx}`}>
+          {divider === idx && collapsed ? <CollapseDivider summary={collapsed} /> : null}
+          <Chapter
+            index={idx}
+            chapter={ch}
+            resolve={resolveByChapter[idx]}
+            decision={decisions[idx]}
+            callers={callerMap[idx]}
+          />
+        </Fragment>
       ))}
       <OtherConcerns items={orphanItems} />
       <OrphanedInlineComments />

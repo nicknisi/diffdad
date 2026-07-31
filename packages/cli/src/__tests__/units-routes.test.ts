@@ -8,6 +8,10 @@ import type { CheckRun, PRComment, PRMetadata, PRReview } from '../github/types'
 import type { PostCommentOptions } from '../github/client';
 import type { ReviewUnit } from '../units/types';
 import type { NarrativeResponse } from '../narrative/types';
+import type { CollapseResult } from '../narrative/collapse';
+import type { PromptCapStats } from '../narrative/prompt';
+import type { DiffFile } from '../github/types';
+import type { RepoContext } from '../repo/snapshot';
 
 const NARRATIVE: NarrativeResponse = {
   title: 't',
@@ -57,6 +61,7 @@ type SubmitInlineComment = { path: string; line: number; body: string; side?: 'L
 
 type SetupOpts = {
   hydrate?: (unit: ReviewUnit, force?: boolean) => Promise<ReviewUnit>;
+  repoContextFetcher?: (unit: ReviewUnit) => Promise<RepoContext>;
   commentFetcher?: (unit: ReviewUnit) => Promise<PRComment[]>;
   commentPoster?: (unit: ReviewUnit, body: string, opts: PostCommentOptions) => Promise<PRComment>;
   reviewSubmitter?: (
@@ -73,7 +78,7 @@ type SetupOpts = {
 
 function setup(opts: SetupOpts = {}) {
   const { hydrate, commentFetcher, commentPoster, reviewSubmitter, ai } = opts;
-  const { statusFetcher, pollNow } = opts;
+  const { statusFetcher, pollNow, repoContextFetcher } = opts;
   const store = new UnitStore([], { dir, ...deterministic() });
   const hub = new SseHub();
   const events: string[] = [];
@@ -94,6 +99,7 @@ function setup(opts: SetupOpts = {}) {
         commentPoster,
         reviewSubmitter,
         statusFetcher,
+        repoContextFetcher,
         pollNow,
       },
     },
@@ -194,6 +200,100 @@ describe('GET /api/units/:id', () => {
     const { app } = setup();
     const res = await app.request('/api/units/nope');
     expect(res.status).toBe(404);
+  });
+});
+
+describe('GET /api/units/:id — blast radius', () => {
+  /** One chapter over one file, so an index that knows no callers produces exactly one decision. */
+  const COLLAPSIBLE: NarrativeResponse = {
+    ...NARRATIVE,
+    chapters: [
+      {
+        title: 'Rename the legacy helper',
+        summary: 's',
+        whyMatters: 'w',
+        risk: 'low',
+        sections: [{ type: 'diff', file: 'src/legacy.ts', startLine: 1, endLine: 40, hunkIndex: 0 }],
+      },
+    ],
+  };
+
+  const FILES: DiffFile[] = [
+    {
+      file: 'src/legacy.ts',
+      isNewFile: false,
+      isDeleted: false,
+      hunks: [
+        {
+          header: '@@ -1,2 +1,2 @@',
+          oldStart: 1,
+          oldCount: 2,
+          newStart: 1,
+          newCount: 2,
+          lines: [{ type: 'add', content: 'x', lineNumber: { new: 1 } }],
+        },
+      ],
+    },
+  ];
+
+  const warmContext: RepoContext = {
+    available: true,
+    root: '/tmp/not-read',
+    ref: 'main',
+    fetchedAt: Date.now(),
+    index: { callers: new Map<string, string[]>(), filesScanned: 9 },
+  };
+
+  it('computes collapse per request from a freshly resolved snapshot', async () => {
+    const { store, app } = setup({ repoContextFetcher: async () => warmContext });
+    const u = await addUnit(store);
+    store.attachReview(u.unitId, FILES, COLLAPSIBLE, 0);
+    const body = (await (await app.request(`/api/units/${u.unitId}`)).json()) as { collapse?: CollapseResult };
+    expect(body.collapse?.available).toBe(true);
+    if (body.collapse?.available) {
+      expect(body.collapse.dividerBefore).toBe(0);
+      expect(body.collapse.decisions[0]?.reason).toContain('0 known callers outside this PR');
+    }
+  });
+
+  it('surfaces the unavailable reason so the drill-in can name the cause', async () => {
+    const { store, app } = setup({ repoContextFetcher: async () => ({ available: false, reason: 'empty-tree' }) });
+    const u = await addUnit(store);
+    store.attachReview(u.unitId, FILES, COLLAPSIBLE, 0);
+    const body = (await (await app.request(`/api/units/${u.unitId}`)).json()) as { collapse?: CollapseResult };
+    expect(body.collapse).toEqual({ available: false, reason: 'empty-tree' });
+  });
+
+  it('omits collapse when the daemon has no way to resolve a snapshot', async () => {
+    // A credential-less daemon cannot fetch a tarball. "Not checked" must not render as a reason.
+    const { store, app } = setup();
+    const u = await addUnit(store);
+    store.attachReview(u.unitId, FILES, COLLAPSIBLE, 0);
+    const body = (await (await app.request(`/api/units/${u.unitId}`)).json()) as { collapse?: CollapseResult };
+    expect(body.collapse).toBeUndefined();
+  });
+
+  it('serves the stored promptCapStats and omits them for a cache-hit narrative', async () => {
+    const { store, app } = setup({ repoContextFetcher: async () => warmContext });
+    const u = await addUnit(store);
+    const capStats: PromptCapStats = {
+      perFileCap: 500,
+      globalCap: 12000,
+      inputFileCount: 40,
+      inputLineCount: 30000,
+      narratedFileCount: 30,
+      narratedLineCount: 12000,
+      truncatedFiles: [{ file: 'src/big.ts', hunksDropped: 1, linesDropped: 90 }],
+      droppedFiles: ['src/gen.ts'],
+    };
+    store.attachReview(u.unitId, FILES, COLLAPSIBLE, 0, capStats);
+    const first = (await (await app.request(`/api/units/${u.unitId}`)).json()) as { capStats?: PromptCapStats };
+    expect(first.capStats?.droppedFiles).toEqual(['src/gen.ts']);
+
+    // Re-attaching from the narrative cache measures no diff, so the stats must not linger.
+    store.attachReview(u.unitId, FILES, COLLAPSIBLE, 0);
+    const second = (await (await app.request(`/api/units/${u.unitId}`)).json()) as { capStats?: PromptCapStats };
+    expect(second.capStats).toBeUndefined();
   });
 });
 
