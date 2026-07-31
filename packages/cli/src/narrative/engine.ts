@@ -135,6 +135,14 @@ export type NarrativeGenerationOptions = {
 export type NarrativeGenerationResult = {
   narrative: NarrativeResponse;
   provider: string;
+  /**
+   * What the prompt budget dropped or shortened before the model saw the diff.
+   *
+   * Optional, and absent rather than empty on the paths that never built a prompt (a plan cache hit).
+   * "Unknown" and "nothing was truncated" must not render alike: defaulting this to an empty object
+   * would have the UI claim a partial story is complete.
+   */
+  capStats?: PromptCapStats;
 };
 
 function totalHunkCount(files: DiffFile[]): number {
@@ -234,6 +242,9 @@ async function generateNarrativeTwoPass(
   // structural-violation feedback.
   let plan: Plan | null = null;
   let plannerProvider = 'cached';
+  // Stays undefined on the plan-cache-hit branch below: no prompt was built, so there is nothing to
+  // report, and reporting "nothing truncated" would be a claim nobody verified.
+  let capStats: PromptCapStats | undefined;
   // `force` skips the read (a re-read must regenerate) but the write below still runs, so the fresh
   // plan replaces the cached one under the same key.
   if (options.cacheKey && !options.force) {
@@ -266,6 +277,7 @@ async function generateNarrativeTwoPass(
       if (validation.ok || attempt === 1) {
         plan = plannerResult.plan;
         plannerProvider = plannerResult.provider;
+        capStats = plannerResult.stats;
         if (!validation.ok) {
           console.error(`${YELLOW}  ⚠ Plan still has violations after retry — proceeding anyway${RESET}`);
           for (const v of validation.violations.slice(0, 5)) {
@@ -331,7 +343,7 @@ async function generateNarrativeTwoPass(
   // generated) are deliberately unplanned, so checking fullFiles would report them all as orphans.
   logNarrativeViolations(narrative, narrate);
   const provider = writerProvider ? `${plannerProvider} + ${writerProvider}` : plannerProvider;
-  return { narrative, provider };
+  return { narrative, provider, capStats };
 }
 
 /**
@@ -413,7 +425,7 @@ async function generateNarrativeSinglePass(
         );
       }
       logNarrativeViolations(narrative, narrate);
-      return { narrative, provider: result.provider };
+      return { narrative, provider: result.provider, capStats: stats };
     } catch (err) {
       if (result.truncated && attempt < MAX_RETRIES) {
         console.log(`Narrative truncated (attempt ${attempt + 1}/${MAX_RETRIES + 1}), retrying...`);

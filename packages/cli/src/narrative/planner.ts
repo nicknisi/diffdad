@@ -4,7 +4,7 @@ import type { RepoContext } from '../repo/snapshot';
 import { callAi, type AiUsage } from './ai-runtime';
 import type { HunkHint } from './hints';
 import { parseLooseJson, rawResponseSnippet } from './json-parse';
-import { buildPlannerPrompt, type PreviousNarrativeContext } from './prompt';
+import { buildPlannerPrompt, type PreviousNarrativeContext, type PromptCapStats } from './prompt';
 import type { Plan, PlanTheme } from './plan-types';
 
 export type PlannerInput = {
@@ -25,6 +25,12 @@ export type PlannerResult = {
   plan: Plan;
   provider: string;
   usage?: AiUsage;
+  /**
+   * What the prompt budget did to the diff before the planner saw it. Already computed by
+   * `buildPlannerPrompt` and, until now, dropped on the floor — a reviewer looking at a story built
+   * from a truncated diff has no way to know that from the story.
+   */
+  stats: PromptCapStats;
 };
 
 // Ceiling for the plan response. Only enforced on the API path (the local-CLI path ignores it); the
@@ -61,7 +67,7 @@ export async function runPlanner(input: PlannerInput): Promise<PlannerResult> {
   const result = await callAi(config, prompt.system, user, PLANNER_MAX_TOKENS);
   const parsed = parsePlanResponse(result.text);
   const plan = normalizePlan(parsed, files);
-  return { plan, provider: result.provider, usage: result.usage };
+  return { plan, provider: result.provider, usage: result.usage, stats: prompt.stats };
 }
 
 /**

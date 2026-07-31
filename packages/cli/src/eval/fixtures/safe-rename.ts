@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'url';
 import type { EvalFixture } from '../types';
 
 /**
@@ -108,6 +109,7 @@ export const fixture: EvalFixture = {
       ],
     },
   ],
+  recordedNarrativePath: fileURLToPath(new URL('./recorded/safe-rename.narrative.json', import.meta.url)),
   groundTruth: {
     expectedConcerns: [],
     expectedHotspots: [],

@@ -1,0 +1,62 @@
+{
+  "_provenance": "Hand-authored, NOT recorded from a live provider run — no provider was configured when this phase was built. Every diff-section range was derived mechanically from the fixture hunks, so a range here cannot disagree with the fixture it points at. Nothing asserts this is a good narrative; recordings are inputs to a pure function, and narrative quality is the eval probe’s job. Re-record from a real two-pass generation when one is available.",
+  "title": "account_id on the events table",
+  "tldr": "Adds a NOT NULL account_id to events, backfills it from users, and simplifies the analytics query.",
+  "verdict": "risky",
+  "readingPlan": [
+    {
+      "step": "Read the migration first; the query change depends on it having run.",
+      "chapterIndex": 0
+    }
+  ],
+  "concerns": [
+    {
+      "question": "How long does ALTER TABLE events hold its lock on 50M rows?",
+      "file": "db/migrations/0042_events_account_id.sql",
+      "line": 2,
+      "category": "state",
+      "why": "ADD COLUMN NOT NULL with no default rewrites the table, and the backfill runs in the same transaction."
+    }
+  ],
+  "chapters": [
+    {
+      "title": "Adding and backfilling account_id",
+      "summary": "One forward-only migration adds the column, backfills from users, and indexes it.",
+      "whyMatters": "There is no down migration, and the backfill is unbatched inside the same lock.",
+      "risk": "high",
+      "sections": [
+        {
+          "type": "narrative",
+          "content": "The ALTER, the UPDATE and the CREATE INDEX are all in one migration with no rollback path."
+        },
+        {
+          "type": "diff",
+          "file": "db/migrations/0042_events_account_id.sql",
+          "hunkIndex": 0,
+          "startLine": 1,
+          "endLine": 9
+        }
+      ]
+    },
+    {
+      "title": "The analytics query drops the join",
+      "summary": "eventsForAccount reads account_id directly instead of joining through users.",
+      "whyMatters": "Correct only after the backfill completes; before that it silently returns nothing.",
+      "risk": "medium",
+      "sections": [
+        {
+          "type": "narrative",
+          "content": "One SQL string changes. The function signature and the db.query call are untouched."
+        },
+        {
+          "type": "diff",
+          "file": "src/analytics/events.ts",
+          "hunkIndex": 0,
+          "startLine": 10,
+          "endLine": 13
+        }
+      ]
+    }
+  ],
+  "missing": ["rollback migration", "batched backfill strategy"]
+}

@@ -1,0 +1,421 @@
+{
+  "_provenance": "Hand-authored, not recorded from a live provider run. Chapter grouping and every section range were derived mechanically from the fixture hunks (see scripts note in collapse.test.ts), so the ranges cannot drift from the fixture. Prose is illustrative; nothing asserts it is a good narrative. Re-record from a real two-pass generation when a provider is configured.",
+  "title": "Multi-currency invoices",
+  "tldr": "Invoice totals become { amount, currency } objects, a migration backfills the new column, and formatMoney is renamed to formatCurrency across the component tree.",
+  "verdict": "risky",
+  "readingPlan": [
+    {
+      "step": "Start at chapter 1 — the InvoiceTotal shape change is what every unchanged caller sees.",
+      "chapterIndex": 0,
+      "why": "The return type went from bare numbers to objects and the callers are outside this PR."
+    },
+    {
+      "step": "Then read the migration; there is no rollback for either ADD COLUMN.",
+      "chapterIndex": 1
+    },
+    {
+      "step": "Chapter 3 is unrelated to currency but changes retry behavior for non-idempotent requests.",
+      "chapterIndex": 2
+    }
+  ],
+  "concerns": [
+    {
+      "question": "Does invoiceIsSettled need to compare currency before comparing amounts?",
+      "file": "src/billing/invoice-calculator.ts",
+      "line": 30,
+      "category": "logic",
+      "why": "A payment in a different currency currently settles the invoice whenever the raw amount is large enough."
+    },
+    {
+      "question": "How do we roll back the currency columns if the backfill is wrong?",
+      "file": "db/migrations/0117_add_currency_to_invoices.sql",
+      "line": 2,
+      "category": "state",
+      "why": "Both ALTER TABLE statements are forward-only and the backfill runs unbatched in one transaction."
+    },
+    {
+      "question": "Is retrying any 5xx safe for POST?",
+      "file": "src/http/retry-policy.ts",
+      "line": 8,
+      "category": "api-contract",
+      "why": "shouldRetry no longer looks at idempotency, and MAX_ATTEMPTS tripled at the same time."
+    }
+  ],
+  "chapters": [
+    {
+      "title": "Invoice totals gain a currency",
+      "summary": "calculateInvoice returns Money objects instead of bare numbers, and tax rates become per-currency.",
+      "whyMatters": "Every caller outside this PR reads total.total as a number today. If any of them is untyped, the change is silent at build time and wrong at runtime.",
+      "risk": "high",
+      "sections": [
+        {
+          "type": "narrative",
+          "content": "InvoiceTotal is now three Money objects plus a formatted display string. The signature also gained a defaulted currency parameter, so existing single-argument calls keep compiling while silently assuming USD."
+        },
+        {
+          "type": "diff",
+          "file": "src/billing/invoice-calculator.ts",
+          "startLine": 1,
+          "endLine": 36,
+          "hunkIndex": 0
+        },
+        {
+          "type": "narrative",
+          "content": "taxFor takes the currency and looks up a per-currency rate, falling back to the old default. emptyTotal moved here, which is why the calculator now imports it."
+        },
+        {
+          "type": "diff",
+          "file": "src/billing/tax-rules.ts",
+          "startLine": 1,
+          "endLine": 19,
+          "hunkIndex": 0
+        }
+      ]
+    },
+    {
+      "title": "Backfilling the currency column",
+      "summary": "Two ADD COLUMN statements with a temporary default, a backfill from accounts, then the default is dropped.",
+      "whyMatters": "The backfill is a single unbatched UPDATE over both tables inside one migration, and there is no down migration for either column.",
+      "risk": "high",
+      "sections": [
+        {
+          "type": "narrative",
+          "content": "The temporary DEFAULT is the right instinct — it avoids a full rewrite on the ADD COLUMN — but the two UPDATE statements that follow hold their locks for the whole backfill."
+        },
+        {
+          "type": "diff",
+          "file": "db/migrations/0117_add_currency_to_invoices.sql",
+          "startLine": 1,
+          "endLine": 24,
+          "hunkIndex": 0
+        }
+      ]
+    },
+    {
+      "title": "Retry policy widened",
+      "summary": "shouldRetry gains a method argument, retries 429, and MAX_ATTEMPTS goes from 3 to 6 with exponential backoff.",
+      "whyMatters": "This rides along unrelated to currency. Retrying any 5xx regardless of method means a non-idempotent POST can be replayed six times.",
+      "risk": "medium",
+      "sections": [
+        {
+          "type": "narrative",
+          "content": "The method argument is threaded through but never actually consulted — the function returns true for every 5xx. The comment says the change is deliberate, which makes it a decision to confirm rather than a bug to report."
+        },
+        {
+          "type": "diff",
+          "file": "src/http/retry-policy.ts",
+          "startLine": 1,
+          "endLine": 33,
+          "hunkIndex": 0
+        },
+        {
+          "type": "narrative",
+          "content": "The spec file covers the new 429 case and the method argument, but not the attempt-count change."
+        },
+        {
+          "type": "diff",
+          "file": "src/http/__tests__/retry-policy.test.ts",
+          "startLine": 1,
+          "endLine": 23,
+          "hunkIndex": 0
+        }
+      ]
+    },
+    {
+      "title": "formatMoney becomes formatCurrency across the component tree",
+      "summary": "Thirty leaf presentation components swap one import and one call site.",
+      "whyMatters": "Nothing here changes behavior; the rename is mechanical and every file is the same two edits.",
+      "risk": "low",
+      "sections": [
+        {
+          "type": "narrative",
+          "content": "Identical edit in all thirty files: the import moves from ../format/money to ../format/currency and the call site gains the currency argument."
+        },
+        {
+          "type": "diff",
+          "file": "src/components/OrderRow.tsx",
+          "startLine": 1,
+          "endLine": 9,
+          "hunkIndex": 0
+        },
+        {
+          "type": "diff",
+          "file": "src/components/CartSummary.tsx",
+          "startLine": 1,
+          "endLine": 9,
+          "hunkIndex": 0
+        },
+        {
+          "type": "diff",
+          "file": "src/components/PriceTag.tsx",
+          "startLine": 1,
+          "endLine": 9,
+          "hunkIndex": 0
+        },
+        {
+          "type": "diff",
+          "file": "src/components/LineItemList.tsx",
+          "startLine": 1,
+          "endLine": 9,
+          "hunkIndex": 0
+        },
+        {
+          "type": "diff",
+          "file": "src/components/TotalsPanel.tsx",
+          "startLine": 1,
+          "endLine": 9,
+          "hunkIndex": 0
+        },
+        {
+          "type": "diff",
+          "file": "src/components/CurrencyBadge.tsx",
+          "startLine": 1,
+          "endLine": 9,
+          "hunkIndex": 0
+        },
+        {
+          "type": "diff",
+          "file": "src/components/RefundNotice.tsx",
+          "startLine": 1,
+          "endLine": 9,
+          "hunkIndex": 0
+        },
+        {
+          "type": "diff",
+          "file": "src/components/ShippingRow.tsx",
+          "startLine": 1,
+          "endLine": 9,
+          "hunkIndex": 0
+        },
+        {
+          "type": "diff",
+          "file": "src/components/DiscountChip.tsx",
+          "startLine": 1,
+          "endLine": 9,
+          "hunkIndex": 0
+        },
+        {
+          "type": "diff",
+          "file": "src/components/SubtotalLine.tsx",
+          "startLine": 1,
+          "endLine": 9,
+          "hunkIndex": 0
+        },
+        {
+          "type": "diff",
+          "file": "src/components/TaxLine.tsx",
+          "startLine": 1,
+          "endLine": 9,
+          "hunkIndex": 0
+        },
+        {
+          "type": "diff",
+          "file": "src/components/GrandTotal.tsx",
+          "startLine": 1,
+          "endLine": 9,
+          "hunkIndex": 0
+        },
+        {
+          "type": "diff",
+          "file": "src/components/ReceiptHeader.tsx",
+          "startLine": 1,
+          "endLine": 9,
+          "hunkIndex": 0
+        },
+        {
+          "type": "diff",
+          "file": "src/components/ReceiptFooter.tsx",
+          "startLine": 1,
+          "endLine": 9,
+          "hunkIndex": 0
+        },
+        {
+          "type": "diff",
+          "file": "src/components/ItemThumbnail.tsx",
+          "startLine": 1,
+          "endLine": 9,
+          "hunkIndex": 0
+        },
+        {
+          "type": "diff",
+          "file": "src/components/QuantityStepper.tsx",
+          "startLine": 1,
+          "endLine": 9,
+          "hunkIndex": 0
+        },
+        {
+          "type": "diff",
+          "file": "src/components/PromoBanner.tsx",
+          "startLine": 1,
+          "endLine": 9,
+          "hunkIndex": 0
+        },
+        {
+          "type": "diff",
+          "file": "src/components/CheckoutButton.tsx",
+          "startLine": 1,
+          "endLine": 9,
+          "hunkIndex": 0
+        },
+        {
+          "type": "diff",
+          "file": "src/components/MiniCart.tsx",
+          "startLine": 1,
+          "endLine": 9,
+          "hunkIndex": 0
+        },
+        {
+          "type": "diff",
+          "file": "src/components/CartDrawer.tsx",
+          "startLine": 1,
+          "endLine": 9,
+          "hunkIndex": 0
+        },
+        {
+          "type": "diff",
+          "file": "src/components/OrderTimeline.tsx",
+          "startLine": 1,
+          "endLine": 9,
+          "hunkIndex": 0
+        },
+        {
+          "type": "diff",
+          "file": "src/components/StatusPill.tsx",
+          "startLine": 1,
+          "endLine": 9,
+          "hunkIndex": 0
+        },
+        {
+          "type": "diff",
+          "file": "src/components/AddressCard.tsx",
+          "startLine": 1,
+          "endLine": 9,
+          "hunkIndex": 0
+        },
+        {
+          "type": "diff",
+          "file": "src/components/DeliveryEstimate.tsx",
+          "startLine": 1,
+          "endLine": 9,
+          "hunkIndex": 0
+        },
+        {
+          "type": "diff",
+          "file": "src/components/MethodRow.tsx",
+          "startLine": 1,
+          "endLine": 9,
+          "hunkIndex": 0
+        },
+        {
+          "type": "diff",
+          "file": "src/components/CouponField.tsx",
+          "startLine": 1,
+          "endLine": 9,
+          "hunkIndex": 0
+        },
+        {
+          "type": "diff",
+          "file": "src/components/GiftNote.tsx",
+          "startLine": 1,
+          "endLine": 9,
+          "hunkIndex": 0
+        },
+        {
+          "type": "diff",
+          "file": "src/components/WarrantyBadge.tsx",
+          "startLine": 1,
+          "endLine": 9,
+          "hunkIndex": 0
+        },
+        {
+          "type": "diff",
+          "file": "src/components/ReturnWindow.tsx",
+          "startLine": 1,
+          "endLine": 9,
+          "hunkIndex": 0
+        },
+        {
+          "type": "diff",
+          "file": "src/components/PrintLink.tsx",
+          "startLine": 1,
+          "endLine": 9,
+          "hunkIndex": 0
+        }
+      ]
+    },
+    {
+      "title": "Component specs follow the rename",
+      "summary": "Eight spec files update the same import and pass a currency in their render fixtures.",
+      "whyMatters": "Test churn caused by the rename, with no new assertions about currency behavior.",
+      "risk": "low",
+      "sections": [
+        {
+          "type": "narrative",
+          "content": "Same two edits as the components, plus a currency field on the Money literal each test renders."
+        },
+        {
+          "type": "diff",
+          "file": "src/components/__tests__/OrderRow.test.tsx",
+          "startLine": 1,
+          "endLine": 16,
+          "hunkIndex": 0
+        },
+        {
+          "type": "diff",
+          "file": "src/components/__tests__/CartSummary.test.tsx",
+          "startLine": 1,
+          "endLine": 16,
+          "hunkIndex": 0
+        },
+        {
+          "type": "diff",
+          "file": "src/components/__tests__/PriceTag.test.tsx",
+          "startLine": 1,
+          "endLine": 16,
+          "hunkIndex": 0
+        },
+        {
+          "type": "diff",
+          "file": "src/components/__tests__/TotalsPanel.test.tsx",
+          "startLine": 1,
+          "endLine": 16,
+          "hunkIndex": 0
+        },
+        {
+          "type": "diff",
+          "file": "src/components/__tests__/GrandTotal.test.tsx",
+          "startLine": 1,
+          "endLine": 16,
+          "hunkIndex": 0
+        },
+        {
+          "type": "diff",
+          "file": "src/components/__tests__/ReceiptHeader.test.tsx",
+          "startLine": 1,
+          "endLine": 16,
+          "hunkIndex": 0
+        },
+        {
+          "type": "diff",
+          "file": "src/components/__tests__/MiniCart.test.tsx",
+          "startLine": 1,
+          "endLine": 16,
+          "hunkIndex": 0
+        },
+        {
+          "type": "diff",
+          "file": "src/components/__tests__/StatusPill.test.tsx",
+          "startLine": 1,
+          "endLine": 16,
+          "hunkIndex": 0
+        }
+      ]
+    }
+  ],
+  "missing": [
+    "rollback for the currency columns",
+    "batched backfill",
+    "currency comparison in invoiceIsSettled",
+    "tests for the new InvoiceTotal shape"
+  ]
+}

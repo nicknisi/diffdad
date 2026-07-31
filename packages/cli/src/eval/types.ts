@@ -12,6 +12,15 @@ export type EvalFixture = {
   pr: PRMetadata;
   files: DiffFile[];
   fileTree?: string[];
+  /**
+   * Absolute path to a committed narrative recorded for this fixture, under `fixtures/recorded/`.
+   *
+   * Absolute rather than relative because the two consumers run from different working directories —
+   * the test suite from wherever `bun test` was invoked, the harness from the repo root — and a
+   * cwd-relative path resolves differently for each. Each fixture builds it from its own
+   * `import.meta.url`, so there is exactly one resolution rule.
+   */
+  recordedNarrativePath?: string;
   groundTruth: GroundTruth;
 };
 

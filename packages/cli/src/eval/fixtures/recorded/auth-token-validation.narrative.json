@@ -1,0 +1,73 @@
+{
+  "_provenance": "Hand-authored, NOT recorded from a live provider run — no provider was configured when this phase was built. Every diff-section range was derived mechanically from the fixture hunks, so a range here cannot disagree with the fixture it points at. Nothing asserts this is a good narrative; recordings are inputs to a pure function, and narrative quality is the eval probe’s job. Re-record from a real two-pass generation when one is available. CONSTRUCTED ADVERSARIALLY: chapter 1 holds the ground-truth hotspot (src/auth/token-validator.ts) and is labelled risk \"low\" by the narrative, grouped with src/worker/queue.ts, which carries no criticality keyword. The hotspot is also a brand-new file, so it has zero known callers outside this PR once the diff’s own files are excluded — i.e. it looks collapsible by the caller signal alone. If the safety test passes here it is because the risk-signal veto did work, not because the chapter was obviously dangerous.",
+  "title": "Token validation moves out of the middleware",
+  "tldr": "Token verification is extracted into src/auth/token-validator.ts and reused from the worker queue.",
+  "verdict": "caution",
+  "readingPlan": [
+    {
+      "step": "Read the new validator first; the middleware change is mechanical.",
+      "chapterIndex": 0
+    }
+  ],
+  "concerns": [
+    {
+      "question": "What verifies the signature when NODE_ENV is not production?",
+      "file": "src/auth/token-validator.ts",
+      "line": 11,
+      "category": "security",
+      "why": "The dev branch calls decode rather than verify, so any well-formed token is accepted."
+    }
+  ],
+  "chapters": [
+    {
+      "title": "A reusable token validator",
+      "summary": "validateToken is extracted so the worker queue can call it too.",
+      "whyMatters": "Both the HTTP path and the queue path now depend on this one function.",
+      "risk": "low",
+      "sections": [
+        {
+          "type": "narrative",
+          "content": "The new module holds the claims type and the verification call, plus a fast path for local dev."
+        },
+        {
+          "type": "diff",
+          "file": "src/auth/token-validator.ts",
+          "hunkIndex": 0,
+          "startLine": 1,
+          "endLine": 29
+        },
+        {
+          "type": "narrative",
+          "content": "The queue picks it up for jobs that carry a token, setting job.actor from the sub claim."
+        },
+        {
+          "type": "diff",
+          "file": "src/worker/queue.ts",
+          "hunkIndex": 0,
+          "startLine": 3,
+          "endLine": 13
+        }
+      ]
+    },
+    {
+      "title": "Middleware delegates to the validator",
+      "summary": "The middleware drops its own jsonwebtoken usage and awaits validateToken.",
+      "whyMatters": "The 401 behavior has to stay identical; the try/catch is the only thing preserving it.",
+      "risk": "medium",
+      "sections": [
+        {
+          "type": "narrative",
+          "content": "Nine lines of inline verification collapse into one call, with the same catch-and-401 shape."
+        },
+        {
+          "type": "diff",
+          "file": "src/auth/middleware.ts",
+          "hunkIndex": 0,
+          "startLine": 1,
+          "endLine": 18
+        }
+      ]
+    }
+  ],
+  "missing": ["tests for token-validator.ts"]
+}

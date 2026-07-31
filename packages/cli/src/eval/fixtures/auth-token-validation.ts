@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'url';
 import type { EvalFixture } from '../types';
 
 /**
@@ -188,6 +189,7 @@ export const fixture: EvalFixture = {
       ],
     },
   ],
+  recordedNarrativePath: fileURLToPath(new URL('./recorded/auth-token-validation.narrative.json', import.meta.url)),
   groundTruth: {
     expectedConcerns: [
       'The dev-mode branch in validateToken bypasses signature verification entirely (uses decode instead of verify), allowing forged tokens in any non-production environment',

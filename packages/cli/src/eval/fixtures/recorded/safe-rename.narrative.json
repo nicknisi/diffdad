@@ -1,0 +1,59 @@
+{
+  "_provenance": "Hand-authored, NOT recorded from a live provider run — no provider was configured when this phase was built. Every diff-section range was derived mechanically from the fixture hunks, so a range here cannot disagree with the fixture it points at. Nothing asserts this is a good narrative; recordings are inputs to a pure function, and narrative quality is the eval probe’s job. Re-record from a real two-pass generation when one is available. This is the fixture where near-total collapse is correct (expectedHotspots is empty), and it is the only guard against a build that satisfies the safety test by collapsing nothing at all. Note chapter 1 does NOT collapse: src/utils/dateFormat.ts is a new 7-line file with no adjacent test, which trips the test-gap veto. That is the veto behaving as designed rather than a defect in the recording — the deletion and the call-site update, which are the majority of the narrated lines, do collapse.",
+  "title": "utils/format renamed to utils/dateFormat",
+  "tldr": "A utility module is renamed to match its contents and its single call site is updated.",
+  "verdict": "safe",
+  "readingPlan": [
+    {
+      "step": "Nothing here needs close reading; confirm the call site count is really one."
+    }
+  ],
+  "concerns": [],
+  "chapters": [
+    {
+      "title": "The renamed module",
+      "summary": "dateFormat.ts holds the two date formatters verbatim.",
+      "whyMatters": "Nothing in the bodies changed, so the risk is entirely in whether all call sites moved.",
+      "risk": "low",
+      "sections": [
+        {
+          "type": "narrative",
+          "content": "Byte-identical function bodies under a new path."
+        },
+        {
+          "type": "diff",
+          "file": "src/utils/dateFormat.ts",
+          "hunkIndex": 0,
+          "startLine": 1,
+          "endLine": 7
+        }
+      ]
+    },
+    {
+      "title": "Old module deleted and the one call site repointed",
+      "summary": "format.ts is deleted and Header.tsx imports from the new path.",
+      "whyMatters": "A missed importer would be a build error, not a runtime one.",
+      "risk": "low",
+      "sections": [
+        {
+          "type": "narrative",
+          "content": "The delete and the single import update, which is the whole of the rest of the PR."
+        },
+        {
+          "type": "diff",
+          "file": "src/utils/format.ts",
+          "hunkIndex": 0,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "type": "diff",
+          "file": "src/components/Header.tsx",
+          "hunkIndex": 0,
+          "startLine": 1,
+          "endLine": 5
+        }
+      ]
+    }
+  ]
+}
