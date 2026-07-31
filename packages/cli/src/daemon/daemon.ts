@@ -9,6 +9,7 @@ import { parseDiff } from '../github/diff-parser';
 import type { CheckRun, PRComment, PRReview } from '../github/types';
 import { cacheNarrative, computePromptMetaHash, getCachedNarrative } from '../narrative/cache';
 import { callAi, generateNarrative, resolveProviderKey } from '../narrative/engine';
+import { describeRepoContext, resolveRepoContext } from '../repo/snapshot';
 import { UnitStore } from '../units/store';
 import type { ReviewUnit } from '../units/types';
 import { createDaemonApp, type GitHubWiring, type ReviewInlineComment, SseHub } from './app';
@@ -258,8 +259,15 @@ function makeHydrate(
       }
     }
 
+    // Resolve the base-branch snapshot before generating, exactly as `dad <pr>` does — the daemon has
+    // no checkout to grep, so the cached tarball snapshot is the only way it gets repo-wide caller
+    // counts, and daemon/CLI parity is the point. Never throws; a failure just degrades the review.
+    const repoContext = await resolveRepoContext(client, owner, name, meta.base);
+    if (!repoContext.available) console.log(`  \x1b[2m${describeRepoContext(repoContext)}\x1b[0m`);
+
     const promptMeta = { ...target.metadata, title: meta.title, body: meta.body, labels: meta.labels };
     const { narrative } = await generateNarrative(promptMeta, files, [], config, undefined, {
+      repoContext,
       // contentKey-style cache key: keyed on the head SHA carried in diffContentKey (advanced above on
       // a re-read). `force` skips the cache read but still writes, so the fresh prose replaces it.
       cacheKey: { owner, repo: name, number: prNumber, sha, metaHash, providerKey },

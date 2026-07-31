@@ -1,5 +1,6 @@
 import type { DiffDadConfig } from '../config';
 import type { DiffFile, PRComment, PRMetadata } from '../github/types';
+import type { RepoContext } from '../repo/snapshot';
 import { buildNarrativePrompt, type PreviousNarrativeContext, type PromptCapStats } from './prompt';
 import { partitionMechanicalFiles } from './diff-filter';
 import { normalizeNarrative, type NarrativeChapter, type NarrativeResponse } from './types';
@@ -116,6 +117,13 @@ export type NarrativeGenerationOptions = {
   cacheKey?: { owner: string; repo: string; number: number; sha: string; metaHash: string; providerKey: string };
   /** Existing inline review comments — fed to the planner as hints (hot-zone signal). */
   comments?: PRComment[];
+  /**
+   * Base-branch snapshot for repo-wide inbound-reference counting. Resolved by the caller, not here:
+   * the CLI prints a status line for it and the daemon may prefetch, so it has to be a visible step
+   * rather than a hidden side effect. Optional — absent means risk scoring falls back to diff-only
+   * counting, which every consumer already handles.
+   */
+  repoContext?: RepoContext;
   /**
    * Force a fresh generation: skip the cache READ but still WRITE the result under `cacheKey`. Powers
    * the per-PR re-read — a same-SHA regeneration must produce new prose instead of replaying the
@@ -251,6 +259,7 @@ async function generateNarrativeTwoPass(
         skippedFiles,
         previousContext,
         hints,
+        repoContext: options.repoContext,
         retryFeedback,
       });
       const validation = validatePlan(plannerResult.plan, narrate);
@@ -302,7 +311,14 @@ async function generateNarrativeTwoPass(
       if (options.onPartial) options.onPartial(assembleNarrative(plan, chapters));
       return;
     }
-    const result = await writeChapter({ plan, theme, files: fullFiles, fileTree, config });
+    const result = await writeChapter({
+      plan,
+      theme,
+      files: fullFiles,
+      fileTree,
+      config,
+      repoContext: options.repoContext,
+    });
     if (!writerProvider) writerProvider = result.provider;
     chapters[idx] = result.chapter;
     options.onChapter?.({ themeId: theme.id, index: idx, chapter: result.chapter });
@@ -339,6 +355,7 @@ async function generateNarrativeSinglePass(
     fileTree,
     skippedFiles,
     previousContext,
+    repoContext: options.repoContext,
   });
   logPromptStats(stats, skippedFiles.length);
 

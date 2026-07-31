@@ -1,4 +1,5 @@
 import type { DiffFile, DiffHunk, DiffLine } from '../github/types';
+import type { RepoContext } from '../repo/snapshot';
 import { formatHintsBlock, type HunkHint } from './hints';
 import type { Plan, PlanTheme } from './plan-types';
 import { computeRisk, formatRiskHints, type FileRisk } from './risk';
@@ -19,6 +20,11 @@ export interface NarrativePromptInput {
   previousContext?: PreviousNarrativeContext;
   /** Optional non-LLM signals fed into the planner prompt. Ignored by the single-pass narrator. */
   hints?: HunkHint[];
+  /**
+   * Base-branch snapshot, when one resolved. Optional on purpose: absence is a defined state that
+   * degrades inbound-reference counting to diff-only rather than failing the prompt.
+   */
+  repoContext?: RepoContext;
 }
 
 export interface PromptCapStats {
@@ -56,8 +62,12 @@ const MAX_THEMES = 7;
  * - NARRATIVE_PROMPT_REVISION — bump when single-pass/writer prose instructions change.
  *   Invalidates completed narratives while leaving still-valid plans cached.
  */
-export const PLANNER_PROMPT_REVISION = 1;
-export const NARRATIVE_PROMPT_REVISION = 2;
+// Both bumped for repo-wide risk hints: `formatRiskHints` now emits `inbound=N(repo|diff)` plus an
+// interpretation legend, and every risk score moved with the rescaled centrality term. Risk hints reach
+// the planner through `buildSharedHeader`, so plans change too — without both bumps, every PR already
+// reviewed at the same head SHA would keep serving its diff-only narrative from cache.
+export const PLANNER_PROMPT_REVISION = 2;
+export const NARRATIVE_PROMPT_REVISION = 3;
 
 const RESPONSE_SCHEMA = `{
   "title": "string — short title for the PR's review story",
@@ -585,8 +595,8 @@ function appendPreviousContext(parts: string[], previousContext: PreviousNarrati
 
 /** Build the original single-pass narrative prompt — used by the small-PR short-circuit and as a fallback. */
 export function buildNarrativePrompt(input: NarrativePromptInput): NarrativePrompt {
-  const { files, skippedFiles, previousContext } = input;
-  const risks = computeRisk(files);
+  const { files, skippedFiles, previousContext, repoContext } = input;
+  const risks = computeRisk(files, repoContext);
   const { diffBlock, stats } = formatDiffBlock(files, MAX_LINES_PER_FILE, MAX_TOTAL_DIFF_LINES);
 
   const parts = buildSharedHeader(input, risks);
@@ -599,8 +609,8 @@ export function buildNarrativePrompt(input: NarrativePromptInput): NarrativeProm
 
 /** Build the planner prompt — used for the first pass of the two-pass pipeline. */
 export function buildPlannerPrompt(input: NarrativePromptInput): NarrativePrompt {
-  const { files, skippedFiles, previousContext, hints } = input;
-  const risks = computeRisk(files);
+  const { files, skippedFiles, previousContext, hints, repoContext } = input;
+  const risks = computeRisk(files, repoContext);
   const { diffBlock, stats } = formatDiffBlock(files, MAX_LINES_PER_FILE, MAX_TOTAL_DIFF_LINES);
 
   const parts = buildSharedHeader(input, risks);
@@ -619,6 +629,8 @@ export interface WriterPromptInput {
   /** Full diff files (writer renders only the hunks referenced by theme.hunkRefs, preserving original hunkIndex). */
   files: DiffFile[];
   fullFileTree: string[];
+  /** Base-branch snapshot, when one resolved. See {@link NarrativePromptInput.repoContext}. */
+  repoContext?: RepoContext;
 }
 
 function normalizePath(p: string): string {
@@ -675,8 +687,8 @@ function formatThemeDiff(files: DiffFile[], theme: PlanTheme): string {
 
 /** Build the writer prompt for one theme — second pass of the two-pass pipeline. */
 export function buildWriterPrompt(input: WriterPromptInput): NarrativePrompt {
-  const { plan, theme, files, fullFileTree } = input;
-  const risks = computeRisk(files);
+  const { plan, theme, files, fullFileTree, repoContext } = input;
+  const risks = computeRisk(files, repoContext);
   const diffBlock = formatThemeDiff(files, theme);
 
   const themeSiblings = plan.themes

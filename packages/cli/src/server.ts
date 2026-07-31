@@ -16,6 +16,7 @@ import { cacheRecap } from './recap/cache';
 import { generateRecap } from './recap/engine';
 import { gatherRecapSources } from './recap/sources';
 import type { RecapResponse } from './recap/types';
+import { describeRepoContext, resolveRepoContext } from './repo/snapshot';
 
 export type ServerContext = {
   narrative: NarrativeResponse | null;
@@ -356,6 +357,11 @@ export function createServer(ctx: ServerContext) {
                     const chars = totalChars > 0 ? `\x1b[2m — ${totalChars.toLocaleString()} chars\x1b[0m` : '';
                     process.stdout.write(`\r  \x1b[2m${frame} ${fmtRegenElapsed()} elapsed\x1b[0m${chars}`);
                   };
+                  // Same resolution the CLI does before its first generation: the prompt builders call
+                  // `computeRisk` synchronously, so the snapshot has to be in hand first. Warm on the
+                  // regenerate path (the CLI fetched it at startup), so this is normally a cache read.
+                  const repoContext = await resolveRepoContext(gh, ctx.owner, ctx.repo, ctx.pr.base);
+                  if (!repoContext.available) console.log(`  \x1b[2m${describeRepoContext(repoContext)}\x1b[0m`);
                   renderRegen();
                   const heartbeat = setInterval(renderRegen, 250);
                   let generated;
@@ -371,6 +377,7 @@ export function createServer(ctx: ServerContext) {
                         previousChapterTitles: prevChapterTitles,
                       },
                       {
+                        repoContext,
                         cacheKey: {
                           owner: ctx.owner,
                           repo: ctx.repo,

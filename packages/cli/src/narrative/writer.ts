@@ -1,5 +1,6 @@
 import type { DiffDadConfig } from '../config';
 import type { DiffFile } from '../github/types';
+import type { RepoContext } from '../repo/snapshot';
 import { callAi, type AiUsage } from './ai-runtime';
 import { parseLooseJson, rawResponseSnippet } from './json-parse';
 import { buildWriterPrompt } from './prompt';
@@ -12,6 +13,8 @@ export type WriterInput = {
   files: DiffFile[];
   fileTree: string[];
   config: DiffDadConfig;
+  /** Base-branch snapshot, when one resolved — widens inbound-reference counting to repo-wide. */
+  repoContext?: RepoContext;
 };
 
 export type WriterResult = {
@@ -34,8 +37,8 @@ function normalizePath(p: string): string {
 }
 
 export async function writeChapter(input: WriterInput): Promise<WriterResult> {
-  const { plan, theme, files, fileTree, config } = input;
-  const prompt = buildWriterPrompt({ plan, theme, files, fullFileTree: fileTree });
+  const { plan, theme, files, fileTree, config, repoContext } = input;
+  const prompt = buildWriterPrompt({ plan, theme, files, fullFileTree: fileTree, repoContext });
 
   const result = await callAi(config, prompt.system, prompt.user, WRITER_MAX_TOKENS);
   const parsed = parseChapterResponse(result.text, theme.id);

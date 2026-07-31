@@ -6,6 +6,7 @@ import { cacheNarrative, clearCache, computePromptMetaHash, getCachedNarrative }
 import { generateNarrative, resolveAiPath, resolveProviderKey, setCliOverride } from './narrative/engine';
 import { migrateLegacyData } from './paths';
 import { getCachedRecap } from './recap/cache';
+import { describeRepoContext, resolveRepoContext } from './repo/snapshot';
 import { createServer } from './server';
 import { daemonStatus, DEFAULT_DAEMON_PORT, isDaemonAlive, startDaemon } from './daemon/daemon';
 
@@ -297,6 +298,13 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
     const providerHint =
       withCli ??
       (aiPath === 'api' ? (effectiveConfig.aiProvider ?? 'anthropic') : (config.defaultCli ?? envCliHint ?? 'claude'));
+    // Resolve the base-branch snapshot before the prompt is built: `computeRisk` runs inside the
+    // synchronous prompt builders, so it cannot be lazily fetched from in there. The first fetch on a
+    // repo is a real download, hence the two status lines — a silent multi-second pause reads as a hang.
+    console.log(`  ${a.dim}Resolving repo context ${a.gray}(${metadata.base})${a.reset}`);
+    const repoContext = await resolveRepoContext(github, parsed.owner, parsed.repo, metadata.base);
+    console.log(`  ${repoContext.available ? a.dim : a.yellow}${describeRepoContext(repoContext)}${a.reset}`);
+
     const waitJoke = DAD_JOKES[Math.floor(Math.random() * DAD_JOKES.length)];
     console.log(
       `  ${a.yellow}Generating narrative${a.reset} ${a.gray}via${a.reset} ${a.cyan}${providerHint}${a.reset}`,
@@ -328,6 +336,7 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
     let result: Awaited<ReturnType<typeof generateNarrative>>;
     try {
       result = await generateNarrative(metadata, files, [], config, undefined, {
+        repoContext,
         cacheKey: {
           owner: parsed.owner,
           repo: parsed.repo,
