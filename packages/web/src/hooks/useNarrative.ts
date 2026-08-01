@@ -35,6 +35,8 @@ type NarrativeApiResponse = {
   capStats?: CapStats;
   /** Command-center bootstrap: the daemon seeds the initial queue so the dashboard paints at once. */
   units?: Unit[];
+  /** Command-center bootstrap: rows ✕ has hidden until their author pushes. Counted, never rendered inline. */
+  dismissed?: Unit[];
 };
 
 /**
@@ -87,7 +89,7 @@ export function useNarrative() {
           // SSE event keeps it live. Return before the PR/watch branches touch `data.pr` (absent).
           setGenerating(false);
           useReviewStore.getState().setMode('command-center');
-          useReviewStore.getState().setUnits(data.units ?? []);
+          useReviewStore.getState().setUnits(data.units ?? [], data.dismissed ?? []);
           return;
         }
 

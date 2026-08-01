@@ -6,10 +6,12 @@ import { type OnConfigChange, registerConfigRoutes } from '../config-api';
 import type { PostCommentOptions } from '../github/client';
 import { mapCommentsToChapters } from '../github/comments';
 import { parsePrRef } from '../github/pr-ref';
-import type { PRComment, PRMetadata } from '../github/types';
+import type { PrFileSummary, PRComment, PRMetadata } from '../github/types';
 import { buildChapterAiPrompt } from '../narrative/chapter-ai';
 import { type ChapterCallers, chapterCallers, type CollapseResult, resolveCollapse } from '../narrative/collapse';
 import { buildReviewSummaryPrompt } from '../narrative/review-summary';
+import { type TriageSummary, triageFiles } from '../narrative/triage';
+import { isDismissed, laneOf, unitsPayload } from '../units/lane';
 import type { CheckRun, PRReview } from '../github/types';
 import type { Broadcast } from '../mcp/broadcast';
 import type { RepoContext } from '../repo/snapshot';
@@ -111,6 +113,17 @@ export interface GitHubWiring {
    */
   prFetcher?: (owner: string, repo: string, number: number) => Promise<PRMetadata>;
   /**
+   * One page of a PR's file list, for triage at the add-PR mint door. Wired separately from the
+   * poller's copy because this is the *second* mint door: `POST /api/units` fetches only metadata by
+   * design, so without this a hand-added PR lands with no triage summary and no lane — laneless for
+   * exactly the PR the reviewer asked for by name.
+   */
+  fileSummaryFetcher?: (
+    owner: string,
+    repo: string,
+    number: number,
+  ) => Promise<{ files: PrFileSummary[]; truncated: boolean }>;
+  /**
    * Runs one GitHub review-request poll on demand — the same `pollOnce` pass the interval poller runs
    * (search GitHub, mint/resurface units, broadcast a `units` snapshot), returning the counts. Absent →
    * the manual poll route 503s (no GitHub token, nothing to poll).
@@ -169,7 +182,7 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
   // ('pr' | 'command-center'). The daemon has no single PR/narrative, so it declares
   // 'command-center' and seeds the queue. Must precede the static catch-all, or serveStatic
   // answers with index.html and the SPA can't tell it's on a daemon.
-  app.get('/api/narrative', (c) => c.json({ mode: 'command-center', units: store.list() }));
+  app.get('/api/narrative', (c) => c.json({ mode: 'command-center', ...unitsPayload(store.list()) }));
 
   // --- Units API ------------------------------------------------------------
   app.get('/api/units', (c) => {
@@ -178,7 +191,7 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
     // `github` rides the snapshot so the command center learns a credential-less daemon can't poll —
     // it can't come off the SSE `units` stream, which carries only the list. Read live from the wiring
     // holder so a token saved after startup flips it without a restart.
-    return c.json({ units: store.list({ status, repo }), github: wiring.current.github });
+    return c.json({ ...unitsPayload(store.list({ status, repo })), github: wiring.current.github });
   });
 
   /**
@@ -222,7 +235,16 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
 
     const repo = `${ref.owner}/${ref.repo}`;
     const existing = store.list().find((u) => u.repo === repo && u.prNumber === ref.number);
-    if (existing) return c.json({ unit: existing, existing: true });
+    if (existing) {
+      // Typing in a PR you had dismissed is an explicit request for it — the most direct statement of
+      // intent the field has. Honour it by un-hiding, rather than returning a unit the queue will not
+      // show and leaving the field looking like it silently did nothing.
+      if (isDismissed(existing)) {
+        store.undismiss(existing.unitId);
+        broadcast('units', unitsPayload(store.list()));
+      }
+      return c.json({ unit: store.get(existing.unitId) ?? existing, existing: true });
+    }
 
     const prFetcher = wiring.current.prFetcher;
     if (!prFetcher) {
@@ -249,7 +271,24 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
       );
     }
 
+    // Second mint door: classify the file list before minting so the row has a lane immediately. A
+    // failure here is not fatal — the unit mints un-triaged and the poller's backfill heals it, which
+    // beats refusing to add a PR because one auxiliary fetch was flaky.
+    let triage: TriageSummary | undefined;
+    const fileSummaryFetcher = wiring.current.fileSummaryFetcher;
+    if (fileSummaryFetcher) {
+      try {
+        const { files, truncated } = await fileSummaryFetcher(ref.owner, ref.repo, ref.number);
+        triage = triageFiles(files, metadata.headSha, truncated);
+      } catch (err) {
+        console.warn(
+          `[diffdad] triage fetch failed for ${repo}#${ref.number} — ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
     const unit = store.addGithubUnit({
+      triage,
       owner: ref.owner,
       repo: ref.repo,
       number: ref.number,
@@ -264,7 +303,7 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
       metadata,
       pinned: true,
     });
-    broadcast('units', { units: store.list() });
+    broadcast('units', unitsPayload(store.list()));
     return c.json({ unit, existing: false }, 201);
   });
 
@@ -301,14 +340,18 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
     return c.json({ unit, ...(await blastRadius(unit)) });
   });
 
-  // Remove a unit from the queue (the reviewer's manual cleanup of failed / stale / abandoned units).
-  // Hard delete: drops it from memory + disk. For github units the poller may re-mint it next cycle if
-  // the review is still requested — that's intended (it's still on your plate); local units stay gone.
+  // Dismiss a unit — the reviewer's "not now" for a PR they don't want in the queue.
+  //
+  // A soft delete, stamped with the current head SHA. It has to be: `classify` routes any PR whose unit
+  // already exists to `existing-github`, so a hard delete of a still-requested PR is undone by the very
+  // next poll, about sixty seconds later. Keeping the unit is the only thing that makes ✕ stick.
+  // The poller clears the stamp once the author pushes past it, returning the PR as genuinely new work.
   app.delete('/api/units/:id', async (c) => {
     const id = c.req.param('id');
-    const removed = await store.remove(id);
-    if (!removed) return c.json({ error: new UnknownUnitError(id).message }, 404);
-    broadcast('units', { units: store.list() });
+    const unit = store.get(id);
+    if (!unit) return c.json({ error: new UnknownUnitError(id).message }, 404);
+    store.dismiss(id, unit.metadata.headSha);
+    broadcast('units', unitsPayload(store.list()));
     return c.json({ ok: true });
   });
 
@@ -361,6 +404,12 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
     const id = c.req.param('id');
     const unit = store.get(id);
     if (!unit) return c.json({ error: new UnknownUnitError(id).message }, 404);
+
+    // The open event, with the lane the queue had assigned. This is the measurement behind "am I
+    // opening fewer PRs I didn't need to?" — a question no test can answer, and one the lane-split
+    // count alone cannot either: distribution is not behaviour. Opening a probably-not PR is exactly
+    // the event worth counting, so it is recorded here rather than inferred later.
+    console.log(`[diffdad] opened ${unit.repo}#${unit.prNumber} (${laneOf(unit)})`);
 
     let force = false;
     try {
@@ -416,7 +465,7 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
       // Record nothing and don't broadcast — the unit stays as-is for a later retry.
       return c.json({ error: err instanceof Error ? err.message : String(err) }, 502);
     }
-    broadcast('units', { units: store.list() });
+    broadcast('units', unitsPayload(store.list()));
     return c.json({ unit: updated, ...(await blastRadius(updated)) });
   });
 
@@ -541,7 +590,7 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
         if (err instanceof IllegalTransitionError) return c.json({ error: err.message }, 409);
         throw err;
       }
-      broadcast('units', { units: store.list() });
+      broadcast('units', unitsPayload(store.list()));
     }
     broadcast('review', { event: ghEvent, body: body.body });
     return c.json({ ok: true, unit: updated });
@@ -635,7 +684,7 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
           }
         };
         send('connected', { timestamp: Date.now() });
-        send('units', { units: store.list() }); // initial snapshot so a fresh tab paints immediately
+        send('units', unitsPayload(store.list())); // initial snapshot so a fresh tab paints immediately
         const remove = hub.add(send);
         c.req.raw.signal.addEventListener('abort', () => {
           remove();

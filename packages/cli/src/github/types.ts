@@ -15,6 +15,24 @@ export type PRMetadata = {
   changedFiles: number;
   commits: number;
   headSha: string;
+  /**
+   * The PR's base repository is archived. Optional because it is a fact we may never have looked up:
+   * units persisted before this field existed carry no value, and `false` there would be a claim
+   * rather than an absence. Read `archived === true`, never `!archived`.
+   */
+  archived?: boolean;
+};
+
+/**
+ * One row of `GET /pulls/:n/files`, minus the patch text. Lives here rather than beside the triage
+ * classifier that consumes it because it describes a GitHub payload, and `github/` sits below
+ * `narrative/` — the client must not import upward to name its own return type.
+ */
+export type PrFileSummary = {
+  path: string;
+  status: string;
+  additions: number;
+  deletions: number;
 };
 
 export type PRComment = {

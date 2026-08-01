@@ -60,6 +60,13 @@ type ReviewState = {
   mode: 'pr' | 'command-center';
   /** Command-center: the daemon's review-unit queue, kept live via the `units` SSE event. */
   units: Unit[];
+  /**
+   * Units ✕ has hidden until their author pushes. A separate slice rather than a flag inside `units`,
+   * because everything downstream of `units` — the repo filter, the facet counts, the empty state's
+   * `total === 0` — would otherwise start counting rows that render nowhere. They ride the same payload
+   * so the reveal has real rows to show, not a bare number.
+   */
+  dismissed: Unit[];
   /** Wall-clock ms of the last `units` snapshot. Null until the first lands — powers the freshness caption. */
   lastUnitsAt: number | null;
   /** Command-center client-side route (center vs. a drill-in `/units/:id`). */
@@ -175,7 +182,8 @@ type ReviewState = {
   addComment: (comment: PRComment) => void;
   setComments: (comments: PRComment[]) => void;
   setMode: (mode: 'pr' | 'command-center') => void;
-  setUnits: (units: Unit[]) => void;
+  /** Both halves of a `units` payload. `dismissed` is required so a caller can't drop it by omission. */
+  setUnits: (units: Unit[], dismissed: Unit[]) => void;
   /** Stamp the freshness clock when a `units` snapshot lands. */
   setLastUnitsAt: (ts: number) => void;
   /** Navigate the command center, pushing browser history (deep-linkable `/units/:id`). */
@@ -453,6 +461,7 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
   comments: [],
   mode: 'pr',
   units: [],
+  dismissed: [],
   lastUnitsAt: null,
   route: typeof window !== 'undefined' ? parseRoute(window.location.pathname) : { name: 'center' },
   checkRuns: [],
@@ -614,7 +623,7 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
 
   setComments: (comments) => set({ comments }),
   setMode: (mode) => set({ mode }),
-  setUnits: (units) => set({ units }),
+  setUnits: (units, dismissed) => set({ units, dismissed }),
   setLastUnitsAt: (lastUnitsAt) => set({ lastUnitsAt }),
 
   navigate: (route) => {

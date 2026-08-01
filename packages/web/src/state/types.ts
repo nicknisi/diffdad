@@ -258,6 +258,67 @@ export type CheckRun = {
  */
 export type UnitStatus = 'queued' | 'approved' | 'changes_requested' | 'done';
 
+/**
+ * Attention lanes — mirror of `packages/cli/src/units/lane.ts`, hand-copied for the same reason
+ * `CollapseEvidence` is: `packages/web` never imports from `packages/cli`.
+ *
+ * Only the *type* is mirrored. The lane itself arrives pre-computed on every payload unit, and that is
+ * the whole point: the daemon's lane-split log and these labels are two consumers of one rule, so a
+ * second implementation here would drift and corrupt the data the two-week judgment rests on. The
+ * browser reads `Unit.lane`; it never derives one.
+ */
+export type Lane = 'needs-you' | 'probably-not' | 'in-flight' | 'cleared';
+
+/**
+ * Triage inputs, mirroring `packages/cli/src/narrative/triage.ts`. Note this is an unrelated vocabulary
+ * to {@link TriageSeverity} above, which is the beat rail's risk/warn/info scale — these describe what a
+ * *file* is, that one describes how alarming a *finding* is. They share a word and nothing else.
+ */
+export type CriticalityTag =
+  | 'auth'
+  | 'security'
+  | 'crypto'
+  | 'payment'
+  | 'migration'
+  | 'permission'
+  | 'token'
+  | 'session'
+  | 'database'
+  | 'config'
+  | 'infra';
+
+/** `source` means "classifies as nothing mechanical" — ordinary code, not an unclassified file. */
+export type TriageKind =
+  | 'lockfile'
+  | 'generated'
+  | 'snapshot'
+  | 'vendored'
+  | 'minified'
+  | 'binary'
+  | 'oversized'
+  | 'manifest'
+  | 'test-only'
+  | 'docs'
+  | 'source';
+
+export type TriagedFile = {
+  path: string;
+  kind: TriageKind;
+  criticality: CriticalityTag[];
+};
+
+export type TriageSummary = {
+  files: TriagedFile[];
+  /** Distinct tags across every file, first-appearance order. Non-empty forces the high-attention lane. */
+  criticality: CriticalityTag[];
+  additions: number;
+  deletions: number;
+  /** More files than one page of `/pulls/:n/files`, so `files` is a partial view — never a low-stakes PR. */
+  truncated: boolean;
+  /** Head SHA these inputs were gathered at, so staleness is detectable without re-fetching. */
+  sha: string;
+};
+
 export type Unit = {
   unitId: string;
   repo: string; // owner/name
@@ -277,6 +338,20 @@ export type Unit = {
    */
   pinned?: boolean;
   toResolve: number;
+  /**
+   * The attention lane the *server* assigned. Optional because a payload from an older daemon carries
+   * none; the queue falls back to status-only grouping rather than to an empty screen. Never compute it.
+   */
+  lane?: Lane;
+  /**
+   * Path-derived evidence for the lane, gathered at mint from one REST call and zero model tokens.
+   * Absent means nobody has looked yet — which is not the same as "nothing found", and the row says so.
+   */
+  triage?: TriageSummary;
+  /** Head SHA at which ✕ hid this row. Present ⇒ dismissed; cleared by the poller once the author pushes. */
+  dismissedAtSha?: string;
+  /** Latest verdict per reviewer, GitHub's own rollup. Absent means the reviews were never fetched. */
+  reviewRollup?: { approved: number; changesRequested: number };
   verdict?: NarrativeResponse['verdict'];
   /** Set when the review worker threw — the unit still queues so it reaches the reviewer. */
   error?: string;

@@ -1,0 +1,388 @@
+{
+  "projectName": "Attention Lanes",
+  "slug": "attention-lanes",
+  "date": "2026-07-31",
+  "status": "Approved",
+  "approvedOn": "2026-07-31",
+  "approvedBy": "Nick Nisi",
+  "supersedes": null,
+  "gates": {
+    "dimensions": [
+      {
+        "key": "problem",
+        "label": "Problem Clarity",
+        "status": "ready",
+        "evidence": "Verified in code, not asserted: `verdict` is written only at store.ts:264 inside setNarrative, and narration is lazy-on-open, so every unopened row renders the neutral bullet (UnitRow.tsx:43) and the needs-you sort by VERDICT_RANK degrades to oldest-first (units-view.ts:54) — the queue's glyph, sort, and 'N to resolve' count are all placeholders for exactly the rows being triaged."
+      },
+      {
+        "key": "goals",
+        "label": "Goal Definition",
+        "status": "ready",
+        "evidence": "Seven goals, six with named commands run under a test-name pattern so a missing test shows as a zero pass count rather than a green exit, and one (G7, the real outcome) declared judgment-only and instrumented with per-poll lane splits plus per-open lane logging so the judgment reads data instead of recollection."
+      },
+      {
+        "key": "criteria",
+        "label": "Success Criteria",
+        "status": "ready",
+        "evidence": "Each goal carries at least one check; criteria cover both directions of the lane function (a degenerate all-Needs-you implementation fails criterion 10), the staleness path, legacy units with no triage summary, and non-regression of the prompt filter and collapse evidence that share classifyPath."
+      },
+      {
+        "key": "scope",
+        "label": "Scope Boundaries",
+        "status": "ready",
+        "evidence": "MVP is one new lane plus the server-side triage inputs that populate it and a dismissal that survives the poller; the approve button, evidence gate, settings config, snapshot dependency, CODEOWNERS, and weighted score are each excluded with a recorded reason, most measurement-backed rather than preferential."
+      },
+      {
+        "key": "consistency",
+        "label": "Consistency",
+        "status": "ready",
+        "evidence": "Five contradictions surfaced and resolved: real-GitHub-approve vs. lazy narration (evidence moved from chapters to file paths), a caller veto dropped while its snapshot guard was kept (measurement — both dropped), four evidence kinds selected after their gate was cut (rehomed as lane inputs), G2's cost envelope excluding the per-poll reviews fetch (G2 restated to own both cadences), and a lane function that phase 1 needed to log but phase 2 defined (moved CLI-side into phase 1)."
+      }
+    ]
+  },
+  "problem": [
+    "The daemon's command center promises triage and delivers a list. Its lanes are status lanes (queued / changes-requested / done), so \"Needs you\" is a synonym for \"everything actionable\", and every row renders at identical visual weight whether it is a four-line typo fix or a nine-hundred-line auth refactor.",
+    "The signal meant to rank the queue does not exist when the queue is rendered. `verdict` is cached from `narrative.verdict` and written in exactly one place — `setNarrative` (store.ts:264) — which runs during the lazy hydrate that only fires when a PR is opened. So for every PR the reviewer has not already opened, `verdict` is undefined: `verdictTone` returns `neutral`, the row leads with a grey bullet, and `groupUnits`' sort by VERDICT_RANK finds all zeros and silently degrades to oldest-first. `toResolve` is initialised to 0 at mint (store.ts:146) and rendered unconditionally, so fresh rows assert \"0 to resolve\" as though it were measured.",
+    "Two smaller defects compound it. PRs in archived repositories keep resurfacing even though GitHub serves those repos read-only, so neither approving nor commenting can succeed — a review request from 2018-02-13 on dojo/cli-export-project, archived in 2018, sat in the real queue during this interview. And the row's ✕ does not stick: `DELETE /api/units/:id` hard-deletes, `classify` (linking.ts:18) only checks whether a unit already exists, and nothing records the dismissal — so any PR GitHub still requests is re-minted on the next poll pass, within 60 seconds.",
+    "The cost is paid in the reviewer's attention, which is the scarce resource this tool exists to protect: the queue cannot say which PRs need a human, so every one gets opened to find out, and the two affordances for reducing the pile either show work that cannot be done or undo themselves within a minute."
+  ],
+  "goals": [
+    "Every queued unit lands in a named lane using only data available without a narrative — including units persisted before this ships — so no row in the command center renders the neutral placeholder state that unopened PRs show today, and no row claims \"0 to resolve\" as a measurement.",
+    "Triage costs no model calls at any point, one file-list page fetch per PR per push, and one reviews fetch per open unit per poll pass. Those are different cadences and the plan owns both: at the 60s default the reviews fetch roughly doubles API traffic and approaches GitHub's 5000/hr ceiling around forty open units.",
+    "Lane assignment discriminates on fixtures and stays honest as PRs change: a PR whose every file classifies as mechanical lands in \"Probably not\", any criticality tag forces \"Needs you\" regardless of size, a PR too large for one file-list page forces \"Needs you\" because size is itself a stakes signal, and a push that adds a source file to a previously-mechanical PR moves it back to \"Needs you\" on the next poll.",
+    "The queue reflects the reviewer's obligation, not only the diff's shape: a PR others have already approved ranks below one where the reviewer is the sole outstanding reviewer.",
+    "PRs whose base repository is archived never appear in the queue and are removed silently if already present — no note, no filtered-count, because there is no action the reviewer could take on one.",
+    "Dismissing a row with ✕ survives the poller: the PR stays hidden until its author pushes, at which point it returns to the queue as genuinely new work.",
+    "The reviewer opens fewer PRs that turn out not to need them — judged after roughly two weeks of real use, against per-poll lane-split counts and a logged lane for every PR actually opened."
+  ],
+  "successCriteria": [
+    {
+      "criterion": "A unit with a populated triage summary and `narrative: undefined` resolves to a named lane, and a legacy unit carrying no triage summary at all resolves to \"Needs you\" rather than a neutral state — the lane function is pure over the stored summary and total over its absence.",
+      "check": { "cmd": "bun test packages/cli/src -t \"lane\"", "expect": "non-zero pass count, 0 fail" }
+    },
+    {
+      "criterion": "The poller backfills a triage summary onto units minted before this shipped — a per-existing-unit heal mirroring countsDiffer, distinct from the mint-time fetch — so a queue that predates the feature converges without the reviewer re-adding anything.",
+      "check": { "cmd": "bun test packages/cli/src -t \"backfill\"", "expect": "non-zero pass count, 0 fail" }
+    },
+    {
+      "criterion": "A PR added by hand through POST /api/units carries a triage summary and a lane, exactly as a polled one does — both mint doors populate it.",
+      "check": { "cmd": "bun test packages/cli/src -t \"pinned triage\"", "expect": "non-zero pass count, 0 fail" }
+    },
+    {
+      "criterion": "Lane criticality and risk-score criticality come from one table: the triage module imports the tagger from risk.ts rather than restating CRITICALITY_KEYWORDS, so the two can never drift.",
+      "check": { "cmd": "bun test packages/cli/src -t \"criticality source\"", "expect": "non-zero pass count, 0 fail" }
+    },
+    {
+      "criterion": "`pollOnce` completes a full mint with an AI dependency that throws if invoked, proving minting never reaches the narrative engine.",
+      "check": { "cmd": "bun test packages/cli/src -t \"no model call\"", "expect": "non-zero pass count, 0 fail" }
+    },
+    {
+      "criterion": "Minting one PR issues one file-list page fetch, asserted by a counting fake; a PR reporting further pages is not paginated through but is forced into \"Needs you\" and flagged truncated.",
+      "check": { "cmd": "bun test packages/cli/src -t \"file-list fetch\"", "expect": "non-zero pass count, 0 fail" }
+    },
+    {
+      "criterion": "Purpose-built fixtures — a lockfile+manifest bump, a docs-only PR, a test-only PR, a >100-file PR, and an adversarial PR of 39 generated files plus one auth-constant change — each land in their expected lane, with the last two in \"Needs you\".",
+      "check": { "cmd": "bun test packages/cli/src -t \"fixture lane\"", "expect": "non-zero pass count, 0 fail" }
+    },
+    {
+      "criterion": "A push that adds a source file to an already-minted docs-only PR re-fetches triage on the next poll and moves the unit out of \"Probably not\" — stale evidence cannot outlive the head SHA it was gathered at.",
+      "check": { "cmd": "bun test packages/cli/src -t \"re-triage\"", "expect": "non-zero pass count, 0 fail" }
+    },
+    {
+      "criterion": "Triage classification composes `classifyPath` without modifying it: the prompt filter and collapse evidence behave identically, proven by the pre-existing suites passing with no edits to their expectations.",
+      "check": {
+        "cmd": "bun test packages/cli/src/__tests__/diff-filter.test.ts packages/cli/src/__tests__/collapse.test.ts",
+        "expect": "exits 0 with no changes to either file in the diff"
+      }
+    },
+    {
+      "criterion": "Sort order places a PR with two existing approvals below an otherwise-identical PR with none.",
+      "check": { "cmd": "bun test packages/cli/src -t \"approval ordering\"", "expect": "non-zero pass count, 0 fail" }
+    },
+    {
+      "criterion": "An archived-repo PR is never minted, is removed if already present, is removed even with no reconcile dependency wired, and produces no user-visible note — the queue simply does not contain it.",
+      "check": { "cmd": "bun test packages/cli/src -t \"archived\"", "expect": "non-zero pass count, 0 fail" }
+    },
+    {
+      "criterion": "The lane function is discriminating in both directions: the fixture queue puts the mechanical PRs in \"Probably not\" AND leaves that lane non-empty, so an implementation that routes everything to \"Needs you\" fails rather than passes.",
+      "check": {
+        "cmd": "bun test packages/cli/src -t \"lane discrimination\"",
+        "expect": "non-zero pass count, 0 fail; the assertion on a non-empty Probably-not lane is present"
+      }
+    },
+    {
+      "criterion": "A dismissed unit is not re-minted by a poll pass that still sees its PR in the review-request search, and is resurfaced when the polled head SHA differs from the SHA it was dismissed at.",
+      "check": { "cmd": "bun test packages/cli/src -t \"dismiss\"", "expect": "non-zero pass count, 0 fail" }
+    },
+    {
+      "criterion": "The command center renders four lanes — Needs you, Probably not, In flight, Cleared — with dismissed units excluded from all of them and reachable behind a count, and no row displaying a \"0 to resolve\" placeholder.",
+      "check": {
+        "cmd": "bun run --filter '@diffdad/web' test -- -t \"lane render\"",
+        "expect": "non-zero pass count, 0 fail"
+      }
+    },
+    {
+      "criterion": "The daemon logs a lane-split count on each poll pass and the assigned lane for each unit actually opened, so the two-week judgment reads data rather than recollection.",
+      "check": { "cmd": "bun test packages/cli/src -t \"lane log\"", "expect": "non-zero pass count, 0 fail" }
+    },
+    {
+      "criterion": "The reviewer runs the daemon against their real queue and agrees the lanes read correctly — nothing that needed them sitting in \"Probably not\", the archived 2018 PR simply absent, ✕ actually sticking, and row weight tracking stakes rather than distracting.",
+      "check": {
+        "judgment": "Nick, running the daemon on a scratch port per the repo's `verify` skill, reading his own queue"
+      }
+    },
+    {
+      "criterion": "After roughly two weeks of real use, the reviewer judges that fewer PRs are being opened that turn out not to need them, reading the logged open-events against their lanes.",
+      "check": {
+        "judgment": "Nick, reading accumulated lane-split and per-open log lines alongside his own experience"
+      }
+    }
+  ],
+  "scope": {
+    "mvp": [
+      {
+        "item": "Fetch each PR's first file-list page at mint and on head-SHA change, storing a compact triage summary — paths, mechanical kind per path, criticality tags, counts, and a truncated flag when more pages exist",
+        "reason": "Path data is the only input the lane needs, it costs one REST call and zero model tokens, and re-fetching on push is what stops stale evidence from outliving the diff it described."
+      },
+      {
+        "item": "A triage classifier that composes `classifyPath` and adds a `manifest` kind for package.json and friends",
+        "reason": "package.json blocked 17 of 30 sampled dependabot PRs from classifying, but classifyPath feeds partitionMechanicalFiles (engine.ts:218) and collapse evidence (collapse.ts:105), so extending it in place would silently change narrative generation."
+      },
+      {
+        "item": "A pure lane function, CLI-side, over the stored triage summary — total over a missing summary",
+        "reason": "Both the daemon (which logs lane splits) and the web UI (which renders lanes) need the answer; two implementations would drift and corrupt the very data the two-week judgment depends on."
+      },
+      {
+        "item": "Fetch each open unit's reviews at poll time and store the approved / changes-requested rollup",
+        "reason": "Turns \"do I need to care\" into a fact about the reviewer rather than only about the diff. Its recurring cost is real and now stated in G2 rather than hidden; summarizeReviews already exists."
+      },
+      {
+        "item": "A \"Probably not\" lane between the existing Needs you and In flight, with a one-line evidence reason on every row",
+        "reason": "Splits the actionable queue by attention while leaving In flight and Cleared untouched — the smallest change that delivers the labeling, since In flight was never part of the problem."
+      },
+      {
+        "item": "Rows sized by stakes, leading with the reason rather than a glyph, and the \"0 to resolve\" placeholder removed",
+        "reason": "A four-line typo fix and a nine-hundred-line auth refactor currently render identically, and the placeholder count asserts a measurement that was never taken. Row weight is covered by the judgment criterion so it cannot be silently dropped or silently expanded."
+      },
+      {
+        "item": "✕ becomes a dismissal that survives the poller: soft-delete stamped with the head SHA, hidden from every lane, resurfaced when the author pushes",
+        "reason": "Today ✕ hard-deletes and the poller re-mints within 60s, so the one control for shrinking the queue undoes itself. Reuses classify's existing-unit guard and shouldResurface rather than adding a suppression list."
+      },
+      {
+        "item": "A per-poll lane-split count and a per-open lane log line in the daemon",
+        "reason": "G7 is judgment-only by necessity; the split alone shows distribution but not behavior, so the open-event line is what makes it a measurement rather than an impression."
+      }
+    ],
+    "full": [],
+    "stretch": [],
+    "outOfScope": [
+      {
+        "item": "The inline approve button",
+        "reason": "Measured: the gate fires on 0 of 47 merged diffdad PRs and 5 of 30 sampled dependabot PRs, and the kinds it does fire on — lockfiles and manifests — are the supply-chain surface, the worst thing to approve unread."
+      },
+      {
+        "item": "The evidence gate and its settings configuration",
+        "reason": "There is no gate to configure once the button is out; a config field added now would encode a guess with no data behind it."
+      },
+      {
+        "item": "\"Known external callers\" as a signal of any kind",
+        "reason": "Measured unreliable for these file kinds: moduleNameFromPath truncates at the first dot, so bun.lock keys as \"bun\" and matched 2 bare-specifier importers, and every X.test.ts collides with X.ts (12 spurious callers on units-view.test.ts). Coarse-by-design is fine where a false positive is conservative; it is not fine here."
+      },
+      {
+        "item": "Any dependency on the repo snapshot or import index",
+        "reason": "It existed only to serve the caller check. Dropping it makes lanes work instantly, with no tarball warmup, and on repositories over the 500 MB snapshot cap."
+      },
+      {
+        "item": "Eager narration of queued PRs",
+        "reason": "Explicitly declined; the file list delivers the lane for one REST call and zero tokens, so the expensive path buys nothing the cheap one does not."
+      },
+      {
+        "item": "Paginating past the first file-list page",
+        "reason": "A PR with more than 100 files is not a \"probably not\" candidate under any reading, so the truncated flag forcing Needs you is both cheaper and safer than fetching the rest."
+      },
+      {
+        "item": "CODEOWNERS parsing and path matching",
+        "reason": "Strongest obligation signal, but neither the parser nor the glob matcher exists, and the reviews rollup already moves the signal from the diff to the reviewer."
+      },
+      {
+        "item": "A weighted risk score with a configurable threshold",
+        "reason": "Any score safe enough to gate on needs criticality as a veto, at which point the conjunction does the work and the number is decoration; and a threshold has no ground truth to calibrate against, so it only ever ratchets looser."
+      },
+      {
+        "item": "A permanent dismissal or a dedicated Dismissed tab",
+        "reason": "Dismiss-until-push self-clears on genuinely new work, so it needs no un-dismiss UI and cannot strand a PR that has since changed."
+      },
+      {
+        "item": "Auto-approving anything, under any condition",
+        "reason": "Standing exclusion from the brainstorm; nothing measured since has weakened it."
+      },
+      {
+        "item": "Restructuring the In flight or Cleared lanes",
+        "reason": "changes_requested means the ball is with the author and already leaves the actionable queue; it was never part of the stated problem."
+      }
+    ],
+    "future": [
+      "Revisit the approve button once the lane-split and open-event logs show the reviewer's real PR mix — neither corpus measured here was their own queue.",
+      "A caller check keyed on full relative paths rather than first-dot module names, which would remove the collision problem and could then be trusted.",
+      "Bounding the per-poll reviews fetch if the queue ever approaches the ~40-unit rate-limit ceiling G2 names.",
+      "CODEOWNERS-based ownership once a parser and matcher exist."
+    ]
+  },
+  "decisions": [
+    {
+      "decision": "Gate and lane evidence quantifies over the PR's file list",
+      "rejected": "Quantifying over narrative chapters (the original all-skim idea)",
+      "reason": "Chapter coverage is not file coverage — capStats exists precisely because the prompt budget drops files before the model sees them, so a PR could have every chapter collapsed while an unnarrated file sat in the diff. Quantifying over files makes coverage total by construction, and needs no narrative, which is what let lazy narration stay."
+    },
+    {
+      "decision": "No weighted score gates any outward action",
+      "rejected": "A configurable score with a numeric threshold",
+      "reason": "A safe score must treat criticality as a veto rather than a weight — otherwise 39 generated files dilute one token-expiry change — and once vetoes exist the conjunction is the safety mechanism. The threshold also has no ground truth to calibrate from and adjusts one-directionally in practice."
+    },
+    {
+      "decision": "Narration stays lazy-on-open",
+      "rejected": "A background worker narrating every unit at mint",
+      "reason": "Chosen by the reviewer; the file-list fetch supplies the lane for one REST call and zero tokens, so eager generation would spend model calls on PRs that never get opened to buy a signal the cheap path already provides."
+    },
+    {
+      "decision": "The caller check is excluded entirely",
+      "rejected": "Using known external callers as a veto, with snapshot-unavailable guarding it",
+      "reason": "Measured against the real import index: bun.lock keys as module \"bun\" and matched 2 importers; units-view.test.ts keys as \"units-view\" and matched 12. The false positives land on exactly the file kinds the feature targets."
+    },
+    {
+      "decision": "The snapshot-unavailable veto is also excluded",
+      "rejected": "Keeping it as an independent safety condition",
+      "reason": "It guarded only the caller check. With that gone the snapshot is unused, so the veto would darken the feature during tarball warmup and on oversized repos while protecting nothing."
+    },
+    {
+      "decision": "The approve button is out of v1, and the whole gate with it",
+      "rejected": "Shipping the button live, or shipping it in shadow-logged form",
+      "reason": "Chosen by the reviewer after the hit-rate measurements. Scope drops substantially — no gate, no config, no settings section, no approve-route wiring — and the stated problem is still solved by the lanes."
+    },
+    {
+      "decision": "The four selected evidence kinds become lane inputs rather than gate inputs",
+      "rejected": "Discarding them as moot once the button was cut",
+      "reason": "The lane is advisory and the gate was strict — different bars — so a generous evidence set is correct for lanes even though it would have been too permissive for an outward action."
+    },
+    {
+      "decision": "One new lane, inserted into the existing three",
+      "rejected": "A two-lane model replacing the current grouping, and a four-attention-lane taxonomy",
+      "reason": "Raised by the scope-creep critic: the contract named Needs you / Probably not / Cleared and never said what became of In flight, which groupOf currently populates from changes_requested. Keeping In flight untouched is both the smallest diff and the honest state — the ball is with the author."
+    },
+    {
+      "decision": "Lane membership and any future button eligibility use different bars",
+      "rejected": "One bar where lane membership implies eligibility",
+      "reason": "Mis-laning costs attention; mis-gating costs an approval under the reviewer's name. Sharing a bar would force the lane down to the gate's strictness and refill \"Needs you\" with noise."
+    },
+    {
+      "decision": "The lane function lives CLI-side and phase 1 owns it",
+      "rejected": "Defining it web-side in units-view.ts alongside groupUnits",
+      "reason": "Raised by the success-criteria critic: phase 1 logs lane splits while phase 2 would have defined the lane, so phase 1 needed a second CLI-side implementation. Two implementations of the same rule would drift and corrupt the data G7's judgment rests on."
+    },
+    {
+      "decision": "Triage classification is a new function composing classifyPath",
+      "rejected": "Adding a manifest kind to classifyPath directly",
+      "reason": "classifyPath feeds partitionMechanicalFiles (engine.ts:218), which drops files from the LLM prompt, and the generated collapse evidence (collapse.ts:105). Extending it would change what the model sees and what collapses, neither of which this project intends to touch."
+    },
+    {
+      "decision": "One file-list page, with more-pages forcing Needs you",
+      "rejected": "Paginating to completion, and asserting \"exactly one fetch\" against a paginating endpoint",
+      "reason": "Raised by the over-engineering critic: /pulls/{n}/files pages at 100, so the original criterion would either truncate large PRs silently or fail on correct code — and it broke on the >100-file class the problem statement uses as its motivating contrast. Treating truncation as a stakes signal keeps one fetch honest and is safer than the alternative."
+    },
+    {
+      "decision": "G2 states two different cadences rather than one",
+      "rejected": "Leaving G2's \"one fetch per PR per push\" wording with the reviews fetch inside it",
+      "reason": "Flagged independently by the scope-creep and over-engineering critics. The reviews rollup is per unit per poll, which at 60s roughly doubles API traffic and approaches the 5000/hr ceiling near forty units. The reviewer accepted that cost knowingly; the defect was the accounting, so the accounting is what changed."
+    },
+    {
+      "decision": "✕ soft-deletes with a dismissal SHA",
+      "rejected": "Today's hard delete, a permanent dismissal, and a dedicated Dismissed tab",
+      "reason": "Hard delete is undone by the poller within 60s because classify only checks for an existing unit. A permanent dismissal can strand a PR that later gains 40 commits. Stamping the head SHA reuses shouldResurface, needs no un-dismiss UI, and returns the PR exactly when there is new work."
+    },
+    {
+      "decision": "Archived PRs are filtered silently",
+      "rejected": "Showing a filtered-count note naming what was hidden",
+      "reason": "Requested by the reviewer: GitHub serves archived repos read-only, so there is no action available on one. Naming it converts an unactionable PR into an unactionable notification."
+    },
+    {
+      "decision": "The stored file list holds paths, kinds, and counts — not patches",
+      "rejected": "Storing the full DiffFile[] at mint",
+      "reason": "Every queued unit is persisted as one JSON file; carrying full patch text for units nobody has opened would bloat that store for data the lane never reads."
+    },
+    {
+      "decision": "PRMetadata.archived is optional",
+      "rejected": "Making it required like the sibling `draft` field",
+      "reason": "38 construction sites across 26 files, and units persisted before the field existed carry no value — `false` there would claim a lookup that never happened. Read `archived === true`, never `!archived`. Matches how pinned? and capStats? already work."
+    },
+    {
+      "decision": "CI status is not consulted",
+      "rejected": "Treating failing or in-flight CI as a signal",
+      "reason": "Approval is not merge, and branch protection already blocks red PRs from landing, so the signal would duplicate a gate GitHub already enforces."
+    },
+    {
+      "decision": "Both mint doors populate triage, and the spec names them",
+      "rejected": "Wiring the fetch into the poller's create path alone",
+      "reason": "Raised by the hidden-dependency critic: POST /api/units (app.ts:201) is a second mint door that deliberately fetches nothing beyond PR metadata, so hand-added PRs would have landed laneless — contradicting G1's 'every queued unit' for exactly the PRs the reviewer asked for by name."
+    },
+    {
+      "decision": "risk.ts exports its criticality tagger; triage imports it",
+      "rejected": "Restating CRITICALITY_KEYWORDS inside the triage module",
+      "reason": "Raised by the hidden-dependency critic: classifyCriticality (risk.ts:68) and its keyword table (risk.ts:48) are module-private, so the classifier could not reach them. A second copy would let lane criticality drift from risk-score criticality — two answers to the same question, which is the defect the single lane function was moved CLI-side to avoid."
+    },
+    {
+      "decision": "Backfill is a per-existing-unit heal, excluded from the mint-fetch count",
+      "rejected": "Treating backfill as part of the mint path",
+      "reason": "Raised by the hidden-dependency critic: it mirrors the existing countsDiffer heal (poller.ts:131), which runs over units already in the store. Counting it in criterion 4's mint-time fetch fake would make a correct implementation fail the check."
+    },
+    {
+      "decision": "cmd checks run under a test-name pattern",
+      "rejected": "Plain suite invocations expecting only exit 0",
+      "reason": "Raised by the success-criteria critic: a suite that never gained the named test still exits 0, so every criterion was vacuously satisfiable. Both runners support the filter (bun test -t, vitest -t), verified during the interview."
+    }
+  ],
+  "execution": {
+    "strategy": "Sequential",
+    "phases": [
+      {
+        "title": "Triage inputs and the lane function",
+        "risk": "medium",
+        "blocking": true,
+        "kind": "phase",
+        "specPath": "docs/ideation/attention-lanes/spec-phase-1.md",
+        "notes": "CLI side, and it owns every producer. Fetch the first file-list page and classify paths with a new triage module composing classifyPath plus a manifest kind; roll up criticality tags and reviews; persist a compact triage summary; define the pure lane function over that summary, total over its absence. Also the dismissal soft-delete and the two log lines. Three wiring facts the spec must state explicitly, each verified: (1) there are TWO mint doors — the poller's classify/create path AND POST /api/units (app.ts:201), which today fetches nothing beyond PR metadata, so a hand-added PR lands laneless unless both call the fetch; (2) classifyCriticality (risk.ts:68) and CRITICALITY_KEYWORDS (risk.ts:48) are module-private, so risk.ts needs an export-only change — duplicating the keyword table would drift lane criticality away from risk-score criticality; (3) backfilling legacy units mirrors the existing countsDiffer heal (poller.ts:131) and is per-existing-unit, NOT per-minted-PR, so it must not be counted by criterion 4's mint-time fetch fake. The phase's criteria assert the summary is populated after a real mint, not merely typed — a field declared in one phase and written by none is the recorded failure mode from review-triage.",
+        "files": [
+          "packages/cli/src/github/client.ts",
+          "packages/cli/src/github/types.ts",
+          "packages/cli/src/narrative/triage.ts",
+          "packages/cli/src/narrative/risk.ts",
+          "packages/cli/src/units/lane.ts",
+          "packages/cli/src/units/types.ts",
+          "packages/cli/src/units/store.ts",
+          "packages/cli/src/units/linking.ts",
+          "packages/cli/src/daemon/poller.ts",
+          "packages/cli/src/daemon/app.ts",
+          "packages/cli/src/daemon/daemon.ts",
+          "packages/cli/src/__tests__/triage.test.ts",
+          "packages/cli/src/__tests__/lane.test.ts",
+          "packages/cli/src/daemon/__tests__/poller.test.ts"
+        ]
+      },
+      {
+        "title": "The Probably-not lane in the queue",
+        "risk": "low",
+        "blocking": true,
+        "kind": "phase",
+        "prereqs": ["Triage inputs and the lane function"],
+        "specPath": "docs/ideation/attention-lanes/spec-phase-2.md",
+        "notes": "Web side, rendering only — it consumes the lane the CLI assigned and never recomputes it. Insert Probably not between Needs you and the untouched In flight; row weight by stakes; reason line replacing the glyph; remove the '0 to resolve' placeholder; hide dismissed units behind a count. Test environment needs no work but has a constraint: vitest's environment is deliberately 'node' because durable-review-state.test.ts shims globalThis.localStorage, which a DOM environment owns as a read-only accessor. A test needing a real DOM opts in per file with `// @vitest-environment happy-dom` (happy-dom is the installed dependency, not jsdom); the global default must not be flipped.",
+        "files": [
+          "packages/web/src/state/types.ts",
+          "packages/web/src/lib/units-view.ts",
+          "packages/web/src/components/UnitRow.tsx",
+          "packages/web/src/components/CommandCenter.tsx",
+          "packages/web/src/lib/__tests__/units-view.test.ts"
+        ]
+      }
+    ]
+  }
+}

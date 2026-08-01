@@ -34,3 +34,21 @@ export function shouldResurface(unit: ReviewUnit, polledHeadSha: string): boolea
     unit.lastReviewedSha !== polledHeadSha
   );
 }
+
+/**
+ * The dismissal counterpart: should a unit the reviewer hid with ✕ come back because the author pushed?
+ *
+ * A separate function rather than a branch inside {@link shouldResurface}, and the distinction is not
+ * cosmetic — that one gates on a *reviewed* status and compares `lastReviewedSha`, while a dismissed
+ * unit is still `queued` and has no recorded decision. Reusing it would mean a dismissed PR never
+ * returned, which is the silent failure this whole mechanism exists to avoid: a dismissal that outlives
+ * the work it was dismissing.
+ */
+export function shouldUndismiss(unit: ReviewUnit, polledHeadSha: string): boolean {
+  return (
+    unit.source === 'github' &&
+    typeof unit.dismissedAtSha === 'string' &&
+    unit.dismissedAtSha.length > 0 &&
+    unit.dismissedAtSha !== polledHeadSha
+  );
+}

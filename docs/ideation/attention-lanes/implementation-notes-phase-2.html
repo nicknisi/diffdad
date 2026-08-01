@@ -1,0 +1,294 @@
+<!doctype html>
+<!--
+  Implementation-notes shell — copied VERBATIM by execute-spec on the first logged entry.
+  This file is the single owner of the implementation-notes format. Do not restate its
+  structure or styles elsewhere; change the format here and every future phase inherits it.
+  Copier substitutes: 2 (phase number, twice), Attention Lanes, 2026-07-31, Rendering the lanes the daemon already assigns —
+  then deletes the example entry and appends real ones inside <main class="doc-content">.
+-->
+<html lang="en" data-theme="auto">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Implementation Notes — Phase 2</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #ffffff;
+        --fg: #1a1a2e;
+        --muted: #5a5a72;
+        --border: #d8d8e4;
+        --accent: #0f3460;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #12121c;
+          --fg: #e8e8f0;
+          --muted: #9a9ab0;
+          --border: #2e2e42;
+          --accent: #7fb3ff;
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0 auto;
+        max-width: 46rem;
+        padding: 2rem 1.25rem 4rem;
+        background: var(--bg);
+        color: var(--fg);
+        font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      .doc-header { border-bottom: 1px solid var(--border); padding-bottom: 1rem; margin-bottom: 2rem; }
+      .doc-header h1 { margin: 0 0 0.25rem; font-size: 1.5rem; }
+      .doc-meta { margin: 0; color: var(--muted); font-size: 0.875rem; }
+      .note-entry { border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1.5rem; }
+      .note-entry h3 { margin: 0 0 0.75rem; font-size: 1.05rem; color: var(--accent); }
+      .note-entry dl { margin: 0; }
+      .note-entry dt { font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin-top: 0.75rem; }
+      .note-entry dt:first-child { margin-top: 0; }
+      .note-entry dd { margin: 0.15rem 0 0; }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.9em;
+        background: color-mix(in srgb, var(--fg) 8%, transparent);
+        padding: 0.1em 0.3em;
+        border-radius: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="doc-header">
+      <h1>Implementation Notes — Phase 2</h1>
+      <p class="doc-meta">Attention Lanes · 2026-07-31 · Rendering the lanes the daemon already assigns</p>
+    </header>
+    <main class="doc-content">
+      <section class="note-entry">
+        <h3>useUnits / review-store — the dismissed count had no path to the browser</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            The spec puts <code>dismissedCount</code> inside <code>groupUnits</code> and lists neither the store nor the
+            hooks under File Changes. But phase 1's server splits dismissed units out of the payload
+            (<code>unitsPayload</code>) and all three client ingestion points read only <code>data.units</code>. A filter
+            inside <code>groupUnits</code> would therefore have counted a population that never arrives — a permanent
+            <code>0</code>, with the unit tests still green because they construct dismissed units by hand.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            Added a <code>dismissed: Unit[]</code> store slice fed from <code>payload.dismissed</code> at all three
+            ingestion points (<code>useNarrative</code>, <code>useUnits</code>, <code>useLiveStream</code>), and
+            <code>useUnits</code> passes <code>[...visible, ...hidden]</code> into <code>groupUnits</code> so the function
+            does the filtering and counting the spec describes. <code>setUnits</code> takes both arrays as
+            <em>required</em> parameters, so a future caller cannot drop the second one by omission.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            Merging dismissed units into the existing <code>units</code> array. Rejected: everything downstream of
+            <code>units</code> — the repo filter, the facet counts, and the empty state's <code>total === 0</code> — would
+            begin counting rows that render nowhere, so a queue holding only dismissed PRs would show a non-empty total
+            against a blank page.
+          </dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3>Tests — a new file, against the spec's "New Files: None"</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            The spec declares no new files, but its own validation command is
+            <code>bun run --filter '@diffdad/web' test -- -t "lane render"</code>, and the contract requires evidence that
+            no row displays the <code>0 to resolve</code> placeholder. That is a render assertion;
+            <code>units-view.test.ts</code> is pure and cannot make it. With no matching test the command exits 0 having
+            run nothing, which reads as satisfied.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            Added <code>packages/web/src/components/__tests__/lane-render.test.tsx</code> (12 tests) following the
+            <code>collapse-render.test.tsx</code> precedent — <code>renderToStaticMarkup</code> in the default node
+            environment, since <code>UnitRow</code> is prop-driven. Exported <code>FileTable</code> from
+            <code>UnitRow</code> so the drawer's contents are assertable: its open state needs a DOM the suite
+            deliberately does not have.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            Opting the file into <code>happy-dom</code> and driving a click. Rejected as more machinery than the assertion
+            needs, and there is no testing-library in the project — the click would have been hand-rolled against a React
+            root.
+          </dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3>units/lane.ts — one payload builder instead of two lane attachments</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            The spec says to extend <code>unitsPayload()</code> in <code>daemon/app.ts</code> and to make "the same
+            attachment" in the poller. The poller's emission is not a call to that helper, though — it is an inline object
+            literal, so following the spec literally would have produced two implementations of the wire shape.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            Hoisted <code>unitsPayload</code> (with its prose) into <code>packages/cli/src/units/lane.ts</code>, which
+            already owns both halves of what it does — <code>laneOf</code> and <code>isDismissed</code> — and called it
+            from both sites. <code>app.ts</code> does not import the poller, so there is no cycle. This is the same
+            argument the contract used to put <code>laneOf</code> CLI-side: the failure mode named in the spec ("a row's
+            lane depends on which message painted it") becomes unrepresentable rather than merely tested.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>Mirroring the spread in the poller. Rejected — it leaves the ninth emission point free to drift from the other eight.</dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3>groupUnits — the verdict rank was kept, not dropped</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            The spec enumerates three sort keys for needs-you (criticality, then nobody-approved, then oldest-first) and
+            says the oldest-first tiebreak is retained. It is silent on the existing <code>VERDICT_RANK</code> key, which
+            those three would otherwise orphan.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            Retained it as the lowest-priority key above the tiebreak. On unhydrated rows every verdict is
+            <code>neutral</code>, so it costs nothing there — which is precisely why it was never a usable lead signal and
+            why the mockup calls it out. On a PR that <em>has</em> been opened it is a real measurement, and this feature
+            has no business discarding one.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>Deleting <code>VERDICT_RANK</code>. Rejected: it silently loses signal for hydrated units, and "the spec didn't mention it" is not evidence it should go.</dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3>units-view.ts — buildRepoFacets now reads the lane too</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            Not in the spec's File Changes, but in the same file. <code>buildRepoFacets</code> counts needs-you via
+            <code>groupOf(u.status)</code>, which routes every <code>queued</code> unit — probably-not included — into the
+            sidebar count. Its own doc comment promises the count "matches the Needs you lane exactly", and this phase
+            would have made that a lie: a repo showing 5 in the rail beside a lane of 2.
+          </dd>
+          <dt>Decision</dt>
+          <dd>Switched it to the shared <code>laneOf</code> reader and rewrote the comment to say why. Covered by a test.</dd>
+          <dt>Alternative</dt>
+          <dd>Leaving it and documenting the divergence. Rejected — two visible counts of "work waiting on you" that disagree is exactly the kind of untrustworthy number this whole feature exists to remove.</dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3>UnitRow — reviewer copy is narrower than the mockup's</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            <code>mockup.html</code> renders "1 of 3 reviewers · none have approved" and "2 of 3 already approved". The
+            wire carries only <code>reviewRollup: { approved, changesRequested }</code> — there is no requested-reviewer
+            total on it, and no "am I the only reviewer" signal. The spec's own <code>reasonLine</code> description omits
+            reviewers entirely, so the two artifacts disagree.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            Rendered only what the rollup supports: "nobody has approved" / "2 approvals already". Took the spec's stricter
+            reading over the mockup's, and asserted the absence in a test (<code>not.toContain('of 3')</code>) so the
+            richer copy cannot creep back in without the data behind it.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>Fetching and storing the requested-reviewer list to match the mockup. Rejected as new phase-1-side data collection, well outside a rendering phase.</dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3>stakesOf — thresholds the spec did not give</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>The spec specifies the signature and that stakes are visual weight only, but names no numbers.</dd>
+          <dt>Decision</dt>
+          <dd>
+            Criticality or truncation ⇒ <code>high</code> outright; otherwise <code>high</code> at ≥200 changed lines or
+            ≥10 files, <code>low</code> at ≤20 lines and ≤2 files, <code>mid</code> between. A unit with no triage sits at
+            <code>mid</code>: it is not known to be small, and promoting it to <code>high</code> would make every
+            un-backfilled row shout during the poller's backfill window.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>Deriving stakes from <code>metadata.changedFiles</code>. Rejected — that field is <code>0</code> on search-minted units until hydrate, so it would size the newest rows as the smallest.</dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3>reasonLine — where it mirrors the CLI's rule, and what that costs</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            The failure-mode table forbids recomputing the lane client-side. <code>reasonLine</code> reads the same triage
+            evidence <code>needsYouReason</code> reads, which is adjacent enough to be worth stating plainly rather than
+            leaving for a reviewer to notice.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            Lane <em>membership</em> is read from <code>unit.lane</code> and never derived; the probably-not branch of
+            <code>reasonLine</code> defers to that lane outright rather than re-deriving it. For the needs-you branches the
+            ordering mirrors <code>needsYouReason</code>, and the property that makes this acceptable is narrow and worth
+            naming: each branch states a fact that is true of the PR independent of which branch won, so a drift shows a
+            <em>different true fact</em>, never a false one. A test asserts no reason or drawer sentence ever contains
+            "safe", "fine", or "approved".
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            Putting the <code>NeedsYouReason</code> union on the wire beside the lane. Genuinely cleaner, and worth
+            revisiting if the reason copy grows — rejected here because the union carries no summary for the probably-not
+            case (it is <code>null</code>), so the kind summary would still be computed web-side and the wire would grow
+            for a partial win.
+          </dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3>UnitRow — the drawer opens from a chevron, not from the row click</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            In <code>mockup.html</code> the row's main button toggles the evidence drawer
+            (<code>onclick="toggle(...)"</code>, :814) and the <code>›</code> is a passive span; the spec's manual test
+            reads "Click a 'Probably not' row; confirm the drawer lists every file". The real row click already has a
+            load-bearing behavior the static mockup had nowhere to put — it opens the unit's review.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            Kept row click = drill-in and made the <code>›</code> the drawer toggle (rotating 90° when open, with
+            <code>aria-expanded</code>). Raised by the cycle-1 reviewer, which is why it is recorded here rather than
+            passed over: the manual-test step should now read "click the chevron on a 'Probably not' row".
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            Making row click toggle the drawer on probably-not rows only. Rejected — the same gesture would mean two
+            different things depending on which lane a row happened to be in, and lanes move on their own as PRs are
+            re-triaged.
+          </dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3>UnitRow — the drawer is offered on every lane, not just the two attention ones</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            The drawer was first restricted to needs-you and probably-not, which left <code>drawerNote</code>'s
+            in-flight/cleared branch unreachable from any component — dead code exercised only by its own test. The
+            cycle-1 reviewer caught it and noted the mockup renders the card on its in-flight row with settled copy.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            Offered it on all four lanes. "Why is this row here?" is a fair question of an in-flight row too, and
+            <code>drawerNote</code> already answers it honestly — "status decides this one, not its files". This matches
+            the mockup and removes the dead branch rather than deleting a truthful answer.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>Deleting the in-flight/cleared branch of <code>drawerNote</code>. Rejected — it is the correct answer for those rows, and the mockup asks for it.</dd>
+        </dl>
+      </section>
+    </main>
+  </body>
+</html>

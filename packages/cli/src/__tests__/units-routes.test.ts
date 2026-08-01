@@ -74,12 +74,17 @@ type SetupOpts = {
   statusFetcher?: (unit: ReviewUnit) => Promise<{ checks: CheckRun[]; reviews: PRReview[] }>;
   pollNow?: () => Promise<{ minted: number; resurfaced: number; removed: number }>;
   prFetcher?: (owner: string, repo: string, number: number) => Promise<PRMetadata>;
+  fileSummaryFetcher?: (
+    owner: string,
+    repo: string,
+    number: number,
+  ) => Promise<{ files: { path: string; status: string; additions: number; deletions: number }[]; truncated: boolean }>;
   github?: boolean;
 };
 
 function setup(opts: SetupOpts = {}) {
   const { hydrate, commentFetcher, commentPoster, reviewSubmitter, ai } = opts;
-  const { statusFetcher, pollNow, repoContextFetcher, prFetcher } = opts;
+  const { statusFetcher, pollNow, repoContextFetcher, prFetcher, fileSummaryFetcher } = opts;
   const store = new UnitStore([], { dir, ...deterministic() });
   const hub = new SseHub();
   const events: string[] = [];
@@ -103,6 +108,7 @@ function setup(opts: SetupOpts = {}) {
         repoContextFetcher,
         pollNow,
         prFetcher,
+        fileSummaryFetcher,
       },
     },
     ai,
@@ -421,6 +427,134 @@ describe('GET /api/units/:id — blast radius', () => {
     const second = (await (await app.request(`/api/units/${u.unitId}`)).json()) as { capStats?: PromptCapStats };
     expect(second.capStats).toBeUndefined();
   });
+});
+
+describe('POST /api/units — pinned triage (the second mint door)', () => {
+  /** Local copy: the add-PR describe block's spy is scoped to it, and these tests are a sibling. */
+  const prFetcherSpy = () => ({
+    fetcher: async (_o: string, _r: string, number: number): Promise<PRMetadata> => ({
+      ...mkMetadata(),
+      number,
+      title: 'Ship the thing',
+      branch: 'feat/thing',
+      headSha: 'sha-live',
+    }),
+  });
+
+  const files = (paths: string[]) => ({
+    files: paths.map((path) => ({ path, status: 'modified', additions: 1, deletions: 0 })),
+    truncated: false,
+  });
+
+  it('mints a hand-added PR with a triage summary, exactly as a polled one gets', async () => {
+    // POST /api/units fetches only metadata by design, so without an explicit triage fetch here a PR
+    // the reviewer typed in would be the one unit in the queue with no lane — the opposite of intent.
+    const { fetcher } = prFetcherSpy();
+    const { store, app } = setup({
+      prFetcher: fetcher,
+      fileSummaryFetcher: async () => files(['README.md', 'docs/guide.md']),
+    });
+
+    const res = await app.request('/api/units', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pr: 'octo/demo#7' }),
+    });
+    expect(res.status).toBe(201);
+
+    const unit = store.list()[0]!;
+    expect(unit.pinned).toBe(true);
+    expect(unit.triage).toBeDefined();
+    expect(unit.triage!.files.map((f) => f.kind)).toEqual(['docs', 'docs']);
+  });
+
+  it('still mints when the triage fetch fails — the backfill heals it later', async () => {
+    // Refusing to add a PR because one auxiliary fetch was flaky would be a worse trade than a row
+    // that is briefly laneless; laneOf reads a missing summary as needs-you, which is the safe side.
+    const { fetcher } = prFetcherSpy();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const { store, app } = setup({
+        prFetcher: fetcher,
+        fileSummaryFetcher: async () => {
+          throw new Error('502 bad gateway');
+        },
+      });
+      const res = await app.request('/api/units', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pr: 'octo/demo#7' }),
+      });
+      expect(res.status).toBe(201);
+      expect(store.list()[0]!.triage).toBeUndefined();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
+
+describe('units payload — dismissed rows leave the queue', () => {
+  it('omits a dismissed unit from GET /api/units and lists it under dismissed', async () => {
+    // Without this the ✕ repaints the row it just hid: the DELETE keeps the unit (so the poller cannot
+    // re-mint it), and every payload returned store.list() raw.
+    const { store, app } = setup();
+    const u = await addUnit(store);
+    await app.request(`/api/units/${u.unitId}`, { method: 'DELETE' });
+
+    const body = (await (await app.request('/api/units')).json()) as {
+      units: { unitId: string }[];
+      dismissed: { unitId: string }[];
+    };
+    expect(body.units.map((x) => x.unitId)).not.toContain(u.unitId);
+    expect(body.dismissed.map((x) => x.unitId)).toContain(u.unitId);
+  });
+
+  it('stamps every payload unit with its lane, on the wire', async () => {
+    // The browser cannot import laneOf across the package boundary, so an un-stamped payload means the
+    // queue silently falls back to status-only grouping and the low-attention lane never appears at all
+    // — a failure that looks exactly like "no PR qualified today".
+    const { store, app } = setup();
+    const visible = await addUnit(store);
+    const hidden = await addUnit(store, 'owner/b');
+    await app.request(`/api/units/${hidden.unitId}`, { method: 'DELETE' });
+
+    const body = (await (await app.request('/api/units')).json()) as {
+      units: { unitId: string; lane?: string }[];
+      dismissed: { unitId: string; lane?: string }[];
+    };
+    expect(body.units.find((x) => x.unitId === visible.unitId)!.lane).toBe('needs-you');
+    // The dismissed list is stamped too — the reveal renders real rows, not a bare count.
+    expect(body.dismissed.find((x) => x.unitId === hidden.unitId)!.lane).toBe('needs-you');
+  });
+
+  it('un-hides a dismissed PR when the reviewer adds it back by hand', async () => {
+    const { fetcher } = prFetcherSpy2();
+    const { store, app } = setup({ prFetcher: fetcher });
+    const u = await addUnit(store);
+    await app.request(`/api/units/${u.unitId}`, { method: 'DELETE' });
+    expect(store.get(u.unitId)!.dismissedAtSha).toBeDefined();
+
+    const res = await app.request('/api/units', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pr: `${u.repo}#${u.prNumber}` }),
+    });
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).existing).toBe(true);
+    expect(store.get(u.unitId)!.dismissedAtSha).toBeUndefined(); // typing it in is an explicit request
+  });
+});
+
+/** Shared minimal prFetcher for the blocks below (the add-PR describe scopes its own). */
+const prFetcherSpy2 = () => ({
+  fetcher: async (_o: string, _r: string, number: number): Promise<PRMetadata> => ({
+    ...mkMetadata(),
+    number,
+    title: 'Ship the thing',
+    branch: 'feat/thing',
+    headSha: 'sha-live',
+  }),
 });
 
 describe('POST /api/units/:id/hydrate (lazy narrative on open)', () => {
@@ -753,12 +887,17 @@ describe('POST /api/poll (manual refresh)', () => {
 });
 
 describe('DELETE /api/units/:id', () => {
-  it('removes the unit and broadcasts', async () => {
+  it('dismisses the unit rather than deleting it, and broadcasts', async () => {
+    // Deliberately NOT a hard delete. `classify` routes any PR whose unit exists to existing-github, so
+    // keeping the unit is the only thing stopping the next poll from re-minting a still-requested PR —
+    // which is what made the old hard delete undo itself within about sixty seconds.
     const { store, events, app } = setup();
     const u = await addUnit(store);
     const res = await app.request(`/api/units/${u.unitId}`, { method: 'DELETE' });
     expect(res.status).toBe(200);
-    expect(store.get(u.unitId)).toBeUndefined();
+    const after = store.get(u.unitId);
+    expect(after).toBeDefined();
+    expect(after!.dismissedAtSha).toBe(u.metadata.headSha);
     expect(events).toContain('units');
   });
 

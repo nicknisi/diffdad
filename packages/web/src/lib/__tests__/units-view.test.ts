@@ -3,21 +3,25 @@ import {
   aiEndpoint,
   buildRepoFacets,
   commentsEndpoint,
+  drawerNote,
   groupByOwner,
   groupOf,
   groupUnits,
+  NOT_MEASURED,
   parseRoute,
+  reasonLine,
   relativeTime,
   repoOptions,
   reviewEndpoint,
   commentTarget,
   routePath,
   sourceBadge,
+  stakesOf,
   summarizeChecks,
   summarizeReviews,
   verdictTone,
 } from '../units-view';
-import type { CheckRun, PRReview, Unit, UnitStatus } from '../../state/types';
+import type { CheckRun, PRReview, TriagedFile, TriageSummary, Unit, UnitStatus } from '../../state/types';
 
 function mkUnit(over: Partial<Unit> = {}): Unit {
   return {
@@ -52,7 +56,7 @@ describe('groupOf', () => {
 });
 
 describe('groupUnits', () => {
-  it('partitions units into the three command-center groups', () => {
+  it('falls back to the three status groups when no unit carries a lane', () => {
     const units = [
       mkUnit({ unitId: 'a', status: 'queued' }),
       mkUnit({ unitId: 'b', status: 'changes_requested' }),
@@ -321,5 +325,201 @@ describe('summarizeReviews', () => {
       mkReview({ user: 'a', state: 'DISMISSED', submittedAt: '2' }),
     ];
     expect(summarizeReviews(reviews)).toEqual({ approved: 0, changesRequested: 0 });
+  });
+});
+
+// --- Attention lanes ---------------------------------------------------------------------------
+
+function mkTriage(over: Partial<TriageSummary> = {}): TriageSummary {
+  return {
+    files: over.files ?? [{ path: 'README.md', kind: 'docs', criticality: [] }],
+    criticality: over.criticality ?? [],
+    additions: over.additions ?? 4,
+    deletions: over.deletions ?? 1,
+    truncated: over.truncated ?? false,
+    sha: over.sha ?? 'abc123',
+    ...over,
+  };
+}
+
+const file = (path: string, kind: TriagedFile['kind'], criticality: TriagedFile['criticality'] = []): TriagedFile => ({
+  path,
+  kind,
+  criticality,
+});
+
+describe('groupUnits — lane partitioning', () => {
+  it('sorts eight units into all four lanes on the lane the server assigned', () => {
+    const units = [
+      mkUnit({ unitId: 'n1', lane: 'needs-you', triage: mkTriage({ files: [file('src/a.ts', 'source')] }) }),
+      mkUnit({ unitId: 'n2', lane: 'needs-you', triage: mkTriage({ criticality: ['auth'] }) }),
+      mkUnit({ unitId: 'n3', lane: 'needs-you', triage: mkTriage({ truncated: true }) }),
+      mkUnit({ unitId: 'p1', lane: 'probably-not', triage: mkTriage() }),
+      mkUnit({ unitId: 'p2', lane: 'probably-not', triage: mkTriage({ files: [file('bun.lock', 'lockfile')] }) }),
+      mkUnit({ unitId: 'f1', lane: 'in-flight', status: 'changes_requested' }),
+      mkUnit({ unitId: 'c1', lane: 'cleared', status: 'approved' }),
+      mkUnit({ unitId: 'c2', lane: 'cleared', status: 'done' }),
+    ];
+    const g = groupUnits(units);
+    expect(g.needsYou.map((u) => u.unitId).sort()).toEqual(['n1', 'n2', 'n3']);
+    // A degenerate implementation that never routes anything to the low-attention lane must fail here —
+    // it is the whole feature, and an empty lane is indistinguishable from "nothing qualified today".
+    expect(g.probablyNot.map((u) => u.unitId).sort()).toEqual(['p1', 'p2']);
+    expect(g.inFlight.map((u) => u.unitId)).toEqual(['f1']);
+    expect(g.cleared.map((u) => u.unitId).sort()).toEqual(['c1', 'c2']);
+    expect(g.dismissedCount).toBe(0);
+  });
+
+  it('falls back to status grouping for a unit an older daemon sent without a lane', () => {
+    // Degrading to yesterday's behavior beats an empty screen — and it must never silently swallow a row.
+    const g = groupUnits([mkUnit({ unitId: 'old', status: 'queued' })]);
+    expect(g.needsYou.map((u) => u.unitId)).toEqual(['old']);
+    expect(g.probablyNot).toEqual([]);
+  });
+
+  it('never puts a lane-less unit in the low-attention lane, whatever its triage says', () => {
+    // The server decides. A fully-mechanical PR with no server lane still lands in needs-you, because
+    // re-deriving the lane here is the drift the contract rejected.
+    const g = groupUnits([mkUnit({ unitId: 'x', status: 'queued', triage: mkTriage() })]);
+    expect(g.probablyNot).toEqual([]);
+    expect(g.needsYou.map((u) => u.unitId)).toEqual(['x']);
+  });
+
+  it('keeps a dismissed unit out of every lane and counts it instead', () => {
+    const g = groupUnits([
+      mkUnit({ unitId: 'live', lane: 'needs-you' }),
+      mkUnit({ unitId: 'hidden', lane: 'needs-you', dismissedAtSha: 'deadbee' }),
+    ]);
+    const everyBucket = [...g.needsYou, ...g.probablyNot, ...g.inFlight, ...g.cleared].map((u) => u.unitId);
+    expect(everyBucket).not.toContain('hidden');
+    expect(g.dismissedCount).toBe(1);
+  });
+
+  it('leads needs-you with criticality, then with work nobody has approved', () => {
+    const base = { lane: 'needs-you' as const, updatedAt: '2026-06-26T00:00:00.000Z' };
+    const g = groupUnits([
+      mkUnit({ ...base, unitId: 'approved-already', reviewRollup: { approved: 2, changesRequested: 0 } }),
+      mkUnit({ ...base, unitId: 'nobody-yet', reviewRollup: { approved: 0, changesRequested: 0 } }),
+      mkUnit({ ...base, unitId: 'critical', triage: mkTriage({ criticality: ['auth'] }) }),
+    ]);
+    expect(g.needsYou.map((u) => u.unitId)).toEqual(['critical', 'nobody-yet', 'approved-already']);
+  });
+
+  it('sorts probably-not oldest-first only — ranking a lane you are told to skip is wasted signal', () => {
+    const g = groupUnits([
+      mkUnit({ unitId: 'new', lane: 'probably-not', updatedAt: '2026-06-28T00:00:00.000Z' }),
+      mkUnit({ unitId: 'old', lane: 'probably-not', updatedAt: '2026-06-20T00:00:00.000Z' }),
+    ]);
+    expect(g.probablyNot.map((u) => u.unitId)).toEqual(['old', 'new']);
+  });
+});
+
+describe('buildRepoFacets — lane agreement', () => {
+  it('counts needs-you off the lane so the sidebar cannot claim more work than the lane shows', () => {
+    const facets = buildRepoFacets([
+      mkUnit({ unitId: 'a', repo: 'o/r', lane: 'needs-you' }),
+      mkUnit({ unitId: 'b', repo: 'o/r', lane: 'probably-not' }), // still status:'queued'
+    ]);
+    expect(facets.needsYou).toBe(1);
+    expect(facets.busy[0]!.total).toBe(2);
+  });
+});
+
+describe('reasonLine', () => {
+  it('states the kinds for a fully-mechanical PR', () => {
+    const docs = mkUnit({ lane: 'probably-not', triage: mkTriage({ files: [file('docs/a.md', 'docs')] }) });
+    expect(reasonLine(docs)).toBe('docs only');
+
+    const tests = mkUnit({
+      lane: 'probably-not',
+      triage: mkTriage({ files: [file('src/__tests__/a.test.ts', 'test-only')] }),
+    });
+    expect(reasonLine(tests)).toBe('tests only');
+
+    const deps = mkUnit({
+      lane: 'probably-not',
+      triage: mkTriage({ files: [file('bun.lock', 'lockfile'), file('package.json', 'manifest')] }),
+    });
+    expect(reasonLine(deps)).toBe('lockfile + manifest');
+  });
+
+  it('names the criticality tags when a path matched one', () => {
+    const u = mkUnit({
+      lane: 'needs-you',
+      triage: mkTriage({ criticality: ['auth', 'session'], files: [file('src/auth/session.ts', 'source', ['auth'])] }),
+    });
+    expect(reasonLine(u)).toBe('auth · session');
+  });
+
+  it('says the file list is partial when the PR overflowed one request', () => {
+    const u = mkUnit({ lane: 'needs-you', triage: mkTriage({ truncated: true }) });
+    expect(reasonLine(u)).toBe('over 100 files');
+  });
+
+  it('counts the source files that kept a PR out of the low-attention lane', () => {
+    const u = mkUnit({
+      lane: 'needs-you',
+      triage: mkTriage({ files: [file('src/a.ts', 'source'), file('src/b.ts', 'source'), file('a.md', 'docs')] }),
+    });
+    expect(reasonLine(u)).toBe('2 source files');
+  });
+
+  it('states an absence as an absence when nothing was measured', () => {
+    expect(reasonLine(mkUnit({ lane: 'needs-you' }))).toBe(NOT_MEASURED);
+    expect(reasonLine(mkUnit({ lane: 'needs-you', triage: mkTriage({ files: [] }) }))).toBe(NOT_MEASURED);
+  });
+
+  it('never renders a word that reads as a safety claim', () => {
+    // The advisory lane must not be mistakable for the approve gate the contract rejected outright.
+    const lanes = ['needs-you', 'probably-not'] as const;
+    const samples = lanes.flatMap((lane) => [
+      mkUnit({ lane, triage: mkTriage() }),
+      mkUnit({ lane, triage: mkTriage({ criticality: ['auth'] }) }),
+      mkUnit({ lane, triage: mkTriage({ truncated: true }) }),
+      mkUnit({ lane }),
+    ]);
+    for (const u of samples) {
+      const text = `${reasonLine(u)} ${drawerNote(u)}`.toLowerCase();
+      for (const word of ['safe', 'fine', 'approved', 'no need', "don't review"]) {
+        expect(text).not.toContain(word);
+      }
+    }
+  });
+});
+
+describe('drawerNote', () => {
+  it('describes the method, not the code, for a low-attention row', () => {
+    const note = drawerNote(mkUnit({ lane: 'probably-not', triage: mkTriage() }));
+    expect(note).toContain('classifies as mechanical');
+    expect(note).toContain('never read');
+  });
+
+  it('says a keyword matched a path, not that the code is dangerous', () => {
+    const note = drawerNote(mkUnit({ lane: 'needs-you', triage: mkTriage({ criticality: ['auth'] }) }));
+    expect(note).toContain('auth');
+    expect(note).toContain('not a judgment');
+  });
+
+  it('explains that status, not triage, placed an in-flight row', () => {
+    expect(drawerNote(mkUnit({ lane: 'in-flight', status: 'changes_requested' }))).toContain('its status');
+  });
+});
+
+describe('stakesOf', () => {
+  it('raises criticality and truncation to high whatever the churn', () => {
+    expect(stakesOf(mkUnit({ triage: mkTriage({ criticality: ['payment'], additions: 1, deletions: 0 }) }))).toBe(
+      'high',
+    );
+    expect(stakesOf(mkUnit({ triage: mkTriage({ truncated: true, additions: 1, deletions: 0 }) }))).toBe('high');
+  });
+
+  it('reads churn and file count for everything else', () => {
+    expect(stakesOf(mkUnit({ triage: mkTriage({ additions: 400, deletions: 12 }) }))).toBe('high');
+    expect(stakesOf(mkUnit({ triage: mkTriage({ additions: 3, deletions: 1 }) }))).toBe('low');
+    expect(stakesOf(mkUnit({ triage: mkTriage({ additions: 60, deletions: 20 }) }))).toBe('mid');
+  });
+
+  it('sits an un-triaged unit at mid — not known to be small, and not worth shouting about', () => {
+    expect(stakesOf(mkUnit({}))).toBe('mid');
   });
 });

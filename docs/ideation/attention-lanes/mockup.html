@@ -1,0 +1,941 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Attention Lanes — interaction mockup</title>
+    <style>
+      :root {
+        --brand: #6565ec;
+        --brand-hover: #5151cd;
+        --brand-soft: rgba(101, 101, 236, 0.1);
+        --bg-page: #f8f8fa;
+        --bg-panel: #ffffff;
+        --bg-subtle: #f3f3f6;
+        --fg-1: #1a1523;
+        --fg-2: #60646c;
+        --fg-3: #8b8d98;
+        --gray-2: #f9f9fb;
+        --gray-3: #eff0f3;
+        --gray-4: #e7e8ec;
+        --gray-a3: rgba(0, 0, 51, 0.06);
+        --gray-a4: rgba(0, 0, 41, 0.09);
+        --gray-a5: rgba(0, 0, 38, 0.13);
+        --purple-3: #ede9fe;
+        --purple-9: #6565ec;
+        --purple-11: #4f46e5;
+        --green-3: #d6f5e1;
+        --green-9: #29a383;
+        --green-10: #1f8f72;
+        --green-11: #1a7a5f;
+        --red-3: #ffe1e6;
+        --red-9: #e54666;
+        --red-11: #b8244a;
+        --amber-3: #ffe9b8;
+        --amber-9: #e8b339;
+        --amber-11: #946800;
+        --yellow-3: #fff3c2;
+        --yellow-11: #946800;
+        --blue-3: #d6e4ff;
+        --blue-11: #1f4ea8;
+        --shadow-card: 0 1px 2px rgba(3, 2, 13, 0.06), 0 3px 6px -1px rgba(3, 2, 13, 0.1);
+      }
+      .dark {
+        --brand: #7c7cf2;
+        --brand-hover: #9595f5;
+        --brand-soft: rgba(124, 124, 242, 0.14);
+        --bg-page: #111113;
+        --bg-panel: #1a1a1e;
+        --bg-subtle: #202024;
+        --fg-1: #ededef;
+        --fg-2: #a0a0ab;
+        --fg-3: #6e6e7a;
+        --gray-2: #1c1c1f;
+        --gray-3: #232326;
+        --gray-4: #2a2a2e;
+        --gray-a3: rgba(255, 255, 255, 0.06);
+        --gray-a4: rgba(255, 255, 255, 0.09);
+        --gray-a5: rgba(255, 255, 255, 0.13);
+        --purple-3: #2b2456;
+        --purple-9: #7c7cf2;
+        --purple-11: #b5b5f8;
+        --green-3: #14342c;
+        --green-9: #2ea88a;
+        --green-10: #38b795;
+        --green-11: #56ba9f;
+        --red-3: #48212b;
+        --red-9: #e54666;
+        --red-11: #efacb8;
+        --amber-3: #3b2c10;
+        --amber-9: #e8b339;
+        --amber-11: #f5cf6f;
+        --yellow-3: #3b2c10;
+        --yellow-11: #f5cf6f;
+        --blue-3: #1c2f56;
+        --blue-11: #95b3ee;
+        --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 3px 6px -1px rgba(0, 0, 0, 0.4);
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        background: var(--bg-page);
+        color: var(--fg-1);
+        min-height: 100vh;
+        font:
+          14px/1.5 ui-sans-serif,
+          -apple-system,
+          'Segoe UI',
+          Roboto,
+          sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      .mono {
+        font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+      }
+
+      /* ---- mockup chrome (not part of the product) ---- */
+      .chrome {
+        position: sticky;
+        top: 0;
+        z-index: 50;
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        flex-wrap: wrap;
+        padding: 10px 20px;
+        background: var(--bg-subtle);
+        box-shadow: inset 0 -1px 0 var(--gray-a4);
+      }
+      .chrome-label {
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--fg-3);
+      }
+      .seg {
+        display: inline-flex;
+        background: var(--bg-panel);
+        border-radius: 8px;
+        padding: 2px;
+        box-shadow: inset 0 0 0 1px var(--gray-a5);
+      }
+      .seg button {
+        border: 0;
+        background: transparent;
+        font: inherit;
+        font-size: 12.5px;
+        font-weight: 500;
+        color: var(--fg-2);
+        padding: 5px 12px;
+        border-radius: 6px;
+        cursor: pointer;
+      }
+      .seg button[aria-pressed='true'] {
+        background: var(--brand);
+        color: #fff;
+      }
+      .ghost {
+        border: 0;
+        font: inherit;
+        font-size: 12.5px;
+        font-weight: 500;
+        cursor: pointer;
+        background: var(--bg-panel);
+        color: var(--fg-1);
+        padding: 6px 11px;
+        border-radius: 6px;
+        box-shadow: inset 0 0 0 1px var(--gray-a5);
+      }
+      .hint {
+        font-size: 12px;
+        color: var(--fg-3);
+      }
+
+      /* ---- app header ---- */
+      header.app {
+        position: sticky;
+        top: 44px;
+        z-index: 40;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 24px;
+        background: var(--bg-panel);
+        box-shadow: inset 0 -1px 0 var(--gray-a4);
+      }
+      .mark {
+        width: 24px;
+        height: 24px;
+        border-radius: 999px;
+        background: var(--brand);
+        color: #fff;
+        display: grid;
+        place-items: center;
+        font-size: 13px;
+        font-weight: 700;
+        flex: none;
+      }
+      .divider-v {
+        width: 1px;
+        height: 20px;
+        background: var(--gray-a4);
+      }
+      .wordmark {
+        font-size: 15px;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+      }
+      .wordmark span {
+        font-weight: 500;
+        color: var(--fg-3);
+      }
+      .live {
+        margin-left: auto;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--green-11);
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: var(--green-10);
+      }
+      .dot.ping {
+        animation: ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+      }
+      @keyframes ping {
+        0% {
+          box-shadow: 0 0 0 0 rgba(41, 163, 131, 0.5);
+        }
+        70% {
+          box-shadow: 0 0 0 6px rgba(41, 163, 131, 0);
+        }
+        100% {
+          box-shadow: 0 0 0 0 rgba(41, 163, 131, 0);
+        }
+      }
+      .stamp {
+        font-size: 12px;
+        color: var(--fg-3);
+        font-variant-numeric: tabular-nums;
+        min-width: 96px;
+      }
+      .iconbtn {
+        width: 30px;
+        height: 30px;
+        border-radius: 6px;
+        border: 0;
+        cursor: pointer;
+        background: var(--bg-panel);
+        color: var(--fg-2);
+        box-shadow: inset 0 0 0 1px var(--gray-a5);
+        display: grid;
+        place-items: center;
+        font-size: 14px;
+      }
+
+      main {
+        max-width: 1000px;
+        margin: 0 auto;
+        padding: 0 24px 80px;
+      }
+
+      /* ---- lane headings ---- */
+      .lane-head {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        margin: 26px 2px 8px;
+      }
+      .lane-title {
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--fg-2);
+      }
+      .lane-count {
+        font-size: 12px;
+        color: var(--fg-3);
+        font-variant-numeric: tabular-nums;
+      }
+      .lane-note {
+        font-size: 12px;
+        color: var(--fg-3);
+        margin-left: 2px;
+      }
+      .linkish {
+        border: 0;
+        background: none;
+        font: inherit;
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--blue-11);
+        cursor: pointer;
+        padding: 0;
+      }
+
+      /* ---- panel + rows ---- */
+      .panel {
+        border-radius: 12px;
+        background: var(--bg-panel);
+        overflow: hidden;
+        box-shadow: inset 0 0 0 1px var(--gray-a4);
+      }
+      .row {
+        display: block;
+        width: 100%;
+        text-align: left;
+        border: 0;
+        background: transparent;
+        cursor: pointer;
+        font: inherit;
+        color: inherit;
+      }
+      .row + .row-wrap,
+      .row-wrap + .row-wrap {
+        box-shadow: inset 0 1px 0 var(--gray-a3);
+      }
+      .row-inner {
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+        padding: 12px 14px;
+      }
+      .row-wrap:hover .row-inner {
+        background: var(--gray-2);
+      }
+      .row-wrap.open .row-inner {
+        background: var(--gray-2);
+      }
+      .lead {
+        font-size: 13px;
+        line-height: 1;
+        margin-top: 3px;
+        flex: none;
+        width: 14px;
+        text-align: center;
+      }
+      .row-main {
+        min-width: 0;
+        flex: 1;
+      }
+      .title-line {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 0 7px;
+        font-size: 13.5px;
+      }
+      .repo {
+        color: var(--fg-3);
+      }
+      .sep {
+        color: var(--fg-3);
+      }
+      .branch {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12.5px;
+        color: var(--fg-3);
+      }
+      .title {
+        font-weight: 500;
+        color: var(--fg-1);
+      }
+      .badge {
+        border-radius: 4px;
+        padding: 1px 5px;
+        font-size: 10.5px;
+        font-weight: 500;
+        line-height: 1.5;
+      }
+      .who {
+        font-size: 12px;
+        color: var(--fg-3);
+      }
+      .reason {
+        margin-top: 3px;
+        font-size: 12px;
+        color: var(--fg-2);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0 6px;
+        align-items: center;
+      }
+      .reason .tag {
+        border-radius: 4px;
+        padding: 0 5px;
+        font-size: 11px;
+        font-weight: 500;
+        background: var(--red-3);
+        color: var(--red-11);
+      }
+      .reason .tag.ok {
+        background: var(--gray-3);
+        color: var(--fg-2);
+      }
+      .reason .muted {
+        color: var(--fg-3);
+      }
+      .chev {
+        flex: none;
+        color: var(--fg-3);
+        font-size: 11px;
+        margin-top: 4px;
+        transition: transform 0.15s;
+      }
+      .row-wrap.open .chev {
+        transform: rotate(90deg);
+      }
+      .remove {
+        flex: none;
+        border: 0;
+        background: none;
+        cursor: pointer;
+        color: var(--fg-3);
+        opacity: 0.35;
+        font-size: 13px;
+        padding: 4px;
+        border-radius: 4px;
+      }
+      .remove:hover {
+        opacity: 1;
+        color: var(--red-11);
+      }
+
+      /* stakes sizing */
+      .row-wrap[data-stakes='high'] .title {
+        font-size: 14.5px;
+        font-weight: 600;
+      }
+      .row-wrap[data-stakes='low'] .row-inner {
+        padding-top: 8px;
+        padding-bottom: 8px;
+      }
+      .row-wrap[data-stakes='low'] .title {
+        font-weight: 500;
+      }
+
+      /* ---- evidence drawer ---- */
+      .why {
+        display: none;
+        padding: 0 14px 14px 40px;
+      }
+      .row-wrap.open .why {
+        display: block;
+      }
+      .why-card {
+        border-radius: 8px;
+        background: var(--bg-subtle);
+        padding: 12px 14px;
+        box-shadow: inset 0 0 0 1px var(--gray-a4);
+      }
+      .why-h {
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--fg-3);
+        margin-bottom: 8px;
+      }
+      table.files {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+      }
+      table.files td {
+        padding: 3px 0;
+        vertical-align: top;
+      }
+      table.files td.p {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        color: var(--fg-1);
+        padding-right: 12px;
+        word-break: break-all;
+      }
+      table.files td.k {
+        text-align: right;
+        white-space: nowrap;
+      }
+      .kind {
+        border-radius: 4px;
+        padding: 0 6px;
+        font-size: 11px;
+        font-weight: 500;
+        background: var(--gray-3);
+        color: var(--fg-2);
+      }
+      .kind.bad {
+        background: var(--red-3);
+        color: var(--red-11);
+      }
+      .kind.none {
+        background: var(--amber-3);
+        color: var(--amber-11);
+      }
+      .verdict {
+        margin-top: 10px;
+        padding-top: 10px;
+        font-size: 12px;
+        color: var(--fg-2);
+        box-shadow: inset 0 1px 0 var(--gray-a4);
+      }
+      .verdict b {
+        color: var(--fg-1);
+      }
+
+      /* ---- before-view specifics ---- */
+      .stale {
+        color: var(--fg-3);
+      }
+
+      /* ---- footer log ---- */
+      .logbox {
+        margin-top: 28px;
+        border-radius: 10px;
+        background: var(--bg-panel);
+        padding: 12px 14px;
+        box-shadow: inset 0 0 0 1px var(--gray-a4);
+      }
+      .logbox .why-h {
+        margin-bottom: 6px;
+      }
+      pre.log {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11.5px;
+        line-height: 1.7;
+        color: var(--fg-2);
+        white-space: pre-wrap;
+      }
+      .filtered {
+        margin: 10px 2px 0;
+        font-size: 12px;
+        color: var(--fg-3);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .callout {
+        margin-top: 14px;
+        border-radius: 10px;
+        padding: 12px 14px;
+        font-size: 13px;
+        background: var(--brand-soft);
+        color: var(--fg-1);
+        box-shadow: inset 0 0 0 1px rgba(101, 101, 236, 0.28);
+      }
+      .callout b {
+        font-weight: 600;
+      }
+      @media (max-width: 620px) {
+        header.app {
+          top: 76px;
+        }
+        .stamp,
+        .live {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="chrome">
+      <span class="chrome-label">Mockup</span>
+      <div class="seg" role="group" aria-label="View">
+        <button id="btn-after" aria-pressed="true">After — two lanes</button>
+        <button id="btn-before" aria-pressed="false">Before — today</button>
+      </div>
+      <button class="ghost" id="theme">◐ Theme</button>
+      <span class="hint" id="hint">Click any row to see why it landed there.</span>
+    </div>
+
+    <header class="app">
+      <div class="mark">D</div>
+      <div class="divider-v"></div>
+      <div class="wordmark">Diff Dad <span>· command center</span></div>
+      <span class="live"><span class="dot ping"></span>Live</span>
+      <span class="stamp">checked just now</span>
+      <button class="ghost">↻ Refresh</button>
+      <button class="iconbtn" title="Settings">⚙</button>
+    </header>
+
+    <main>
+      <div id="view"></div>
+    </main>
+
+    <script>
+      const QUEUE = [
+        {
+          id: 1,
+          lane: 'needs',
+          stakes: 'high',
+          repo: 'acme/api',
+          branch: 'sec/rotate-signing-keys',
+          title: 'Rotate session signing keys',
+          who: '@dmitri',
+          age: '2d',
+          files: 8,
+          adds: 214,
+          dels: 96,
+          tags: ['auth', 'session', 'token'],
+          reviewers: 'you’re the only reviewer',
+          fileList: [
+            ['src/auth/session.ts', 'source', 'bad'],
+            ['src/auth/token-store.ts', 'source', 'bad'],
+            ['src/auth/rotate.ts', 'source', 'bad'],
+            ['src/middleware/verify.ts', 'source', 'none'],
+            ['config/keys.json', 'source', 'bad'],
+            ['src/auth/__tests__/rotate.test.ts', 'test-only', ''],
+            ['docs/security/rotation.md', 'docs', ''],
+            ['bun.lock', 'lockfile', ''],
+          ],
+          verdict:
+            'Three paths match <b>auth</b>, <b>session</b>, and <b>token</b> criticality keywords, and four files classify as nothing mechanical. No approvals recorded and you are the only requested reviewer.',
+        },
+        {
+          id: 2,
+          lane: 'needs',
+          stakes: 'high',
+          repo: 'acme/billing',
+          branch: 'feat/proration',
+          title: 'Add proration to subscription upgrades',
+          who: '@sam',
+          age: '6h',
+          files: 14,
+          adds: 502,
+          dels: 118,
+          tags: ['payment'],
+          reviewers: '1 of 3 reviewers · none have approved',
+          fileList: [
+            ['src/billing/proration.ts', 'source', 'bad'],
+            ['src/billing/invoice.ts', 'source', 'bad'],
+            ['src/billing/plan.ts', 'source', 'none'],
+            ['src/api/subscriptions.ts', 'source', 'none'],
+            ['… 8 more source files', 'source', 'none'],
+            ['src/billing/__tests__/proration.test.ts', 'test-only', ''],
+            ['CHANGELOG.md', 'docs', ''],
+          ],
+          verdict:
+            'Two paths match the <b>payment</b> keyword set. Twelve files classify as nothing mechanical. Nobody has approved yet, so your review is still load-bearing.',
+        },
+        {
+          id: 3,
+          lane: 'needs',
+          stakes: 'mid',
+          repo: 'acme/web',
+          branch: 'fix/search-pagination',
+          title: 'Fix pagination off-by-one in search results',
+          who: '@rio',
+          age: '3h',
+          files: 3,
+          adds: 11,
+          dels: 7,
+          tags: [],
+          reviewers: 'you’re the only reviewer',
+          fileList: [
+            ['src/search/paginate.ts', 'source', 'none'],
+            ['src/search/query.ts', 'source', 'none'],
+            ['src/search/__tests__/paginate.test.ts', 'test-only', ''],
+          ],
+          verdict:
+            'No criticality keywords fire, but two files classify as nothing mechanical — they are ordinary source changes, so the lane makes no claim about them. Small, but unread.',
+        },
+        {
+          id: 4,
+          lane: 'needs',
+          stakes: 'mid',
+          repo: 'acme/infra',
+          branch: 'chore/tf-aws-5x',
+          title: 'Bump Terraform AWS provider to 5.x',
+          who: '@dmitri',
+          age: '1d',
+          files: 2,
+          adds: 46,
+          dels: 46,
+          tags: ['infra'],
+          reviewers: '2 of 3 already approved — ranked last here',
+          fileList: [
+            ['terraform/providers.tf', 'source', 'bad'],
+            ['.github/workflows/deploy.yml', 'source', 'bad'],
+          ],
+          verdict:
+            'Both paths match <b>infra</b>. It stays in this lane because criticality forces it here regardless of size — but two teammates have approved, so it sorts below the PRs where you are the only reviewer.',
+        },
+        {
+          id: 5,
+          lane: 'skip',
+          stakes: 'low',
+          repo: 'zp-products/ghx-workshop',
+          branch: 'slides/part-4-case',
+          title: 'slides: add Case agent-harness arc to Part 4',
+          who: '@nicknisi',
+          age: '5h',
+          files: 6,
+          adds: 180,
+          dels: 12,
+          tags: [],
+          badge: 'Added',
+          reviewers: 'added by hand',
+          fileList: [
+            ['slides/part-4/case-arc.md', 'docs', ''],
+            ['slides/part-4/index.md', 'docs', ''],
+            ['slides/part-4/notes.md', 'docs', ''],
+            ['README.md', 'docs', ''],
+            ['docs/outline.md', 'docs', ''],
+            ['docs/timing.md', 'docs', ''],
+          ],
+          verdict: 'Every one of the six files is markdown. Nothing here executes, and no criticality keyword fires.',
+        },
+        {
+          id: 6,
+          lane: 'skip',
+          stakes: 'low',
+          repo: 'acme/web',
+          branch: 'dependabot/vite-7.2.0',
+          title: 'chore(deps): bump vite from 7.1.2 to 7.2.0',
+          who: '@dependabot',
+          age: '11h',
+          files: 2,
+          adds: 84,
+          dels: 84,
+          tags: [],
+          reviewers: '1 of 2 reviewers',
+          fileList: [
+            ['package.json', 'manifest', ''],
+            ['bun.lock', 'lockfile', ''],
+          ],
+          verdict:
+            'Manifest plus lockfile, nothing else. Worth noting: this lane says <b>not worth reading</b>, not <b>safe to merge blind</b> — a version bump still changes what ships.',
+        },
+        {
+          id: 7,
+          lane: 'skip',
+          stakes: 'low',
+          repo: 'acme/api',
+          branch: 'test/flaky-timeouts',
+          title: 'Increase flaky test timeouts',
+          who: '@sam',
+          age: '2h',
+          files: 4,
+          adds: 8,
+          dels: 8,
+          tags: [],
+          reviewers: 'you’re the only reviewer',
+          fileList: [
+            ['src/api/__tests__/webhook.test.ts', 'test-only', ''],
+            ['src/api/__tests__/retry.test.ts', 'test-only', ''],
+            ['src/queue/__tests__/drain.test.ts', 'test-only', ''],
+            ['src/__tests__/setup.ts', 'test-only', ''],
+          ],
+          verdict:
+            'All four files are tests. Production behavior cannot change — though a weakened assertion would look identical from here, which is why this lane is advisory.',
+        },
+        {
+          id: 8,
+          lane: 'skip',
+          stakes: 'low',
+          repo: 'nicknisi/diffdad',
+          branch: 'docs/readme-typo',
+          title: 'docs: fix typo in README',
+          who: '@nicknisi',
+          age: '4d',
+          files: 1,
+          adds: 1,
+          dels: 1,
+          tags: [],
+          reviewers: 'you’re the only reviewer',
+          fileList: [['README.md', 'docs', '']],
+          verdict: 'One markdown file, one character.',
+        },
+      ];
+
+      const INFLIGHT = {
+        id: 9,
+        lane: 'flight',
+        stakes: 'mid',
+        repo: 'acme/api',
+        branch: 'feat/webhook-retries',
+        title: 'Retry webhooks with exponential backoff',
+        who: '@rio',
+        age: '1d',
+        files: 5,
+        adds: 96,
+        dels: 20,
+        tags: [],
+        reviewers: 'you requested changes — waiting on a push',
+        fileList: [
+          ['src/queue/webhook.ts', 'source', 'none'],
+          ['src/queue/backoff.ts', 'source', 'none'],
+          ['src/queue/__tests__/backoff.test.ts', 'test-only', ''],
+        ],
+        verdict:
+          'Not triaged by lane at all — status decides this one. It sits here because you requested changes, and <span class="mono">resurfaceForNewPush</span> returns it to Needs you when the author pushes past the sha you reviewed.',
+      };
+
+      function tagHtml(t) {
+        return `<span class="tag">${t}</span>`;
+      }
+
+      function rowHtml(u, view) {
+        const isBefore = view === 'before';
+        const lead = isBefore
+          ? `<span class="lead stale">•</span>`
+          : u.lane === 'needs'
+            ? `<span class="lead" style="color:var(--red-11)">▲</span>`
+            : `<span class="lead" style="color:var(--fg-3)">○</span>`;
+
+        const meta = isBefore
+          ? `<span class="reason"><span class="muted">0 to resolve · ${u.files} files · ${u.age}</span></span>`
+          : `<span class="reason">
+         ${u.tags.length ? u.tags.map(tagHtml).join('') : ''}
+         ${u.tags.length ? '' : `<span class="tag ok">${kindSummary(u)}</span>`}
+         <span class="muted">${u.files} file${u.files === 1 ? '' : 's'} · +${u.adds}/−${u.dels} · ${u.reviewers} · ${u.age}</span>
+       </span>`;
+
+        const files = u.fileList
+          .map(
+            ([p, k, flag]) =>
+              `<tr><td class="p">${p}</td><td class="k"><span class="kind ${flag === 'bad' ? 'bad' : flag === 'none' ? 'none' : ''}">${flag === 'bad' ? k + ' · criticality' : flag === 'none' ? k + ' · unclassified' : k}</span></td></tr>`,
+          )
+          .join('');
+
+        return `
+  <div class="row-wrap" data-stakes="${isBefore ? 'mid' : u.stakes}" data-id="${u.id}">
+    <div class="row-inner">
+      <button class="row" onclick="toggle(${u.id})" style="display:flex;gap:12px;flex:1;min-width:0;align-items:flex-start">
+        ${lead}
+        <span class="row-main">
+          <span class="title-line">
+            <span class="repo">${u.repo}</span><span class="sep">·</span>
+            <span class="branch">${u.branch}</span><span class="sep">·</span>
+            <span class="title">${u.title}</span>
+            ${
+              u.badge
+                ? `<span class="badge" style="background:var(--gray-3);color:var(--fg-2)">${u.badge}</span>`
+                : `<span class="badge" style="background:var(--blue-3);color:var(--blue-11)">GitHub</span>`
+            }
+            <span class="who">${u.who}</span>
+          </span>
+          ${meta}
+        </span>
+      </button>
+      ${isBefore ? '' : `<span class="chev">›</span>`}
+      <button class="remove" title="Remove from queue">✕</button>
+    </div>
+    ${
+      isBefore
+        ? ''
+        : `
+    <div class="why">
+      <div class="why-card">
+        <div class="why-h">Why it landed here — every file, classified</div>
+        <table class="files">${files}</table>
+        <div class="verdict">${u.verdict}</div>
+      </div>
+    </div>`
+    }
+  </div>`;
+      }
+
+      function kindSummary(u) {
+        const kinds = [...new Set(u.fileList.map((f) => f[1]))];
+        if (kinds.length === 1)
+          return kinds[0] === 'docs' ? 'docs only' : kinds[0] === 'test-only' ? 'tests only' : kinds[0];
+        if (kinds.every((k) => ['manifest', 'lockfile'].includes(k))) return 'lockfile + manifest';
+        return kinds.join(' + ');
+      }
+
+      function render(view) {
+        const el = document.getElementById('view');
+        document.getElementById('hint').textContent =
+          view === 'after'
+            ? 'Click any row to see why it landed there.'
+            : 'Today: every unopened row shows a grey bullet and “0 to resolve”. Nothing distinguishes them.';
+
+        if (view === 'before') {
+          const all = [...QUEUE].sort((a, b) => b.id - a.id);
+          el.innerHTML = `
+      <div class="lane-head"><span class="lane-title">Needs you</span><span class="lane-count">8</span></div>
+      <div class="panel">${all.map((u) => rowHtml(u, 'before')).join('')}</div>
+      <div class="lane-head"><span class="lane-title">Cleared</span><span class="lane-count">2</span><button class="linkish">show</button></div>
+      <div class="callout">
+        <b>Every lead glyph is the same grey bullet</b> — <span class="mono">verdict</span> is only written during the lazy
+        hydrate that fires when you open a PR, so for anything unopened it is <span class="mono">undefined</span>. The sort by
+        verdict rank finds all zeros and silently falls back to oldest-first, and “0 to resolve” is the value it was
+        initialised to, not a measurement. One of these eight is a session-key rotation. Nothing here tells you which.
+      </div>`;
+          return;
+        }
+
+        const needs = QUEUE.filter((u) => u.lane === 'needs');
+        const skip = QUEUE.filter((u) => u.lane === 'skip');
+        el.innerHTML = `
+    <div class="lane-head">
+      <span class="lane-title">Needs you</span><span class="lane-count">${needs.length}</span>
+      <span class="lane-note">criticality first, then whether anyone else has approved</span>
+    </div>
+    <div class="panel">${needs.map((u) => rowHtml(u, 'after')).join('')}</div>
+
+    <div class="lane-head">
+      <span class="lane-title">Probably not</span><span class="lane-count">${skip.length}</span>
+      <span class="lane-note">every file classified mechanical · no criticality keyword</span>
+    </div>
+    <div class="panel">${skip.map((u) => rowHtml(u, 'after')).join('')}</div>
+
+    <div class="lane-head">
+      <span class="lane-title">In flight</span><span class="lane-count">1</span>
+      <span class="lane-note">unchanged — the ball is with the author</span>
+    </div>
+    <div class="panel">${rowHtml(INFLIGHT, 'after')}</div>
+
+    <div class="lane-head">
+      <span class="lane-title">Cleared</span><span class="lane-count">2</span><button class="linkish">show</button>
+      <span class="lane-note">· 1 dismissed <button class="linkish" onclick="alert('Dismissed: acme/web#901 — hidden until @rio pushes.\\n\\nStamped at head sha 4c19ff. The poller still sees this PR every 60s and will not re-mint it. It returns to Needs you the moment that sha changes.')">show</button></span>
+    </div>
+
+    <div class="logbox">
+      <div class="why-h">What the daemon logs — the evidence behind the two-week judgment</div>
+      <pre class="log">[diffdad] lanes: 8 queued — 4 needs-you · 4 probably-not · 1 in-flight
+[diffdad] opened acme/api#412 (needs-you)
+[diffdad] opened acme/web#880 (probably-not)   ← the line that answers "is this working?"</pre>
+    </div>
+
+    <div class="callout">
+      <b>The lane is advisory; it is not an approval.</b> “Probably not” means not worth your reading time — it never
+      claims a PR is safe to merge unread. That distinction is why the approve button is out of v1: the file kinds that
+      look most boring, lockfiles and manifests, are exactly the ones that change what ships.
+      <br><br>
+      Two things you won’t see here, deliberately: the archived <span class="mono">dojo/cli-export-project#10</span> is
+      simply <b>absent</b> — no note, no filtered count, because there is nothing you could do about it. And ✕ now
+      <b>sticks</b>: it hides the PR until its author pushes, instead of being undone by the next poll 60 seconds later.
+    </div>`;
+      }
+
+      function toggle(id) {
+        const wrap = document.querySelector(`.row-wrap[data-id="${id}"]`);
+        if (wrap) wrap.classList.toggle('open');
+      }
+
+      document.getElementById('btn-after').onclick = () => setView('after');
+      document.getElementById('btn-before').onclick = () => setView('before');
+      function setView(v) {
+        document.getElementById('btn-after').setAttribute('aria-pressed', String(v === 'after'));
+        document.getElementById('btn-before').setAttribute('aria-pressed', String(v === 'before'));
+        render(v);
+      }
+      document.getElementById('theme').onclick = () => document.documentElement.classList.toggle('dark');
+      if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)
+        document.documentElement.classList.add('dark');
+      render('after');
+    </script>
+  </body>
+</html>

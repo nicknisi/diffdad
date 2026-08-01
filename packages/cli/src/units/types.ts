@@ -1,5 +1,6 @@
 import type { DiffFile, PRMetadata } from '../github/types';
 import type { PromptCapStats } from '../narrative/prompt';
+import type { TriageSummary } from '../narrative/triage';
 import type { Concern, NarrativeResponse } from '../narrative/types';
 
 /**
@@ -77,6 +78,28 @@ export type ReviewUnit = {
    * two after you asked for it. A pinned unit leaves the queue only when you remove it.
    */
   pinned?: boolean;
+  /**
+   * Path-derived triage inputs — what the command center's lane is computed from, gathered at mint and
+   * refreshed whenever the head SHA moves. Optional for the same reason `archived?` is: units persisted
+   * before this existed carry no value, and a fabricated empty summary would read as "we looked and
+   * found nothing" rather than "we never looked". `laneOf` treats absence as needs-you, and the poller
+   * backfills it — both, because the fallback has to be safe before the backfill arrives.
+   */
+  triage?: TriageSummary;
+  /**
+   * The head SHA at which the reviewer dismissed this row with ✕. Present means hidden from every lane.
+   *
+   * A soft delete rather than a hard one, because `classify` only checks whether a unit exists: a hard
+   * delete of a still-requested PR is undone by the very next poll. Keeping the unit is what makes the
+   * dismissal stick. Cleared when the polled head moves past this SHA, which returns the PR as genuinely
+   * new work — so a dismissal can never strand a PR that has since changed.
+   */
+  dismissedAtSha?: string;
+  /**
+   * Latest per-reviewer verdict rollup, refreshed each poll pass. Orders units *within* a lane — it
+   * never decides one. Absent until the first poll that fetched it.
+   */
+  reviewRollup?: { approved: number; changesRequested: number };
   createdAt: string;
   updatedAt: string;
 };
@@ -103,6 +126,8 @@ export type PolledPr = {
   deletions: number;
   changedFiles: number;
   commits: number;
+  /** The base repo is archived — GitHub serves it read-only, so the PR is not reviewable work. */
+  archived?: boolean;
 };
 
 /** Thrown when a mutation references a unit id the store doesn't hold. */

@@ -1,8 +1,18 @@
 import type { Broadcast } from '../mcp/broadcast';
-import { classify, shouldResurface } from '../units/linking';
+import { classify, shouldResurface, shouldUndismiss } from '../units/linking';
 import type { UnitStore } from '../units/store';
 import type { PolledPr, ReviewUnit } from '../units/types';
-import type { PRMetadata } from '../github/types';
+import type { PrFileSummary, PRMetadata } from '../github/types';
+import { type TriageSummary, triageFiles } from '../narrative/triage';
+import { isDismissed, laneSplit, unitsPayload } from '../units/lane';
+
+/**
+ * Consecutive reviews-fetch failures before the pass gives up on the rollup entirely. Three rather than
+ * one: a single deleted or permission-blocked PR is ordinary and the remaining units still deserve their
+ * counts, but three in a row is the shared core rate limit, and every further request is pure burn against
+ * the budget hydrate and comment posting need.
+ */
+const REVIEW_FAILURE_CUTOFF = 3;
 
 /**
  * Build the `PRMetadata` a freshly-minted `github` unit carries from the PR metadata the poller
@@ -28,6 +38,7 @@ function metadataFromPr(pr: PolledPr): PRMetadata {
     changedFiles: pr.changedFiles,
     commits: pr.commits,
     headSha: pr.headSha,
+    archived: pr.archived,
   };
 }
 
@@ -49,6 +60,11 @@ function countsDiffer(meta: PRMetadata, pr: PolledPr): boolean {
  * broadcasts a `units` snapshot over the daemon's SSE spine so the command center reflects the new inbox
  * immediately.
  *
+ * PRs whose base repo is archived are dropped before any of that: GitHub serves archived repos
+ * read-only, so approving or commenting would 403 and the PR is not work the reviewer can do. They are
+ * never minted, and an existing (non-`pinned`) unit for one is removed — this runs with or without the
+ * reconcile dep, since the search keeps returning them and the miss streak would never fire.
+ *
  * With `fetchPrState` wired, the pass also reconciles the store against the search: a github unit whose
  * PR the search stopped returning is dropped — immediately if GitHub reports it closed/merged, else
  * after two consecutive missing polls (the miss streak absorbs the search's eventual consistency).
@@ -65,15 +81,71 @@ export async function pollOnce(deps: {
   broadcast: Broadcast;
   fetchPrState?: (unit: ReviewUnit) => Promise<{ open: boolean }>;
   missStreaks?: Map<string, number>;
+  /**
+   * One page of a PR's file list — the triage inputs the queue's lane is computed from. Absent → triage
+   * is skipped entirely and units mint without a summary, which `laneOf` reads as needs-you. Costs one
+   * REST call per PR *per push*, never per poll.
+   */
+  fetchFileSummary?: (pr: { owner: string; repo: string; number: number }) => Promise<{
+    files: PrFileSummary[];
+    truncated: boolean;
+  }>;
+  /**
+   * A unit's reviews rollup. Unlike the file summary this runs *per poll*, because approvals land
+   * without a push — which is why it is the one genuinely recurring cost in the pass. Failures are
+   * swallowed per-unit: a rollup is ordering information, and losing it must never fail a whole poll.
+   */
+  fetchReviews?: (unit: ReviewUnit) => Promise<{ approved: number; changesRequested: number }>;
 }): Promise<{ minted: number; resurfaced: number; removed: number }> {
-  const { search, store, broadcast, fetchPrState, missStreaks } = deps;
+  const { search, store, broadcast, fetchPrState, missStreaks, fetchFileSummary, fetchReviews } = deps;
   const prs = await search();
+
+  /** Fetch + classify a PR's files. `undefined` on any failure — never a fabricated empty summary,
+   *  which would read as "we looked and found nothing" rather than "we never looked". */
+  const triageFor = async (
+    pr: { owner: string; repo: string; number: number },
+    sha: string,
+  ): Promise<TriageSummary | undefined> => {
+    if (!fetchFileSummary) return undefined;
+    try {
+      const { files, truncated } = await fetchFileSummary(pr);
+      return triageFiles(files, sha, truncated);
+    } catch (err) {
+      console.warn(
+        `[diffdad] triage fetch failed for ${pr.owner}/${pr.repo}#${pr.number} — ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return undefined;
+    }
+  };
 
   let minted = 0;
   let resurfaced = 0;
   let removed = 0;
+  const removals: string[] = [];
+
+  // GitHub serves archived repositories read-only: approving, commenting, and merging all fail. A PR
+  // there is not work you can do, so it never enters the queue — and one already in it is dropped now
+  // rather than left to the miss-streak path, which would never fire (the search still returns it).
+  // `pinned` units are exempt, matching the reconciliation exemption below: reading an archived PR
+  // still works, and a hand-added one was asked for by name.
+  const archived = new Set<string>();
+  for (const pr of prs) {
+    if (pr.archived) archived.add(`${pr.owner}/${pr.repo}#${pr.number}`);
+  }
+  if (archived.size > 0) {
+    for (const unit of store.list()) {
+      if (unit.source !== 'github' || unit.prNumber === undefined || unit.pinned) continue;
+      const key = `${unit.repo}#${unit.prNumber}`;
+      if (!archived.has(key)) continue;
+      await store.remove(unit.unitId);
+      missStreaks?.delete(unit.unitId);
+      removals.push(`${key} (archived repo)`);
+      removed++;
+    }
+  }
 
   for (const pr of prs) {
+    if (pr.archived) continue; // read-only upstream — never mint, never resurface
     const c = classify(store.list(), pr);
     if (c.kind === 'create') {
       store.addGithubUnit({
@@ -87,11 +159,24 @@ export async function pollOnce(deps: {
         url: pr.url,
         baseRef: pr.base,
         metadata: metadataFromPr(pr),
+        triage: await triageFor(pr, pr.headSha),
       });
       minted++;
     } else {
       // existing-github: only re-open if the author pushed past the reviewed head.
       const unit = store.get(c.unitId);
+      // A dismissed PR comes back the moment its author pushes past the SHA it was hidden at. Checked
+      // before resurface because a dismissed unit is still `queued` — `shouldResurface` gates on a
+      // reviewed status and would never fire for one.
+      if (unit && shouldUndismiss(unit, pr.headSha)) {
+        store.undismiss(unit.unitId);
+      }
+      // Re-triage on a new head: evidence gathered at one SHA must not outlive it. Without this, a push
+      // that adds a source file to a docs-only PR leaves it sitting in the low-attention lane forever.
+      if (unit && unit.triage && unit.triage.sha !== pr.headSha) {
+        const fresh = await triageFor(pr, pr.headSha);
+        if (fresh) store.setTriage(unit.unitId, fresh);
+      }
       if (unit && shouldResurface(unit, pr.headSha)) {
         store.resurfaceForNewPush(c.unitId, pr.headSha);
         resurfaced++;
@@ -116,7 +201,6 @@ export async function pollOnce(deps: {
     const streaks = missStreaks ?? new Map<string, number>();
     // Search keys are `owner/repo#number`; a unit's `repo` is already `owner/name`.
     const polled = new Set(prs.map((pr) => `${pr.owner}/${pr.repo}#${pr.number}`));
-    const removals: string[] = [];
     for (const unit of store.list()) {
       if (unit.source !== 'github' || unit.prNumber === undefined) continue;
       // Hand-added PRs are exempt: the reviewer typed one in precisely because GitHub was NOT asking
@@ -124,6 +208,16 @@ export async function pollOnce(deps: {
       // it's finished. Reconciling it would delete the unit a minute or two after it was requested,
       // often mid-generation. It leaves the queue by the ✕ (DELETE /api/units/:id) alone.
       if (unit.pinned) {
+        streaks.delete(unit.unitId);
+        continue;
+      }
+      // Dismissed units are exempt too, and for a sharper reason: removing one *resurrects* it. The
+      // dismissal lives on the unit, so a hard delete drops the stamp with it, and the next pass that
+      // sees the PR mints a fresh unit with nothing recording that it was ever hidden. A search blip —
+      // two eventually-consistent misses, which the comment below says is not evidence of anything —
+      // would silently undo a dismissal at the same SHA. Archived removal above still wins, because
+      // that PR cannot be acted on at all.
+      if (isDismissed(unit)) {
         streaks.delete(unit.unitId);
         continue;
       }
@@ -166,14 +260,83 @@ export async function pollOnce(deps: {
         }
       }
     }
-    if (removed > 0) {
-      console.log(`[diffdad] reconciled queue: dropped ${removals.join(', ')}`);
+  }
+
+  // Outside the `fetchPrState` block: archived removals happen without a reconcile dep wired.
+  if (removals.length > 0) {
+    console.log(`[diffdad] reconciled queue: dropped ${removals.join(', ')}`);
+  }
+
+  // Backfill: units minted before triage existed carry no summary and would sit in needs-you forever
+  // on the lane function's safe fallback. This is a per-EXISTING-unit heal, mirroring the countsDiffer
+  // repair above — deliberately not part of the mint path, so a mint-time fetch counter never sees it.
+  if (fetchFileSummary) {
+    for (const unit of store.list()) {
+      if (unit.source !== 'github' || unit.prNumber === undefined || unit.triage) continue;
+      const [owner, repo] = unit.repo.split('/');
+      if (!owner || !repo) continue;
+      const fresh = await triageFor({ owner, repo, number: unit.prNumber }, unit.metadata.headSha);
+      if (fresh) store.setTriage(unit.unitId, fresh);
     }
   }
+
+  // Reviews rollup — the one per-poll cost in this pass. Scoped to units still awaiting the reviewer:
+  // a dismissed or decided unit's ordering is not being looked at, so spending a request on it is pure
+  // rate-limit burn against a ceiling this reaches around forty open units.
+  if (fetchReviews) {
+    let consecutive = 0;
+    let failed = 0;
+    let stoppedEarly = false;
+    let lastError: unknown;
+    for (const unit of store.list()) {
+      if (unit.source !== 'github' || unit.status !== 'queued' || isDismissed(unit)) continue;
+      // A *run* of failures is budget exhaustion, not bad luck. `getReviews` draws on the same core
+      // rate limit as hydrate, comment posting, and search enrichment, so spending the rest of the pass
+      // on calls that are already failing would starve the requests that actually block a review. Give
+      // up on this pass instead; the next one is sixty seconds away.
+      if (consecutive >= REVIEW_FAILURE_CUTOFF) {
+        stoppedEarly = true;
+        break;
+      }
+      try {
+        store.setReviewRollup(unit.unitId, await fetchReviews(unit));
+        consecutive = 0;
+      } catch (err) {
+        // Ordering information, not correctness. Keep the previous rollup and carry on — one flaky
+        // reviews call must never take down a whole poll pass.
+        consecutive++;
+        failed++;
+        lastError = err;
+      }
+    }
+    // One aggregated line, not one per unit: this loop runs against every queued unit on every pass, so
+    // per-failure logging at parity with the triage fetch would emit dozens of lines a minute during the
+    // exact rate-limit cascade it exists to reveal — burying the reconciliation and lane-split lines.
+    // Silence was the real bug, though: without this, an exhausted budget freezes every approval count
+    // with no signal at all.
+    if (failed > 0) {
+      const detail = lastError instanceof Error ? lastError.message : String(lastError);
+      console.warn(
+        `[diffdad] reviews rollup degraded: ${failed} fetch${failed === 1 ? '' : 'es'} failed` +
+          `${stoppedEarly ? `, stopped after ${REVIEW_FAILURE_CUTOFF} in a row (rate limit?)` : ''} — ${detail}`,
+      );
+    }
+  }
+
+  // The evidence behind "am I opening fewer PRs I didn't need to?" — a question no command can answer,
+  // so the daemon writes down what it decided each pass rather than leaving it to recollection.
+  const split = laneSplit(store.list());
+  console.log(
+    `[diffdad] lanes: ${store.list().filter((u) => !isDismissed(u)).length} tracked — ` +
+      `${split['needs-you']} needs-you · ${split['probably-not']} probably-not · ` +
+      `${split['in-flight']} in-flight · ${split.cleared} cleared`,
+  );
 
   // `polledAt` marks this as a real GitHub check (interval or manual /api/poll), so the command
   // center stamps its "checked …" freshness caption only on true poll passes — not on the other
   // `units` broadcasts (decision/delete/hydrate/review/initial snapshot) that never re-query GitHub.
-  broadcast('units', { units: store.list(), polledAt: Date.now() });
+  // The split and the lane stamp both come from the shared builder the routes use, so this ninth
+  // emission point can't drift from the other eight.
+  broadcast('units', { ...unitsPayload(store.list()), polledAt: Date.now() });
   return { minted, resurfaced, removed };
 }

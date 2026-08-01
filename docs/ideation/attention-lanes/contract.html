@@ -1,0 +1,3088 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Attention Lanes — Contract</title>
+    <script>
+      // Apply a saved forced theme before first paint to avoid a flash
+      try {
+        const saved = localStorage.getItem('ideation-contract-theme');
+        if (saved === 'light' || saved === 'dark')
+          document.documentElement.dataset.theme = saved;
+      } catch {}
+    </script>
+    <style>
+/* ═══════════════════════════════════════════════════════════════════
+   Contract — the pre-flight document.
+
+   THESIS   A contract is what you sign before handing hours of
+            autonomous work to a machine. So it shows the machine's
+            behavior, not only the plan's prose. It refuses the dark
+            instrument-panel dashboard this file used to be.
+   WORLD    The ideation field guide, inherited from docs/index.html:
+            paper ground, ink, ONE cobalt accent, serif display,
+            letterpress offset chips, hairline rules, 3px radii.
+            Graphite dark deck, never navy.
+   REGISTER Serif carries headings and prose. Mono is demoted to what
+            is literally a command, a path, or a measured number —
+            never a costume for "technical".
+   MOTION   One authored moment: the run model's token traverses
+            scout→build→review→commit once, on entry. Everything else
+            is a state change under 160ms.
+
+   Inlined into generated HTML by contract-gen.ts at build time.
+   Self-contained: no fonts, no CDNs, no images.
+   ═══════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* Auto: follow the system. The masthead toggle forces a deck by
+     setting data-theme, which pins color-scheme and resolves every
+     light-dark() below. */
+  color-scheme: light dark;
+
+  /* ── Palette ─────────────────────────────────────────────────
+     light-dark(paper deck, graphite deck). Values are the shipped
+     ideation site's, so a contract looks like the product that
+     produced it. */
+  --bg: light-dark(#f7f7f3, #131417);
+  --surface-1: light-dark(#fcfcfa, #1a1c20);
+  --surface-2: light-dark(#ffffff, #202329);
+  --wash: light-dark(#ebebe4, #0c0d0f);
+  --line: light-dark(#dededf, #2d3036);
+  --line-strong: light-dark(#a6a6a0, #4c505a);
+  --ink: light-dark(#191b1d, #e9e9e4);
+  --muted: light-dark(#50555a, #a8aaa6);
+  --faint: light-dark(#75797d, #82858a);
+
+  --accent: light-dark(#2b46c7, #93a7ff);
+  --accent-tint: light-dark(#e6eafb, #1e2542);
+  --go: light-dark(#187a48, #63bf8d);
+  --go-tint: light-dark(#e0f0e7, #15291e);
+  --caution: light-dark(#94660a, #d2ad55);
+  --caution-tint: light-dark(#f5ecd2, #2b2513);
+  --danger: light-dark(#bb3a2c, #e0796e);
+  --danger-tint: light-dark(#f8e2de, #331714);
+
+  /* Letterpress: an offset, no blur. The world's depth device. */
+  --press: 3px 3px 0 0 var(--line);
+  --press-strong: 4px 4px 0 0 var(--wash);
+
+  /* ── Type ────────────────────────────────────────────────────
+     Serif = voice. Sans = interface furniture. Mono = evidence. */
+  --font-serif:
+    'Iowan Old Style', 'Palatino Nova', Palatino, 'Book Antiqua', Georgia,
+    'Times New Roman', serif;
+  --font-mono:
+    'Berkeley Mono', 'SF Mono', 'Fira Code', 'Cascadia Code', Menlo, Consolas,
+    monospace;
+  --font-sans:
+    system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial,
+    sans-serif;
+
+  --t-kicker: 0.6875rem;
+  --t-meta: 0.75rem;
+  --t-data: 0.8125rem;
+  --t-small: 0.875rem;
+  --t-body: 1rem;
+  --t-lead: 1.125rem;
+  --t-h3: 1.25rem;
+  --t-h2: 1.75rem;
+  --t-display: clamp(2.25rem, 5.5vw, 3.5rem);
+  --t-figure: clamp(1.75rem, 4vw, 2.5rem);
+
+  /* ── Space (4pt) ─────────────────────────────────────────── */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 24px;
+  --s6: 32px;
+  --s7: 48px;
+  --s8: 72px;
+  --s9: 104px;
+
+  --radius: 3px;
+  --radius-lg: 4px;
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --measure: 68ch;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+/* ── Reset ─────────────────────────────────────────────────── */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+html {
+  scroll-behavior: smooth;
+  /* clear the running head when jumping to a section */
+  scroll-padding-top: 76px;
+}
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+body {
+  font-family: var(--font-serif);
+  font-size: var(--t-body);
+  line-height: 1.6;
+  color: var(--ink);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  font-kerning: normal;
+}
+:where(button, summary):focus-visible,
+:where(a, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius);
+}
+.wrap {
+  max-width: 1140px;
+  margin: 0 auto;
+  padding-inline: var(--s6);
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ── Voices ────────────────────────────────────────────────── */
+
+/* Reserved for labels on measurements and for the two stamps.
+   Not an eyebrow over every section — sections get real serif heads. */
+.kicker {
+  font-family: var(--font-mono);
+  font-size: var(--t-kicker);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.meta {
+  font-family: var(--font-mono);
+  font-size: var(--t-meta);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+/* Letterpress stamp — status, worn like a rubber stamp on paper. */
+.stamp {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  font-family: var(--font-mono);
+  font-size: var(--t-meta);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: var(--s1) var(--s3);
+  border: 1.5px solid currentColor;
+  border-radius: var(--radius);
+  white-space: nowrap;
+}
+.stamp::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: 0 0 auto;
+}
+.is-go {
+  color: var(--go);
+}
+.is-caution {
+  color: var(--caution);
+}
+.is-danger {
+  color: var(--danger);
+}
+.is-accent {
+  color: var(--accent);
+}
+
+/* Inline chips — small facts that ride next to text. Flat, hairline. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: var(--t-kicker);
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.chip-go {
+  color: var(--go);
+  border-color: currentColor;
+  background: var(--go-tint);
+}
+.chip-caution {
+  color: var(--caution);
+  border-color: currentColor;
+  background: var(--caution-tint);
+}
+.chip-danger {
+  color: var(--danger);
+  border-color: currentColor;
+  background: var(--danger-tint);
+}
+.chip-accent {
+  color: var(--accent);
+  border-color: currentColor;
+  background: var(--accent-tint);
+}
+
+/* ── Running head ──────────────────────────────────────────
+   A book's running head, not an app bar: hairline, quiet, and it
+   only appears once the masthead has scrolled away. */
+
+.runhead {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: color-mix(in oklab, var(--bg) 88%, transparent);
+  backdrop-filter: blur(8px) saturate(1.4);
+  border-bottom: 1px solid var(--line);
+  opacity: 0;
+  transform: translateY(-100%);
+  transition:
+    opacity 0.22s var(--ease),
+    transform 0.22s var(--ease);
+  pointer-events: none;
+}
+.runhead[data-visible='true'] {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+.runhead-inner {
+  display: flex;
+  align-items: center;
+  gap: var(--s5);
+  height: 52px;
+}
+.runhead-name {
+  font-family: var(--font-serif);
+  font-size: var(--t-small);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 24ch;
+}
+.runhead-nav {
+  display: flex;
+  gap: var(--s1);
+  margin-inline-start: auto;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.runhead-nav::-webkit-scrollbar {
+  display: none;
+}
+.runhead-nav a {
+  font-family: var(--font-mono);
+  font-size: var(--t-kicker);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--faint);
+  text-decoration: none;
+  padding: var(--s1) var(--s2);
+  border-radius: var(--radius);
+  white-space: nowrap;
+  transition: color 0.14s var(--ease);
+}
+.runhead-nav a:hover {
+  color: var(--ink);
+  background: var(--wash);
+}
+.runhead-nav a[aria-current='true'] {
+  color: var(--accent);
+  box-shadow: inset 0 -2px 0 0 var(--accent);
+}
+.runhead-run {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: var(--t-kicker);
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  padding: 5px var(--s3);
+  color: var(--bg);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.runhead-run:hover {
+  filter: brightness(1.08);
+}
+
+/* ── Masthead ──────────────────────────────────────────────── */
+
+.masthead {
+  padding-block: var(--s7) var(--s7);
+}
+.masthead-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s5);
+  flex-wrap: wrap;
+}
+.masthead-slug {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin-bottom: var(--s3);
+}
+/* The mark: a rotated square, the same glyph as the plugin's favicon. */
+.masthead-mark {
+  width: 10px;
+  height: 10px;
+  background: var(--accent);
+  transform: rotate(45deg);
+  flex: 0 0 auto;
+}
+.masthead h1 {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: var(--t-display);
+  font-weight: 600;
+  line-height: 1.02;
+  letter-spacing: -0.022em;
+  text-wrap: balance;
+  max-width: 18ch;
+}
+.masthead-aside {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--s2);
+  text-align: right;
+  flex: 0 0 auto;
+}
+.masthead-dates {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-end;
+}
+.theme-toggle {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  margin-top: var(--s1);
+  padding: 0;
+  color: var(--faint);
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.theme-toggle::after {
+  content: '';
+  position: absolute;
+  inset: -7px;
+}
+.theme-toggle:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.theme-toggle svg {
+  width: 15px;
+  height: 15px;
+  display: none;
+}
+.theme-toggle[data-mode='auto'] .i-auto,
+.theme-toggle[data-mode='light'] .i-light,
+.theme-toggle[data-mode='dark'] .i-dark {
+  display: block;
+}
+
+/* The lede — one sentence of what this contract commits to. */
+.masthead-lede {
+  margin: var(--s5) 0 0;
+  font-size: var(--t-lead);
+  line-height: 1.55;
+  color: var(--muted);
+  max-width: 62ch;
+  text-wrap: pretty;
+}
+.masthead-lede strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* ── Flight strip ──────────────────────────────────────────
+   The five measurements that decide whether you hand this over.
+   One bordered strip of cells, not a row of floating cards. */
+
+.flightstrip {
+  margin-top: var(--s6);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(184px, 1fr));
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+  box-shadow: var(--press);
+  overflow: hidden;
+}
+.fs-cell {
+  padding: var(--s4) var(--s4) var(--s3);
+  border-inline-start: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  min-width: 0;
+}
+.fs-cell:first-child {
+  border-inline-start: 0;
+}
+.fs-figure {
+  font-family: var(--font-mono);
+  font-size: var(--t-figure);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+.fs-figure .fs-of {
+  font-size: 0.5em;
+  color: var(--faint);
+  font-weight: 500;
+  letter-spacing: 0;
+}
+.fs-note {
+  font-family: var(--font-sans);
+  font-size: var(--t-meta);
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+/* Coverage meter — a real proportion, drawn to scale. */
+.meter {
+  display: flex;
+  gap: 2px;
+  height: 6px;
+  margin-top: var(--s1);
+}
+.meter span {
+  flex: 1;
+  border-radius: 1px;
+  background: var(--line-strong);
+}
+.meter .on {
+  background: var(--go);
+}
+.meter .warn {
+  background: var(--caution);
+}
+
+/* Risk bar — proportional segments, labelled, never colour alone. */
+.riskbar {
+  display: flex;
+  height: 6px;
+  margin-top: var(--s1);
+  border-radius: 1px;
+  overflow: hidden;
+  background: var(--wash);
+}
+.riskbar i {
+  display: block;
+}
+.riskbar .r-high {
+  background: var(--danger);
+}
+.riskbar .r-medium {
+  background: var(--caution);
+}
+.riskbar .r-low {
+  background: var(--go);
+}
+
+/* ── Section furniture ─────────────────────────────────────── */
+
+.band {
+  padding-block: var(--s8);
+  border-top: 1px solid var(--line);
+}
+.masthead {
+  border-top: 0;
+}
+.band-wash {
+  background: var(--surface-1);
+}
+.sec-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--s5);
+  margin-bottom: var(--s6);
+  flex-wrap: wrap;
+}
+.sec-head h2 {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: var(--t-h2);
+  font-weight: 600;
+  letter-spacing: -0.018em;
+  line-height: 1.15;
+}
+.sec-sub {
+  margin: var(--s2) 0 0;
+  font-size: var(--t-small);
+  line-height: 1.55;
+  color: var(--muted);
+  max-width: 62ch;
+  text-wrap: pretty;
+}
+.sec-count {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: var(--t-meta);
+  color: var(--faint);
+  letter-spacing: 0.03em;
+  padding-bottom: 3px;
+}
+
+/* ── Gate board ────────────────────────────────────────────── */
+
+.gates {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.gate {
+  padding: var(--s4);
+  border-inline-start: 1px solid var(--line);
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--s1) var(--s3);
+  align-content: start;
+}
+.gate:first-child {
+  border-inline-start: 0;
+}
+.gate-mark {
+  grid-row: span 2;
+  font-family: var(--font-mono);
+  font-size: var(--t-body);
+  font-weight: 700;
+  line-height: 1.2;
+}
+.gate-name {
+  font-family: var(--font-serif);
+  font-size: var(--t-small);
+  font-weight: 600;
+  color: var(--ink);
+  align-self: center;
+}
+.gate-ev {
+  grid-column: 2;
+  font-family: var(--font-sans);
+  font-size: var(--t-meta);
+  line-height: 1.5;
+  color: var(--muted);
+  text-wrap: pretty;
+}
+
+/* ── Run advice ────────────────────────────────────────────
+   verify.mjs's adviseRunMode(), rendered. The verdict the routing
+   decision is made on, printed in the contract instead of lost in
+   a transcript. */
+
+/* Two columns only when there is enough to fill the second one. adviseRunMode
+   short-circuits on the first disqualifying reason, so a one-reason verdict is
+   the common case, not the edge case. */
+.advice {
+  display: grid;
+  grid-template-columns: minmax(220px, 300px) 1fr;
+  gap: var(--s6);
+  align-items: start;
+  padding: var(--s5);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+  box-shadow: var(--press);
+}
+.advice-verdict {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s2);
+}
+.advice[data-few='true'] {
+  grid-template-columns: 1fr;
+  gap: var(--s4);
+}
+.advice[data-few='true'] .advice-reasons {
+  padding: var(--s4) 0 0;
+  border-inline-start: 0;
+  border-top: 1px solid var(--line);
+}
+.advice-mode {
+  font-family: var(--font-serif);
+  font-size: var(--t-h3);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.2;
+}
+.advice-gloss {
+  font-family: var(--font-sans);
+  font-size: var(--t-meta);
+  line-height: 1.55;
+  color: var(--muted);
+}
+.advice-reasons {
+  margin: 0;
+  padding: 0 0 0 var(--s6);
+  border-inline-start: 1px solid var(--line);
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  align-self: stretch;
+}
+.advice-reasons li {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: var(--s3);
+  font-family: var(--font-sans);
+  font-size: var(--t-small);
+  line-height: 1.55;
+  color: var(--ink);
+  align-items: start;
+}
+.advice-reasons .r-mark {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  line-height: 1.45;
+}
+.advice-reasons .m-ok {
+  color: var(--go);
+}
+.advice-reasons .m-no {
+  color: var(--danger);
+}
+.advice-reasons .m-warn {
+  color: var(--caution);
+}
+
+/* ── Prose & goals ─────────────────────────────────────────── */
+
+.split {
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  gap: var(--s8);
+  align-items: start;
+}
+.prose p {
+  margin: 0 0 var(--s4);
+  font-size: var(--t-body);
+  line-height: 1.68;
+  max-width: var(--measure);
+  text-wrap: pretty;
+}
+.prose p:last-child {
+  margin-bottom: 0;
+}
+/* Drop cap on the first paragraph — the field guide's opening device. */
+.prose > p:first-child::first-letter {
+  float: left;
+  font-size: 3.1em;
+  line-height: 0.82;
+  padding: 0.06em 0.09em 0 0;
+  font-weight: 600;
+  color: var(--accent);
+}
+.goals {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: goal;
+}
+.goals li {
+  counter-increment: goal;
+  display: grid;
+  grid-template-columns: 26px 1fr;
+  gap: var(--s3);
+  padding: var(--s3) 0;
+  border-top: 1px solid var(--line);
+  font-size: var(--t-small);
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+.goals li:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.goals li::before {
+  content: counter(goal, decimal-leading-zero);
+  font-family: var(--font-mono);
+  font-size: var(--t-meta);
+  font-weight: 600;
+  color: var(--accent);
+  padding-top: 3px;
+}
+
+/* ── Scope ─────────────────────────────────────────────────
+   The nesting diagram stops being decoration: hovering or focusing
+   a tier lights its own items, and the counts are live. */
+
+.scope {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: var(--s7);
+  align-items: start;
+}
+.nest {
+  position: relative;
+  width: 280px;
+  height: 280px;
+  flex: 0 0 auto;
+}
+.nest-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: var(--radius-lg);
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  transition: background 0.16s var(--ease);
+}
+.nest-stretch {
+  width: 280px;
+  height: 280px;
+  border: 1px dashed var(--line-strong);
+}
+.nest-full {
+  width: 202px;
+  height: 202px;
+  border: 1px solid var(--accent);
+}
+.nest-mvp {
+  width: 124px;
+  height: 124px;
+  border: 1.5px solid var(--accent);
+  background: var(--accent-tint);
+}
+.nest-ring[aria-pressed='true'],
+.nest-ring:hover {
+  background: var(--accent-tint);
+}
+.nest-mvp[aria-pressed='true'],
+.nest-mvp:hover {
+  background: color-mix(in oklab, var(--accent) 22%, transparent);
+}
+.nest-label {
+  position: absolute;
+  top: 7px;
+  left: 10px;
+  font-family: var(--font-mono);
+  font-size: var(--t-kicker);
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--accent);
+  white-space: nowrap;
+}
+.nest-stretch > .nest-label {
+  color: var(--faint);
+}
+.nest-caption {
+  margin-top: var(--s3);
+  font-family: var(--font-sans);
+  font-size: var(--t-meta);
+  line-height: 1.5;
+  color: var(--muted);
+  max-width: 280px;
+}
+.tiers {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s5);
+}
+.tier-hd {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  margin-bottom: var(--s2);
+}
+.tier-hd h3 {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: var(--t-body);
+  font-weight: 600;
+}
+.hrule {
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+  min-width: var(--s5);
+}
+.items {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+.items li {
+  font-size: var(--t-small);
+  line-height: 1.55;
+  padding-inline-start: var(--s4);
+  position: relative;
+  text-wrap: pretty;
+  margin-bottom: var(--s1);
+}
+.items li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.62em;
+  width: 6px;
+  height: 6px;
+  background: var(--accent);
+  transform: rotate(45deg);
+}
+.items strong {
+  font-weight: 600;
+}
+/* The reason goes on its own line: run inline, a five-clause justification
+   turns a scannable list of commitments into a wall of paragraph. */
+.items .why {
+  display: block;
+  margin-top: 2px;
+  font-family: var(--font-sans);
+  font-size: var(--t-meta);
+  line-height: 1.5;
+  color: var(--muted);
+}
+/* Tier dimming when a ring is engaged */
+.tiers[data-tier] .tier-group {
+  opacity: 0.3;
+  transition: opacity 0.18s var(--ease);
+}
+.tiers[data-tier='mvp'] .tier-group[data-tier='mvp'],
+.tiers[data-tier='full'] .tier-group[data-tier='full'],
+.tiers[data-tier='stretch'] .tier-group[data-tier='stretch'] {
+  opacity: 1;
+}
+
+.boundaries {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s5);
+  margin-top: var(--s7);
+}
+.bound {
+  padding: var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+}
+.bound h3 {
+  margin: 0 0 var(--s3);
+  font-family: var(--font-serif);
+  font-size: var(--t-small);
+  font-weight: 600;
+}
+.bound-out h3 {
+  color: var(--danger);
+}
+.bound ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+.bound li {
+  font-size: var(--t-data);
+  line-height: 1.55;
+  color: var(--muted);
+  text-wrap: pretty;
+}
+.struck {
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: line-through;
+  text-decoration-color: var(--danger);
+  text-decoration-thickness: 1.5px;
+}
+.bound-empty {
+  font-size: var(--t-data);
+  color: var(--faint);
+  font-style: italic;
+}
+
+/* ── Plan: the graph ───────────────────────────────────────
+   HTML nodes, so titles wrap and never truncate. Edges are an SVG
+   overlay measured from real geometry after layout — which is also
+   why the graph survives a font the machine actually has. */
+
+.graph {
+  position: relative;
+  padding: var(--s5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+  overflow-x: auto;
+}
+.graph-edges {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+.graph-edges path {
+  fill: none;
+  stroke: var(--line-strong);
+  stroke-width: 1.5;
+}
+.graph-edges .e-hot {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.graph-grid {
+  position: relative;
+  display: grid;
+  gap: var(--s5) var(--s7);
+  justify-content: start;
+  align-items: start;
+  min-width: min-content;
+}
+.wave-label {
+  grid-row: 1;
+  font-family: var(--font-mono);
+  font-size: var(--t-kicker);
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--faint);
+  padding-bottom: var(--s2);
+  border-bottom: 1px solid var(--line);
+  margin-bottom: var(--s2);
+}
+
+/* A phase node. Left rail carries risk; the whole thing is a button. */
+.pnode {
+  position: relative;
+  width: 216px;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  padding: var(--s3) var(--s3) var(--s3) var(--s4);
+  background: var(--surface-1);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--press);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  transition:
+    transform 0.16s var(--ease),
+    box-shadow 0.16s var(--ease),
+    border-color 0.16s var(--ease);
+}
+.pnode::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 0;
+  inset-block: 0;
+  width: 3px;
+  border-radius: var(--radius) 0 0 var(--radius);
+  background: var(--go);
+}
+.pnode[data-risk='medium']::before {
+  background: var(--caution);
+}
+.pnode[data-risk='high']::before {
+  background: var(--danger);
+}
+.pnode:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 0 var(--line);
+  border-color: var(--accent);
+}
+.pnode-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s2);
+}
+.pnode-n {
+  font-family: var(--font-mono);
+  font-size: var(--t-meta);
+  font-weight: 700;
+  color: var(--faint);
+  letter-spacing: 0.06em;
+}
+.pnode-title {
+  font-family: var(--font-serif);
+  font-size: var(--t-small);
+  font-weight: 600;
+  line-height: 1.3;
+  text-wrap: pretty;
+}
+.pnode-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s2);
+  align-items: center;
+  margin-top: 2px;
+}
+.pnode-gate {
+  background: var(--accent-tint);
+  border-style: dashed;
+}
+/* Focus state: one phase selected, the rest recede. */
+.graph[data-focus] .pnode {
+  opacity: 0.42;
+  filter: saturate(0.5);
+}
+.graph[data-focus] .pnode[aria-pressed='true'] {
+  opacity: 1;
+  filter: none;
+  border-color: var(--accent);
+  box-shadow: 4px 4px 0 0 var(--accent-tint);
+}
+.graph-hint {
+  margin-top: var(--s4);
+  font-family: var(--font-sans);
+  font-size: var(--t-meta);
+  color: var(--faint);
+  display: flex;
+  gap: var(--s3);
+  align-items: center;
+  flex-wrap: wrap;
+}
+.graph-clear {
+  font-family: var(--font-mono);
+  font-size: var(--t-kicker);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  padding: 2px var(--s2);
+  cursor: pointer;
+  visibility: hidden;
+}
+.graph-hint[data-active='true'] .graph-clear {
+  visibility: visible;
+}
+
+/* ── Plan: the ledger ──────────────────────────────────────
+   One row per phase. Not cards — a ledger, so notes have room and
+   the eye tracks down a single column of titles. */
+
+.ledger {
+  margin-top: var(--s5);
+  display: flex;
+  flex-direction: column;
+}
+.lrow {
+  display: grid;
+  grid-template-columns: 40px minmax(180px, 1.1fr) 2fr;
+  gap: var(--s5);
+  padding: var(--s4) var(--s3);
+  border-top: 1px solid var(--line);
+  align-items: start;
+  scroll-margin-top: 96px;
+  transition:
+    opacity 0.18s var(--ease),
+    background 0.18s var(--ease);
+}
+.ledger[data-focus] .lrow {
+  opacity: 0.35;
+}
+.ledger[data-focus] .lrow[data-hot='true'] {
+  opacity: 1;
+  background: var(--accent-tint);
+  border-radius: var(--radius);
+}
+.lrow-n {
+  font-family: var(--font-mono);
+  font-size: var(--t-body);
+  font-weight: 700;
+  color: var(--faint);
+  letter-spacing: -0.01em;
+  line-height: 1.4;
+}
+.lrow-head h3 {
+  margin: 0 0 var(--s2);
+  font-family: var(--font-serif);
+  font-size: var(--t-body);
+  font-weight: 600;
+  line-height: 1.3;
+  text-wrap: pretty;
+}
+.lrow-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s2);
+}
+.lrow-body {
+  font-family: var(--font-sans);
+  font-size: var(--t-data);
+  line-height: 1.6;
+  color: var(--muted);
+  text-wrap: pretty;
+}
+.lrow-body .spec {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: var(--s2);
+  font-family: var(--font-mono);
+  font-size: var(--t-meta);
+  color: var(--accent);
+  word-break: break-all;
+}
+.lrow-none {
+  font-style: italic;
+  color: var(--faint);
+}
+
+/* ── The run model ─────────────────────────────────────────
+   The signature moment. Five stages, the loop that can send review
+   back to build, and the gates that stop the run — with this
+   contract's own numbers in them. */
+
+.model {
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+  box-shadow: var(--press);
+  overflow: hidden;
+}
+.model-track {
+  position: relative;
+  padding: var(--s6) var(--s5) var(--s7);
+  overflow-x: auto;
+}
+.stages {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(150px, 1fr));
+  gap: var(--s5);
+  min-width: 780px;
+  /* room under the outcome chips for the review⇄fix arc to pass through */
+  padding-bottom: 52px;
+}
+.stage {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  padding-top: var(--s5);
+}
+/* The rail every stage sits on, and the travelling token. */
+/* Bridges the grid gap so the rail reads as one track, not five dashes. */
+.stage::before {
+  content: '';
+  position: absolute;
+  top: 9px;
+  inset-inline: calc(var(--s5) / -2 - 1px);
+  height: 1px;
+  background: var(--line-strong);
+}
+.stage:first-child::before {
+  inset-inline-start: 50%;
+}
+.stage:last-child::before {
+  inset-inline-end: 50%;
+}
+.stage-dot {
+  position: absolute;
+  top: 3px;
+  left: calc(50% - 6.5px);
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  border: 2px solid var(--line-strong);
+  z-index: 1;
+  transition:
+    border-color 0.3s var(--ease),
+    background 0.3s var(--ease),
+    transform 0.3s var(--ease);
+}
+.model[data-lit] .stage[data-reached='true'] .stage-dot {
+  border-color: var(--accent);
+  background: var(--accent);
+  transform: scale(1.18);
+}
+.stage-name {
+  font-family: var(--font-serif);
+  font-size: var(--t-body);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.stage-agent {
+  font-family: var(--font-mono);
+  font-size: var(--t-kicker);
+  letter-spacing: 0.06em;
+  color: var(--faint);
+}
+.stage-what {
+  font-family: var(--font-sans);
+  font-size: var(--t-meta);
+  line-height: 1.5;
+  color: var(--muted);
+  text-wrap: pretty;
+}
+.stage-outs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1);
+  margin-top: var(--s1);
+}
+/* Where the run leaves the loop. Set in caution so the eye can read the exits
+   as a row across the track without reading the prose. */
+.stage-exit {
+  margin-top: var(--s1);
+  padding-top: var(--s2);
+  border-top: 1px dashed var(--line);
+  font-family: var(--font-sans);
+  font-size: var(--t-meta);
+  line-height: 1.45;
+  color: var(--caution);
+  text-wrap: pretty;
+}
+.stage-exit code {
+  font-family: var(--font-mono);
+}
+/* The fix loop: an arc from review back to build. */
+/* Spans the Review column's centre (50%) to the Fix column's (70%) — the two
+   stages the cycle actually runs between. */
+.loopback {
+  position: absolute;
+  left: 50%;
+  right: 30%;
+  bottom: 22px;
+  height: 26px;
+  pointer-events: none;
+}
+.loopback svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.loopback path {
+  fill: none;
+  stroke: var(--caution);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+}
+.loopback-label {
+  position: absolute;
+  left: 50%;
+  bottom: -22px;
+  transform: translateX(-50%);
+  font-family: var(--font-mono);
+  font-size: var(--t-kicker);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--caution);
+  background: var(--surface-2);
+  padding-inline: var(--s2);
+  white-space: nowrap;
+}
+
+/* Run-level rules — what the engine does around the per-phase loop. */
+.rules {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  border-top: 1px solid var(--line);
+}
+.rule {
+  padding: var(--s4) var(--s5);
+  border-inline-start: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+.rule:first-child {
+  border-inline-start: 0;
+}
+.rule h3 {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: var(--t-small);
+  font-weight: 600;
+}
+.rule p {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--t-meta);
+  line-height: 1.55;
+  color: var(--muted);
+  text-wrap: pretty;
+}
+.rule code {
+  font-family: var(--font-mono);
+  font-size: 0.95em;
+  color: var(--ink);
+  background: var(--wash);
+  padding: 0 3px;
+  border-radius: 2px;
+}
+
+/* ── Done when ─────────────────────────────────────────────
+   The completion predicate, shown as the scoreboard it becomes. */
+
+.score {
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) 1fr;
+  gap: var(--s7);
+  align-items: start;
+}
+/* Grid and flex items default to min-width:auto, so one nowrap command string
+   inside the panel would set a floor the whole page has to scroll to reach. */
+.score > *,
+.split > *,
+.scope > *,
+.advice > * {
+  min-width: 0;
+}
+.score-panel {
+  padding: var(--s5);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+  box-shadow: var(--press);
+  position: sticky;
+  top: 76px;
+}
+.score-figure {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  font-family: var(--font-mono);
+  font-size: var(--t-figure);
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+.score-figure .of {
+  font-size: 0.44em;
+  color: var(--faint);
+  letter-spacing: 0;
+}
+.score-label {
+  margin-top: var(--s2);
+  font-family: var(--font-sans);
+  font-size: var(--t-meta);
+  line-height: 1.5;
+  color: var(--muted);
+}
+.verify-line {
+  margin-top: var(--s4);
+  padding: var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--wash);
+  font-family: var(--font-mono);
+  font-size: var(--t-meta);
+  line-height: 1.6;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.verify-line .vk {
+  color: var(--faint);
+}
+.verify-line .vg {
+  color: var(--go);
+  font-weight: 700;
+}
+.verify-cap {
+  margin-top: var(--s2);
+  font-family: var(--font-sans);
+  font-size: var(--t-meta);
+  line-height: 1.5;
+  color: var(--faint);
+}
+
+.crit-group + .crit-group {
+  margin-top: var(--s6);
+}
+.crit-group > h3 {
+  margin: 0 0 var(--s3);
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  font-family: var(--font-serif);
+  font-size: var(--t-small);
+  font-weight: 600;
+}
+.crits {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.crit {
+  display: grid;
+  grid-template-columns: 26px 1fr;
+  gap: var(--s3);
+  padding: var(--s3) 0;
+  border-top: 1px solid var(--line);
+  align-items: start;
+}
+.crit:first-child {
+  border-top: 0;
+}
+.crit-n {
+  font-family: var(--font-mono);
+  font-size: var(--t-meta);
+  font-weight: 600;
+  color: var(--faint);
+  padding-top: 3px;
+}
+.crit-text {
+  font-size: var(--t-small);
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+.crit-check {
+  display: block;
+  margin-top: var(--s2);
+  font-family: var(--font-mono);
+  font-size: var(--t-meta);
+  line-height: 1.55;
+  color: var(--ink);
+  background: var(--wash);
+  border: 1px solid var(--line);
+  /* Hairline, not a 2px tab: the mechanical/judgment split is already carried
+     by the group heading and by the mono/sans switch, so this is the third
+     signal and gets the least weight. */
+  border-inline-start: 1px solid var(--go);
+  padding: var(--s2) var(--s3);
+  border-radius: var(--radius);
+  overflow-wrap: anywhere;
+}
+.crit-judge .crit-check {
+  border-inline-start-color: var(--caution);
+  font-family: var(--font-sans);
+  color: var(--muted);
+}
+.crit-expect {
+  display: block;
+  margin-top: 5px;
+  font-family: var(--font-sans);
+  font-size: var(--t-meta);
+  color: var(--muted);
+}
+.crit-static {
+  margin-inline-start: var(--s2);
+}
+
+/* ── Decisions ─────────────────────────────────────────────── */
+
+.decisions {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  columns: 2;
+  column-gap: var(--s8);
+}
+.decision {
+  break-inside: avoid;
+  padding: var(--s4) 0;
+  border-top: 1px solid var(--line);
+}
+.decision:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.decision h3 {
+  margin: 0 0 var(--s2);
+  font-family: var(--font-serif);
+  font-size: var(--t-small);
+  font-weight: 600;
+  line-height: 1.4;
+  text-wrap: pretty;
+}
+.decision p {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--t-meta);
+  line-height: 1.6;
+  color: var(--muted);
+  text-wrap: pretty;
+}
+.decision .rejected {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+/* ── Open questions ────────────────────────────────────────── */
+
+.openqs {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.openq {
+  break-inside: avoid;
+  padding: var(--s4) 0;
+  border-top: 1px solid var(--line);
+}
+.openq:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.openq h3 {
+  margin: var(--s2) 0 var(--s2);
+  font-family: var(--font-serif);
+  font-size: var(--t-small);
+  font-weight: 600;
+  line-height: 1.4;
+  text-wrap: pretty;
+}
+/* A label on a kind, not an eyebrow over a section — the four kinds are the
+   thing the reader routes on. */
+.openq-type {
+  font-family: var(--font-mono);
+  font-size: var(--t-meta);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.openq-meta {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--t-meta);
+  line-height: 1.6;
+  color: var(--muted);
+  text-wrap: pretty;
+}
+/* Blocked entries are marked by the word, coloured to be findable in a scan. */
+.openq-wait {
+  color: var(--caution);
+  font-weight: 600;
+}
+/* An id is a handle the next session types back in, so it is mono. No chip:
+   padding would open a gap before the comma that separates two of them. */
+.openq-meta code {
+  font-family: var(--font-mono);
+  font-size: 0.95em;
+  color: var(--ink);
+}
+/* The entry's own id leads its meta line, and the ids after "waiting on" are
+   references to other entries. Same mono treatment would make the two
+   indistinguishable, so the leading one carries the weight: it is the label
+   a reader scans for when resolving somebody else's "waiting on". */
+.openq-id {
+  font-weight: 600;
+}
+
+/* ── Commands ──────────────────────────────────────────────── */
+
+.runbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(300px, 1.5fr);
+  gap: var(--s5);
+  align-items: center;
+  padding: var(--s5);
+  border: 1.5px solid var(--accent);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+  box-shadow: var(--press-strong);
+}
+.runbar h3 {
+  margin: 0 0 var(--s2);
+  font-family: var(--font-serif);
+  font-size: var(--t-h3);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+.runbar p {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--t-meta);
+  line-height: 1.55;
+  color: var(--muted);
+  max-width: 46ch;
+}
+.cmd {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s3);
+  background: var(--wash);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: var(--t-data);
+  line-height: 1.5;
+  min-width: 0;
+}
+.cmd-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: all;
+}
+.cmd-block {
+  align-items: flex-start;
+}
+.cmd-block .cmd-text {
+  white-space: pre-wrap;
+  overflow: visible;
+  overflow-wrap: anywhere;
+}
+.copy {
+  position: relative;
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: var(--t-kicker);
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  padding: 3px var(--s2);
+  cursor: pointer;
+  min-width: 5.4em;
+  text-align: center;
+}
+.copy::after {
+  content: '';
+  position: absolute;
+  inset: -9px;
+}
+.copy:hover {
+  background: var(--accent-tint);
+  border-color: var(--accent);
+}
+.copy[data-state='done'] {
+  color: var(--go);
+  border-color: var(--go);
+  background: var(--go-tint);
+}
+
+.fold {
+  margin-top: var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+  overflow: hidden;
+}
+.fold > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: var(--s3) var(--s4);
+  font-family: var(--font-serif);
+  font-size: var(--t-small);
+  font-weight: 600;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+.fold > summary::-webkit-details-marker {
+  display: none;
+}
+.fold > summary:hover {
+  color: var(--ink);
+}
+.fold > summary::before {
+  content: '';
+  width: 0;
+  height: 0;
+  border-block: 4px solid transparent;
+  border-inline-start: 6px solid var(--faint);
+  transition: transform 0.16s var(--ease);
+}
+.fold[open] > summary::before {
+  transform: rotate(90deg);
+}
+.fold-body {
+  padding: var(--s4);
+  border-top: 1px solid var(--line);
+}
+.fold-body > p {
+  margin: 0 0 var(--s4);
+  font-family: var(--font-sans);
+  font-size: var(--t-meta);
+  line-height: 1.6;
+  color: var(--muted);
+  max-width: 76ch;
+}
+.phase-cmds {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+}
+.phase-cmd {
+  display: grid;
+  grid-template-columns: 34px minmax(140px, 220px) 1fr;
+  gap: var(--s4);
+  align-items: center;
+}
+.phase-cmd .n {
+  font-family: var(--font-mono);
+  font-size: var(--t-meta);
+  font-weight: 600;
+  color: var(--faint);
+}
+.phase-cmd .t {
+  font-family: var(--font-serif);
+  font-size: var(--t-data);
+  font-weight: 600;
+}
+
+/* ── Awaiting approval / close ─────────────────────────────── */
+
+.awaiting {
+  margin-top: var(--s5);
+  padding: var(--s5);
+  border: 1px solid var(--caution);
+  border-radius: var(--radius-lg);
+  background: var(--caution-tint);
+}
+.awaiting p {
+  margin: var(--s2) 0 0;
+  font-family: var(--font-sans);
+  font-size: var(--t-data);
+  line-height: 1.6;
+  color: var(--ink);
+  max-width: 64ch;
+}
+.placeholder {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.close {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--s5);
+  align-items: center;
+  padding: var(--s6) var(--s5);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+  box-shadow: var(--press);
+  overflow: hidden;
+}
+/* The approved cap. As a `border-top: 3px` it mitered into the 1px side
+   borders inside a 4px corner arc — a visible wedge. Clipped by the parent's
+   radius instead, so the cap follows the corner. */
+.close::before {
+  content: '';
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: 0;
+  height: 3px;
+  background: var(--go);
+}
+.close h2 {
+  margin: var(--s2) 0 0;
+  font-family: var(--font-serif);
+  font-size: var(--t-h2);
+  font-weight: 600;
+  letter-spacing: -0.018em;
+}
+.close p {
+  margin: var(--s3) 0 0;
+  font-family: var(--font-sans);
+  font-size: var(--t-data);
+  line-height: 1.6;
+  color: var(--muted);
+  max-width: 62ch;
+  text-wrap: pretty;
+}
+.close-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--s2);
+  text-align: right;
+}
+.colophon {
+  padding-block: var(--s6) var(--s8);
+  font-family: var(--font-sans);
+  font-size: var(--t-meta);
+  color: var(--faint);
+  line-height: 1.6;
+}
+.colophon code {
+  font-family: var(--font-mono);
+}
+
+/* ── Responsive ────────────────────────────────────────────── */
+
+@media (max-width: 1020px) {
+  .split,
+  .scope,
+  .score {
+    grid-template-columns: 1fr;
+    gap: var(--s6);
+  }
+  .score-panel {
+    position: static;
+  }
+  .advice {
+    grid-template-columns: 1fr;
+    gap: var(--s5);
+  }
+  .decisions {
+    columns: 1;
+  }
+}
+
+@media (max-width: 720px) {
+  .wrap {
+    padding-inline: var(--s4);
+  }
+  .band {
+    padding-block: var(--s7);
+  }
+  .masthead {
+    padding-top: var(--s6);
+  }
+  .masthead-top {
+    flex-direction: column;
+  }
+  .masthead-aside {
+    align-items: flex-start;
+    text-align: left;
+  }
+  .masthead-dates {
+    align-items: flex-start;
+  }
+  /* Two-up, with the rules following the grid: auto-fit would keep two
+     columns here while the single-column border rules assumed one. */
+  .flightstrip {
+    grid-template-columns: 1fr 1fr;
+  }
+  .fs-cell {
+    border-top: 1px solid var(--line);
+  }
+  .fs-cell:nth-child(-n + 2) {
+    border-top: 0;
+  }
+  .fs-cell:nth-child(odd) {
+    border-inline-start: 0;
+  }
+  .fs-cell:last-child:nth-child(odd) {
+    grid-column: span 2;
+  }
+  .gate {
+    border-inline-start: 0;
+    border-top: 1px solid var(--line);
+  }
+  .gate:first-child {
+    border-top: 0;
+  }
+  .rule {
+    border-inline-start: 0;
+    border-top: 1px solid var(--line);
+  }
+  .rule:first-child {
+    border-top: 0;
+  }
+  .nest {
+    display: none;
+  }
+  .boundaries,
+  .runbar,
+  .close {
+    grid-template-columns: 1fr;
+  }
+  .close-meta {
+    align-items: flex-start;
+    text-align: left;
+  }
+  .lrow {
+    grid-template-columns: 30px 1fr;
+    gap: var(--s3);
+  }
+  .lrow-body {
+    grid-column: 2;
+  }
+  .phase-cmd {
+    grid-template-columns: 30px 1fr;
+  }
+  .phase-cmd .cmd {
+    grid-column: 1 / -1;
+  }
+  .runhead-nav {
+    display: none;
+  }
+  .prose > p:first-child::first-letter {
+    font-size: 2.6em;
+  }
+}
+
+/* ── Motion ───────────────────────────────────────────────
+   One authored moment. The token traverses the run model once when
+   the section is first seen; nothing else animates on scroll. */
+
+@keyframes token-travel {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(var(--travel, 0px));
+  }
+}
+.token {
+  position: absolute;
+  top: 4px;
+  left: 0;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--accent) 22%, transparent);
+  opacity: 0;
+  z-index: 2;
+}
+.model[data-lit='running'] .token {
+  opacity: 1;
+  animation: token-travel var(--dur, 2400ms) var(--ease) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+  .token {
+    display: none;
+  }
+  /* Reduced motion still gets the information: every stage reads lit. */
+  .model .stage-dot {
+    border-color: var(--accent);
+  }
+}
+
+/* ── Print — the contract as a paper document ──────────────── */
+
+@media print {
+  :root,
+  :root[data-theme] {
+    color-scheme: light;
+    --bg: #ffffff;
+    --surface-1: #ffffff;
+    --surface-2: #ffffff;
+    --wash: #f2f2ee;
+    --line: #c9c9c4;
+    --line-strong: #8a8a84;
+    --ink: #000000;
+    --muted: #303336;
+    --faint: #4a4d51;
+    --accent: #1c2f96;
+    --accent-tint: #eceffc;
+    --go: #105934;
+    --caution: #6b4a07;
+    --danger: #8e2b20;
+    --press: none;
+    --press-strong: none;
+  }
+  body {
+    font-size: 10.5pt;
+  }
+  .wrap {
+    max-width: none;
+    padding-inline: 0;
+  }
+  .runhead,
+  .copy,
+  .theme-toggle,
+  .graph-hint,
+  .token {
+    display: none !important;
+  }
+  .band {
+    padding-block: 18pt;
+    break-inside: auto;
+  }
+  .graph,
+  .model-track,
+  .flightstrip {
+    overflow: visible;
+  }
+  /* Folded content is part of the document on paper. */
+  .fold {
+    border: 0;
+  }
+  .fold > summary {
+    padding-inline: 0;
+  }
+  .fold:not([open]) > *:not(summary) {
+    display: block !important;
+  }
+  .fold-body {
+    padding-inline: 0;
+  }
+  .decisions {
+    columns: 2;
+  }
+  .score-panel {
+    position: static;
+  }
+  .gates,
+  .flightstrip,
+  .model,
+  .runbar,
+  .close,
+  .lrow,
+  .decision,
+  .openq,
+  .crit,
+  .pnode {
+    break-inside: avoid;
+  }
+  .graph[data-focus] .pnode,
+  .ledger[data-focus] .lrow {
+    opacity: 1 !important;
+    filter: none !important;
+  }
+}
+
+    </style>
+  </head>
+  <body data-contract-status="Approved">
+    <div class="runhead" id="runhead" data-visible="false">
+      <div class="wrap runhead-inner">
+        <span class="runhead-name">Attention Lanes</span>
+        <nav class="runhead-nav" aria-label="Contract sections">
+          <a href="#readiness">Readiness</a>
+          <a href="#brief">Brief</a>
+          <a href="#scope">Scope</a>
+          <a href="#plan">Plan</a>
+          <a href="#run-model">Run model</a>
+          <a href="#done">Done when</a>
+          <a href="#decisions">Decisions</a>
+        </nav>
+        <button type="button" class="runhead-run" data-copy-text="/ideation:autopilot docs/ideation/attention-lanes/contract.md">copy run command</button>
+      </div>
+    </div>
+
+    <header class="band masthead" id="top">
+      <div class="wrap">
+        <div class="masthead-top">
+          <div>
+            <div class="masthead-slug">
+              <span class="masthead-mark" aria-hidden="true"></span>
+              <span class="kicker">contract · attention-lanes</span>
+            </div>
+            <h1>Attention Lanes</h1>
+          </div>
+          <div class="masthead-aside">
+            <span class="stamp is-go">Approved</span>
+            <div class="masthead-dates">
+              <span class="meta">drafted 2026-07-31</span>
+              <span class="meta">approved 2026-07-31 · Nick Nisi</span>
+            </div>
+            <button type="button" class="theme-toggle" id="theme-toggle" data-mode="auto" aria-label="Colour theme: follow system">
+      <svg class="i-auto" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="5"/><path d="M8 3v10" /><path d="M8 3a5 5 0 010 10z" fill="currentColor" stroke="none"/></svg>
+      <svg class="i-light" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="3.1"/><path d="M8 1v1.6M8 13.4V15M15 8h-1.6M2.6 8H1M12.9 3.1l-1.1 1.1M4.2 11.8l-1.1 1.1M12.9 12.9l-1.1-1.1M4.2 4.2L3.1 3.1"/></svg>
+      <svg class="i-dark" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M13.4 9.8A5.8 5.8 0 016.2 2.6a5.8 5.8 0 107.2 7.2z"/></svg>
+            </button>
+          </div>
+        </div>
+        <p class="masthead-lede"><strong>2 build phases</strong> across 2 dependency waves, delivering 8 committed scope items. Completion is decided by <strong>15 of 17</strong> criteria a machine can check and 2 a human must.</p>
+        <div class="flightstrip">
+          <div class="fs-cell">
+            <span class="kicker">gates</span>
+            <span class="fs-figure"><span class="num">5</span><span class="fs-of">/5</span></span>
+            <span class="fs-note">ready — the interview closed every gate</span>
+            <div class="meter" aria-hidden="true"><span class="on"></span><span class="on"></span><span class="on"></span><span class="on"></span><span class="on"></span></div>
+          </div>
+          <div class="fs-cell">
+            <span class="kicker">phases</span>
+            <span class="fs-figure"><span class="num">02</span></span>
+            <span class="fs-note">2 dependency waves · 2 expected to commit</span>
+          </div>
+          <div class="fs-cell">
+            <span class="kicker">checkable</span>
+            <span class="fs-figure"><span class="num">15</span><span class="fs-of">/17</span></span>
+            <span class="fs-note">2 need a human to look</span>
+            <div class="meter" aria-hidden="true"><span class="on"></span><span class="on"></span><span class="on"></span><span class="on"></span><span class="on"></span><span class="on"></span><span class="on"></span><span class="on"></span><span class="on"></span><span class="on"></span><span class="on"></span><span class="on"></span><span class="on"></span><span class="on"></span><span class="on"></span><span class=""></span><span class=""></span></div>
+          </div>
+          <div class="fs-cell">
+            <span class="kicker">scope</span>
+            <span class="fs-figure"><span class="num">08</span></span>
+            <span class="fs-note">8 MVP · 0 full · 0 stretch · 11 refused</span>
+          </div>
+          <div class="fs-cell">
+            <span class="kicker">risk</span>
+            <span class="fs-figure"><span class="num">1</span><span class="fs-of">medium</span></span>
+            <span class="fs-note">of 2 phases · 1 medium · 1 low</span>
+            <div class="riskbar" aria-hidden="true"><i class="r-medium" style="width:50.0%"></i><i class="r-low" style="width:50.0%"></i></div>
+          </div>
+        </div>
+      </div>
+    </header>
+    <main>
+
+    <section class="band" id="readiness" aria-labelledby="readiness-h">
+      <div class="wrap">
+      <div class="sec-head">
+        <div>
+          <h2 id="readiness-h">Is this ready to hand over?</h2>
+          <p class="sec-sub">Every dimension the interview probes closed with evidence. Each cell below is what closed it.</p>
+        </div>
+        <span class="sec-count">5/5 ready</span>
+      </div>
+      <div class="gates">
+        <div class="gate">
+          <span class="gate-mark is-go" aria-hidden="true">✓</span>
+          <span class="gate-name">Problem Clarity <span class="sr-only">— ready</span></span>
+          <span class="gate-ev">Verified in code, not asserted: `verdict` is written only at store.ts:264 inside setNarrative, and narration is lazy-on-open, so every unopened row renders the neutral bullet (UnitRow.tsx:43) and the needs-you sort by VERDICT_RANK degrades to oldest-first (units-view.ts:54) — the queue's glyph, sort, and 'N to resolve' count are all placeholders for exactly the rows being triaged.</span>
+        </div>
+        <div class="gate">
+          <span class="gate-mark is-go" aria-hidden="true">✓</span>
+          <span class="gate-name">Goal Definition <span class="sr-only">— ready</span></span>
+          <span class="gate-ev">Seven goals, six with named commands run under a test-name pattern so a missing test shows as a zero pass count rather than a green exit, and one (G7, the real outcome) declared judgment-only and instrumented with per-poll lane splits plus per-open lane logging so the judgment reads data instead of recollection.</span>
+        </div>
+        <div class="gate">
+          <span class="gate-mark is-go" aria-hidden="true">✓</span>
+          <span class="gate-name">Success Criteria <span class="sr-only">— ready</span></span>
+          <span class="gate-ev">Each goal carries at least one check; criteria cover both directions of the lane function (a degenerate all-Needs-you implementation fails criterion 10), the staleness path, legacy units with no triage summary, and non-regression of the prompt filter and collapse evidence that share classifyPath.</span>
+        </div>
+        <div class="gate">
+          <span class="gate-mark is-go" aria-hidden="true">✓</span>
+          <span class="gate-name">Scope Boundaries <span class="sr-only">— ready</span></span>
+          <span class="gate-ev">MVP is one new lane plus the server-side triage inputs that populate it and a dismissal that survives the poller; the approve button, evidence gate, settings config, snapshot dependency, CODEOWNERS, and weighted score are each excluded with a recorded reason, most measurement-backed rather than preferential.</span>
+        </div>
+        <div class="gate">
+          <span class="gate-mark is-go" aria-hidden="true">✓</span>
+          <span class="gate-name">Consistency <span class="sr-only">— ready</span></span>
+          <span class="gate-ev">Five contradictions surfaced and resolved: real-GitHub-approve vs. lazy narration (evidence moved from chapters to file paths), a caller veto dropped while its snapshot guard was kept (measurement — both dropped), four evidence kinds selected after their gate was cut (rehomed as lane inputs), G2's cost envelope excluding the per-poll reviews fetch (G2 restated to own both cadences), and a lane function that phase 1 needed to log but phase 2 defined (moved CLI-side into phase 1).</span>
+        </div>
+      </div>
+
+      <div class="advice" data-few="false" style="margin-top: var(--s5)">
+        <div class="advice-verdict">
+          <span class="stamp is-go">walk-away</span>
+          <span class="advice-mode">Safe to walk away</span>
+          <span class="advice-gloss">The checks are mechanical enough that verify.mjs can certify completion without you. Start it, leave, and read the VERIFY line when it lands.</span>
+          <span class="meta">RUNMODE attention-lanes: walk-away  phases=2 cmd=15 judgment=2 risk=medium</span>
+        </div>
+        <ul class="advice-reasons">
+          <li><span class="r-mark m-ok" aria-hidden="true">✓</span><span><span class="sr-only">In favour: </span>15 of 17 criteria are mechanically checked — verify.mjs can certify completion</span></li>
+          <li><span class="r-mark m-ok" aria-hidden="true">✓</span><span><span class="sr-only">In favour: </span>2 phases, no high-risk phase</span></li>
+          <li><span class="r-mark m-warn" aria-hidden="true">!</span><span><span class="sr-only">Caveat: </span>2 judgment criteria are printed but never counted — verify cannot certify them</span></li>
+        </ul>
+      </div>
+      <div class="runbar" style="margin-top: var(--s5)">
+        <div>
+          <span class="kicker">start here</span>
+          <h3>Run the whole contract.</h3>
+          <p>Autopilot reads this plan, orders the phases, and dispatches each one through the loop below. It skips phases that already have a commit, so re-running after a fix is safe.</p>
+        </div>
+        <div class="cmd">
+            <span class="cmd-text" id="cmd-top">/ideation:autopilot docs/ideation/attention-lanes/contract.md</span>
+            <button type="button" class="copy" data-copy="cmd-top">copy</button>
+          </div>
+      </div>
+      </div>
+    </section>
+
+    <section class="band" id="brief" aria-labelledby="brief-h">
+      <div class="wrap">
+      <div class="sec-head">
+        <div>
+          <h2 id="brief-h">What is wrong, and what would fix it</h2>
+          <p class="sec-sub">The problem this contract exists to close, and the outcomes that would mean it closed.</p>
+        </div>
+      </div>
+      <div class="split">
+        <div class="prose">
+          <p>The daemon's command center promises triage and delivers a list. Its lanes are status lanes (queued / changes-requested / done), so &quot;Needs you&quot; is a synonym for &quot;everything actionable&quot;, and every row renders at identical visual weight whether it is a four-line typo fix or a nine-hundred-line auth refactor.</p>
+          <p>The signal meant to rank the queue does not exist when the queue is rendered. `verdict` is cached from `narrative.verdict` and written in exactly one place — `setNarrative` (store.ts:264) — which runs during the lazy hydrate that only fires when a PR is opened. So for every PR the reviewer has not already opened, `verdict` is undefined: `verdictTone` returns `neutral`, the row leads with a grey bullet, and `groupUnits`' sort by VERDICT_RANK finds all zeros and silently degrades to oldest-first. `toResolve` is initialised to 0 at mint (store.ts:146) and rendered unconditionally, so fresh rows assert &quot;0 to resolve&quot; as though it were measured.</p>
+          <p>Two smaller defects compound it. PRs in archived repositories keep resurfacing even though GitHub serves those repos read-only, so neither approving nor commenting can succeed — a review request from 2018-02-13 on dojo/cli-export-project, archived in 2018, sat in the real queue during this interview. And the row's ✕ does not stick: `DELETE /api/units/:id` hard-deletes, `classify` (linking.ts:18) only checks whether a unit already exists, and nothing records the dismissal — so any PR GitHub still requests is re-minted on the next poll pass, within 60 seconds.</p>
+          <p>The cost is paid in the reviewer's attention, which is the scarce resource this tool exists to protect: the queue cannot say which PRs need a human, so every one gets opened to find out, and the two affordances for reducing the pile either show work that cannot be done or undo themselves within a minute.</p>
+        </div>
+        <div>
+          <div class="tier-hd">
+            <h3>Goals</h3>
+            <span class="hrule"></span>
+            <span class="sec-count">×7</span>
+          </div>
+          <ol class="goals">
+            <li>Every queued unit lands in a named lane using only data available without a narrative — including units persisted before this ships — so no row in the command center renders the neutral placeholder state that unopened PRs show today, and no row claims &quot;0 to resolve&quot; as a measurement.</li>
+            <li>Triage costs no model calls at any point, one file-list page fetch per PR per push, and one reviews fetch per open unit per poll pass. Those are different cadences and the plan owns both: at the 60s default the reviews fetch roughly doubles API traffic and approaches GitHub's 5000/hr ceiling around forty open units.</li>
+            <li>Lane assignment discriminates on fixtures and stays honest as PRs change: a PR whose every file classifies as mechanical lands in &quot;Probably not&quot;, any criticality tag forces &quot;Needs you&quot; regardless of size, a PR too large for one file-list page forces &quot;Needs you&quot; because size is itself a stakes signal, and a push that adds a source file to a previously-mechanical PR moves it back to &quot;Needs you&quot; on the next poll.</li>
+            <li>The queue reflects the reviewer's obligation, not only the diff's shape: a PR others have already approved ranks below one where the reviewer is the sole outstanding reviewer.</li>
+            <li>PRs whose base repository is archived never appear in the queue and are removed silently if already present — no note, no filtered-count, because there is no action the reviewer could take on one.</li>
+            <li>Dismissing a row with ✕ survives the poller: the PR stays hidden until its author pushes, at which point it returns to the queue as genuinely new work.</li>
+            <li>The reviewer opens fewer PRs that turn out not to need them — judged after roughly two weeks of real use, against per-poll lane-split counts and a logged lane for every PR actually opened.</li>
+          </ol>
+        </div>
+      </div>
+      </div>
+    </section>
+
+    <section class="band band-wash" id="scope" aria-labelledby="scope-h">
+      <div class="wrap">
+      <div class="sec-head">
+        <div>
+          <h2 id="scope-h">What is in, and what was refused</h2>
+          <p class="sec-sub">MVP nests inside Full nests inside Stretch — each ring contains the one before it. Select a ring to isolate its items.</p>
+        </div>
+        <span class="sec-count">8 committed · 11 refused</span>
+      </div>
+      <div class="scope">
+        <div>
+          <div class="nest">
+            <button type="button" class="nest-ring nest-stretch" data-tier="stretch" aria-pressed="false"><span class="nest-label">Stretch ×0</span></button>
+            <button type="button" class="nest-ring nest-full" data-tier="full" aria-pressed="false"><span class="nest-label">Full ×0</span></button>
+            <button type="button" class="nest-ring nest-mvp" data-tier="mvp" aria-pressed="false"><span class="nest-label">MVP ×8</span></button>
+          </div>
+          <p class="nest-caption">Cutting to the inner ring is always a legal move. Adding a ring is not — that is a new revision that supersedes this one.</p>
+        </div>
+        <div class="tiers" id="tiers">
+          <div class="tier-group" data-tier="mvp">
+            <div class="tier-hd">
+              <h3>MVP — must ship</h3>
+              <span class="hrule"></span>
+              <span class="sec-count">×8</span>
+            </div>
+            <ul class="items">
+              <li><strong>Fetch each PR's first file-list page at mint and on head-SHA change, storing a compact triage summary — paths, mechanical kind per path, criticality tags, counts, and a truncated flag when more pages exist</strong> <span class="why">— Path data is the only input the lane needs, it costs one REST call and zero model tokens, and re-fetching on push is what stops stale evidence from outliving the diff it described.</span></li>
+              <li><strong>A triage classifier that composes `classifyPath` and adds a `manifest` kind for package.json and friends</strong> <span class="why">— package.json blocked 17 of 30 sampled dependabot PRs from classifying, but classifyPath feeds partitionMechanicalFiles (engine.ts:218) and collapse evidence (collapse.ts:105), so extending it in place would silently change narrative generation.</span></li>
+              <li><strong>A pure lane function, CLI-side, over the stored triage summary — total over a missing summary</strong> <span class="why">— Both the daemon (which logs lane splits) and the web UI (which renders lanes) need the answer; two implementations would drift and corrupt the very data the two-week judgment depends on.</span></li>
+              <li><strong>Fetch each open unit's reviews at poll time and store the approved / changes-requested rollup</strong> <span class="why">— Turns &quot;do I need to care&quot; into a fact about the reviewer rather than only about the diff. Its recurring cost is real and now stated in G2 rather than hidden; summarizeReviews already exists.</span></li>
+              <li><strong>A &quot;Probably not&quot; lane between the existing Needs you and In flight, with a one-line evidence reason on every row</strong> <span class="why">— Splits the actionable queue by attention while leaving In flight and Cleared untouched — the smallest change that delivers the labeling, since In flight was never part of the problem.</span></li>
+              <li><strong>Rows sized by stakes, leading with the reason rather than a glyph, and the &quot;0 to resolve&quot; placeholder removed</strong> <span class="why">— A four-line typo fix and a nine-hundred-line auth refactor currently render identically, and the placeholder count asserts a measurement that was never taken. Row weight is covered by the judgment criterion so it cannot be silently dropped or silently expanded.</span></li>
+              <li><strong>✕ becomes a dismissal that survives the poller: soft-delete stamped with the head SHA, hidden from every lane, resurfaced when the author pushes</strong> <span class="why">— Today ✕ hard-deletes and the poller re-mints within 60s, so the one control for shrinking the queue undoes itself. Reuses classify's existing-unit guard and shouldResurface rather than adding a suppression list.</span></li>
+              <li><strong>A per-poll lane-split count and a per-open lane log line in the daemon</strong> <span class="why">— G7 is judgment-only by necessity; the split alone shows distribution but not behavior, so the open-event line is what makes it a measurement rather than an impression.</span></li>
+            </ul>
+          </div>
+
+
+        </div>
+      </div>
+
+      <div class="boundaries">
+        <div class="bound bound-out">
+          <h3>Out of scope — refused on purpose</h3>
+          <ul>
+            <li><span class="struck">The inline approve button</span> — Measured: the gate fires on 0 of 47 merged diffdad PRs and 5 of 30 sampled dependabot PRs, and the kinds it does fire on — lockfiles and manifests — are the supply-chain surface, the worst thing to approve unread.</li>
+            <li><span class="struck">The evidence gate and its settings configuration</span> — There is no gate to configure once the button is out; a config field added now would encode a guess with no data behind it.</li>
+            <li><span class="struck">&quot;Known external callers&quot; as a signal of any kind</span> — Measured unreliable for these file kinds: moduleNameFromPath truncates at the first dot, so bun.lock keys as &quot;bun&quot; and matched 2 bare-specifier importers, and every X.test.ts collides with X.ts (12 spurious callers on units-view.test.ts). Coarse-by-design is fine where a false positive is conservative; it is not fine here.</li>
+            <li><span class="struck">Any dependency on the repo snapshot or import index</span> — It existed only to serve the caller check. Dropping it makes lanes work instantly, with no tarball warmup, and on repositories over the 500 MB snapshot cap.</li>
+            <li><span class="struck">Eager narration of queued PRs</span> — Explicitly declined; the file list delivers the lane for one REST call and zero tokens, so the expensive path buys nothing the cheap one does not.</li>
+            <li><span class="struck">Paginating past the first file-list page</span> — A PR with more than 100 files is not a &quot;probably not&quot; candidate under any reading, so the truncated flag forcing Needs you is both cheaper and safer than fetching the rest.</li>
+            <li><span class="struck">CODEOWNERS parsing and path matching</span> — Strongest obligation signal, but neither the parser nor the glob matcher exists, and the reviews rollup already moves the signal from the diff to the reviewer.</li>
+            <li><span class="struck">A weighted risk score with a configurable threshold</span> — Any score safe enough to gate on needs criticality as a veto, at which point the conjunction does the work and the number is decoration; and a threshold has no ground truth to calibrate against, so it only ever ratchets looser.</li>
+            <li><span class="struck">A permanent dismissal or a dedicated Dismissed tab</span> — Dismiss-until-push self-clears on genuinely new work, so it needs no un-dismiss UI and cannot strand a PR that has since changed.</li>
+            <li><span class="struck">Auto-approving anything, under any condition</span> — Standing exclusion from the brainstorm; nothing measured since has weakened it.</li>
+            <li><span class="struck">Restructuring the In flight or Cleared lanes</span> — changes_requested means the ball is with the author and already leaves the actionable queue; it was never part of the stated problem.</li>
+          </ul>
+        </div>
+        <div class="bound">
+          <h3>Future — someday, maybe</h3>
+          <ul>
+            <li>Revisit the approve button once the lane-split and open-event logs show the reviewer's real PR mix — neither corpus measured here was their own queue.</li>
+            <li>A caller check keyed on full relative paths rather than first-dot module names, which would remove the collision problem and could then be trusted.</li>
+            <li>Bounding the per-poll reviews fetch if the queue ever approaches the ~40-unit rate-limit ceiling G2 names.</li>
+            <li>CODEOWNERS-based ownership once a parser and matcher exist.</li>
+          </ul>
+        </div>
+      </div>
+      </div>
+    </section>
+
+    <section class="band" id="plan" aria-labelledby="plan-h">
+      <div class="wrap">
+      <div class="sec-head">
+        <div>
+          <h2 id="plan-h">What gets built, in what order</h2>
+          <p class="sec-sub">Sequential. Columns are dependency waves — nothing in a column waits on anything else in it, but two phases naming the same file are still serialised, so a column is an upper bound on concurrency rather than a promise of it.</p>
+        </div>
+        <span class="sec-count">2 phases</span>
+      </div>
+      <div class="graph" id="graph" data-edges="[[0,1]]">
+        <div class="graph-grid" aria-label="Phase dependency graph: 01 Triage inputs and the lane function (wave 1); 02 The Probably-not lane in the queue (wave 2)" style="grid-template-columns: repeat(2, max-content)">
+          <svg class="graph-edges" aria-hidden="true"></svg>
+          <div class="wave-label" style="grid-column:1">wave 1</div>
+          <div class="wave-label" style="grid-column:2">wave 2</div>
+          <button type="button" class="pnode" data-phase="0" data-risk="medium" aria-pressed="false"
+            style="grid-column:1; grid-row:2">
+            <span class="pnode-top">
+              <span class="pnode-n">01</span>
+            </span>
+            <span class="pnode-title">Triage inputs and the lane function</span>
+            <span class="pnode-foot">
+              <span class="chip">blocking</span>
+              <span class="chip chip-caution">medium risk</span>
+            </span>
+          </button>
+          <button type="button" class="pnode" data-phase="1" data-risk="low" aria-pressed="false"
+            style="grid-column:2; grid-row:2">
+            <span class="pnode-top">
+              <span class="pnode-n">02</span>
+            </span>
+            <span class="pnode-title">The Probably-not lane in the queue</span>
+            <span class="pnode-foot">
+              <span class="chip">blocking</span>
+              <span class="chip chip-go">low risk</span>
+            </span>
+          </button>
+        </div>
+      </div>
+      <div class="graph-hint" id="graph-hint" data-active="false">
+        <span>Select a phase to isolate it here and in the ledger below.</span>
+        <button type="button" class="graph-clear" id="graph-clear">show all</button>
+      </div>
+      <div class="ledger" id="ledger">
+        <div class="lrow" id="phase-0" data-phase="0">
+          <div class="lrow-n">01</div>
+          <div class="lrow-head">
+            <h3>Triage inputs and the lane function</h3>
+            <div class="lrow-tags">
+              <span class="chip">phase</span>
+              <span class="chip chip-caution">blocking</span>
+              <span class="chip chip-caution">medium risk</span>
+              <span class="chip">wave 1</span>
+            </div>
+          </div>
+          <div class="lrow-body">
+            CLI side, and it owns every producer. Fetch the first file-list page and classify paths with a new triage module composing classifyPath plus a manifest kind; roll up criticality tags and reviews; persist a compact triage summary; define the pure lane function over that summary, total over its absence. Also the dismissal soft-delete and the two log lines. Three wiring facts the spec must state explicitly, each verified: (1) there are TWO mint doors — the poller's classify/create path AND POST /api/units (app.ts:201), which today fetches nothing beyond PR metadata, so a hand-added PR lands laneless unless both call the fetch; (2) classifyCriticality (risk.ts:68) and CRITICALITY_KEYWORDS (risk.ts:48) are module-private, so risk.ts needs an export-only change — duplicating the keyword table would drift lane criticality away from risk-score criticality; (3) backfilling legacy units mirrors the existing countsDiffer heal (poller.ts:131) and is per-existing-unit, NOT per-minted-PR, so it must not be counted by criterion 4's mint-time fetch fake. The phase's criteria assert the summary is populated after a real mint, not merely typed — a field declared in one phase and written by none is the recorded failure mode from review-triage.
+            <div style="margin-top: var(--s2)">If this fails, 1 downstream phase is skipped, not attempted: The Probably-not lane in the queue.</div>
+            <div style="margin-top: var(--s2)">Claims <code>packages/cli/src/github/client.ts</code>, <code>packages/cli/src/github/types.ts</code>, <code>packages/cli/src/narrative/triage.ts</code>, <code>packages/cli/src/narrative/risk.ts</code>, <code>packages/cli/src/units/lane.ts</code>, <code>packages/cli/src/units/types.ts</code>, <code>packages/cli/src/units/store.ts</code>, <code>packages/cli/src/units/linking.ts</code>, <code>packages/cli/src/daemon/poller.ts</code>, <code>packages/cli/src/daemon/app.ts</code>, <code>packages/cli/src/daemon/daemon.ts</code>, <code>packages/cli/src/__tests__/triage.test.ts</code>, <code>packages/cli/src/__tests__/lane.test.ts</code>, <code>packages/cli/src/daemon/__tests__/poller.test.ts</code> — used to serialise colliding phases and as the commit stage's fallback file list.</div>
+            <span class="spec">docs/ideation/attention-lanes/spec-phase-1.md</span>
+          </div>
+        </div>
+        <div class="lrow" id="phase-1" data-phase="1">
+          <div class="lrow-n">02</div>
+          <div class="lrow-head">
+            <h3>The Probably-not lane in the queue</h3>
+            <div class="lrow-tags">
+              <span class="chip">phase</span>
+              <span class="chip chip-caution">blocking</span>
+              <span class="chip chip-go">low risk</span>
+              <span class="chip">wave 2</span>
+            </div>
+          </div>
+          <div class="lrow-body">
+            Web side, rendering only — it consumes the lane the CLI assigned and never recomputes it. Insert Probably not between Needs you and the untouched In flight; row weight by stakes; reason line replacing the glyph; remove the '0 to resolve' placeholder; hide dismissed units behind a count. Test environment needs no work but has a constraint: vitest's environment is deliberately 'node' because durable-review-state.test.ts shims globalThis.localStorage, which a DOM environment owns as a read-only accessor. A test needing a real DOM opts in per file with `// @vitest-environment happy-dom` (happy-dom is the installed dependency, not jsdom); the global default must not be flipped.
+            <div style="margin-top: var(--s2)">Waits for <strong>Triage inputs and the lane function</strong>.</div>
+            <div style="margin-top: var(--s2)">Claims <code>packages/web/src/state/types.ts</code>, <code>packages/web/src/lib/units-view.ts</code>, <code>packages/web/src/components/UnitRow.tsx</code>, <code>packages/web/src/components/CommandCenter.tsx</code>, <code>packages/web/src/lib/__tests__/units-view.test.ts</code> — used to serialise colliding phases and as the commit stage's fallback file list.</div>
+            <span class="spec">docs/ideation/attention-lanes/spec-phase-2.md</span>
+          </div>
+        </div>
+      </div>
+      </div>
+    </section>
+
+    <section class="band band-wash" id="run-model" aria-labelledby="run-model-h">
+      <div class="wrap">
+      <div class="sec-head">
+        <div>
+          <h2 id="run-model-h">What actually happens when you run it</h2>
+          <p class="sec-sub">Every build phase goes through the same five stages. These are the real agents and the real gates — the points where the run can stop before anything is committed. Human gates in the plan above are not build phases: nothing is specced, built, or committed for them.</p>
+        </div>
+        <span class="sec-count">per build phase</span>
+      </div>
+      <div class="model" id="model">
+        <div class="model-track">
+          <div class="stages">
+            <span class="token" id="token" aria-hidden="true"></span>
+            <div class="stage" data-stage="0" data-reached="false">
+              <span class="stage-dot" aria-hidden="true"></span>
+              <span class="stage-name">Scout</span>
+              <span class="stage-agent">ideation:scout</span>
+              <span class="stage-what">Reads the codebase against the spec and scores five evidence gates before a line is written.</span>
+              <span class="stage-outs"><span class="chip chip-go">GO</span><span class="chip chip-caution">HOLD</span></span>
+              <span class="stage-exit"><span class="sr-only">Stops here when: </span>Under --strict a HOLD stops here — nothing is built.</span>
+            </div>
+            <div class="stage" data-stage="1" data-reached="false">
+              <span class="stage-dot" aria-hidden="true"></span>
+              <span class="stage-name">Build</span>
+              <span class="stage-agent">general-purpose</span>
+              <span class="stage-what">Implements the spec, then runs the validation the spec itself declares.</span>
+              <span class="stage-outs"><span class="chip chip-go">BUILT</span><span class="chip chip">NO-OP</span><span class="chip chip-danger">FAIL</span></span>
+              <span class="stage-exit"><span class="sr-only">Stops here when: </span>Failed validation stops here. An empty diff is a NO-OP and also stops here — review never runs.</span>
+            </div>
+            <div class="stage" data-stage="2" data-reached="false">
+              <span class="stage-dot" aria-hidden="true"></span>
+              <span class="stage-name">Review</span>
+              <span class="stage-agent">ideation:reviewer</span>
+              <span class="stage-what">Reads the diff back against the spec and returns findings counted by severity.</span>
+              <span class="stage-outs"><span class="chip chip-go">PASS</span><span class="chip chip-danger">FAIL</span></span>
+              <span class="stage-exit"><span class="sr-only">Stops here when: </span>An unavailable reviewer stops here under --strict; otherwise it commits as validation-only.</span>
+            </div>
+            <div class="stage" data-stage="3" data-reached="false">
+              <span class="stage-dot" aria-hidden="true"></span>
+              <span class="stage-name">Fix</span>
+              <span class="stage-agent">general-purpose</span>
+              <span class="stage-what">Applies or refutes every blocking finding, then hands back for another review.</span>
+              <span class="stage-outs"><span class="chip chip-go">FIXED</span><span class="chip chip-danger">FAIL</span></span>
+              <span class="stage-exit"><span class="sr-only">Stops here when: </span>Still FAIL on cycle 3 stops here — changes are left unstaged, not committed.</span>
+            </div>
+            <div class="stage" data-stage="4" data-reached="false">
+              <span class="stage-dot" aria-hidden="true"></span>
+              <span class="stage-name">Commit</span>
+              <span class="stage-agent">general-purpose</span>
+              <span class="stage-what">Stages only the files the builder named and writes the spec path into the commit body.</span>
+              <span class="stage-outs"><span class="chip chip-accent">COMMITTED</span><span class="chip chip-danger">FAILED</span></span>
+              <span class="stage-exit"><span class="sr-only">Stops here when: </span>If neither the builder nor the phase named a file, it refuses to commit blind rather than <code>git add -A</code>.</span>
+            </div>
+            <div class="loopback" aria-hidden="true">
+              <svg viewBox="0 0 200 26" preserveAspectRatio="none"><path vector-effect="non-scaling-stroke" d="M197 0 V17 Q197 24 190 24 H10 Q3 24 3 17 V0"/></svg>
+              <span class="loopback-label">review → fix → review · 3 cycles max, then it stops</span>
+            </div>
+          </div>
+        </div>
+        <div class="rules">
+          <div class="rule">
+            <h3>Waves, not a queue</h3>
+            <p>Phases are grouped into 2 waves from their declared prerequisites. A wave dispatches together; the next one waits for all of it. Two phases naming the same file are serialised even inside one wave. Autopilot re-derives that list from each spec&rsquo;s File Changes tables at dispatch, so the run follows the specs rather than this page.</p>
+          </div>
+          <div class="rule">
+            <h3>Failure strands, it does not retry</h3>
+            <p>A failed phase is not retried, and everything downstream of it is marked <code>SKIPPED</code> rather than attempted. Here that means <strong>Triage inputs and the lane function</strong> failing costs 1 more phase.</p>
+          </div>
+          <div class="rule">
+            <h3>Resume is a git question</h3>
+            <p>Re-running skips any phase whose spec path already appears in a commit body — which is why the commit stage writes it there. 2 build phases are expected to leave one.</p>
+          </div>
+          <div class="rule">
+            <h3>Non-strict: it degrades loudly</h3>
+            <p>If the scout holds or the reviewer is unavailable, the phase proceeds and says so in its warnings rather than failing. The result reports <code>validation-only</code>, never a bare pass.</p>
+          </div>
+        </div>
+      </div>
+      </div>
+    </section>
+
+    <section class="band" id="done" aria-labelledby="done-h">
+      <div class="wrap">
+      <div class="sec-head">
+        <div>
+          <h2 id="done-h">How you will know it worked</h2>
+          <p class="sec-sub">These are not aspirations — the ones with a command are executed by <code>verify.mjs</code>, and their result is what an unattended run is judged on.</p>
+        </div>
+        <span class="sec-count">15 of 17 mechanical</span>
+      </div>
+      <div class="score">
+        <div class="score-panel">
+          <span class="kicker">completion predicate</span>
+          <div class="score-figure"><span class="num">15</span><span class="of">/17</span></div>
+          <p class="score-label">2 criteria are judgment calls — printed, but never counted. A green run does not cover them.</p>
+          <div class="verify-line"><span class="vk">VERIFY</span> attention-lanes: commits=<span class="vg">2/2</span> pass=<span class="vg">15</span> fail=<span class="vg">0</span> judgment=2</div>
+          <p class="verify-cap">Mechanical verification only, as <code>verify.mjs</code> will print it — a green line here is necessary, not sufficient. The 2 judgment criteria above are uncounted, so this contract is not finished until they have been signed off too.</p>
+          <div class="cmd">
+            <span class="cmd-text" id="cmd-verify">node ${CLAUDE_PLUGIN_ROOT}/scripts/verify.mjs docs/ideation/attention-lanes/contract-data.json</span>
+            <button type="button" class="copy" data-copy="cmd-verify">copy</button>
+          </div>
+        </div>
+        <div>
+      <div class="crit-group">
+        <h3>Mechanically checked <span class="hrule"></span> <span class="sec-count">×15</span></h3>
+        <ul class="crits">
+          <li class="crit">
+            <span class="crit-n">01</span>
+            <span class="crit-text">A unit with a populated triage summary and `narrative: undefined` resolves to a named lane, and a legacy unit carrying no triage summary at all resolves to &quot;Needs you&quot; rather than a neutral state — the lane function is pure over the stored summary and total over its absence.<code class="crit-check">bun test packages/cli/src -t &quot;lane&quot;</code><span class="crit-expect">expect: non-zero pass count, 0 fail</span></span>
+          </li>
+          <li class="crit">
+            <span class="crit-n">02</span>
+            <span class="crit-text">The poller backfills a triage summary onto units minted before this shipped — a per-existing-unit heal mirroring countsDiffer, distinct from the mint-time fetch — so a queue that predates the feature converges without the reviewer re-adding anything.<code class="crit-check">bun test packages/cli/src -t &quot;backfill&quot;</code><span class="crit-expect">expect: non-zero pass count, 0 fail</span></span>
+          </li>
+          <li class="crit">
+            <span class="crit-n">03</span>
+            <span class="crit-text">A PR added by hand through POST /api/units carries a triage summary and a lane, exactly as a polled one does — both mint doors populate it.<code class="crit-check">bun test packages/cli/src -t &quot;pinned triage&quot;</code><span class="crit-expect">expect: non-zero pass count, 0 fail</span></span>
+          </li>
+          <li class="crit">
+            <span class="crit-n">04</span>
+            <span class="crit-text">Lane criticality and risk-score criticality come from one table: the triage module imports the tagger from risk.ts rather than restating CRITICALITY_KEYWORDS, so the two can never drift.<code class="crit-check">bun test packages/cli/src -t &quot;criticality source&quot;</code><span class="crit-expect">expect: non-zero pass count, 0 fail</span></span>
+          </li>
+          <li class="crit">
+            <span class="crit-n">05</span>
+            <span class="crit-text">`pollOnce` completes a full mint with an AI dependency that throws if invoked, proving minting never reaches the narrative engine.<code class="crit-check">bun test packages/cli/src -t &quot;no model call&quot;</code><span class="crit-expect">expect: non-zero pass count, 0 fail</span></span>
+          </li>
+          <li class="crit">
+            <span class="crit-n">06</span>
+            <span class="crit-text">Minting one PR issues one file-list page fetch, asserted by a counting fake; a PR reporting further pages is not paginated through but is forced into &quot;Needs you&quot; and flagged truncated.<code class="crit-check">bun test packages/cli/src -t &quot;file-list fetch&quot;</code><span class="crit-expect">expect: non-zero pass count, 0 fail</span></span>
+          </li>
+          <li class="crit">
+            <span class="crit-n">07</span>
+            <span class="crit-text">Purpose-built fixtures — a lockfile+manifest bump, a docs-only PR, a test-only PR, a &gt;100-file PR, and an adversarial PR of 39 generated files plus one auth-constant change — each land in their expected lane, with the last two in &quot;Needs you&quot;.<code class="crit-check">bun test packages/cli/src -t &quot;fixture lane&quot;</code><span class="crit-expect">expect: non-zero pass count, 0 fail</span></span>
+          </li>
+          <li class="crit">
+            <span class="crit-n">08</span>
+            <span class="crit-text">A push that adds a source file to an already-minted docs-only PR re-fetches triage on the next poll and moves the unit out of &quot;Probably not&quot; — stale evidence cannot outlive the head SHA it was gathered at.<code class="crit-check">bun test packages/cli/src -t &quot;re-triage&quot;</code><span class="crit-expect">expect: non-zero pass count, 0 fail</span></span>
+          </li>
+          <li class="crit">
+            <span class="crit-n">09</span>
+            <span class="crit-text">Triage classification composes `classifyPath` without modifying it: the prompt filter and collapse evidence behave identically, proven by the pre-existing suites passing with no edits to their expectations.<code class="crit-check">bun test packages/cli/src/__tests__/diff-filter.test.ts packages/cli/src/__tests__/collapse.test.ts</code><span class="crit-expect">expect: exits 0 with no changes to either file in the diff</span></span>
+          </li>
+          <li class="crit">
+            <span class="crit-n">10</span>
+            <span class="crit-text">Sort order places a PR with two existing approvals below an otherwise-identical PR with none.<code class="crit-check">bun test packages/cli/src -t &quot;approval ordering&quot;</code><span class="crit-expect">expect: non-zero pass count, 0 fail</span></span>
+          </li>
+          <li class="crit">
+            <span class="crit-n">11</span>
+            <span class="crit-text">An archived-repo PR is never minted, is removed if already present, is removed even with no reconcile dependency wired, and produces no user-visible note — the queue simply does not contain it.<code class="crit-check">bun test packages/cli/src -t &quot;archived&quot;</code><span class="crit-expect">expect: non-zero pass count, 0 fail</span></span>
+          </li>
+          <li class="crit">
+            <span class="crit-n">12</span>
+            <span class="crit-text">The lane function is discriminating in both directions: the fixture queue puts the mechanical PRs in &quot;Probably not&quot; AND leaves that lane non-empty, so an implementation that routes everything to &quot;Needs you&quot; fails rather than passes.<code class="crit-check">bun test packages/cli/src -t &quot;lane discrimination&quot;</code><span class="crit-expect">expect: non-zero pass count, 0 fail; the assertion on a non-empty Probably-not lane is present</span></span>
+          </li>
+          <li class="crit">
+            <span class="crit-n">13</span>
+            <span class="crit-text">A dismissed unit is not re-minted by a poll pass that still sees its PR in the review-request search, and is resurfaced when the polled head SHA differs from the SHA it was dismissed at.<code class="crit-check">bun test packages/cli/src -t &quot;dismiss&quot;</code><span class="crit-expect">expect: non-zero pass count, 0 fail</span></span>
+          </li>
+          <li class="crit">
+            <span class="crit-n">14</span>
+            <span class="crit-text">The command center renders four lanes — Needs you, Probably not, In flight, Cleared — with dismissed units excluded from all of them and reachable behind a count, and no row displaying a &quot;0 to resolve&quot; placeholder.<code class="crit-check">bun run --filter '@diffdad/web' test -- -t &quot;lane render&quot;</code><span class="crit-expect">expect: non-zero pass count, 0 fail</span></span>
+          </li>
+          <li class="crit">
+            <span class="crit-n">15</span>
+            <span class="crit-text">The daemon logs a lane-split count on each poll pass and the assigned lane for each unit actually opened, so the two-week judgment reads data rather than recollection.<code class="crit-check">bun test packages/cli/src -t &quot;lane log&quot;</code><span class="crit-expect">expect: non-zero pass count, 0 fail</span></span>
+          </li>
+        </ul>
+      </div>
+      <div class="crit-group">
+        <h3>Judgment calls <span class="hrule"></span> <span class="sec-count">×2 · a human must look</span></h3>
+        <ul class="crits">
+          <li class="crit crit-judge">
+            <span class="crit-n">16</span>
+            <span class="crit-text">The reviewer runs the daemon against their real queue and agrees the lanes read correctly — nothing that needed them sitting in &quot;Probably not&quot;, the archived 2018 PR simply absent, ✕ actually sticking, and row weight tracking stakes rather than distracting.<span class="crit-check">Nick, running the daemon on a scratch port per the repo's `verify` skill, reading his own queue</span></span>
+          </li>
+          <li class="crit crit-judge">
+            <span class="crit-n">17</span>
+            <span class="crit-text">After roughly two weeks of real use, the reviewer judges that fewer PRs are being opened that turn out not to need them, reading the logged open-events against their lanes.<span class="crit-check">Nick, reading accumulated lane-split and per-open log lines alongside his own experience</span></span>
+          </li>
+        </ul>
+      </div>
+        </div>
+      </div>
+      </div>
+    </section>
+
+    <section class="band band-wash" id="decisions" aria-labelledby="decisions-h">
+      <div class="wrap">
+      <div class="sec-head">
+        <div>
+          <h2 id="decisions-h">What was considered and turned down</h2>
+          <p class="sec-sub">A rejected alternative is evidence, not an oversight. Before proposing one of these, read why it lost.</p>
+        </div>
+        <span class="sec-count">×22</span>
+      </div>
+      <ul class="decisions">
+        <li class="decision">
+          <h3>Gate and lane evidence quantifies over the PR's file list</h3>
+          <p><span class="rejected">Instead of</span> Quantifying over narrative chapters (the original all-skim idea). Chapter coverage is not file coverage — capStats exists precisely because the prompt budget drops files before the model sees them, so a PR could have every chapter collapsed while an unnarrated file sat in the diff. Quantifying over files makes coverage total by construction, and needs no narrative, which is what let lazy narration stay.</p>
+        </li>
+        <li class="decision">
+          <h3>No weighted score gates any outward action</h3>
+          <p><span class="rejected">Instead of</span> A configurable score with a numeric threshold. A safe score must treat criticality as a veto rather than a weight — otherwise 39 generated files dilute one token-expiry change — and once vetoes exist the conjunction is the safety mechanism. The threshold also has no ground truth to calibrate from and adjusts one-directionally in practice.</p>
+        </li>
+        <li class="decision">
+          <h3>Narration stays lazy-on-open</h3>
+          <p><span class="rejected">Instead of</span> A background worker narrating every unit at mint. Chosen by the reviewer; the file-list fetch supplies the lane for one REST call and zero tokens, so eager generation would spend model calls on PRs that never get opened to buy a signal the cheap path already provides.</p>
+        </li>
+        <li class="decision">
+          <h3>The caller check is excluded entirely</h3>
+          <p><span class="rejected">Instead of</span> Using known external callers as a veto, with snapshot-unavailable guarding it. Measured against the real import index: bun.lock keys as module &quot;bun&quot; and matched 2 importers; units-view.test.ts keys as &quot;units-view&quot; and matched 12. The false positives land on exactly the file kinds the feature targets.</p>
+        </li>
+        <li class="decision">
+          <h3>The snapshot-unavailable veto is also excluded</h3>
+          <p><span class="rejected">Instead of</span> Keeping it as an independent safety condition. It guarded only the caller check. With that gone the snapshot is unused, so the veto would darken the feature during tarball warmup and on oversized repos while protecting nothing.</p>
+        </li>
+        <li class="decision">
+          <h3>The approve button is out of v1, and the whole gate with it</h3>
+          <p><span class="rejected">Instead of</span> Shipping the button live, or shipping it in shadow-logged form. Chosen by the reviewer after the hit-rate measurements. Scope drops substantially — no gate, no config, no settings section, no approve-route wiring — and the stated problem is still solved by the lanes.</p>
+        </li>
+        <li class="decision">
+          <h3>The four selected evidence kinds become lane inputs rather than gate inputs</h3>
+          <p><span class="rejected">Instead of</span> Discarding them as moot once the button was cut. The lane is advisory and the gate was strict — different bars — so a generous evidence set is correct for lanes even though it would have been too permissive for an outward action.</p>
+        </li>
+        <li class="decision">
+          <h3>One new lane, inserted into the existing three</h3>
+          <p><span class="rejected">Instead of</span> A two-lane model replacing the current grouping, and a four-attention-lane taxonomy. Raised by the scope-creep critic: the contract named Needs you / Probably not / Cleared and never said what became of In flight, which groupOf currently populates from changes_requested. Keeping In flight untouched is both the smallest diff and the honest state — the ball is with the author.</p>
+        </li>
+        <li class="decision">
+          <h3>Lane membership and any future button eligibility use different bars</h3>
+          <p><span class="rejected">Instead of</span> One bar where lane membership implies eligibility. Mis-laning costs attention; mis-gating costs an approval under the reviewer's name. Sharing a bar would force the lane down to the gate's strictness and refill &quot;Needs you&quot; with noise.</p>
+        </li>
+        <li class="decision">
+          <h3>The lane function lives CLI-side and phase 1 owns it</h3>
+          <p><span class="rejected">Instead of</span> Defining it web-side in units-view.ts alongside groupUnits. Raised by the success-criteria critic: phase 1 logs lane splits while phase 2 would have defined the lane, so phase 1 needed a second CLI-side implementation. Two implementations of the same rule would drift and corrupt the data G7's judgment rests on.</p>
+        </li>
+        <li class="decision">
+          <h3>Triage classification is a new function composing classifyPath</h3>
+          <p><span class="rejected">Instead of</span> Adding a manifest kind to classifyPath directly. classifyPath feeds partitionMechanicalFiles (engine.ts:218), which drops files from the LLM prompt, and the generated collapse evidence (collapse.ts:105). Extending it would change what the model sees and what collapses, neither of which this project intends to touch.</p>
+        </li>
+        <li class="decision">
+          <h3>One file-list page, with more-pages forcing Needs you</h3>
+          <p><span class="rejected">Instead of</span> Paginating to completion, and asserting &quot;exactly one fetch&quot; against a paginating endpoint. Raised by the over-engineering critic: /pulls/{n}/files pages at 100, so the original criterion would either truncate large PRs silently or fail on correct code — and it broke on the &gt;100-file class the problem statement uses as its motivating contrast. Treating truncation as a stakes signal keeps one fetch honest and is safer than the alternative.</p>
+        </li>
+        <li class="decision">
+          <h3>G2 states two different cadences rather than one</h3>
+          <p><span class="rejected">Instead of</span> Leaving G2's &quot;one fetch per PR per push&quot; wording with the reviews fetch inside it. Flagged independently by the scope-creep and over-engineering critics. The reviews rollup is per unit per poll, which at 60s roughly doubles API traffic and approaches the 5000/hr ceiling near forty units. The reviewer accepted that cost knowingly; the defect was the accounting, so the accounting is what changed.</p>
+        </li>
+        <li class="decision">
+          <h3>✕ soft-deletes with a dismissal SHA</h3>
+          <p><span class="rejected">Instead of</span> Today's hard delete, a permanent dismissal, and a dedicated Dismissed tab. Hard delete is undone by the poller within 60s because classify only checks for an existing unit. A permanent dismissal can strand a PR that later gains 40 commits. Stamping the head SHA reuses shouldResurface, needs no un-dismiss UI, and returns the PR exactly when there is new work.</p>
+        </li>
+        <li class="decision">
+          <h3>Archived PRs are filtered silently</h3>
+          <p><span class="rejected">Instead of</span> Showing a filtered-count note naming what was hidden. Requested by the reviewer: GitHub serves archived repos read-only, so there is no action available on one. Naming it converts an unactionable PR into an unactionable notification.</p>
+        </li>
+        <li class="decision">
+          <h3>The stored file list holds paths, kinds, and counts — not patches</h3>
+          <p><span class="rejected">Instead of</span> Storing the full DiffFile[] at mint. Every queued unit is persisted as one JSON file; carrying full patch text for units nobody has opened would bloat that store for data the lane never reads.</p>
+        </li>
+        <li class="decision">
+          <h3>PRMetadata.archived is optional</h3>
+          <p><span class="rejected">Instead of</span> Making it required like the sibling `draft` field. 38 construction sites across 26 files, and units persisted before the field existed carry no value — `false` there would claim a lookup that never happened. Read `archived === true`, never `!archived`. Matches how pinned? and capStats? already work.</p>
+        </li>
+        <li class="decision">
+          <h3>CI status is not consulted</h3>
+          <p><span class="rejected">Instead of</span> Treating failing or in-flight CI as a signal. Approval is not merge, and branch protection already blocks red PRs from landing, so the signal would duplicate a gate GitHub already enforces.</p>
+        </li>
+        <li class="decision">
+          <h3>Both mint doors populate triage, and the spec names them</h3>
+          <p><span class="rejected">Instead of</span> Wiring the fetch into the poller's create path alone. Raised by the hidden-dependency critic: POST /api/units (app.ts:201) is a second mint door that deliberately fetches nothing beyond PR metadata, so hand-added PRs would have landed laneless — contradicting G1's 'every queued unit' for exactly the PRs the reviewer asked for by name.</p>
+        </li>
+        <li class="decision">
+          <h3>risk.ts exports its criticality tagger; triage imports it</h3>
+          <p><span class="rejected">Instead of</span> Restating CRITICALITY_KEYWORDS inside the triage module. Raised by the hidden-dependency critic: classifyCriticality (risk.ts:68) and its keyword table (risk.ts:48) are module-private, so the classifier could not reach them. A second copy would let lane criticality drift from risk-score criticality — two answers to the same question, which is the defect the single lane function was moved CLI-side to avoid.</p>
+        </li>
+        <li class="decision">
+          <h3>Backfill is a per-existing-unit heal, excluded from the mint-fetch count</h3>
+          <p><span class="rejected">Instead of</span> Treating backfill as part of the mint path. Raised by the hidden-dependency critic: it mirrors the existing countsDiffer heal (poller.ts:131), which runs over units already in the store. Counting it in criterion 4's mint-time fetch fake would make a correct implementation fail the check.</p>
+        </li>
+        <li class="decision">
+          <h3>cmd checks run under a test-name pattern</h3>
+          <p><span class="rejected">Instead of</span> Plain suite invocations expecting only exit 0. Raised by the success-criteria critic: a suite that never gained the named test still exits 0, so every criterion was vacuously satisfiable. Both runners support the filter (bun test -t, vitest -t), verified during the interview.</p>
+        </li>
+      </ul>
+      </div>
+    </section>
+
+
+    <section class="band" id="run" aria-labelledby="run-h">
+      <div class="wrap">
+      <div class="sec-head">
+        <div>
+          <h2 id="run-h">Run it</h2>
+          <p class="sec-sub">Three ways in, in descending order of how much you can walk away from.</p>
+        </div>
+      </div>
+      <div class="runbar">
+        <div>
+          <span class="kicker">recommended</span>
+          <h3>Autopilot.</h3>
+          <p>Dispatches every phase through the loop above, in dependency order, gating on failure. Already-committed phases are skipped, so re-running after a fix picks up where it stopped.</p>
+        </div>
+        <div class="cmd">
+            <span class="cmd-text" id="cmd-autopilot">/ideation:autopilot docs/ideation/attention-lanes/contract.md</span>
+            <button type="button" class="copy" data-copy="cmd-autopilot">copy</button>
+          </div>
+      </div>
+
+      <details class="fold">
+        <summary>Unattended, with a stop condition (/goal)</summary>
+        <div class="fold-body">
+          <p>A durability wrapper around the same autopilot run: Claude re-checks this condition before it is allowed to stop, so a failed phase gets repaired and re-run instead of ending the session. The done-when is deliberately disjunctive — two identical failing VERIFY lines release the run, because a contract whose checks have rotted must not trap it forever.</p>
+          <div class="cmd cmd-block">
+            <span class="cmd-text" id="cmd-goal">/goal Drive the Attention Lanes contract (attention-lanes) to completion with /ideation:autopilot.
+
+1. Run `/ideation:autopilot docs/ideation/attention-lanes/contract.md`.
+2. It dispatches a BACKGROUND workflow. Wait for the completion notification — never start a second autopilot run while one is in flight.
+3. Then run the ideation plugin's `scripts/verify.mjs` against `docs/ideation/attention-lanes/contract-data.json` and leave its VERIFY line in the conversation. Resolve the plugin's install directory first — `${CLAUDE_PLUGIN_ROOT}/scripts/verify.mjs` is a placeholder, not a shell variable, and bash will not expand it. That line is the only evidence this goal is judged on.
+4. If anything failed, fix the spec or the implementation and go back to step 1. Autopilot skips phases that already have commits.
+
+Done when the most recent VERIFY line reads fail=0 and commits=2/2 — or when two consecutive VERIFY lines are identical and still failing, in which case name the failing checks and stop, because a contract whose checks have rotted must not trap the run.</span>
+            <button type="button" class="copy" data-copy="cmd-goal">copy</button>
+          </div>
+        </div>
+      </details>
+
+      <details class="fold">
+        <summary>One phase at a time (2)</summary>
+        <div class="fold-body">
+          <p>No orchestration, no failure gating, no resume — you are the scheduler. Start with <strong>Triage inputs and the lane function</strong>.</p>
+          <div class="phase-cmds">
+            <div class="phase-cmd">
+              <span class="n">01</span>
+              <span class="t">Triage inputs and the lane function</span>
+              <div class="cmd">
+            <span class="cmd-text" id="cmd-1">/ideation:execute-spec docs/ideation/attention-lanes/spec-phase-1.md</span>
+            <button type="button" class="copy" data-copy="cmd-1">copy</button>
+          </div>
+            </div>
+            <div class="phase-cmd">
+              <span class="n">02</span>
+              <span class="t">The Probably-not lane in the queue</span>
+              <div class="cmd">
+            <span class="cmd-text" id="cmd-2">/ideation:execute-spec docs/ideation/attention-lanes/spec-phase-2.md</span>
+            <button type="button" class="copy" data-copy="cmd-2">copy</button>
+          </div>
+            </div>
+          </div>
+        </div>
+      </details>
+      </div>
+    </section>
+
+    <section class="band" id="close" aria-labelledby="close-h">
+      <div class="wrap">
+        <div class="close">
+          <div>
+            <span class="kicker">the commitment</span>
+            <h2 id="close-h">This plan is what was agreed.</h2>
+            <p>2 phases · Sequential. Scope changes mean a new revision that supersedes this document — not silent drift.</p>
+          </div>
+          <div class="close-meta">
+            <span class="stamp is-go">approved</span>
+            <span class="meta">2026-07-31 · Nick Nisi</span>
+          </div>
+        </div>
+        <p class="colophon">Generated by <code>ideation:contract-gen</code> from <code>docs/ideation/attention-lanes/contract-data.json</code>. That JSON is the source of truth; this page and <code>docs/ideation/attention-lanes/contract.md</code> are both rendered from it, so edit the data and re-render rather than editing either output.</p>
+      </div>
+    </section>
+    </main>
+    <script>
+(function () {
+  'use strict';
+  var reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* ---- copy ------------------------------------------------------------ */
+  function flash(btn, label) {
+    var prior = btn.dataset.label || btn.textContent;
+    btn.dataset.label = prior;
+    btn.textContent = label;
+    btn.dataset.state = 'done';
+    setTimeout(function () {
+      btn.textContent = prior;
+      btn.removeAttribute('data-state');
+    }, 1800);
+  }
+  function wireCopy(btn, getText) {
+    btn.setAttribute('aria-live', 'polite');
+    btn.addEventListener('click', function () {
+      var text = getText();
+      if (text == null) return;
+      /* file:// or a denied permission: point at the manual path rather than
+         failing silently — and select the text first, so "press ⌘C" is true.
+         navigator.clipboard is absent entirely outside a secure context, which
+         throws synchronously before any rejection handler runs, so the guard
+         has to come before the call and not only after it. */
+      var manual = function () {
+        var t = btn.dataset.copy ? document.getElementById(btn.dataset.copy) : null;
+        if (t && window.getSelection && document.createRange) {
+          var range = document.createRange();
+          range.selectNodeContents(t);
+          var sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(range);
+        }
+        flash(btn, 'press ' + (navigator.platform.indexOf('Mac') === 0 ? '⌘C' : 'Ctrl+C'));
+      };
+      if (!navigator.clipboard || !navigator.clipboard.writeText) { manual(); return; }
+      navigator.clipboard.writeText(text).then(
+        function () { flash(btn, 'copied'); },
+        manual
+      );
+    });
+  }
+  document.querySelectorAll('.copy[data-copy]').forEach(function (btn) {
+    wireCopy(btn, function () {
+      var t = document.getElementById(btn.dataset.copy);
+      return t ? t.textContent.trim() : null;
+    });
+  });
+  document.querySelectorAll('[data-copy-text]').forEach(function (btn) {
+    wireCopy(btn, function () { return btn.dataset.copyText; });
+  });
+
+  /* ---- theme (auto -> light -> dark) ----------------------------------- */
+  var themeBtn = document.getElementById('theme-toggle');
+  if (themeBtn) {
+    var KEY = 'ideation-contract-theme';
+    var root = document.documentElement;
+    var LABEL = {
+      auto: 'Colour theme: follow system',
+      light: 'Colour theme: light',
+      dark: 'Colour theme: dark'
+    };
+    var apply = function (mode) {
+      if (mode === 'auto') delete root.dataset.theme;
+      else root.dataset.theme = mode;
+      themeBtn.dataset.mode = mode;
+      themeBtn.setAttribute('aria-label', LABEL[mode]);
+      themeBtn.title = LABEL[mode];
+      try {
+        if (mode === 'auto') localStorage.removeItem(KEY);
+        else localStorage.setItem(KEY, mode);
+      } catch (e) {}
+    };
+    apply(root.dataset.theme || 'auto');
+    themeBtn.addEventListener('click', function () {
+      var order = ['auto', 'light', 'dark'];
+      apply(order[(order.indexOf(root.dataset.theme || 'auto') + 1) % 3]);
+    });
+  }
+
+  /* ---- running head + scrollspy ---------------------------------------- */
+  var runhead = document.getElementById('runhead');
+  var masthead = document.querySelector('.masthead');
+  if (runhead && masthead && 'IntersectionObserver' in window) {
+    new IntersectionObserver(function (es) {
+      runhead.dataset.visible = String(!es[0].isIntersecting);
+    }, { rootMargin: '-60px 0px 0px 0px' }).observe(masthead);
+
+    var navLinks = {};
+    runhead.querySelectorAll('.runhead-nav a').forEach(function (a) {
+      navLinks[a.getAttribute('href').slice(1)] = a;
+    });
+    /* One observer over every section; the topmost intersecting one wins, so
+       the marker never flickers between two bands sharing the viewport. */
+    var visible = {};
+    var spy = new IntersectionObserver(function (es) {
+      es.forEach(function (e) { visible[e.target.id] = e.isIntersecting; });
+      var order = Object.keys(navLinks);
+      var current = order.filter(function (id) { return visible[id]; })[0];
+      order.forEach(function (id) {
+        if (current === id) navLinks[id].setAttribute('aria-current', 'true');
+        else navLinks[id].removeAttribute('aria-current');
+      });
+    }, { rootMargin: '-70px 0px -55% 0px' });
+    Object.keys(navLinks).forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) spy.observe(el);
+    });
+  }
+
+  /* ---- phase graph: edges measured from real geometry ------------------ */
+  var graph = document.getElementById('graph');
+  var ledger = document.getElementById('ledger');
+  if (graph) {
+    var grid = graph.querySelector('.graph-grid');
+    var svg = graph.querySelector('.graph-edges');
+    var nodes = Array.prototype.slice.call(grid.querySelectorAll('.pnode'));
+    var edges = [];
+    try { edges = JSON.parse(graph.dataset.edges || '[]'); } catch (e) {}
+    var byIndex = {};
+    nodes.forEach(function (n) { byIndex[n.dataset.phase] = n; });
+
+    var draw = function () {
+      if (!edges.length) return;
+      var gb = grid.getBoundingClientRect();
+      svg.setAttribute('viewBox', '0 0 ' + gb.width + ' ' + gb.height);
+      var box = function (i) {
+        var el = byIndex[i];
+        if (!el) return null;
+        var r = el.getBoundingClientRect();
+        return {
+          l: r.left - gb.left, r: r.right - gb.left,
+          cy: r.top - gb.top + r.height / 2
+        };
+      };
+      var focus = graph.dataset.focus;
+      /* Built with DOM calls rather than innerHTML: every value here is
+         geometry, but a renderer that cannot inject markup cannot regress
+         into one that can. */
+      var NS = 'http://www.w3.org/2000/svg';
+      while (svg.firstChild) svg.removeChild(svg.firstChild);
+      var defs = document.createElementNS(NS, 'defs');
+      var marker = document.createElementNS(NS, 'marker');
+      marker.setAttribute('id', 'ah');
+      marker.setAttribute('viewBox', '0 0 10 10');
+      marker.setAttribute('refX', '9');
+      marker.setAttribute('refY', '5');
+      marker.setAttribute('markerWidth', '6');
+      marker.setAttribute('markerHeight', '6');
+      marker.setAttribute('orient', 'auto');
+      var head = document.createElementNS(NS, 'path');
+      head.setAttribute('d', 'M0 0 L10 5 L0 10 z');
+      head.setAttribute('fill', 'context-stroke');
+      marker.appendChild(head);
+      defs.appendChild(marker);
+      svg.appendChild(defs);
+      edges.forEach(function (e) {
+        var a = box(e[0]), b = box(e[1]);
+        if (!a || !b) return;
+        var x1 = a.r, x2 = b.l - 7, y1 = a.cy, y2 = b.cy;
+        var mid = x1 + (x2 - x1) / 2;
+        var d = Math.abs(y1 - y2) < 0.5
+          ? 'M' + x1 + ' ' + y1 + ' H' + x2
+          : 'M' + x1 + ' ' + y1 + ' H' + mid + ' V' + y2 + ' H' + x2;
+        var p = document.createElementNS(NS, 'path');
+        p.setAttribute('d', d);
+        p.setAttribute('marker-end', 'url(#ah)');
+        if (focus !== undefined && (String(e[0]) === focus || String(e[1]) === focus)) {
+          p.setAttribute('class', 'e-hot');
+        }
+        svg.appendChild(p);
+      });
+    };
+
+    /* Fonts land after first paint and change node heights. */
+    draw();
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(draw);
+    addEventListener('resize', draw);
+    addEventListener('beforeprint', draw);
+    graph.addEventListener('scroll', draw);
+
+    /* ---- focus: one phase isolated across graph and ledger ------------- */
+    var hint = document.getElementById('graph-hint');
+    var rows = ledger ? Array.prototype.slice.call(ledger.querySelectorAll('.lrow')) : [];
+    var clearFocus = function () {
+      delete graph.dataset.focus;
+      if (ledger) delete ledger.dataset.focus;
+      nodes.forEach(function (n) { n.setAttribute('aria-pressed', 'false'); });
+      rows.forEach(function (r) { r.dataset.hot = 'false'; });
+      if (hint) hint.dataset.active = 'false';
+      draw();
+    };
+    var setFocus = function (i, scroll) {
+      if (graph.dataset.focus === String(i)) return clearFocus();
+      graph.dataset.focus = String(i);
+      if (ledger) ledger.dataset.focus = String(i);
+      nodes.forEach(function (n) {
+        n.setAttribute('aria-pressed', String(n.dataset.phase === String(i)));
+      });
+      rows.forEach(function (r) { r.dataset.hot = String(r.dataset.phase === String(i)); });
+      if (hint) hint.dataset.active = 'true';
+      draw();
+      if (scroll) {
+        var row = document.getElementById('phase-' + i);
+        if (row) row.scrollIntoView({ block: 'nearest', behavior: reduce ? 'auto' : 'smooth' });
+      }
+    };
+    nodes.forEach(function (n) {
+      n.addEventListener('click', function () { setFocus(n.dataset.phase, true); });
+    });
+    var clearBtn = document.getElementById('graph-clear');
+    if (clearBtn) clearBtn.addEventListener('click', clearFocus);
+    addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && graph.dataset.focus !== undefined) clearFocus();
+    });
+  }
+
+  /* ---- scope rings ------------------------------------------------------ */
+  var tiers = document.getElementById('tiers');
+  if (tiers) {
+    var rings = Array.prototype.slice.call(document.querySelectorAll('.nest-ring'));
+    rings.forEach(function (ring) {
+      ring.addEventListener('click', function () {
+        var t = ring.dataset.tier;
+        var on = tiers.dataset.tier !== t;
+        if (on) tiers.dataset.tier = t; else delete tiers.dataset.tier;
+        rings.forEach(function (r) {
+          r.setAttribute('aria-pressed', String(on && r.dataset.tier === t));
+        });
+      });
+    });
+  }
+
+  /* ---- the one authored moment: the run model's token ------------------ */
+  var model = document.getElementById('model');
+  var token = document.getElementById('token');
+  if (model && token && 'IntersectionObserver' in window) {
+    var stages = Array.prototype.slice.call(model.querySelectorAll('.stage'));
+    var light = function (animate) {
+      var dots = stages.map(function (s) { return s.querySelector('.stage-dot'); });
+      var wrap = model.querySelector('.stages');
+      var wb = wrap.getBoundingClientRect();
+      var first = dots[0].getBoundingClientRect();
+      var last = dots[dots.length - 1].getBoundingClientRect();
+      token.style.left = (first.left - wb.left + first.width / 2 - 5.5) + 'px';
+      token.style.setProperty('--travel', (last.left - first.left) + 'px');
+      if (!animate) {
+        stages.forEach(function (s) { s.dataset.reached = 'true'; });
+        model.dataset.lit = 'done';
+        return;
+      }
+      var dur = 420 * (stages.length - 1);
+      token.style.setProperty('--dur', dur + 'ms');
+      model.dataset.lit = 'running';
+      stages.forEach(function (s, i) {
+        setTimeout(function () { s.dataset.reached = 'true'; }, (dur / (stages.length - 1)) * i);
+      });
+      setTimeout(function () { model.dataset.lit = 'done'; }, dur + 260);
+    };
+    var io = new IntersectionObserver(function (es) {
+      if (!es[0].isIntersecting) return;
+      io.disconnect();
+      light(!reduce);
+    }, { threshold: 0.3 });
+    io.observe(model);
+  }
+})();
+</script>
+  </body>
+</html>

@@ -192,8 +192,8 @@ export function useLiveStream() {
     // Command center: the daemon broadcasts the full cross-repo queue on every unit change.
     const onUnits = (e: MessageEvent) => {
       try {
-        const data = JSON.parse(e.data) as { units: Unit[]; polledAt?: number };
-        useReviewStore.getState().setUnits(data.units ?? []);
+        const data = JSON.parse(e.data) as { units: Unit[]; dismissed?: Unit[]; polledAt?: number };
+        useReviewStore.getState().setUnits(data.units ?? [], data.dismissed ?? []);
         // Only stamp the freshness caption on real GitHub poll passes: `pollOnce` tags its broadcast
         // with `polledAt`. Other `units` broadcasts (decision/delete/hydrate/review/initial snapshot,
         // and SSE reconnects) never re-query GitHub, so stamping them would falsely reset "checked …".

@@ -65,7 +65,13 @@ function isTestPath(path: string): boolean {
   return TEST_PATTERNS.some((re) => re.test(path));
 }
 
-function classifyCriticality(path: string): CriticalityTag[] {
+/**
+ * Sensitive-area tags for a path. Exported for the triage classifier, which needs criticality without
+ * the rest of a risk score: `computeRisk` requires full `DiffFile[]` with hunks, and a triage summary
+ * deliberately stores paths and counts rather than patches, so it cannot supply them. One tagger, one
+ * keyword table — a second copy would let queue criticality drift from risk-score criticality.
+ */
+export function classifyCriticality(path: string): CriticalityTag[] {
   const tags: CriticalityTag[] = [];
   for (const entry of CRITICALITY_KEYWORDS) {
     if (entry.patterns.some((re) => re.test(path))) tags.push(entry.tag);
