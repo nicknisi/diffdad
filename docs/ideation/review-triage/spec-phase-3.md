@@ -37,17 +37,17 @@ _Carried from the contract; consult before making gap decisions._
 
 ### Modified Files
 
-| File Path | Changes |
-| --------- | ------- |
-| `packages/web/src/state/types.ts` | Extend the narrative API payload type with `collapse: CollapseResult` and `capStats?: PromptCapStats`; mirror the CLI shapes rather than importing across packages, matching how `NarrativeResponse` is already handled here |
+| File Path                                   | Changes                                                                                                                                                                                                                       |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/web/src/state/types.ts`           | Extend the narrative API payload type with `collapse: CollapseResult` and `capStats?: PromptCapStats`; mirror the CLI shapes rather than importing across packages, matching how `NarrativeResponse` is already handled here  |
 | `packages/web/src/components/StoryView.tsx` | Insert the divider before `dividerBefore`'s index in the `chapters.map` at line 269; pass each chapter its `CollapseDecision` when it has one; render the unavailable notice and the truncation banner above the chapter list |
-| `packages/web/src/components/Chapter.tsx` | Seed the existing `collapsed` state from the decision; render the reason line on the collapsed row; add the Stretch caller-list disclosure |
-| `packages/cli/src/server.ts` | Call `selectCollapsible` in the `/api/narrative` handler and add `collapse` and `capStats` to the response |
-| `packages/cli/src/daemon/app.ts` | Same computation in `GET /api/units/:id`, using the unit's persisted narrative and freshly resolved repo context |
-| `packages/cli/src/daemon/daemon.ts` | Stretch: prefetch snapshots for polled repos so context is warm before a unit is opened |
-| `packages/cli/src/units/store.ts` | Read-only touch: confirm nothing needs to persist collapse; if a helper is needed to resolve a unit's `owner/repo` for context resolution, it lives here |
-| `packages/cli/src/units/types.ts` | No collapse fields. Present in this list to make the deliberate absence explicit rather than an oversight |
-| `packages/cli/src/__tests__/server.test.ts` | Add tests whose names contain `promptCapStats`, asserting the field reaches the response when present and is absent on a cache hit |
+| `packages/web/src/components/Chapter.tsx`   | Seed the existing `collapsed` state from the decision; render the reason line on the collapsed row; add the Stretch caller-list disclosure                                                                                    |
+| `packages/cli/src/server.ts`                | Call `selectCollapsible` in the `/api/narrative` handler and add `collapse` and `capStats` to the response                                                                                                                    |
+| `packages/cli/src/daemon/app.ts`            | Same computation in `GET /api/units/:id`, using the unit's persisted narrative and freshly resolved repo context                                                                                                              |
+| `packages/cli/src/daemon/daemon.ts`         | Stretch: prefetch snapshots for polled repos so context is warm before a unit is opened                                                                                                                                       |
+| `packages/cli/src/units/store.ts`           | Read-only touch: confirm nothing needs to persist collapse; if a helper is needed to resolve a unit's `owner/repo` for context resolution, it lives here                                                                      |
+| `packages/cli/src/units/types.ts`           | No collapse fields. Present in this list to make the deliberate absence explicit rather than an oversight                                                                                                                     |
+| `packages/cli/src/__tests__/server.test.ts` | Add tests whose names contain `promptCapStats`, asserting the field reaches the response when present and is absent on a cache hit                                                                                            |
 
 ## Implementation Details
 
@@ -184,11 +184,11 @@ _Carried from the contract; consult before making gap decisions._
 
 ### Unit Tests
 
-| Test File | Coverage |
-| --------- | -------- |
-| `packages/web/src/components/__tests__/collapse-render.test.tsx` | Divider placement for `null`, `0`, and a mid-list index; nothing rendered when unavailable |
-| `packages/web/src/components/__tests__/chapter-precedence.test.tsx` | The four seed combinations and which reason text renders |
-| `packages/cli/src/__tests__/server.test.ts` | `promptCapStats` present when generated, absent on a cache hit; `collapse` present on both |
+| Test File                                                           | Coverage                                                                                   |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `packages/web/src/components/__tests__/collapse-render.test.tsx`    | Divider placement for `null`, `0`, and a mid-list index; nothing rendered when unavailable |
+| `packages/web/src/components/__tests__/chapter-precedence.test.tsx` | The four seed combinations and which reason text renders                                   |
+| `packages/cli/src/__tests__/server.test.ts`                         | `promptCapStats` present when generated, absent on a cache hit; `collapse` present on both |
 
 **Key test cases**:
 
@@ -208,15 +208,15 @@ _Carried from the contract; consult before making gap decisions._
 
 ## Failure Modes
 
-| Component | Failure Mode | Trigger | Impact | Mitigation |
-| --------- | ------------ | ------- | ------ | ---------- |
-| Chapter precedence | State fight | Both the reviewed effect and a collapse seed drive `collapsed` | Chapter re-collapses under the reviewer, or refuses to collapse | Seed once in `useState`; do not add a second `useEffect` that writes `collapsed` |
-| Divider | Divider with nothing below | `dividerBefore` set but decisions empty | Dead chrome, the `readingPlan` failure repeating | Derive the divider strictly from `dividerBefore !== null`, which Phase 2 sets only when a decision exists |
-| Daemon serve | Stale collapse | Collapse computed once at mint time | A unit minted with a cold snapshot never collapses, even after the snapshot warms | Compute in the request handler, never in the store |
-| Truncation banner | False completeness | `capStats` defaulted rather than left absent on a cache hit | The reviewer believes a partial story is complete | Optional field, absent on cache hits, nothing rendered when absent |
-| Web types | Silent field loss | Fields added on the CLI but not mirrored in `packages/web/src/state/types.ts` | Components cannot read them and typecheck fails | Typecheck covers `packages/web/tsconfig.json`, so this fails loudly rather than silently |
-| Caller list (stretch) | Wall of paths | A module with hundreds of importers | Chapter becomes unreadable | Cap the list, state the overflow count |
-| Prefetch (stretch) | Poll slowdown | Sequential fetches across many repos | Daemon poll cycle stretches, units appear late | Best-effort, non-blocking, deduplicated by repo, bounded by the staleness window |
+| Component             | Failure Mode               | Trigger                                                                       | Impact                                                                            | Mitigation                                                                                                |
+| --------------------- | -------------------------- | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Chapter precedence    | State fight                | Both the reviewed effect and a collapse seed drive `collapsed`                | Chapter re-collapses under the reviewer, or refuses to collapse                   | Seed once in `useState`; do not add a second `useEffect` that writes `collapsed`                          |
+| Divider               | Divider with nothing below | `dividerBefore` set but decisions empty                                       | Dead chrome, the `readingPlan` failure repeating                                  | Derive the divider strictly from `dividerBefore !== null`, which Phase 2 sets only when a decision exists |
+| Daemon serve          | Stale collapse             | Collapse computed once at mint time                                           | A unit minted with a cold snapshot never collapses, even after the snapshot warms | Compute in the request handler, never in the store                                                        |
+| Truncation banner     | False completeness         | `capStats` defaulted rather than left absent on a cache hit                   | The reviewer believes a partial story is complete                                 | Optional field, absent on cache hits, nothing rendered when absent                                        |
+| Web types             | Silent field loss          | Fields added on the CLI but not mirrored in `packages/web/src/state/types.ts` | Components cannot read them and typecheck fails                                   | Typecheck covers `packages/web/tsconfig.json`, so this fails loudly rather than silently                  |
+| Caller list (stretch) | Wall of paths              | A module with hundreds of importers                                           | Chapter becomes unreadable                                                        | Cap the list, state the overflow count                                                                    |
+| Prefetch (stretch)    | Poll slowdown              | Sequential fetches across many repos                                          | Daemon poll cycle stretches, units appear late                                    | Best-effort, non-blocking, deduplicated by repo, bounded by the staleness window                          |
 
 ## Validation Commands
 

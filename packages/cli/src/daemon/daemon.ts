@@ -171,6 +171,9 @@ export function buildGitHubWiring(
     reviewSubmitter: makeReviewSubmitter(client),
     statusFetcher: makeStatusFetcher(client),
     repoContextFetcher: makeRepoContextFetcher(client),
+    // Metadata only — the add-PR route mints from this and lets the drill-in's lazy hydrate do the
+    // expensive half (diff + narrative), so typing in a PR never blocks on generation.
+    prFetcher: (owner, repo, number) => client.getPR(owner, repo, number),
     pollNow: async () => {
       const counts = await pollOnce({
         search: () => client.searchReviewRequested(),

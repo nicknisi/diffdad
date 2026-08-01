@@ -34,17 +34,17 @@ _Carried from the contract; consult before making gap decisions._
 
 ### New Files
 
-| File Path | Purpose |
-| --------- | ------- |
+| File Path                                       | Purpose                                                                     |
+| ----------------------------------------------- | --------------------------------------------------------------------------- |
 | `packages/cli/src/__tests__/eval-judge.test.ts` | Hotspot placement scoring, the not-applicable case, and aggregate reporting |
 
 ### Modified Files
 
-| File Path | Changes |
-| --------- | ------- |
-| `packages/cli/src/eval/judge.ts` | Add `scoreHotspotPlacement(narrative, fixture, collapse)`, a pure function alongside the existing LLM-backed `scoreNarrative` and `scoreDefectDetection` |
+| File Path                        | Changes                                                                                                                                                                                                                              |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `packages/cli/src/eval/judge.ts` | Add `scoreHotspotPlacement(narrative, fixture, collapse)`, a pure function alongside the existing LLM-backed `scoreNarrative` and `scoreDefectDetection`                                                                             |
 | `packages/cli/src/eval/types.ts` | Add `HotspotPlacementResult` and a `hotspotPlacement` field on `EvalRun`; add `avgHotspotPlacement` to `Baseline.aggregate`. Phase 2 already extended this file with `recordedNarrativePath` — read its current shape before editing |
-| `packages/cli/src/eval/run.ts` | Export `aggregate`; call `scoreHotspotPlacement` in `runOne`; include the new field in the written baseline and in the console summary |
+| `packages/cli/src/eval/run.ts`   | Export `aggregate`; call `scoreHotspotPlacement` in `runOne`; include the new field in the written baseline and in the console summary                                                                                               |
 
 ## Implementation Details
 
@@ -121,8 +121,8 @@ export function scoreHotspotPlacement(
 
 ### Unit Tests
 
-| Test File | Coverage |
-| --------- | -------- |
+| Test File                                       | Coverage                                                                                    |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------- |
 | `packages/cli/src/__tests__/eval-judge.test.ts` | Placement scoring across covered/expanded/uncovered, the `n/a` case, and aggregate skipping |
 
 **Key test cases**:
@@ -141,12 +141,12 @@ export function scoreHotspotPlacement(
 
 ## Failure Modes
 
-| Component | Failure Mode | Trigger | Impact | Mitigation |
-| --------- | ------------ | ------- | ------ | ---------- |
-| Placement scoring | Path mismatch | Ground truth, diff parser, and narrative disagree on `a/`/`b/` prefixes | Every hotspot reads as uncovered and the metric is uniformly wrong | Normalize both sides with the existing `normalizePath`; the prefix test pins it |
-| Placement scoring | `n/a` averaged as zero | `safe-rename` counted as a total miss | Aggregate drags down for a fixture behaving correctly | Skip `status: 'n/a'` in the aggregate; the mixed-run-set test pins it |
-| Aggregate | Unreachable from tests | `aggregate` left module-private at `run.ts:130` | The "reports it per run" criterion is only half-checked | Export it; this is a requirement, not a preference |
-| Harness | Fixture never runs | `large-refactor` missing from the hand-maintained `FIXTURES` array | The one fixture the project exists for is silently excluded | Phase 2 registers it; assert `FIXTURES` contains it here as a cheap cross-phase guard |
+| Component         | Failure Mode           | Trigger                                                                 | Impact                                                             | Mitigation                                                                            |
+| ----------------- | ---------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
+| Placement scoring | Path mismatch          | Ground truth, diff parser, and narrative disagree on `a/`/`b/` prefixes | Every hotspot reads as uncovered and the metric is uniformly wrong | Normalize both sides with the existing `normalizePath`; the prefix test pins it       |
+| Placement scoring | `n/a` averaged as zero | `safe-rename` counted as a total miss                                   | Aggregate drags down for a fixture behaving correctly              | Skip `status: 'n/a'` in the aggregate; the mixed-run-set test pins it                 |
+| Aggregate         | Unreachable from tests | `aggregate` left module-private at `run.ts:130`                         | The "reports it per run" criterion is only half-checked            | Export it; this is a requirement, not a preference                                    |
+| Harness           | Fixture never runs     | `large-refactor` missing from the hand-maintained `FIXTURES` array      | The one fixture the project exists for is silently excluded        | Phase 2 registers it; assert `FIXTURES` contains it here as a cheap cross-phase guard |
 
 ## Validation Commands
 

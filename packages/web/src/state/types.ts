@@ -270,6 +270,12 @@ export type Unit = {
   prNumber?: number;
   prUrl?: string;
   prAuthor?: string;
+  /**
+   * You added this PR by hand (the command center's add-PR field) rather than the poller minting it
+   * from a review request. It is exempt from the poller's queue reconciliation, so it stays until you
+   * remove it — the row's badge says so.
+   */
+  pinned?: boolean;
   toResolve: number;
   verdict?: NarrativeResponse['verdict'];
   /** Set when the review worker threw — the unit still queues so it reaches the reviewer. */

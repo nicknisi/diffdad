@@ -111,6 +111,10 @@ export class UnitStore {
    * generated lazily on open. The `headSha` keys the (lazy) narrative cache via `diffContentKey`, and
    * `files` start empty until that fetch.
    *
+   * `pinned` marks a unit the reviewer added by hand (the command center's add-PR field) so the
+   * poller's reconciliation leaves it alone — see `ReviewUnit.pinned`. Omitted for polled units, and
+   * written as `undefined` rather than `false` so their JSON is byte-identical to before.
+   *
    * Synchronous (returns the unit immediately for the poller's reducer); the disk write goes through
    * the same best-effort `save()` path as every other mutation, the in-memory copy authoritative.
    */
@@ -125,6 +129,7 @@ export class UnitStore {
     url: string;
     baseRef?: string;
     metadata: PRMetadata;
+    pinned?: boolean;
   }): ReviewUnit {
     const ts = this.now();
     const unit: ReviewUnit = {
@@ -145,6 +150,7 @@ export class UnitStore {
       prUrl: input.url,
       prAuthor: input.author,
       lastReviewedSha: undefined,
+      pinned: input.pinned ? true : undefined,
       createdAt: ts,
       updatedAt: ts,
     };

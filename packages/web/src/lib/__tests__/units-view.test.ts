@@ -253,13 +253,16 @@ describe('commentTarget', () => {
 
 describe('sourceBadge', () => {
   it('labels the github door so the queue is legible', () => {
-    expect(sourceBadge('github')).toMatchObject({ label: 'GitHub', tone: 'github' });
-  });
-  it('defaults an unset source to the github door', () => {
-    expect(sourceBadge(undefined)).toMatchObject({ label: 'GitHub', tone: 'github' });
+    expect(sourceBadge({})).toMatchObject({ label: 'GitHub', tone: 'github' });
   });
   it('carries a human title explaining where the unit came from', () => {
-    expect(sourceBadge('github').title).toMatch(/github/i);
+    expect(sourceBadge({}).title).toMatch(/github/i);
+  });
+  it('distinguishes a PR you added by hand — it behaves differently in the queue', () => {
+    const badge = sourceBadge({ pinned: true });
+    expect(badge).toMatchObject({ label: 'Added', tone: 'added' });
+    // The row's tooltip is the only place the "stays until you remove it" contract is stated.
+    expect(badge.title).toMatch(/until you remove it/i);
   });
 });
 

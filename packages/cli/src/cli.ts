@@ -2,6 +2,7 @@
 import { resolveGitHubToken } from './auth';
 import { getConfigPath, LOCAL_CLIS, readConfig } from './config';
 import { GitHubClient } from './github/client';
+import { type ParsedPr, parsePrRef } from './github/pr-ref';
 import { cacheNarrative, clearCache, computePromptMetaHash, getCachedNarrative } from './narrative/cache';
 import { generateNarrative, resolveAiPath, resolveProviderKey, setCliOverride } from './narrative/engine';
 import { migrateLegacyData } from './paths';
@@ -43,12 +44,6 @@ const DAD_JOKES = [
   "Hi diff, I'm dad.",
 ];
 
-interface ParsedPr {
-  owner: string;
-  repo: string;
-  number: number;
-}
-
 const USAGE = `dad - GitHub PRs as narrated stories
 
 Usage:
@@ -78,35 +73,12 @@ PR argument formats:
   139                                (bare PR number; requires being inside a git repo with a GitHub remote)
 `;
 
-export function parsePrArg(arg: string): ParsedPr | null {
-  if (!arg) return null;
-  const trimmed = arg.trim();
-
-  // Full URL: https://github.com/owner/repo/pull/123
-  const urlMatch = trimmed.match(/^https?:\/\/github\.com\/([^/\s]+)\/([^/\s]+)\/pull\/(\d+)(?:[/?#].*)?$/i);
-  if (urlMatch) {
-    const [, owner, repo, num] = urlMatch;
-    if (owner && repo && num) {
-      return { owner, repo, number: Number(num) };
-    }
-  }
-
-  // Shorthand: owner/repo#123
-  const shortMatch = trimmed.match(/^([^/\s#]+)\/([^/\s#]+)#(\d+)$/);
-  if (shortMatch) {
-    const [, owner, repo, num] = shortMatch;
-    if (owner && repo && num) {
-      return { owner, repo, number: Number(num) };
-    }
-  }
-
-  // Bare number: 139 — handled by reviewCommand via inferRepoFromGit()
-  if (/^\d+$/.test(trimmed)) {
-    return null;
-  }
-
-  return null;
-}
+/**
+ * The CLI's PR argument. A thin re-export of the shared `parsePrRef` (see github/pr-ref.ts) — the
+ * daemon's add-PR route parses the same forms, so both doors accept exactly the same references.
+ * A bare number (`139`) returns null here and is resolved by `resolvePrArg` via `inferRepoFromGit`.
+ */
+export const parsePrArg = parsePrRef;
 
 export async function inferRepoFromGit(): Promise<{ owner: string; repo: string } | null> {
   try {

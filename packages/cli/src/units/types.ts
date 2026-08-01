@@ -69,6 +69,14 @@ export type ReviewUnit = {
   prAuthor?: string;
   /** Freshness: the head SHA the last decision was recorded against. A newer push re-opens review. */
   lastReviewedSha?: string;
+  /**
+   * The reviewer added this PR by hand (POST /api/units from the command center) rather than the
+   * poller minting it from a review request. Load-bearing, not cosmetic: the poller reconciles the
+   * queue against the "review requested of me" search and drops units it stops seeing — and a PR you
+   * typed in was never in that search to begin with, so without this flag it would be reaped a poll or
+   * two after you asked for it. A pinned unit leaves the queue only when you remove it.
+   */
+  pinned?: boolean;
   createdAt: string;
   updatedAt: string;
 };

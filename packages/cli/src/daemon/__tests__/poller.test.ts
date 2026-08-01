@@ -546,6 +546,67 @@ describe('pollOnce reconciliation', () => {
     expect(store.list().some((x) => x.prNumber === 42)).toBe(true);
   });
 
+  it('never reconciles a pinned unit away — the PR you added is never in the review-request search', async () => {
+    const store = new UnitStore([], det());
+    const pinned = store.addGithubUnit({
+      owner: 'octo',
+      repo: 'demo',
+      number: 501,
+      title: 'A PR you asked for',
+      headBranch: 'feat/manual',
+      headSha: 'sha-1',
+      author: 'somebody-else',
+      url: 'https://github.com/octo/demo/pull/501',
+      metadata: { ...mkMetadata(), headSha: 'sha-1' },
+      pinned: true,
+    });
+    const streaks = new Map<string, number>();
+    let fetched = 0;
+    const fetchPrState = () => {
+      fetched++;
+      return openState();
+    };
+
+    // Far past the two-miss threshold. A hand-added PR is absent from the search by definition —
+    // that absence is its normal state, not evidence the work is done.
+    for (let pass = 0; pass < 4; pass++) {
+      const r = await pollOnce({ search: search([]), store, broadcast: () => {}, fetchPrState, missStreaks: streaks });
+      expect(r.removed).toBe(0);
+    }
+    expect(store.get(pinned.unitId)).toBeDefined();
+    expect(streaks.size).toBe(0); // no streak accrues against it
+    expect(fetched).toBe(0); // and it never costs a per-poll PR-state fetch
+  });
+
+  it('keeps a pinned unit even when its PR is closed/merged (only the reviewer retires it)', async () => {
+    const store = new UnitStore([], det());
+    const pinned = store.addGithubUnit({
+      owner: 'octo',
+      repo: 'demo',
+      number: 502,
+      title: 'A merged PR read after the fact',
+      headBranch: 'feat/merged',
+      headSha: 'sha-1',
+      author: 'somebody-else',
+      url: 'https://github.com/octo/demo/pull/502',
+      metadata: { ...mkMetadata(), headSha: 'sha-1' },
+      pinned: true,
+    });
+
+    const result = await pollOnce({
+      search: search([]),
+      store,
+      broadcast: () => {},
+      fetchPrState: closedState,
+      missStreaks: new Map(),
+    });
+
+    // Reading a merged PR is a legitimate thing to ask for; the ✕ (DELETE /api/units/:id) is the
+    // only thing that takes it away.
+    expect(result.removed).toBe(0);
+    expect(store.get(pinned.unitId)).toBeDefined();
+  });
+
   it('logs one reconciliation line naming each removed repo#pr and its reason', async () => {
     const store = new UnitStore([], det());
     seedUnit(store);

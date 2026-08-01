@@ -9,7 +9,7 @@ Diff Dad currently reasons about a PR using nothing but the PR. `generateNarrati
 
 The mechanism is a cached repository snapshot, not a checkout. Grep needs file contents, not history, so the phase fetches `GET /repos/{owner}/{repo}/tarball/{base}` — one request that returns the entire tree — extracts it under the regenerable cache directory, and builds an import index during the same pass. Indexing while writing avoids a second full read of every file and removes any dependency on `git` or `ripgrep` being installed. Caller lookup then becomes a map read rather than a scan.
 
-The awkward part is plumbing, not fetching. `computeRisk` is invoked *inside* the synchronous prompt builders (`prompt.ts:589`, `:603`, `:679`), while snapshot resolution is async. Resolved context therefore has to be resolved before prompt construction and threaded down as a parameter: `generateNarrative` gains it, passes it to `runPlanner` and `writeChapter`, and all three production call sites (`cli.ts:330`, `server.ts:364`, `daemon/daemon.ts:262`) supply it. This is the phase's main risk, and the reason it is sequenced first and alone.
+The awkward part is plumbing, not fetching. `computeRisk` is invoked _inside_ the synchronous prompt builders (`prompt.ts:589`, `:603`, `:679`), while snapshot resolution is async. Resolved context therefore has to be resolved before prompt construction and threaded down as a parameter: `generateNarrative` gains it, passes it to `runPlanner` and `writeChapter`, and all three production call sites (`cli.ts:330`, `server.ts:364`, `daemon/daemon.ts:262`) supply it. This is the phase's main risk, and the reason it is sequenced first and alone.
 
 One correctness trap sits at the end of the pipeline. `computeScore` scores centrality as `Math.min(input.inboundRefs, 10) * 4`. That cap was calibrated for diff-internal counts, which are tiny. Repo-wide counts saturate it for essentially every non-leaf file, which turns the centrality term into a constant 40 and destroys exactly the discrimination this project exists to create. The term is rescaled logarithmically, matching how churn is already handled at `risk.ts:152`.
 
@@ -22,7 +22,7 @@ _Carried from the contract; consult before making gap decisions._
 - **Build the import index during extraction and persist it beside the snapshot** — rejected: shelling out to ripgrep or git grep at query time. One pass over files already being written, no dependency on a binary that may not be installed, and caller lookup becomes a map read rather than a scan.
 - **Rescale the centrality term in computeScore** — rejected: leaving `Math.min(inboundRefs, 10) * 4` and simply widening what `inboundRefs` counts. Repo-wide counts saturate that cap for essentially every non-leaf file, turning the term into a constant 40 and reproducing the no-discrimination symptom the project exists to fix.
 - **Local checkout detection as a fast path** — rejected: using cwd when it is already the repo. A second provider means two sets of edge cases and results that differ by where the command was run; the snapshot path is uniform and the cache makes the repeat cost negligible.
-- **Per-symbol caller resolution** — rejected for this phase. `computeRisk` stores one integer per file and `formatRiskHints` prints it as `inbound=N`, so file-and-module granularity is all any consumer reads. The index does store the caller *file list* per module, because the Stretch-tier caller list reads it, but no symbol extraction happens.
+- **Per-symbol caller resolution** — rejected for this phase. `computeRisk` stores one integer per file and `formatRiskHints` prints it as `inbound=N`, so file-and-module granularity is all any consumer reads. The index does store the caller _file list_ per module, because the Stretch-tier caller list reads it, but no symbol extraction happens.
 
 ## Feedback Strategy
 
@@ -36,29 +36,29 @@ _Carried from the contract; consult before making gap decisions._
 
 ### New Files
 
-| File Path | Purpose |
-| --------- | ------- |
-| `packages/cli/src/repo/snapshot.ts` | Fetch, extract, cache, and evict repository snapshots; owns the size cap, staleness bound, and the `RepoContext` result type |
-| `packages/cli/src/repo/import-index.ts` | Build and query the module-to-callers index; one pass during extraction, JSON-persisted beside the snapshot |
-| `packages/cli/src/__tests__/repo-snapshot.test.ts` | Extraction safety, index accuracy, staleness, size-cap degrade, and callers-outside-the-diff |
-| `packages/cli/src/__tests__/fixtures/mini-repo.tar.gz` | Small committed archive used by every test in this phase |
-| `packages/cli/src/__tests__/fixtures/evil-paths.tar.gz` | Archive containing `../` entries and an escaping symlink, for the rejection tests |
+| File Path                                               | Purpose                                                                                                                      |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `packages/cli/src/repo/snapshot.ts`                     | Fetch, extract, cache, and evict repository snapshots; owns the size cap, staleness bound, and the `RepoContext` result type |
+| `packages/cli/src/repo/import-index.ts`                 | Build and query the module-to-callers index; one pass during extraction, JSON-persisted beside the snapshot                  |
+| `packages/cli/src/__tests__/repo-snapshot.test.ts`      | Extraction safety, index accuracy, staleness, size-cap degrade, and callers-outside-the-diff                                 |
+| `packages/cli/src/__tests__/fixtures/mini-repo.tar.gz`  | Small committed archive used by every test in this phase                                                                     |
+| `packages/cli/src/__tests__/fixtures/evil-paths.tar.gz` | Archive containing `../` entries and an escaping symlink, for the rejection tests                                            |
 
 ### Modified Files
 
-| File Path | Changes |
-| --------- | ------- |
-| `packages/cli/src/github/client.ts` | Add `getTarball(owner, repo, ref): Promise<ReadableStream>` using the existing private `fetch` with `Accept: application/vnd.github+json`; GitHub 302s to codeload, which `fetch` follows by default |
-| `packages/cli/src/paths.ts` | Add `repoSnapshotDir()` under `legacyDir()` (`~/.cache/diffdad`), not `dataDir()` — snapshots are regenerable, and the file's own doc comment already draws that line |
-| `packages/cli/src/narrative/risk.ts` | `computeRisk` takes an optional `RepoContext`; `inboundRefs` reads the index when present and falls back to today's diff-internal count when absent; rescale the centrality term in `computeScore` |
-| `packages/cli/src/narrative/prompt.ts` | `NarrativePromptInput` gains `repoContext`; pass it through to `computeRisk` at the three call sites; `formatRiskHints` labels counts as repo-wide or diff-only so the model knows which it is reading |
-| `packages/cli/src/narrative/planner.ts` | `PlannerInput` gains `repoContext`, forwarded to `buildPlannerPrompt` |
-| `packages/cli/src/narrative/writer.ts` | `WriterInput` gains `repoContext`, forwarded to `buildWriterPrompt` |
-| `packages/cli/src/narrative/engine.ts` | `generateNarrative` gains a `repoContext` option, threaded into both the single-pass and two-pass paths |
-| `packages/cli/src/cli.ts` | Resolve the snapshot before `generateNarrative` (line 330); log a one-line status so a slow first fetch is not silent |
-| `packages/cli/src/server.ts` | Same resolution before the regenerate path at line 364 |
-| `packages/cli/src/daemon/daemon.ts` | Same resolution before line 262 |
-| `packages/cli/src/__tests__/risk.test.ts` | Line 66 asserts the diff-internal inbound-ref behavior being replaced; rewrite it, and add the `centrality` case proving the rescaled term still discriminates above ten |
+| File Path                                 | Changes                                                                                                                                                                                                |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `packages/cli/src/github/client.ts`       | Add `getTarball(owner, repo, ref): Promise<ReadableStream>` using the existing private `fetch` with `Accept: application/vnd.github+json`; GitHub 302s to codeload, which `fetch` follows by default   |
+| `packages/cli/src/paths.ts`               | Add `repoSnapshotDir()` under `legacyDir()` (`~/.cache/diffdad`), not `dataDir()` — snapshots are regenerable, and the file's own doc comment already draws that line                                  |
+| `packages/cli/src/narrative/risk.ts`      | `computeRisk` takes an optional `RepoContext`; `inboundRefs` reads the index when present and falls back to today's diff-internal count when absent; rescale the centrality term in `computeScore`     |
+| `packages/cli/src/narrative/prompt.ts`    | `NarrativePromptInput` gains `repoContext`; pass it through to `computeRisk` at the three call sites; `formatRiskHints` labels counts as repo-wide or diff-only so the model knows which it is reading |
+| `packages/cli/src/narrative/planner.ts`   | `PlannerInput` gains `repoContext`, forwarded to `buildPlannerPrompt`                                                                                                                                  |
+| `packages/cli/src/narrative/writer.ts`    | `WriterInput` gains `repoContext`, forwarded to `buildWriterPrompt`                                                                                                                                    |
+| `packages/cli/src/narrative/engine.ts`    | `generateNarrative` gains a `repoContext` option, threaded into both the single-pass and two-pass paths                                                                                                |
+| `packages/cli/src/cli.ts`                 | Resolve the snapshot before `generateNarrative` (line 330); log a one-line status so a slow first fetch is not silent                                                                                  |
+| `packages/cli/src/server.ts`              | Same resolution before the regenerate path at line 364                                                                                                                                                 |
+| `packages/cli/src/daemon/daemon.ts`       | Same resolution before line 262                                                                                                                                                                        |
+| `packages/cli/src/__tests__/risk.test.ts` | Line 66 asserts the diff-internal inbound-ref behavior being replaced; rewrite it, and add the `centrality` case proving the rescaled term still discriminates above ten                               |
 
 ## Implementation Details
 
@@ -131,7 +131,7 @@ export function callersOf(index: ImportIndex, filePath: string, exclude: Set<str
 
 **Key decisions**:
 
-- `callersOf` takes an `exclude` set of the diff's file paths so the count reported is specifically *unchanged* callers. That is the number the evidence line claims, and computing it here keeps `collapse.ts` in Phase 2 pure.
+- `callersOf` takes an `exclude` set of the diff's file paths so the count reported is specifically _unchanged_ callers. That is the number the evidence line claims, and computing it here keeps `collapse.ts` in Phase 2 pure.
 - Store the caller list, not a count. The count is `.length`, and the Stretch-tier caller list needs the paths.
 - Scan only text files with source-like extensions. A snapshot contains images and binaries, and running `IMPORT_RE` over a PNG is wasted work.
 - `filesScanned` exists so a downstream consumer can tell "genuinely nothing imports this" from "the index never got built." Those two states must not both render as `0 external callers`.
@@ -203,10 +203,10 @@ export function computeRisk(files: DiffFile[], repo?: RepoContext): FileRisk[];
 
 ### Unit Tests
 
-| Test File | Coverage |
-| --------- | -------- |
-| `packages/cli/src/__tests__/repo-snapshot.test.ts` | Extraction safety, cache reuse, staleness, size cap, index accuracy, callers-outside-the-diff |
-| `packages/cli/src/__tests__/risk.test.ts` | Rescored centrality, repo-wide versus diff-internal counting, unchanged behavior without repo context |
+| Test File                                          | Coverage                                                                                              |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `packages/cli/src/__tests__/repo-snapshot.test.ts` | Extraction safety, cache reuse, staleness, size cap, index accuracy, callers-outside-the-diff         |
+| `packages/cli/src/__tests__/risk.test.ts`          | Rescored centrality, repo-wide versus diff-internal counting, unchanged behavior without repo context |
 
 **Key test cases**:
 
@@ -227,26 +227,26 @@ export function computeRisk(files: DiffFile[], repo?: RepoContext): FileRisk[];
 
 ## Error Handling
 
-| Error Scenario | Handling Strategy |
-| -------------- | ----------------- |
+| Error Scenario                            | Handling Strategy                                                                                                                                       |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Tarball request fails (404, 403, network) | Return `{available: false, reason: 'fetch-failed'}`; never throw into the narrative path — a missing snapshot degrades the review, it does not break it |
-| Extraction fails midway | Delete the scratch directory, return `{available: false, reason: 'extract-failed'}` |
-| Archive exceeds the size cap | Abort the stream, delete the scratch directory, return `{available: false, reason: 'size-cap'}` |
-| Cache directory is unwritable | Treat as `extract-failed`; the review proceeds without repo context |
-| Persisted index JSON is corrupt | Rebuild from the extracted tree; if the tree is also gone, refetch |
+| Extraction fails midway                   | Delete the scratch directory, return `{available: false, reason: 'extract-failed'}`                                                                     |
+| Archive exceeds the size cap              | Abort the stream, delete the scratch directory, return `{available: false, reason: 'size-cap'}`                                                         |
+| Cache directory is unwritable             | Treat as `extract-failed`; the review proceeds without repo context                                                                                     |
+| Persisted index JSON is corrupt           | Rebuild from the extracted tree; if the tree is also gone, refetch                                                                                      |
 
 ## Failure Modes
 
-| Component | Failure Mode | Trigger | Impact | Mitigation |
-| --------- | ------------ | ------- | ------ | ---------- |
-| Snapshot | Archive escape | Tarball entry with `../` or a symlink pointing outside the destination | Arbitrary file write outside the cache directory | Validate every entry path resolves under the destination before extracting; reject the whole archive on any violation |
-| Snapshot | Disk exhaustion | Large monorepo, or many repos accumulating over weeks | Cache fills the disk | Size cap per snapshot plus 7-day eviction on write |
-| Snapshot | Stale tree served silently | Base branch moved after the last fetch | Caller counts slightly behind reality | Accepted by design; the staleness bound triggers a refetch and counts tolerate drift. Record `fetchedAt` so a future surface can show it |
-| Snapshot | Fetch succeeds, tree is empty | Repository is genuinely empty, or the ref does not exist | Index reports zero callers for everything, which reads as "safe to collapse everything" | `filesScanned === 0` must map to `available: false`, not to an empty index |
-| Import index | Basename collision | Two files named `types.ts` in different directories | Callers of one attributed to the other, inflating counts | Known limitation inherited from `importTargetsFile`; inflation is the safe direction, since it prevents collapse rather than causing it. Do not attempt to fix here |
-| Import index | Dynamic imports missed | `import(varName)` or a re-export barrel | Undercount, which is the dangerous direction — it can cause a wrong collapse | Accept the undercount but never let it reach zero silently: the evidence line says "0 known callers", not "0 callers" |
-| Risk rescoring | Constant `K` mis-chosen | Centrality now dominates or vanishes relative to churn | Ordering gets worse, not better | The `centrality` test pins relative ordering of two synthetic files; tune `K` against it |
-| Context threading | A call site missed | New code path added later | That path silently reverts to diff-internal counts | `inboundScope` makes the regression visible in the risk hints rather than invisible |
+| Component         | Failure Mode                  | Trigger                                                                | Impact                                                                                  | Mitigation                                                                                                                                                          |
+| ----------------- | ----------------------------- | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Snapshot          | Archive escape                | Tarball entry with `../` or a symlink pointing outside the destination | Arbitrary file write outside the cache directory                                        | Validate every entry path resolves under the destination before extracting; reject the whole archive on any violation                                               |
+| Snapshot          | Disk exhaustion               | Large monorepo, or many repos accumulating over weeks                  | Cache fills the disk                                                                    | Size cap per snapshot plus 7-day eviction on write                                                                                                                  |
+| Snapshot          | Stale tree served silently    | Base branch moved after the last fetch                                 | Caller counts slightly behind reality                                                   | Accepted by design; the staleness bound triggers a refetch and counts tolerate drift. Record `fetchedAt` so a future surface can show it                            |
+| Snapshot          | Fetch succeeds, tree is empty | Repository is genuinely empty, or the ref does not exist               | Index reports zero callers for everything, which reads as "safe to collapse everything" | `filesScanned === 0` must map to `available: false`, not to an empty index                                                                                          |
+| Import index      | Basename collision            | Two files named `types.ts` in different directories                    | Callers of one attributed to the other, inflating counts                                | Known limitation inherited from `importTargetsFile`; inflation is the safe direction, since it prevents collapse rather than causing it. Do not attempt to fix here |
+| Import index      | Dynamic imports missed        | `import(varName)` or a re-export barrel                                | Undercount, which is the dangerous direction — it can cause a wrong collapse            | Accept the undercount but never let it reach zero silently: the evidence line says "0 known callers", not "0 callers"                                               |
+| Risk rescoring    | Constant `K` mis-chosen       | Centrality now dominates or vanishes relative to churn                 | Ordering gets worse, not better                                                         | The `centrality` test pins relative ordering of two synthetic files; tune `K` against it                                                                            |
+| Context threading | A call site missed            | New code path added later                                              | That path silently reverts to diff-internal counts                                      | `inboundScope` makes the regression visible in the risk hints rather than invisible                                                                                 |
 
 ## Validation Commands
 

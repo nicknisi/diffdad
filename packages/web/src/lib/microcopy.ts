@@ -19,6 +19,13 @@ export const copy = {
   rereadBusy: 'Reading it again…',
 
   queueLoading: 'Rounding up your reviews…',
+
+  // Add-PR field: review any PR, not just the ones GitHub put on your plate. The placeholder carries
+  // the accepted formats (it's the only place they're documented in the UI), so it stays literal.
+  addPrPlaceholder: 'Review any PR — paste a URL or owner/repo#123',
+  addPrLabel: 'Review',
+  addPrBusy: 'Fetching…',
+
   emptyState: 'Go make a diff-erence.',
   inlineHint: 'Use your comment sense.',
   commentPlaceholder: 'Use your comment sense... (Cmd/Ctrl+Enter to submit)',
