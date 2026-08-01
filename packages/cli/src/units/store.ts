@@ -2,6 +2,7 @@ import { mkdir, readdir, readFile, unlink, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { dataDir } from '../paths';
 import type { DiffFile, PRMetadata } from '../github/types';
+import type { PromptCapStats } from '../narrative/prompt';
 import type { NarrativeResponse } from '../narrative/types';
 import { type Decision, IllegalTransitionError, type ReviewUnit, type UnitStatus, UnknownUnitError } from './types';
 
@@ -110,6 +111,10 @@ export class UnitStore {
    * generated lazily on open. The `headSha` keys the (lazy) narrative cache via `diffContentKey`, and
    * `files` start empty until that fetch.
    *
+   * `pinned` marks a unit the reviewer added by hand (the command center's add-PR field) so the
+   * poller's reconciliation leaves it alone — see `ReviewUnit.pinned`. Omitted for polled units, and
+   * written as `undefined` rather than `false` so their JSON is byte-identical to before.
+   *
    * Synchronous (returns the unit immediately for the poller's reducer); the disk write goes through
    * the same best-effort `save()` path as every other mutation, the in-memory copy authoritative.
    */
@@ -124,6 +129,7 @@ export class UnitStore {
     url: string;
     baseRef?: string;
     metadata: PRMetadata;
+    pinned?: boolean;
   }): ReviewUnit {
     const ts = this.now();
     const unit: ReviewUnit = {
@@ -144,6 +150,7 @@ export class UnitStore {
       prUrl: input.url,
       prAuthor: input.author,
       lastReviewedSha: undefined,
+      pinned: input.pinned ? true : undefined,
       createdAt: ts,
       updatedAt: ts,
     };
@@ -240,13 +247,23 @@ export class UnitStore {
    * Lazy-hydration write for `github` units: attach the fetched diff + generated narrative WITHOUT a
    * status transition (a github unit stays `queued`). The unit is already `queued`; this only fills in
    * the deferred walkthrough. Synchronous; persistence is best-effort via `save()`.
+   *
+   * `capStats` is assigned unconditionally, including to `undefined`: a cache-hit hydrate measured no
+   * diff, and leaving the previous run's stats in place would describe the wrong generation.
    */
-  attachReview(unitId: string, files: DiffFile[], narrative: NarrativeResponse, toResolve: number): ReviewUnit {
+  attachReview(
+    unitId: string,
+    files: DiffFile[],
+    narrative: NarrativeResponse,
+    toResolve: number,
+    capStats?: PromptCapStats,
+  ): ReviewUnit {
     const unit = this.require(unitId);
     unit.files = files;
     unit.narrative = narrative;
     unit.verdict = narrative.verdict;
     unit.toResolve = toResolve;
+    unit.capStats = capStats;
     unit.updatedAt = this.now();
     void this.save(unit);
     return unit;

@@ -146,6 +146,21 @@ export class GitHubClient {
     return res.text();
   }
 
+  /**
+   * The repository at `ref` as a gzipped tarball stream — one request for the whole tree, which is
+   * what the repo-wide import index is built from. GitHub answers with a 302 to a signed
+   * `codeload.github.com` URL; `fetch` follows it by default.
+   *
+   * The ref is encoded per path segment so a base branch like `release/1.2` keeps its slash (the
+   * endpoint treats everything after `/tarball/` as the ref) while other characters are escaped.
+   */
+  async getTarball(owner: string, repo: string, ref: string): Promise<ReadableStream<Uint8Array>> {
+    const encodedRef = ref.split('/').map(encodeURIComponent).join('/');
+    const res = await this.fetch(`/repos/${owner}/${repo}/tarball/${encodedRef}`);
+    if (!res.body) throw new Error(`GitHub returned an empty tarball body for ${owner}/${repo}@${ref}`);
+    return res.body;
+  }
+
   async getComments(owner: string, repo: string, number: number): Promise<PRComment[]> {
     const [reviewRes, issueRes] = await Promise.all([
       this.fetch(`/repos/${owner}/${repo}/pulls/${number}/comments?per_page=100`),

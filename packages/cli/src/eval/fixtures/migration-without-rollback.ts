@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'url';
 import type { EvalFixture } from '../types';
 
 /**
@@ -95,6 +96,9 @@ export const fixture: EvalFixture = {
       ],
     },
   ],
+  recordedNarrativePath: fileURLToPath(
+    new URL('./recorded/migration-without-rollback.narrative.json', import.meta.url),
+  ),
   groundTruth: {
     expectedConcerns: [
       'ADD COLUMN ... NOT NULL with no default will rewrite the entire events table; on a 50M-row table this locks the table for the duration of the migration and the application will see writes fail',

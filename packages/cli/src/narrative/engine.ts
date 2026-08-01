@@ -1,5 +1,6 @@
 import type { DiffDadConfig } from '../config';
 import type { DiffFile, PRComment, PRMetadata } from '../github/types';
+import type { RepoContext } from '../repo/snapshot';
 import { buildNarrativePrompt, type PreviousNarrativeContext, type PromptCapStats } from './prompt';
 import { partitionMechanicalFiles } from './diff-filter';
 import { normalizeNarrative, type NarrativeChapter, type NarrativeResponse } from './types';
@@ -117,6 +118,13 @@ export type NarrativeGenerationOptions = {
   /** Existing inline review comments — fed to the planner as hints (hot-zone signal). */
   comments?: PRComment[];
   /**
+   * Base-branch snapshot for repo-wide inbound-reference counting. Resolved by the caller, not here:
+   * the CLI prints a status line for it and the daemon may prefetch, so it has to be a visible step
+   * rather than a hidden side effect. Optional — absent means risk scoring falls back to diff-only
+   * counting, which every consumer already handles.
+   */
+  repoContext?: RepoContext;
+  /**
    * Force a fresh generation: skip the cache READ but still WRITE the result under `cacheKey`. Powers
    * the per-PR re-read — a same-SHA regeneration must produce new prose instead of replaying the
    * cached plan. No effect on the single-pass path (it has no cache).
@@ -127,6 +135,14 @@ export type NarrativeGenerationOptions = {
 export type NarrativeGenerationResult = {
   narrative: NarrativeResponse;
   provider: string;
+  /**
+   * What the prompt budget dropped or shortened before the model saw the diff.
+   *
+   * Optional, and absent rather than empty on the paths that never built a prompt (a plan cache hit).
+   * "Unknown" and "nothing was truncated" must not render alike: defaulting this to an empty object
+   * would have the UI claim a partial story is complete.
+   */
+  capStats?: PromptCapStats;
 };
 
 function totalHunkCount(files: DiffFile[]): number {
@@ -226,6 +242,9 @@ async function generateNarrativeTwoPass(
   // structural-violation feedback.
   let plan: Plan | null = null;
   let plannerProvider = 'cached';
+  // Stays undefined on the plan-cache-hit branch below: no prompt was built, so there is nothing to
+  // report, and reporting "nothing truncated" would be a claim nobody verified.
+  let capStats: PromptCapStats | undefined;
   // `force` skips the read (a re-read must regenerate) but the write below still runs, so the fresh
   // plan replaces the cached one under the same key.
   if (options.cacheKey && !options.force) {
@@ -251,12 +270,14 @@ async function generateNarrativeTwoPass(
         skippedFiles,
         previousContext,
         hints,
+        repoContext: options.repoContext,
         retryFeedback,
       });
       const validation = validatePlan(plannerResult.plan, narrate);
       if (validation.ok || attempt === 1) {
         plan = plannerResult.plan;
         plannerProvider = plannerResult.provider;
+        capStats = plannerResult.stats;
         if (!validation.ok) {
           console.error(`${YELLOW}  ⚠ Plan still has violations after retry — proceeding anyway${RESET}`);
           for (const v of validation.violations.slice(0, 5)) {
@@ -302,7 +323,14 @@ async function generateNarrativeTwoPass(
       if (options.onPartial) options.onPartial(assembleNarrative(plan, chapters));
       return;
     }
-    const result = await writeChapter({ plan, theme, files: fullFiles, fileTree, config });
+    const result = await writeChapter({
+      plan,
+      theme,
+      files: fullFiles,
+      fileTree,
+      config,
+      repoContext: options.repoContext,
+    });
     if (!writerProvider) writerProvider = result.provider;
     chapters[idx] = result.chapter;
     options.onChapter?.({ themeId: theme.id, index: idx, chapter: result.chapter });
@@ -315,7 +343,7 @@ async function generateNarrativeTwoPass(
   // generated) are deliberately unplanned, so checking fullFiles would report them all as orphans.
   logNarrativeViolations(narrative, narrate);
   const provider = writerProvider ? `${plannerProvider} + ${writerProvider}` : plannerProvider;
-  return { narrative, provider };
+  return { narrative, provider, capStats };
 }
 
 /**
@@ -339,6 +367,7 @@ async function generateNarrativeSinglePass(
     fileTree,
     skippedFiles,
     previousContext,
+    repoContext: options.repoContext,
   });
   logPromptStats(stats, skippedFiles.length);
 
@@ -396,7 +425,7 @@ async function generateNarrativeSinglePass(
         );
       }
       logNarrativeViolations(narrative, narrate);
-      return { narrative, provider: result.provider };
+      return { narrative, provider: result.provider, capStats: stats };
     } catch (err) {
       if (result.truncated && attempt < MAX_RETRIES) {
         console.log(`Narrative truncated (attempt ${attempt + 1}/${MAX_RETRIES + 1}), retrying...`);

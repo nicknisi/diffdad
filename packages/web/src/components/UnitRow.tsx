@@ -1,9 +1,10 @@
 import { groupOf, relativeTime, type SourceBadge, sourceBadge, type VerdictTone, verdictTone } from '../lib/units-view';
 import type { Unit, UnitStatus } from '../state/types';
 
-/** Source-badge palette — github reads blue (comments post to the PR). */
+/** Source-badge palette — github reads blue (comments post to the PR), a hand-added PR reads neutral. */
 const SOURCE_TONE: Record<SourceBadge['tone'], React.CSSProperties> = {
   github: { background: 'var(--blue-3)', color: 'var(--blue-11)' },
+  added: { background: 'var(--gray-3)', color: 'var(--fg-2)' },
 };
 
 const TONE: Record<VerdictTone, { fg: string; glyph: string }> = {
@@ -44,7 +45,7 @@ export function UnitRow({ unit, now, onOpen, onRemove, busy }: Props) {
   const lead = isNeedsYou ? tone : { fg: status.color, glyph: status.glyph };
   const branch = unit.metadata?.branch;
   const elapsed = relativeTime(unit.updatedAt, now);
-  const badge = sourceBadge(unit.source);
+  const badge = sourceBadge(unit);
 
   const meta: string[] = [];
   if (isNeedsYou) meta.push(unit.toResolve === 1 ? '1 to resolve' : `${unit.toResolve} to resolve`);

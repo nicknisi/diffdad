@@ -2,11 +2,13 @@
 import { resolveGitHubToken } from './auth';
 import { getConfigPath, LOCAL_CLIS, readConfig } from './config';
 import { GitHubClient } from './github/client';
+import { type ParsedPr, parsePrRef } from './github/pr-ref';
 import { cacheNarrative, clearCache, computePromptMetaHash, getCachedNarrative } from './narrative/cache';
 import { generateNarrative, resolveAiPath, resolveProviderKey, setCliOverride } from './narrative/engine';
 import { migrateLegacyData } from './paths';
 import { getCachedRecap } from './recap/cache';
-import { createServer } from './server';
+import { describeRepoContext, resolveRepoContext } from './repo/snapshot';
+import { createServer, type ServerContext } from './server';
 import { daemonStatus, DEFAULT_DAEMON_PORT, isDaemonAlive, startDaemon } from './daemon/daemon';
 
 const a = {
@@ -42,12 +44,6 @@ const DAD_JOKES = [
   "Hi diff, I'm dad.",
 ];
 
-interface ParsedPr {
-  owner: string;
-  repo: string;
-  number: number;
-}
-
 const USAGE = `dad - GitHub PRs as narrated stories
 
 Usage:
@@ -77,35 +73,12 @@ PR argument formats:
   139                                (bare PR number; requires being inside a git repo with a GitHub remote)
 `;
 
-export function parsePrArg(arg: string): ParsedPr | null {
-  if (!arg) return null;
-  const trimmed = arg.trim();
-
-  // Full URL: https://github.com/owner/repo/pull/123
-  const urlMatch = trimmed.match(/^https?:\/\/github\.com\/([^/\s]+)\/([^/\s]+)\/pull\/(\d+)(?:[/?#].*)?$/i);
-  if (urlMatch) {
-    const [, owner, repo, num] = urlMatch;
-    if (owner && repo && num) {
-      return { owner, repo, number: Number(num) };
-    }
-  }
-
-  // Shorthand: owner/repo#123
-  const shortMatch = trimmed.match(/^([^/\s#]+)\/([^/\s#]+)#(\d+)$/);
-  if (shortMatch) {
-    const [, owner, repo, num] = shortMatch;
-    if (owner && repo && num) {
-      return { owner, repo, number: Number(num) };
-    }
-  }
-
-  // Bare number: 139 — handled by reviewCommand via inferRepoFromGit()
-  if (/^\d+$/.test(trimmed)) {
-    return null;
-  }
-
-  return null;
-}
+/**
+ * The CLI's PR argument. A thin re-export of the shared `parsePrRef` (see github/pr-ref.ts) — the
+ * daemon's add-PR route parses the same forms, so both doors accept exactly the same references.
+ * A bare number (`139`) returns null here and is resolved by `resolvePrArg` via `inferRepoFromGit`.
+ */
+export const parsePrArg = parsePrRef;
 
 export async function inferRepoFromGit(): Promise<{ owner: string; repo: string } | null> {
   try {
@@ -254,7 +227,7 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
     : await getCachedNarrative(parsed.owner, parsed.repo, parsed.number, metadata.headSha, metaHash, providerKey);
   const cachedRecap = noCache ? null : await getCachedRecap(parsed.owner, parsed.repo, parsed.number, metadata.headSha);
 
-  const ctx = {
+  const ctx: ServerContext = {
     narrative: cached,
     pr: metadata,
     files,
@@ -268,9 +241,13 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
     recap: cachedRecap,
     recapGenerating: false,
     recapError: null,
+    // Filled in below: on the generation path from the snapshot the prompt was built with, on the
+    // cached path by the server's background refresh.
+    repoContext: null,
+    capStats: null,
   };
 
-  const { app, broadcast } = createServer(ctx);
+  const { app, broadcast, refreshRepoContext, blastRadius } = createServer(ctx);
   const portFlag = Bun.argv.find((f) => f.startsWith('--port='));
   const port = portFlag ? parseInt(portFlag.split('=')[1] ?? '0') : 0;
   const server = Bun.serve({ fetch: app.fetch, port, idleTimeout: 255 });
@@ -278,6 +255,10 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
 
   if (cached) {
     console.log(`\n  ${a.dim}Using cached narrative ${a.gray}(${metadata.headSha.slice(0, 7)})${a.reset}`);
+    // Nothing on this path resolved a snapshot (no prompt was built), and collapse selection needs one.
+    // Deliberately not awaited: a snapshot older than the staleness bound refetches the whole tarball,
+    // and the reviewer should be reading the diff by then, not watching a spinner.
+    void refreshRepoContext();
   }
 
   console.log(`\n  ${a.purple}${a.bold}${url}${a.reset}`);
@@ -297,6 +278,16 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
     const providerHint =
       withCli ??
       (aiPath === 'api' ? (effectiveConfig.aiProvider ?? 'anthropic') : (config.defaultCli ?? envCliHint ?? 'claude'));
+    // Resolve the base-branch snapshot before the prompt is built: `computeRisk` runs inside the
+    // synchronous prompt builders, so it cannot be lazily fetched from in there. The first fetch on a
+    // repo is a real download, hence the two status lines — a silent multi-second pause reads as a hang.
+    console.log(`  ${a.dim}Resolving repo context ${a.gray}(${metadata.base})${a.reset}`);
+    const repoContext = await resolveRepoContext(github, parsed.owner, parsed.repo, metadata.base);
+    // The same snapshot backs the prompt and the collapse boundary, so the reviewer's boundary always
+    // describes the narrative they are reading.
+    ctx.repoContext = repoContext;
+    console.log(`  ${repoContext.available ? a.dim : a.yellow}${describeRepoContext(repoContext)}${a.reset}`);
+
     const waitJoke = DAD_JOKES[Math.floor(Math.random() * DAD_JOKES.length)];
     console.log(
       `  ${a.yellow}Generating narrative${a.reset} ${a.gray}via${a.reset} ${a.cyan}${providerHint}${a.reset}`,
@@ -328,6 +319,7 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
     let result: Awaited<ReturnType<typeof generateNarrative>>;
     try {
       result = await generateNarrative(metadata, files, [], config, undefined, {
+        repoContext,
         cacheKey: {
           owner: parsed.owner,
           repo: parsed.repo,
@@ -377,6 +369,9 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
     const generated = result.narrative;
     const usedProvider = result.provider;
     ctx.narrative = generated;
+    // Absent when the planner pass came off the plan cache — the banner then says nothing rather than
+    // claim a diff nobody measured was complete.
+    ctx.capStats = result.capStats ?? null;
     await cacheNarrative(parsed.owner, parsed.repo, parsed.number, metadata.headSha, metaHash, providerKey, generated);
     console.log(
       `  ${a.green}✓${a.reset} ${generated.chapters.length} chapters generated ${a.dim}via ${usedProvider} in ${fmtElapsed()}${a.reset}`,
@@ -386,6 +381,10 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
       pr: metadata,
       files,
       comments,
+      // The browser opened before generation finished, so its bootstrap GET carried no narrative and no
+      // collapse. This event is the only place the first review's boundary can arrive.
+      ...blastRadius(),
+      capStats: ctx.capStats ?? undefined,
     });
   }
 

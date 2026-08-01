@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'url';
 import type { EvalFixture } from '../types';
 
 /**
@@ -104,6 +105,7 @@ export const fixture: EvalFixture = {
       ],
     },
   ],
+  recordedNarrativePath: fileURLToPath(new URL('./recorded/cache-race-condition.narrative.json', import.meta.url)),
   groundTruth: {
     expectedConcerns: [
       'Concurrent calls for the same userId on a cold cache will both miss, both fetch from the auth service, and both write — losing the deduplication benefit and racing on the cache.set',

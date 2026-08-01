@@ -1,8 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { collapseReason, initialCollapsed } from '../lib/collapse';
 import { normalizePath } from '../lib/paths';
 import { useReviewStore } from '../state/review-store';
 import { useInlineComments } from '../hooks/useInlineComments';
-import type { Callout, Chapter as ChapterType, DiffFile, DiffHunk } from '../state/types';
+import type {
+  Callout,
+  Chapter as ChapterType,
+  ChapterCallers,
+  CollapseDecision,
+  DiffFile,
+  DiffHunk,
+} from '../state/types';
 import { Hunk } from './Hunk';
 import { IconCheck, IconChevron } from './Icons';
 import { NarrationAnchor } from './NarrationAnchor';
@@ -15,6 +23,17 @@ type Props = {
   chapter: ChapterType;
   /** Open questions for this beat — rendered as inline resolve strips. */
   resolve?: ResolveItem[];
+  /**
+   * Present when the server found checkable evidence that this chapter is safe to hide by default.
+   *
+   * Applied at mount and once more on its first arrival, because on both live paths it lands *after* the
+   * chapters have mounted. Never applied again after that: re-renders (a live comment, a check update)
+   * hand over a fresh object with the same content, and a reviewer who has already worked this row keeps
+   * whatever they chose.
+   */
+  decision?: CollapseDecision;
+  /** Unchanged repository files that import this chapter's files — the argument for reading it. */
+  callers?: ChapterCallers;
 };
 
 const RISK_STYLES: Record<ChapterType['risk'], React.CSSProperties> = {
@@ -171,7 +190,7 @@ function findHunk(files: DiffFile[], file: string, hunkIndex: number): FlatHunk 
   return { hunk, file: diffFile.file, isNewFile: diffFile.isNewFile };
 }
 
-export function Chapter({ index, chapter, resolve }: Props) {
+export function Chapter({ index, chapter, resolve, decision, callers }: Props) {
   const files = useReviewStore((s) => s.files);
   const comments = useInlineComments();
   const chapterStates = useReviewStore((s) => s.chapterStates);
@@ -268,12 +287,39 @@ export function Chapter({ index, chapter, resolve }: Props) {
     };
   }, [chapter.sections, chapter.callouts, resolve, files]);
 
-  const [collapsed, setCollapsed] = useState(reviewed);
+  // Two seeds, one boolean, two transition effects shaped identically: each writes `collapsed` only on
+  // the edge that means "this just became true", never on every render. That is what keeps them from
+  // fighting.
+  //
+  // The mount seed alone is not enough, because on both live paths the decision arrives *after* these
+  // chapters mount: the streaming path mounts placeholders from `applyPlan` under the same `ch-${idx}`
+  // keys (so React reuses these instances when the finished narrative replaces the array), and a cached
+  // narrative gets its boundary from the `collapse` SSE event once the snapshot resolves. Without the
+  // transition below, the divider would render above four chapters that are all still expanded.
+  const [collapsed, setCollapsed] = useState(() => initialCollapsed(reviewed, decision));
+  // Set the moment the reviewer works this row themselves. A decision arriving later must not overrule
+  // them — collapse is a default, and a default only applies while it is still the default.
+  const touched = useRef(false);
+  const toggleCollapsed = () => {
+    touched.current = true;
+    setCollapsed((v) => !v);
+  };
   const prevReviewed = useRef(reviewed);
   useEffect(() => {
     if (reviewed && !prevReviewed.current) setCollapsed(true);
     prevReviewed.current = reviewed;
   }, [reviewed]);
+  // Not gated on `touched`: marking a chapter reviewed IS the reviewer acting, and it outranks whatever
+  // they did to the chevron a moment earlier.
+  const prevHadDecision = useRef(decision !== undefined);
+  useEffect(() => {
+    const hasDecision = decision !== undefined;
+    if (hasDecision && !prevHadDecision.current && !touched.current) setCollapsed(true);
+    prevHadDecision.current = hasDecision;
+  }, [decision]);
+  // `reviewed` wins: both seeds produce the same collapsed row, so precedence only decides which line
+  // explains it, and the reviewer's own action outranks the tool's inference.
+  const reasonLine = collapseReason(decision, reviewed);
 
   // Outline: collapsed by default, except chapter 0
   const [outlineOpen, setOutlineOpen] = useState(index === 0);
@@ -378,6 +424,32 @@ export function Chapter({ index, chapter, resolve }: Props) {
       <span>Writing chapter prose…</span>
     </div>
   ) : null;
+  // Who depends on this code, as an argument for reading it. Lives in the body rather than the header
+  // for two reasons: it is only meaningful on a chapter that is open (a collapsed chapter's evidence is
+  // that nothing imports it, so this is empty there by construction), and a `<details>` inside the
+  // clickable header would fight the collapse toggle. Capped by the server, with the remainder stated —
+  // a module with 200 importers must give the number without pasting 200 paths into a chapter.
+  const callerDisclosure =
+    callers && callers.total > 0 ? (
+      <details
+        className="ml-[34px] rounded-[8px] px-3 py-2 text-[12.5px]"
+        style={{ background: 'var(--gray-2)', color: 'var(--fg-2)' }}
+        data-caller-disclosure
+      >
+        <summary className="cursor-pointer font-medium text-[var(--fg-3)]">
+          Imported by {callers.total} unchanged {callers.total === 1 ? 'file' : 'files'}
+        </summary>
+        <ul className="mt-2 space-y-1 font-mono text-[11.5px] text-[var(--fg-3)]">
+          {callers.callers.map((caller) => (
+            <li key={caller}>{caller}</li>
+          ))}
+          {callers.total > callers.callers.length ? (
+            <li style={{ fontStyle: 'italic' }}>+{callers.total - callers.callers.length} more</li>
+          ) : null}
+        </ul>
+      </details>
+    ) : null;
+
   const body = (
     <div className={compact ? 'space-y-3' : 'space-y-4'}>
       {streamingIndicator}
@@ -390,6 +462,7 @@ export function Chapter({ index, chapter, resolve }: Props) {
           {whyMatters ? <span className="text-[var(--fg-2)]">{whyMatters}</span> : null}
         </p>
       ) : null}
+      {callerDisclosure}
       {hasNarrationOverride && firstNarrativeIndex === -1 ? <NarrationBlock content="" chapterKey={id} /> : null}
       {chapter.sections.map((section, i) => {
         if (section.type === 'narrative') {
@@ -566,13 +639,14 @@ export function Chapter({ index, chapter, resolve }: Props) {
     <section data-chid={id} className={`scroll-mt-[168px] ${compact ? 'mb-[18px]' : 'mb-[28px]'}`}>
       <div
         className="flex cursor-pointer items-start gap-2.5 rounded-lg p-2 -ml-2 transition-colors hover:bg-[var(--gray-2)]"
-        onClick={() => setCollapsed((v) => !v)}
+        onClick={toggleCollapsed}
         role="button"
         tabIndex={0}
+        aria-expanded={!collapsed}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
-            setCollapsed((v) => !v);
+            toggleCollapsed();
           }
         }}
       >
@@ -608,6 +682,13 @@ export function Chapter({ index, chapter, resolve }: Props) {
                 )}
                 {reviewed && <> · reviewed</>}
               </span>
+              {/* On the collapsed row, not inside the body: a reason you have to expand to read cannot
+                  justify the collapse. */}
+              {reasonLine ? (
+                <span className="mt-[3px] block text-[12px]" style={{ color: 'var(--fg-3)' }} data-collapse-reason>
+                  Collapsed — {reasonLine}
+                </span>
+              ) : null}
             </div>
           </div>
         </div>

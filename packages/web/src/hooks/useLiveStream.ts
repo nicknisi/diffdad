@@ -1,8 +1,11 @@
 import { useEffect } from 'react';
 import { useReviewStore } from '../state/review-store';
 import type {
+  CapStats,
   Chapter,
+  ChapterCallers,
   CheckRun,
+  CollapseResult,
   DiffFile,
   LiveEvent,
   LiveEventKind,
@@ -48,6 +51,36 @@ export function handleNarrativePartialEvent(e: MessageEvent): void {
     store.setLastEventAt(Date.now());
   } catch {
     // ignore malformed partial
+  }
+}
+
+/**
+ * Apply a `collapse` event: the blast radius for the narrative already on screen.
+ *
+ * Only the PR server sends this, and only on the path where nothing had resolved a repo snapshot yet (a
+ * cached narrative skips generation entirely). It carries no narrative, so it must not touch chapters —
+ * it fills in a boundary for the chapters the store already holds. Exported for direct unit testing.
+ */
+export function handleCollapseEvent(e: MessageEvent): void {
+  try {
+    const data = JSON.parse(e.data) as {
+      collapse?: CollapseResult;
+      callers?: ChapterCallers[];
+      capStats?: CapStats;
+    };
+    const store = useReviewStore.getState();
+    // Nothing to say: a snapshot that resolved to no answer at all leaves the screen as it was.
+    if (!data.collapse) return;
+    store.setBlastRadius({
+      collapse: data.collapse,
+      callers: data.callers ?? [],
+      // The event describes a snapshot, not a generation — keep whatever budget stats the payload that
+      // brought the narrative established, rather than clearing them as a side effect.
+      capStats: data.capStats ?? store.capStats,
+    });
+    store.setLastEventAt(Date.now());
+  } catch {
+    // ignore malformed payload
   }
 }
 
@@ -214,8 +247,16 @@ export function useLiveStream() {
           pr: PRData;
           files: DiffFile[];
           comments: PRComment[];
+          collapse?: CollapseResult;
+          callers?: ChapterCallers[];
+          capStats?: CapStats;
         };
         const state = useReviewStore.getState();
+        // The narrative that just landed brings its own boundary, committed with it rather than after it:
+        // the streaming path already mounted placeholder chapters under these same keys, so a paint with
+        // the finished chapters but no decisions would show the divider above four expanded chapters.
+        // This is also the only place a first review's collapse can arrive — the bootstrap GET answered
+        // before generation finished.
         state.setData(
           data.pr,
           data.narrative,
@@ -224,6 +265,7 @@ export function useLiveStream() {
           state.repoUrl,
           state.checkRuns,
           state.reviews,
+          { collapse: data.collapse ?? null, callers: data.callers ?? [], capStats: data.capStats ?? null },
         );
         useReviewStore.getState().setRegenerating(false);
         useReviewStore.getState().setNarrativeProgressChars(0);
@@ -294,6 +336,7 @@ export function useLiveStream() {
     es.addEventListener('narrative-error', onNarrativeError as EventListener);
     es.addEventListener('narrative.partial', handleNarrativePartialEvent as EventListener);
     es.addEventListener('narrative', onNarrative as EventListener);
+    es.addEventListener('collapse', handleCollapseEvent as EventListener);
     es.addEventListener('plan-ready', onPlanReady as EventListener);
     es.addEventListener('chapter-ready', onChapterReady as EventListener);
     es.addEventListener('recap', onRecap as EventListener);
@@ -323,6 +366,7 @@ export function useLiveStream() {
       es.removeEventListener('narrative-error', onNarrativeError as EventListener);
       es.removeEventListener('narrative.partial', handleNarrativePartialEvent as EventListener);
       es.removeEventListener('narrative', onNarrative as EventListener);
+      es.removeEventListener('collapse', handleCollapseEvent as EventListener);
       es.removeEventListener('plan-ready', onPlanReady as EventListener);
       es.removeEventListener('chapter-ready', onChapterReady as EventListener);
       es.removeEventListener('recap', onRecap as EventListener);

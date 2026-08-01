@@ -1,4 +1,5 @@
 import type { DiffFile, PRMetadata } from '../github/types';
+import type { PromptCapStats } from '../narrative/prompt';
 import type { Concern, NarrativeResponse } from '../narrative/types';
 
 /**
@@ -45,6 +46,15 @@ export type ReviewUnit = {
   metadata: PRMetadata;
   /** Phase-1 narrative; absent until the review worker queues the unit. */
   narrative?: NarrativeResponse;
+  /**
+   * Prompt budget stats for the generation that produced `narrative` — how much of the diff the model
+   * never saw. Stored, unlike collapse: collapse depends on a snapshot that warms and cools
+   * independently of the unit and would go stale beside it, while this describes the generation that
+   * produced the narrative next to it and stays true for exactly as long as that narrative does.
+   * Absent on a cache-hit hydrate (nothing measured the diff) and cleared whenever the narrative is
+   * replaced by one — the truncation banner then renders nothing rather than claim completeness.
+   */
+  capStats?: PromptCapStats;
   /** Cached from `narrative.verdict` for the dashboard's recommended action. */
   verdict?: NarrativeResponse['verdict'];
   decision?: Decision;
@@ -59,6 +69,14 @@ export type ReviewUnit = {
   prAuthor?: string;
   /** Freshness: the head SHA the last decision was recorded against. A newer push re-opens review. */
   lastReviewedSha?: string;
+  /**
+   * The reviewer added this PR by hand (POST /api/units from the command center) rather than the
+   * poller minting it from a review request. Load-bearing, not cosmetic: the poller reconciles the
+   * queue against the "review requested of me" search and drops units it stops seeing — and a PR you
+   * typed in was never in that search to begin with, so without this flag it would be reaped a poll or
+   * two after you asked for it. A pinned unit leaves the queue only when you remove it.
+   */
+  pinned?: boolean;
   createdAt: string;
   updatedAt: string;
 };

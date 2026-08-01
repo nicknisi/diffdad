@@ -8,14 +8,18 @@ import type { GitHubClient } from './github/client';
 import { mapCommentsToChapters } from './github/comments';
 import type { CheckRun, DiffFile, PRComment, PRMetadata, PRReview } from './github/types';
 import { cacheNarrative, computePromptMetaHash, getCachedNarrative } from './narrative/cache';
+import { chapterCallers, resolveCollapse } from './narrative/collapse';
 import { callAi, generateNarrative, resolveAiPath, resolveProviderKey } from './narrative/engine';
 import { buildChapterAiPrompt } from './narrative/chapter-ai';
+import type { PromptCapStats } from './narrative/prompt';
 import { buildReviewSummaryPrompt } from './narrative/review-summary';
 import type { NarrativeResponse } from './narrative/types';
+import type { RepoContext } from './repo/snapshot';
 import { cacheRecap } from './recap/cache';
 import { generateRecap } from './recap/engine';
 import { gatherRecapSources } from './recap/sources';
 import type { RecapResponse } from './recap/types';
+import { describeRepoContext, resolveRepoContext } from './repo/snapshot';
 
 export type ServerContext = {
   narrative: NarrativeResponse | null;
@@ -29,6 +33,19 @@ export type ServerContext = {
   owner: string;
   repo: string;
   headSha: string;
+  /**
+   * The base-branch snapshot the narrative was generated against, carried from `cli.ts` (which already
+   * resolves it) so collapse selection never resolves inside a request — a cold snapshot is a whole
+   * tarball download, and `/api/narrative` is the page's bootstrap. Absent means "not resolved yet":
+   * the response then omits `collapse` entirely rather than claiming a reason it never checked.
+   */
+  repoContext?: RepoContext | null;
+  /**
+   * Prompt budget stats from the generation that produced `ctx.narrative`. Absent on a cache hit, and
+   * absent is load-bearing: the truncation banner renders nothing rather than claim a completeness that
+   * was never measured.
+   */
+  capStats?: PromptCapStats | null;
   /** Populated lazily when the user opens the Recap tab (or hydrated from cache at startup). */
   recap?: RecapResponse | null;
   /** Set while a recap is being generated; cleared on success or failure. */
@@ -68,6 +85,53 @@ export function createServer(ctx: ServerContext) {
     }
   }
 
+  /**
+   * The blast-radius half of the narrative payload: which chapters are safe to hide by default, and
+   * which unchanged files import each chapter's code.
+   *
+   * Computed per request and never persisted — a narrative cached while the snapshot was cold would
+   * otherwise keep collapsing nothing at that SHA forever. Returns an empty object (no `collapse` key
+   * at all) when there is no snapshot answer yet, which is different from `{available: false}`: that
+   * one means we looked and could not tell, this one means we have not looked.
+   */
+  function blastRadius(): {
+    collapse?: ReturnType<typeof resolveCollapse>;
+    callers?: ReturnType<typeof chapterCallers>;
+  } {
+    const repoContext = ctx.repoContext;
+    if (!repoContext || !ctx.narrative) return {};
+    return {
+      collapse: resolveCollapse(ctx.narrative.chapters, ctx.files, repoContext),
+      callers: chapterCallers(ctx.narrative.chapters, ctx.files, repoContext),
+    };
+  }
+
+  let repoContextRefresh: Promise<void> | null = null;
+
+  /**
+   * Resolve the base-branch snapshot in the background, once, for the path that never needed it:
+   * a cached narrative means `cli.ts` skipped generation, so nothing resolved a snapshot, and the
+   * 24-hour staleness bound means re-opening a PR two days later refetches the tarball. Awaiting that
+   * inside `GET /api/narrative` would stall the page's bootstrap on a multi-hundred-megabyte download,
+   * so the request answers without collapse and this pushes it over SSE when it lands.
+   */
+  async function refreshRepoContext(): Promise<void> {
+    if (ctx.repoContext || !ctx.github) return;
+    repoContextRefresh ??= (async () => {
+      const gh = ctx.github;
+      if (!gh) return;
+      try {
+        ctx.repoContext = await resolveRepoContext(gh, ctx.owner, ctx.repo, ctx.pr.base);
+        if (ctx.narrative) broadcast('collapse', blastRadius());
+      } catch {
+        // `resolveRepoContext` is documented never to throw, and this call is fire-and-forget from
+        // `cli.ts` — a rejection here would surface as an unhandled rejection rather than as a missing
+        // collapse boundary, which is the wrong trade for a purely additive surface.
+      }
+    })();
+    return repoContextRefresh;
+  }
+
   app.get('/api/narrative', async (c) => {
     const config = await readConfig();
     const { path: aiPath } = resolveAiPath(config);
@@ -103,6 +167,9 @@ export function createServer(ctx: ServerContext) {
       repoUrl: `https://github.com/${ctx.owner}/${ctx.repo}`,
       mode: 'pr',
       aiPath,
+      ...blastRadius(),
+      // Absent on a cache hit, and deliberately so — see `ServerContext.capStats`.
+      capStats: ctx.capStats ?? undefined,
       _debug: {
         totalComments: ctx.comments.length,
         commentPaths,
@@ -253,6 +320,11 @@ export function createServer(ctx: ServerContext) {
 
         send('connected', { timestamp: Date.now() });
         if (narrativeProgressChars > 0) send('narrative-progress', { chars: narrativeProgressChars });
+        // Replay the boundary for the same reason progress is replayed: `refreshRepoContext` broadcasts
+        // `collapse` exactly once, and a snapshot that resolves in the gap between the bootstrap
+        // `GET /api/narrative` and this connect would otherwise be dropped with no second chance short of
+        // a reload. Empty when nothing has resolved yet, which sends nothing.
+        if (ctx.repoContext && ctx.narrative) send('collapse', blastRadius());
         sseClients.add(send);
         hadClients = true;
         if (exitTimer) {
@@ -338,6 +410,9 @@ export function createServer(ctx: ServerContext) {
                 );
                 if (cached) {
                   ctx.narrative = cached;
+                  // A cached narrative carries no budget stats, and inventing them would tell the
+                  // reviewer a story built from a truncated diff was complete.
+                  ctx.capStats = null;
                   console.log(`  \x1b[38;5;78m✓\x1b[0m Using cached narrative \x1b[2m(${newSha})\x1b[0m`);
                 } else {
                   const regenStartedAt = Date.now();
@@ -356,6 +431,14 @@ export function createServer(ctx: ServerContext) {
                     const chars = totalChars > 0 ? `\x1b[2m — ${totalChars.toLocaleString()} chars\x1b[0m` : '';
                     process.stdout.write(`\r  \x1b[2m${frame} ${fmtRegenElapsed()} elapsed\x1b[0m${chars}`);
                   };
+                  // Same resolution the CLI does before its first generation: the prompt builders call
+                  // `computeRisk` synchronously, so the snapshot has to be in hand first. Warm on the
+                  // regenerate path (the CLI fetched it at startup), so this is normally a cache read.
+                  const repoContext = await resolveRepoContext(gh, ctx.owner, ctx.repo, ctx.pr.base);
+                  // Same snapshot the prompt was built from now backs collapse selection, so the
+                  // boundary the reviewer sees describes the narrative they are reading.
+                  ctx.repoContext = repoContext;
+                  if (!repoContext.available) console.log(`  \x1b[2m${describeRepoContext(repoContext)}\x1b[0m`);
                   renderRegen();
                   const heartbeat = setInterval(renderRegen, 250);
                   let generated;
@@ -371,6 +454,7 @@ export function createServer(ctx: ServerContext) {
                         previousChapterTitles: prevChapterTitles,
                       },
                       {
+                        repoContext,
                         cacheKey: {
                           owner: ctx.owner,
                           repo: ctx.repo,
@@ -402,6 +486,7 @@ export function createServer(ctx: ServerContext) {
                     );
                     generated = result.narrative;
                     provider = result.provider;
+                    ctx.capStats = result.capStats ?? null;
                   } finally {
                     clearInterval(heartbeat);
                     if (isTty) process.stdout.write('\r\x1b[2K');
@@ -426,6 +511,11 @@ export function createServer(ctx: ServerContext) {
                   pr: ctx.pr,
                   files: ctx.files,
                   comments: mapCommentsToChapters(ctx.comments, ctx.narrative),
+                  // Recomputed for the new chapter array: `CollapseDecision.chapterIndex` indexes the
+                  // chapters it was computed against, so shipping the narrative without it would leave
+                  // the browser holding a boundary that describes the previous plan.
+                  ...blastRadius(),
+                  capStats: ctx.capStats ?? undefined,
                 });
               } catch (err) {
                 const msg = err instanceof Error ? err.message : String(err);
@@ -583,5 +673,5 @@ export function createServer(ctx: ServerContext) {
   // SPA fallback: any unmatched route serves index.html
   app.get('/*', serveStatic({ root: webDist, path: 'index.html' }));
 
-  return { app, broadcast };
+  return { app, broadcast, refreshRepoContext, blastRadius };
 }

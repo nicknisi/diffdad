@@ -1,11 +1,23 @@
 import type { DiffFile } from '../github/types';
+// The import-matching primitives live with the repo-wide index that is now their main consumer;
+// `computeRisk`'s diff-only fallback below shares them so the two paths can never disagree about what
+// counts as an import.
+import { callersOf, extractImportsFromText, importTargetsFile, moduleNameFromPath } from '../repo/import-index';
+// Type-only on purpose. `snapshot.ts` imports `import-index.ts`, which this file imports for real, so a
+// value import of `RepoContext` would close a runtime cycle. `import type` erases at compile time.
+import type { RepoContext } from '../repo/snapshot';
 
 export type FileRisk = {
   file: string;
   /** Total of added + removed lines. */
   churn: number;
-  /** Count of inbound imports/requires for this file's module across the kept diff. */
+  /**
+   * Count of inbound imports/requires for this file's module. Repo-wide when a snapshot was available,
+   * otherwise limited to the kept diff — read {@link FileRisk.inboundScope} to know which.
+   */
   inboundRefs: number;
+  /** Which universe {@link FileRisk.inboundRefs} was counted over. */
+  inboundScope: InboundScope;
   /** Whether the file path matches sensitive-area keywords. */
   criticality: CriticalityTag[];
   /** True if a non-test source file was added/changed but no test file in the same area was touched. */
@@ -13,6 +25,12 @@ export type FileRisk = {
   /** Combined risk score, higher = riskier. */
   score: number;
 };
+
+/**
+ * Which universe an inbound-reference count was taken over. `'repo'` means every file in the base
+ * branch was eligible; `'diff'` means only the files in this PR were, which is a floor, not a total.
+ */
+export type InboundScope = 'repo' | 'diff';
 
 export type CriticalityTag =
   | 'auth'
@@ -65,44 +83,15 @@ function fileChurn(file: DiffFile): number {
   return churn;
 }
 
-const IMPORT_RE = /(?:from\s+['"]|require\(\s*['"]|import\s+['"])([^'"]+)['"]/g;
-
 function extractImports(file: DiffFile): string[] {
   const imports: string[] = [];
   for (const hunk of file.hunks) {
     for (const line of hunk.lines) {
       if (line.type === 'remove') continue;
-      let match: RegExpExecArray | null;
-      const text = line.content;
-      while ((match = IMPORT_RE.exec(text)) !== null) {
-        if (match[1]) imports.push(match[1]);
-      }
-      // Reset state across iterations
-      IMPORT_RE.lastIndex = 0;
+      imports.push(...extractImportsFromText(line.content));
     }
   }
   return imports;
-}
-
-/**
- * Cheap "module name" derivation: strip extension and dirs to a basename.
- * e.g. `packages/cli/src/server.ts` -> `server`
- */
-function moduleNameFromPath(path: string): string {
-  const base = path.split('/').pop() ?? path;
-  const dot = base.indexOf('.');
-  return dot > 0 ? base.slice(0, dot) : base;
-}
-
-function importTargetsFile(target: string, filePath: string): boolean {
-  if (target.startsWith('.')) {
-    // Relative path — too noisy to resolve precisely. Match on basename.
-    const targetBase = target.split('/').pop() ?? target;
-    const fileBase = moduleNameFromPath(filePath);
-    return targetBase === fileBase;
-  }
-  // Bare specifier — only matches if the target path includes it.
-  return filePath.toLowerCase().includes(target.toLowerCase());
 }
 
 /**
@@ -139,6 +128,8 @@ function detectTestGap(file: DiffFile, allFiles: DiffFile[]): boolean {
   return fileChurn(file) >= 4;
 }
 
+const CENTRALITY_WEIGHT = 20;
+
 function computeScore(input: {
   churn: number;
   inboundRefs: number;
@@ -150,8 +141,13 @@ function computeScore(input: {
   let score = 0;
   // Churn: log-scaled so a 1000-line file isn't 100x scarier than a 10-line file.
   score += Math.log10(Math.max(input.churn, 1)) * 10;
-  // Centrality: more inbound refs = wider blast radius.
-  score += Math.min(input.inboundRefs, 10) * 4;
+  // Centrality: more inbound refs = wider blast radius. Log-scaled for the same reason churn is, and
+  // it has to be: this used to be `Math.min(inboundRefs, 10) * 4`, calibrated for diff-internal counts
+  // that never got far past 10. Repo-wide counts saturate that cap for every non-leaf file, which
+  // turns centrality into a constant 40 and erases the discrimination it exists to provide.
+  // CENTRALITY_WEIGHT is set so ~100 repo-wide callers scores where 10 diff-internal callers used to
+  // (log10(100) * 20 === 40), keeping centrality's weight against churn and criticality unchanged.
+  score += Math.log10(Math.max(input.inboundRefs, 1)) * CENTRALITY_WEIGHT;
   // Criticality keywords each add 8 points.
   score += input.criticality.length * 8;
   // Test gap is a strong signal.
@@ -161,8 +157,8 @@ function computeScore(input: {
   return Math.round(score);
 }
 
-export function computeRisk(files: DiffFile[]): FileRisk[] {
-  // Build inbound-ref index: for each file, count how many other files in the diff import it.
+/** Count inbound refs among the diff's own files — the only universe available with no snapshot. */
+function diffInternalInboundCounts(files: DiffFile[]): Map<string, number> {
   const inboundCounts = new Map<string, number>();
   for (const candidate of files) {
     inboundCounts.set(candidate.file, 0);
@@ -177,6 +173,28 @@ export function computeRisk(files: DiffFile[]): FileRisk[] {
         }
       }
     }
+  }
+  return inboundCounts;
+}
+
+/**
+ * Per-file risk signals for a diff, ordered riskiest first.
+ *
+ * With a `repo` snapshot available, `inboundRefs` counts every file in the base branch that imports
+ * each changed file — the actual blast radius. Without one it falls back to counting only among the
+ * diff's own files, which systematically reads a widely-imported file as a leaf. `inboundScope` on
+ * each result records which of the two produced the number, so a consumer (and the model) never has
+ * to guess, and a call site that forgets to pass context shows up in the hints instead of vanishing.
+ */
+export function computeRisk(files: DiffFile[], repo?: RepoContext): FileRisk[] {
+  const inboundScope: InboundScope = repo?.available ? 'repo' : 'diff';
+  let inboundCounts: Map<string, number>;
+  if (repo?.available) {
+    // Total centrality, so the queried file's own callers all count even when they are also in the
+    // diff. (Phase 2's "unchanged callers" number is what `callersOf`'s exclude set is for.)
+    inboundCounts = new Map(files.map((f) => [f.file, callersOf(repo.index, f.file, new Set()).length]));
+  } else {
+    inboundCounts = diffInternalInboundCounts(files);
   }
 
   return files
@@ -193,7 +211,7 @@ export function computeRisk(files: DiffFile[]): FileRisk[] {
         isNewFile: file.isNewFile,
         isDeleted: file.isDeleted,
       });
-      return { file: file.file, churn, inboundRefs, criticality, testGap, score };
+      return { file: file.file, churn, inboundRefs, inboundScope, criticality, testGap, score };
     })
     .sort((a, b) => b.score - a.score);
 }
@@ -201,14 +219,27 @@ export function computeRisk(files: DiffFile[]): FileRisk[] {
 /**
  * Render a per-file risk hint block for inclusion in the prompt. The LLM uses
  * this to order chapters by risk and weight the reading plan.
+ *
+ * Inbound counts carry their scope. `inbound=N(repo)` was counted across the whole base branch and is
+ * a real blast-radius number; `inbound=N(diff)` only saw the files in this PR and is a floor. A repo
+ * count of zero is printed rather than suppressed — with the whole repository in scope, "nothing known
+ * imports this" is a finding, and the import index undercounts (dynamic imports, re-export barrels),
+ * so it is stated as *known* callers rather than as an absence of callers.
  */
 export function formatRiskHints(risks: FileRisk[]): string {
   if (risks.length === 0) return '';
   const lines = risks.slice(0, 30).map((r) => {
     const tags = r.criticality.length > 0 ? ` [${r.criticality.join(',')}]` : '';
     const gap = r.testGap ? ' [test-gap]' : '';
-    const refs = r.inboundRefs > 0 ? ` inbound=${r.inboundRefs}` : '';
+    const showRefs = r.inboundScope === 'repo' || r.inboundRefs > 0;
+    const refs = showRefs ? ` inbound=${r.inboundRefs}(${r.inboundScope})` : '';
     return `- ${r.file} | risk=${r.score} churn=${r.churn}${refs}${tags}${gap}`;
   });
-  return `Per-file risk signals (higher score = riskier; ordered by score):\n${lines.join('\n')}`;
+  return [
+    'Per-file risk signals (higher score = riskier; ordered by score):',
+    ...lines,
+    'inbound=N(repo) is known importers across the whole base branch (an undercount — dynamic imports and',
+    're-export barrels are invisible to it, so treat 0 as "no known callers", not "no callers").',
+    'inbound=N(diff) means no repository snapshot was available and only files in this PR were counted.',
+  ].join('\n');
 }

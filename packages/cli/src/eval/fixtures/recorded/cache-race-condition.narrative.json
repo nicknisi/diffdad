@@ -1,0 +1,62 @@
+{
+  "_provenance": "Hand-authored, NOT recorded from a live provider run — no provider was configured when this phase was built. Every diff-section range was derived mechanically from the fixture hunks, so a range here cannot disagree with the fixture it points at. Nothing asserts this is a good narrative; recordings are inputs to a pure function, and narrative quality is the eval probe’s job. Re-record from a real two-pass generation when one is available.",
+  "title": "Memoizing the user profile lookup",
+  "tldr": "A module-level TTL cache is added in front of fetchUserProfile and the /me handler reads through it.",
+  "verdict": "caution",
+  "readingPlan": [
+    {
+      "step": "Read the cache module; the handler change is one line.",
+      "chapterIndex": 0
+    }
+  ],
+  "concerns": [
+    {
+      "question": "What happens when two requests for the same userId miss at the same time?",
+      "file": "src/cache/profile-cache.ts",
+      "line": 11,
+      "category": "timing",
+      "why": "The check and the set are separate awaits, so concurrent misses both fetch and both write."
+    }
+  ],
+  "chapters": [
+    {
+      "title": "A module-level memo in front of the profile fetch",
+      "summary": "getUserProfile reads a Map with a 30s TTL and falls through to the auth service on a miss.",
+      "whyMatters": "Every profile read in the process now goes through this one map, including concurrent ones.",
+      "risk": "low",
+      "sections": [
+        {
+          "type": "narrative",
+          "content": "The cache is a plain Map keyed by userId with an expiresAt timestamp, plus an invalidate helper."
+        },
+        {
+          "type": "diff",
+          "file": "src/cache/profile-cache.ts",
+          "hunkIndex": 0,
+          "startLine": 1,
+          "endLine": 23
+        }
+      ]
+    },
+    {
+      "title": "The handler switches to the cached read",
+      "summary": "meHandler imports getUserProfile instead of fetchUserProfile.",
+      "whyMatters": "This is the only call site, so the cache TTL is what the endpoint now returns.",
+      "risk": "low",
+      "sections": [
+        {
+          "type": "narrative",
+          "content": "One import and one call site change; the response shape is unchanged."
+        },
+        {
+          "type": "diff",
+          "file": "src/handlers/me.ts",
+          "hunkIndex": 0,
+          "startLine": 1,
+          "endLine": 7
+        }
+      ]
+    }
+  ],
+  "missing": ["tests for profile-cache.ts"]
+}

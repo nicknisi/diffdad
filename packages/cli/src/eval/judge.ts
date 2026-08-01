@@ -1,7 +1,14 @@
 import { callAi } from '../narrative/engine';
 import type { DiffDadConfig } from '../config';
+import type { CollapseResult } from '../narrative/collapse';
 import type { NarrativeResponse } from '../narrative/types';
-import type { DefectDetectionResult, EvalFixture, RubricScores } from './types';
+import type {
+  DefectDetectionResult,
+  EvalFixture,
+  HotspotPlacement,
+  HotspotPlacementResult,
+  RubricScores,
+} from './types';
 
 const JUDGE_SYSTEM = `You are a strict code-review-quality judge. You evaluate AI-generated PR review narratives against ground truth.
 
@@ -221,4 +228,70 @@ export function chaptersOrderedByRisk(narrative: NarrativeResponse): boolean {
     prev = s;
   }
   return true;
+}
+
+// Eighth module-private copy of the same four lines, matching `collapse.ts:53` and the six before it.
+// House style here is a local copy over an export the pure modules would then start sharing by
+// accident. Ground truth, diff-parser output and narrative sections have disagreed about `a/` and `b/`
+// prefixes before, so both sides of every comparison below go through this.
+function normalizePath(p: string): string {
+  return p
+    .trim()
+    .replace(/^[ab]\//, '')
+    .replace(/^\/+/, '');
+}
+
+/**
+ * Where each ground-truth hotspot landed in a narrative, and whether collapse hid it.
+ *
+ * Deterministic by design: set membership over normalized paths, so it spends no tokens and never
+ * flakes. The two `callAi` judges above stay responsible for prose quality, which is the only part of
+ * the rubric a model is actually needed for.
+ *
+ * `covered` and `expanded` stay separate booleans because they fail differently. Uncovered means the
+ * narrative never mentioned the file at all; covered-and-not-expanded means it mentioned the file and
+ * then hid it behind a collapsed chapter, which is the failure this whole feature exists to prevent.
+ * Folding them into one number would report the same score for both and say which happened for
+ * neither.
+ */
+export function scoreHotspotPlacement(
+  narrative: NarrativeResponse,
+  fixture: EvalFixture,
+  collapse: CollapseResult,
+): HotspotPlacementResult {
+  // `expectedHotspots` is optional, so absent and empty both land here, and neither is a zero score:
+  // counting a fixture with no hotspots as a total miss would drag the aggregate down for a fixture
+  // that is behaving correctly.
+  const hotspots = fixture.groundTruth.expectedHotspots ?? [];
+  if (hotspots.length === 0) {
+    return { status: 'n/a', placements: [], expandedOf: { expanded: 0, total: 0 } };
+  }
+
+  // The unavailable arm carries no `decisions` at all, and `selectCollapsible` short-circuits on it
+  // before weighing any evidence — nothing collapses, so a covered hotspot is an expanded one. Written
+  // out rather than reached by a `?? []` default, so the empty set is a stated claim about that arm
+  // instead of a narrowing accident.
+  const collapsedChapters = collapse.available
+    ? new Set(collapse.decisions.map((d) => d.chapterIndex))
+    : new Set<number>();
+
+  const placements: HotspotPlacement[] = hotspots.map((file) => {
+    const target = normalizePath(file);
+    const chapterIndex = narrative.chapters.findIndex((chapter) =>
+      chapter.sections.some((s) => s.type === 'diff' && normalizePath(s.file) === target),
+    );
+    const covered = chapterIndex !== -1;
+    return {
+      file,
+      covered,
+      expanded: covered && !collapsedChapters.has(chapterIndex),
+      chapterIndex: covered ? chapterIndex : null,
+    };
+  });
+
+  return {
+    status: 'scored',
+    placements,
+    expandedOf: { expanded: placements.filter((p) => p.expanded).length, total: placements.length },
+  };
 }

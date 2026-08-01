@@ -1,6 +1,17 @@
 import { useEffect, useState } from 'react';
 import { loadDrafts, loadResolved, reviewDraftKey, useReviewStore } from '../state/review-store';
-import type { CheckRun, DiffFile, NarrativeResponse, PRComment, PRData, PRReview, Unit } from '../state/types';
+import type {
+  CapStats,
+  ChapterCallers,
+  CheckRun,
+  CollapseResult,
+  DiffFile,
+  NarrativeResponse,
+  PRComment,
+  PRData,
+  PRReview,
+  Unit,
+} from '../state/types';
 
 type NarrativeApiResponse = {
   generating?: boolean;
@@ -13,6 +24,15 @@ type NarrativeApiResponse = {
   repoUrl?: string;
   mode?: 'pr' | 'command-center';
   aiPath?: 'api' | 'local-cli';
+  /**
+   * Blast radius for this narrative, computed per request. All three are optional and their absence is
+   * meaningful: no `collapse` means the server had no repo-snapshot answer yet (as opposed to
+   * `{available: false}`, which means it looked and could not tell), and no `capStats` means nothing
+   * measured the diff — a cache hit.
+   */
+  collapse?: CollapseResult;
+  callers?: ChapterCallers[];
+  capStats?: CapStats;
   /** Command-center bootstrap: the daemon seeds the initial queue so the dashboard paints at once. */
   units?: Unit[];
 };
@@ -78,6 +98,8 @@ export function useNarrative() {
           // not the narrative payload — the config block was removed from `/api/narrative` in Phase 2.
         } else if (data.narrative) {
           setGenerating(false);
+          // The blast radius rides along in the same commit: a chapter seeds its collapsed state from its
+          // decision, so chapters must never paint before their decisions land.
           setData(
             data.pr,
             data.narrative,
@@ -86,6 +108,7 @@ export function useNarrative() {
             data.repoUrl ?? null,
             data.checkRuns ?? [],
             data.reviews ?? [],
+            { collapse: data.collapse ?? null, callers: data.callers ?? [], capStats: data.capStats ?? null },
           );
           useReviewStore.getState().setAiPath(data.aiPath ?? null);
         }

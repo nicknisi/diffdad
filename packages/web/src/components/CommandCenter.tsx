@@ -4,6 +4,7 @@ import { copy } from '../lib/microcopy';
 import { useReviewStore } from '../state/review-store';
 import { removeUnit, useUnits } from '../hooks/useUnits';
 import { AccentPicker } from './AccentPicker';
+import { AddPrBar } from './AddPrBar';
 import { DadMark } from './DadMark';
 import { IconGear } from './Icons';
 import { RepoFacets } from './RepoFacets';
@@ -274,6 +275,11 @@ export function CommandCenter() {
               </div>
             )}
 
+            {/* Above the queue and outside every loading/empty branch below: putting a PR in is the one
+                action that must work before the queue has painted, and on a cold daemon with nothing
+                in it that field IS the product. */}
+            <AddPrBar disabled={!githubActive} disabledHint={copy.githubOffHint} />
+
             {error && (
               <div
                 className="mt-4 flex items-center justify-between rounded-lg px-3.5 py-2.5 text-[13px]"
@@ -321,7 +327,8 @@ export function CommandCenter() {
                 <DadMark size={64} bg={markBg} shape="circle" showBadge className="mx-auto mb-4 opacity-90" />
                 <p className="text-[15px] font-medium text-[var(--fg-2)]">All clear, champ. Nothing in the queue.</p>
                 <p className="mt-1.5 text-[13px] text-[var(--fg-3)]">
-                  Open a review request on GitHub and it shows up here, grouped by what needs you.
+                  Open a review request on GitHub and it shows up here, grouped by what needs you — or paste any PR
+                  above and I'll read it now.
                 </p>
               </div>
             ) : (

@@ -152,14 +152,22 @@ export function groupByOwner(facets: RepoFacet[]): OwnerGroup[] {
 }
 
 /**
- * The visible "where did this unit come from" badge. github-only now — every unit mirrors a real
- * GitHub PR, and comments post back to that PR.
+ * The visible "where did this unit come from" badge. Every unit mirrors a real GitHub PR and comments
+ * post back to it; what differs is which door it came through — GitHub asked you (the poller), or you
+ * asked for it (the add-PR field). Worth distinguishing on the row because the two behave differently:
+ * a polled unit leaves the queue on its own once the request is gone, an added one stays until you
+ * remove it.
  */
-export type SourceBadge = { label: string; title: string; tone: 'github' };
+export type SourceBadge = { label: string; title: string; tone: 'github' | 'added' };
 
-export function sourceBadge(_source: Unit['source']): SourceBadge {
-  // github-only: every unit mirrors a real PR, so the badge is constant. The param is retained so
-  // callers keep passing `unit.source` and the badge stays a pure function of the unit.
+export function sourceBadge(unit: Pick<Unit, 'pinned'>): SourceBadge {
+  if (unit.pinned) {
+    return {
+      label: 'Added',
+      title: 'A PR you added by hand — it stays in your queue until you remove it. Comments post to the PR.',
+      tone: 'added',
+    };
+  }
   return {
     label: 'GitHub',
     title: 'Pulled from a GitHub review request — comments post to the PR',

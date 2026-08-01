@@ -23,6 +23,15 @@ export function legacyDir(): string {
   return join(homedir(), '.cache', 'diffdad');
 }
 
+/**
+ * Cached repository snapshots (extracted base-branch trees + their import indexes). Regenerable by
+ * definition — every one of them can be refetched from GitHub — so they belong under
+ * {@link legacyDir}, not {@link dataDir}. Losing this directory costs a re-download, never data.
+ */
+export function repoSnapshotDir(): string {
+  return join(legacyDir(), 'repos');
+}
+
 /** The subdirs under the legacy dir that hold durable (non-regenerable) data. */
 const DURABLE_SUBDIRS = ['units'] as const;
 

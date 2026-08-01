@@ -12,6 +12,15 @@ export type EvalFixture = {
   pr: PRMetadata;
   files: DiffFile[];
   fileTree?: string[];
+  /**
+   * Absolute path to a committed narrative recorded for this fixture, under `fixtures/recorded/`.
+   *
+   * Absolute rather than relative because the two consumers run from different working directories —
+   * the test suite from wherever `bun test` was invoked, the harness from the repo root — and a
+   * cwd-relative path resolves differently for each. Each fixture builds it from its own
+   * `import.meta.url`, so there is exactly one resolution rule.
+   */
+  recordedNarrativePath?: string;
   groundTruth: GroundTruth;
 };
 
@@ -50,6 +59,31 @@ export type DefectDetectionResult = {
   detail: { expected: string; surfaced: boolean; evidence?: string }[];
 };
 
+/** Where one ground-truth hotspot file ended up in a narrative. */
+export type HotspotPlacement = {
+  file: string;
+  /** Some chapter's diff sections reference this file. */
+  covered: boolean;
+  /** Covered AND the covering chapter is not collapsed. */
+  expanded: boolean;
+  /** 0-based index of the first chapter referencing it; null when uncovered. */
+  chapterIndex: number | null;
+};
+
+export type HotspotPlacementResult = {
+  /**
+   * 'n/a' when the fixture declares no hotspots.
+   *
+   * Explicit rather than the sentinel `DefectDetectionResult` uses (`expected: 0`), which every
+   * consumer has to re-derive independently — the console line and the aggregate each decode it on
+   * their own today. One discriminant read the same way in both places is the point.
+   */
+  status: 'scored' | 'n/a';
+  placements: HotspotPlacement[];
+  /** Count of hotspots in expanded chapters, over the count declared. Both 0 when `n/a`. */
+  expandedOf: { expanded: number; total: number };
+};
+
 export type EvalRun = {
   fixtureId: string;
   provider: string;
@@ -62,6 +96,8 @@ export type EvalRun = {
   scores: RubricScores;
   scoreNotes: string;
   defectDetection: DefectDetectionResult;
+  /** Did the ground-truth hotspots survive into chapters a reader actually sees? */
+  hotspotPlacement: HotspotPlacementResult;
   /** True if the narrative had at least 1 concern. */
   hasConcerns: boolean;
   /** Risk-distribution sanity: did chapters get ordered by risk? */
@@ -85,5 +121,7 @@ export type Baseline = {
     avgTotalMs: number;
     avgProseWordCount: number;
     avgDefectRecall: number;
+    /** Mean per-run fraction of hotspots that landed in an expanded chapter, over scored runs only. */
+    avgHotspotPlacement: number;
   };
 };

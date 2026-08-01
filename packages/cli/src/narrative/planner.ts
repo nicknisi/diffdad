@@ -1,9 +1,10 @@
 import type { DiffDadConfig } from '../config';
 import type { DiffFile, PRMetadata } from '../github/types';
+import type { RepoContext } from '../repo/snapshot';
 import { callAi, type AiUsage } from './ai-runtime';
 import type { HunkHint } from './hints';
 import { parseLooseJson, rawResponseSnippet } from './json-parse';
-import { buildPlannerPrompt, type PreviousNarrativeContext } from './prompt';
+import { buildPlannerPrompt, type PreviousNarrativeContext, type PromptCapStats } from './prompt';
 import type { Plan, PlanTheme } from './plan-types';
 
 export type PlannerInput = {
@@ -14,6 +15,8 @@ export type PlannerInput = {
   skippedFiles?: string[];
   previousContext?: PreviousNarrativeContext;
   hints?: HunkHint[];
+  /** Base-branch snapshot, when one resolved — widens inbound-reference counting to repo-wide. */
+  repoContext?: RepoContext;
   /** Optional violation feedback from a previous failed run; injected into the user prompt. */
   retryFeedback?: string;
 };
@@ -22,6 +25,12 @@ export type PlannerResult = {
   plan: Plan;
   provider: string;
   usage?: AiUsage;
+  /**
+   * What the prompt budget did to the diff before the planner saw it. Already computed by
+   * `buildPlannerPrompt` and, until now, dropped on the floor — a reviewer looking at a story built
+   * from a truncated diff has no way to know that from the story.
+   */
+  stats: PromptCapStats;
 };
 
 // Ceiling for the plan response. Only enforced on the API path (the local-CLI path ignores it); the
@@ -39,7 +48,7 @@ function normalizePath(p: string): string {
 }
 
 export async function runPlanner(input: PlannerInput): Promise<PlannerResult> {
-  const { pr, files, fileTree, config, skippedFiles, previousContext, hints, retryFeedback } = input;
+  const { pr, files, fileTree, config, skippedFiles, previousContext, hints, repoContext, retryFeedback } = input;
   const prompt = buildPlannerPrompt({
     title: pr.title,
     description: pr.body,
@@ -49,6 +58,7 @@ export async function runPlanner(input: PlannerInput): Promise<PlannerResult> {
     skippedFiles,
     previousContext,
     hints,
+    repoContext,
   });
   const user = retryFeedback
     ? `${prompt.user}\n\n---\n\nPREVIOUS PLAN HAD VIOLATIONS:\n${retryFeedback}\n\nFix them in this run.`
@@ -57,7 +67,7 @@ export async function runPlanner(input: PlannerInput): Promise<PlannerResult> {
   const result = await callAi(config, prompt.system, user, PLANNER_MAX_TOKENS);
   const parsed = parsePlanResponse(result.text);
   const plan = normalizePlan(parsed, files);
-  return { plan, provider: result.provider, usage: result.usage };
+  return { plan, provider: result.provider, usage: result.usage, stats: prompt.stats };
 }
 
 /**

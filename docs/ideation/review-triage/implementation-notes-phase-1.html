@@ -1,0 +1,432 @@
+<!doctype html>
+<!--
+  Implementation-notes shell — copied VERBATIM by execute-spec on the first logged entry.
+  This file is the single owner of the implementation-notes format. Do not restate its
+  structure or styles elsewhere; change the format here and every future phase inherits it.
+  Copier substitutes: 1 (phase number, twice), Review Triage, 2026-07-31, Repo snapshot and import index —
+  then deletes the example entry and appends real ones inside <main class="doc-content">.
+-->
+<html lang="en" data-theme="auto">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Implementation Notes — Phase 1</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #ffffff;
+        --fg: #1a1a2e;
+        --muted: #5a5a72;
+        --border: #d8d8e4;
+        --accent: #0f3460;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #12121c;
+          --fg: #e8e8f0;
+          --muted: #9a9ab0;
+          --border: #2e2e42;
+          --accent: #7fb3ff;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0 auto;
+        max-width: 46rem;
+        padding: 2rem 1.25rem 4rem;
+        background: var(--bg);
+        color: var(--fg);
+        font:
+          16px/1.6 system-ui,
+          -apple-system,
+          'Segoe UI',
+          sans-serif;
+      }
+      .doc-header {
+        border-bottom: 1px solid var(--border);
+        padding-bottom: 1rem;
+        margin-bottom: 2rem;
+      }
+      .doc-header h1 {
+        margin: 0 0 0.25rem;
+        font-size: 1.5rem;
+      }
+      .doc-meta {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.875rem;
+      }
+      .note-entry {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 1rem 1.25rem;
+        margin-bottom: 1.5rem;
+      }
+      .note-entry h3 {
+        margin: 0 0 0.75rem;
+        font-size: 1.05rem;
+        color: var(--accent);
+      }
+      .note-entry dl {
+        margin: 0;
+      }
+      .note-entry dt {
+        font-weight: 600;
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--muted);
+        margin-top: 0.75rem;
+      }
+      .note-entry dt:first-child {
+        margin-top: 0;
+      }
+      .note-entry dd {
+        margin: 0.15rem 0 0;
+      }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.9em;
+        background: color-mix(in srgb, var(--fg) 8%, transparent);
+        padding: 0.1em 0.3em;
+        border-radius: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="doc-header">
+      <h1>Implementation Notes — Phase 1</h1>
+      <p class="doc-meta">Review Triage · 2026-07-31 · Repo snapshot and import index</p>
+    </header>
+    <main class="doc-content">
+      <section class="note-entry">
+        <h3>Repository snapshot — in-process tar reader instead of a <code>tar</code> subprocess</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            Step 4 names <code>Bun.spawn(['tar', '-xzf', '-', '-C', dest])</code>, and separately requires (a)
+            validating every entry <em>before</em> extracting, (b) checking the size cap against a running total of
+            extracted bytes, and (c) building the import index during the same pass over files already being written. A
+            subprocess cannot deliver any of the three: the response body is single-use so it cannot be listed then
+            extracted, bytes fed to <code>tar</code>'s stdin are still gzipped, and files written by
+            <code>tar</code> would have to be read back off disk to be indexed. <code>tar -tvf</code> link-target
+            parsing also differs between bsdtar (local) and GNU tar (CI), which the scout flagged as a real divergence.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            Added <code>packages/cli/src/repo/tar.ts</code> — a streaming ustar reader with GNU <code>L</code>/<code
+              >K</code
+            >
+            and pax <code>x</code> long-name support, header-checksum verification, and GNU base-256 size fields. The
+            gzip layer is <code>DecompressionStream('gzip')</code>, so the byte ceiling is enforced on decompressed
+            bytes and a cap breach cancels the stream mid-download. Validated against a real
+            <code>git archive</code> tarball of this repo (307 entries, 3.8 MB): 200 source files indexed in 75 ms,
+            correct root after stripping the wrapper directory. This is one file more than the spec's New Files table
+            lists, and the deviation is deliberate: the spec's own step 4 requires behavior a subprocess cannot provide.
+            Because it adds security-sensitive parsing surface the spec did not budget for, the long-name and
+            corrupt-header branches — the ones every real <code>git archive</code> tarball exercises, since any path
+            over 100 bytes gets a pax extended header — are covered by tar entries synthesized byte-by-byte in
+            <code>repo-snapshot.test.ts</code> (<code>describe('tar reader long names and corrupt headers')</code>)
+            rather than by a committed binary fixture, so the bytes under test are readable in the diff. Both committed
+            fixtures carry only short ustar names.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            Buffer the decompressed tar to a scratch file, run <code>tar -tf</code> to validate names and
+            <code>tar -tvf</code> to scrape <code>name -&gt; target</code> for symlinks, then <code>tar -xf</code>.
+            Rejected: the scrape is brittle across tar flavors, it costs a full extra write plus two extra passes, and
+            it still leaves the index needing a separate disk walk.
+          </dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3>Repository snapshot — <code>'empty-tree'</code> added to the unavailable reasons</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            The failure-mode table requires <code>filesScanned === 0</code> to map to <code>available: false</code>, but
+            the declared union only allows <code>'size-cap' | 'fetch-failed' | 'extract-failed'</code>. None of the
+            three describes a successful fetch of a tree with nothing in it.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            Added a fourth member, <code>'empty-tree'</code>, rather than overloading <code>'extract-failed'</code>.
+            Phases 2 and 3 render this discriminant, so the distinction between "extraction broke" and "there is
+            genuinely nothing to index" is worth a surface string. <code>describeRepoContext()</code> in the same module
+            owns the user-facing wording for all four. <strong>Downstream contract</strong>: the union is now
+            <code>'size-cap' | 'fetch-failed' | 'extract-failed' | 'empty-tree'</code>. Phase 2's spec restated the
+            three-member version in <code>CollapseResult</code>; that restatement has been corrected in
+            <code>spec-phase-2.md</code>, and any renderer switching on the reason must cover the fourth case.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            Reuse <code>'extract-failed'</code>. Rejected: it would tell a user their download is broken when it worked
+            perfectly, and it is the sort of ad-hoc collapse that becomes permanent once a UI reads it.
+          </dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3>Repository snapshot — <code>cacheDir</code> on <code>SnapshotOptions</code></h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            <code>SnapshotOptions</code> as specified exposes only <code>maxBytes</code> and <code>maxAgeMs</code>, yet
+            four required tests (no-second-fetch, stale-refetch, refetch-failure-serves-cached, corrupt-index-rebuild)
+            need control over where snapshots land, and none of them should write into the developer's real
+            <code>~/.cache/diffdad/repos</code>.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            Added <code>cacheDir?: string</code>, defaulting to <code>repoSnapshotDir()</code>. This is the same
+            affordance <code>migrateLegacyData({ from, to })</code> already establishes in <code>paths.ts</code>, so it
+            reads as house style rather than a test hook.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            Point <code>HOME</code> at a temp directory for the duration of each test. Rejected: it mutates
+            process-global state that other suites in the same Bun process also read.
+          </dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3>Repository snapshot — owner as its own path segment, and refetch on ref change</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            The spec sets the cache key to <code>{owner}-{repo}</code> with the ref in a sidecar. Flattening is
+            ambiguous (<code>a-b/c</code> and <code>a/b-c</code> both give <code>a-b-c</code>), and the spec does not
+            say what happens when the sidecar's ref differs from the requested one.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            Layout is <code>{cacheDir}/{owner}/{repo}/</code> holding <code>tree/</code>, <code>meta.json</code>, and
+            <code>index.json</code>; both segments are sanitized so a <code>..</code> owner cannot walk out of the
+            cache. A requested ref that differs from the cached one refetches — the spec's stated objection is to
+            per-<em>SHA</em> keying thrashing on every push to the base, and a different base <em>branch</em> is a
+            genuinely different tree, which also gives the sidecar's <code>ref</code> field a purpose beyond decoration.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            Serve a <code>main</code> snapshot for a <code>release/2</code> request since caller counts "tolerate
+            drift". Rejected: that is not drift, it is a different tree, and <code>RepoContext.ref</code> would then be
+            reporting something the index does not reflect.
+          </dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3>Repository snapshot — symlinks are validated, then never materialized</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            Validating that a symlink's target stays inside the destination is necessary but not sufficient: the classic
+            escape is a <em>safe-looking</em> symlink (<code>foo -&gt; ../..</code> relative to a deep directory, or any
+            link to a directory) followed by a later file entry written <em>through</em> it.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            Reject the whole archive on any escaping link target, and skip creating even the links that pass. Nothing
+            downstream reads links — the index walk explicitly does not follow them — so refusing to write them makes
+            write-through-a-symlink structurally impossible rather than merely checked for.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            Materialize validated symlinks and rely on the path check to catch the follow-up entry. Rejected: the
+            follow-up entry's own path is textually innocent, so the path check cannot see it.
+          </dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3>Repository snapshot — a remembered negative, and a wider source-extension set</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            Only <em>successful</em> snapshots were recorded on disk, so <code>'size-cap'</code> and
+            <code>'empty-tree'</code> re-downloaded the entire tarball on every review of that repository, forever. The
+            extension set compounded it: a C, Elixir, Clojure, SQL, or Terraform repository matched nothing, scanned
+            zero files, resolved to <code>'empty-tree'</code>, and paid a full-tree fetch per run to be told so again.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            An <code>unavailable.json</code> sidecar records repo-shaped negatives under their own shorter bound
+            (<code>negativeMaxAgeMs</code>, default 6h against the tree's 24h) and is cleared on the next good fetch.
+            Only <code>'size-cap'</code> and <code>'empty-tree'</code> are remembered — both are properties of the
+            repository rather than of one attempt. <code>'fetch-failed'</code>/<code>'extract-failed'</code> are
+            deliberately not sticky, because a 403 from rate limiting must be retried, not cached.
+            <code>SOURCE_EXTENSIONS</code> gained the C family (headers included), BEAM, Lisps, ML/Haskell/Julia/R, JVM
+            extras, Perl, and <code>sql</code>/<code>tf</code>/<code>hcl</code>/<code>proto</code>. A file scanned for
+            nothing costs one regex pass; a language left off the list costs that repository the whole feature.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            Remember every unavailable reason under one bound. Rejected: a transient network failure would then suppress
+            repo context for hours, which is the same invisible degrade in a new place. Also rejected: leaving a
+            rejected extraction's directory strictly empty, as the error table implies — the marker is one small file in
+            it, and the tree itself is still removed.
+          </dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3>Repository snapshot — eviction also reclaims scratch and sidecar-less directories</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            Eviction read <code>meta.json</code> and skipped anything without one, so a <code>.tmp-*</code>
+            tree orphaned by a killed extraction, or a repo directory whose sidecar never landed, was never reclaimed —
+            the exact disk-exhaustion mode the 7-day rule exists to prevent.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            Both are now aged out on directory mtime against the same 7-day bound: they have no
+            <code>fetchedAt</code> to read, and the week-long bound is what keeps the sweep safe against a live
+            extraction, whose scratch directory is minutes old rather than days.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            Delete every <code>.tmp-*</code> sibling on each write. Rejected: the daemon can hydrate two PRs against one
+            repo concurrently, and that would delete a running extraction's scratch tree.
+          </dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3>Risk rescoring — both prompt revisions bumped</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            <code>cache.ts</code> keys cached plans and narratives on <code>PLANNER_PROMPT_REVISION</code>/<code
+              >NARRATIVE_PROMPT_REVISION</code
+            >
+            precisely so a prompt change regenerates stale output, and both entry points short-circuit on that cache
+            before a snapshot is ever resolved (<code>cli.ts</code>'s <code>if (cached)</code>, the daemon's non-force
+            cache read). This phase changes the prompt contract — <code>inbound=N(repo|diff)</code> plus an
+            interpretation legend, and every risk score moved with the rescaled centrality term.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            <code>PLANNER_PROMPT_REVISION</code> 1 → 2 and <code>NARRATIVE_PROMPT_REVISION</code> 2 → 3. The planner
+            bump is required, not optional: risk hints reach <code>buildPlannerPrompt</code> through
+            <code>buildSharedHeader</code>, so plans change too.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            Leave them alone since no schema changed. Rejected: every PR already reviewed at the same head SHA would
+            keep serving its diff-only narrative, so the phase would silently do nothing exactly where it is easiest to
+            check.
+          </dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3>Import index — text-level import extraction split out of <code>risk.ts</code></h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            The spec says to reuse <code>IMPORT_RE</code>, <code>extractImports</code>, <code>moduleNameFromPath</code>,
+            and <code>importTargetsFile</code> rather than reinvent them, but all four are module-private and
+            <code>extractImports</code> takes a <code>DiffFile</code> and walks hunk lines — it cannot read a snapshot
+            file's text. <code>IMPORT_RE</code> is also a module-level <code>/g</code> regex whose
+            <code>lastIndex</code> is reset by hand, which the index walk's interleaved <code>await</code>s would
+            corrupt across files.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            Extracted <code>extractImportsFromText(text)</code> as the shared core and exported it alongside
+            <code>moduleNameFromPath</code> and <code>importTargetsFile</code>. It mints a fresh <code>RegExp</code> per
+            call, so there is no shared match position to corrupt; the diff path now calls it per line and behaves
+            identically.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            Copy the regex and the two matching helpers into <code>import-index.ts</code>. Rejected: two copies of the
+            project's import-matching rules would drift, and the diff path and the repo path disagreeing about what
+            counts as an import is a silent-wrong-answer bug.
+          </dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3>Risk rescoring — <code>K = 20</code>, and repo-wide counts do not exclude the diff</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            The spec leaves <code>K</code> open, asking only that "~100 repo-wide callers score roughly where 10
+            diff-internal callers scored before". It also says <code>callersOf</code> takes an <code>exclude</code> set
+            of the diff's paths, without saying whether <code>computeRisk</code>
+            should use it.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            <code>CENTRALITY_WEIGHT = 20</code>, because <code>log10(100) * 20 === 40</code> — exactly what the old
+            <code>Math.min(refs, 10) * 4</code> paid at its cap — so centrality keeps its weight against churn and
+            criticality. <code>computeRisk</code> passes an <em>empty</em> exclude set: centrality is about total blast
+            radius, and the spec's own rationale for <code>exclude</code>
+            names Phase 2's "unchanged callers" evidence line as its consumer. With zero inbound refs the rescaled term
+            contributes exactly what the capped one did (both 0), which is what pins the "unchanged ordering without
+            repo context" test.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            <code>K = 40</code>, doubling centrality's weight. Rejected against the <code>centrality</code>
+            test: it discriminates no better and quietly demotes churn and criticality relative to today.
+          </dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3>Risk rescoring — a repo-wide zero is printed, not suppressed</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            <code>formatRiskHints</code> emitted the inbound token only when <code>inboundRefs &gt; 0</code>. The
+            failure-mode table wants "0 known callers" to stay visible, because the index undercounts (dynamic imports,
+            re-export barrels) and undercounting is the direction that causes a wrong collapse.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            Print <code>inbound=0(repo)</code> when the scope is repo-wide, keep suppressing a diff-only zero (which
+            carries no information), and append a two-line legend telling the model that a repo count is an undercount
+            and that 0 means "no <em>known</em> callers". The spec's Modified-Files row asked only for the scope label;
+            the guard change is what makes the label mean anything at zero.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            Keep the <code>&gt; 0</code> guard and only add the suffix. Rejected: the single most decision- relevant
+            case — a widely-changed file that nothing appears to import — would print nothing at all.
+          </dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3>Context threading — <code>WriterPromptInput</code> also gained the field</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            The Modified-Files row for <code>prompt.ts</code> names only <code>NarrativePromptInput</code>, but the
+            third <code>computeRisk</code> call site lives in <code>buildWriterPrompt</code>, whose input type is the
+            separate <code>WriterPromptInput</code>.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            Added <code>repoContext?</code> to both interfaces and forwarded it from <code>writer.ts</code>. Without it
+            the writer pass would have silently kept diff-only counts while the planner pass used repo-wide ones — the
+            exact split-brain <code>inboundScope</code>
+            exists to make visible.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            Leave the writer on diff-only counts. Rejected: two passes disagreeing about a file's blast radius within
+            one review is worse than either answer alone.
+          </dd>
+        </dl>
+      </section>
+    </main>
+  </body>
+</html>

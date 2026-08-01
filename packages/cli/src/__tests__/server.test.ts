@@ -2,9 +2,12 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createServer, type ServerContext } from '../server';
+import type { CollapseResult } from '../narrative/collapse';
+import type { PromptCapStats } from '../narrative/prompt';
 import type { NarrativeResponse } from '../narrative/types';
 import type { CheckRun, DiffFile, PRComment, PRMetadata } from '../github/types';
 import type { GitHubClient, PostCommentOptions } from '../github/client';
+import type { RepoContext } from '../repo/snapshot';
 
 // Isolate config: point XDG_CONFIG_HOME at an empty dir so readConfig() returns defaults rather than
 // the developer's real ~/.config/diffdad/config.json (whose theme/layout would break the assertions
@@ -110,6 +113,31 @@ function createStubGithub(overrides: Partial<StubGitHub> = {}): StubGitHub {
   return stub;
 }
 
+/** A resolved snapshot with an index that scanned files but knows no callers — enough for collapse. */
+function fakeRepoContext(): RepoContext {
+  return {
+    available: true,
+    root: '/tmp/does-not-need-to-exist',
+    ref: 'main',
+    fetchedAt: Date.now(),
+    index: { callers: new Map<string, string[]>(), filesScanned: 12 },
+  };
+}
+
+/** Prompt budget stats for a diff that overflowed: one file dropped, one shortened. */
+function fakeCapStats(): PromptCapStats {
+  return {
+    perFileCap: 500,
+    globalCap: 12000,
+    inputFileCount: 3,
+    inputLineCount: 20000,
+    narratedFileCount: 1,
+    narratedLineCount: 12000,
+    truncatedFiles: [{ file: 'src/big.ts', hunksDropped: 2, linesDropped: 400 }],
+    droppedFiles: ['src/generated.ts'],
+  };
+}
+
 function buildContext(overrides: Partial<ServerContext> = {}): ServerContext {
   const github = createStubGithub();
   return {
@@ -123,6 +151,7 @@ function buildContext(overrides: Partial<ServerContext> = {}): ServerContext {
     owner: 'test',
     repo: 'test',
     headSha: 'abc123',
+    repoContext: fakeRepoContext(),
     ...overrides,
   };
 }
@@ -162,6 +191,60 @@ describe('GET /api/narrative', () => {
     const res = await app.request('/api/narrative');
     const data = (await res.json()) as { comments: { id: number; chapterIndices: number[] }[] };
     expect(data.comments[0]?.chapterIndices).toEqual([0]);
+  });
+});
+
+// Named `promptCapStats` rather than anything containing a bare "cap": `-t cap` also matches the recap
+// suites below, so the phase's inner-loop filter needs a token nothing else in the file carries.
+describe('GET /api/narrative — promptCapStats and collapse', () => {
+  it('serves promptCapStats when the generation measured the diff', async () => {
+    const { app } = createServer(buildContext({ capStats: fakeCapStats() }));
+    const res = await app.request('/api/narrative');
+    const data = (await res.json()) as { capStats?: PromptCapStats };
+    expect(data.capStats?.droppedFiles).toEqual(['src/generated.ts']);
+    expect(data.capStats?.truncatedFiles).toHaveLength(1);
+  });
+
+  it('omits promptCapStats on a cache hit', async () => {
+    // A cached narrative never built a prompt, so nothing measured the diff. The field must be absent
+    // rather than zeroed — zeros would tell the reviewer a partial story was complete.
+    const { app } = createServer(buildContext({ capStats: null }));
+    const res = await app.request('/api/narrative');
+    const data = (await res.json()) as { capStats?: PromptCapStats };
+    expect(data.capStats).toBeUndefined();
+  });
+
+  it('serves collapse alongside promptCapStats and on a cache hit alike', async () => {
+    for (const capStats of [fakeCapStats(), null]) {
+      const { app } = createServer(buildContext({ capStats }));
+      const res = await app.request('/api/narrative');
+      const data = (await res.json()) as { collapse?: CollapseResult };
+      expect(data.collapse?.available).toBe(true);
+      // The mock chapter's one file has no known callers in the fake index, so it collapses with that
+      // evidence and the divider lands before it. The reason is the server's pre-rendered string — the UI
+      // renders it verbatim and never re-derives copy from the evidence.
+      if (data.collapse?.available) {
+        expect(data.collapse.dividerBefore).toBe(0);
+        expect(data.collapse.decisions).toHaveLength(1);
+        expect(data.collapse.decisions[0]?.reason).toContain('0 known callers outside this PR');
+      }
+    }
+  });
+
+  it('reports the unavailable reason when the snapshot could not be resolved', async () => {
+    const { app } = createServer(buildContext({ repoContext: { available: false, reason: 'size-cap' } }));
+    const res = await app.request('/api/narrative');
+    const data = (await res.json()) as { collapse?: CollapseResult };
+    expect(data.collapse).toEqual({ available: false, reason: 'size-cap' });
+  });
+
+  it('omits collapse entirely when no snapshot has been resolved yet', async () => {
+    // Absent is not the same claim as unavailable: the UI must render no notice at all here, because
+    // nothing has looked yet.
+    const { app } = createServer(buildContext({ repoContext: null }));
+    const res = await app.request('/api/narrative');
+    const data = (await res.json()) as { collapse?: CollapseResult };
+    expect(data.collapse).toBeUndefined();
   });
 });
 

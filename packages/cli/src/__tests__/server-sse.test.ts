@@ -6,6 +6,7 @@ import { createServer, type ServerContext } from '../server';
 import type { NarrativeResponse } from '../narrative/types';
 import type { CheckRun, DiffFile, PRComment, PRMetadata, PRReview } from '../github/types';
 import type { GitHubClient } from '../github/client';
+import type { RepoContext } from '../repo/snapshot';
 
 // SSE stream helpers ----------------------------------------------------------
 
@@ -269,6 +270,48 @@ describe('GET /api/events — initial connection', () => {
     const progress = events.find((e) => e.event === 'narrative-progress');
     expect(progress).toBeDefined();
     expect((progress!.data as { chars: number }).chars).toBe(1234);
+
+    ctrl.abort();
+    await reader.cancel();
+  });
+
+  it('replays the collapse boundary when a snapshot resolved before the client connected', async () => {
+    // `refreshRepoContext` broadcasts `collapse` exactly once, and it can land in the window between the
+    // bootstrap `GET /api/narrative` (which answered without a boundary) and this connect. Without the
+    // replay that event is dropped and the session shows no boundary until a reload.
+    const repoContext: RepoContext = {
+      available: true,
+      root: '/tmp/does-not-need-to-exist',
+      ref: 'main',
+      fetchedAt: Date.now(),
+      index: { callers: new Map<string, string[]>(), filesScanned: 7 },
+    };
+    const ctx = mkContext({ github: defaultGh({ pr: mkPR() }) as unknown as GitHubClient, repoContext });
+    const { app } = createServer(ctx);
+
+    const ctrl = new AbortController();
+    const res = await app.request('/api/events', { signal: ctrl.signal });
+    const reader = new StreamReader(res.body!);
+    const events = (await reader.drain()) as SseEvent[];
+    const collapse = events.find((e) => e.event === 'collapse');
+    expect(collapse).toBeDefined();
+    expect((collapse!.data as { collapse?: { available: boolean } }).collapse?.available).toBe(true);
+
+    ctrl.abort();
+    await reader.cancel();
+  });
+
+  it('replays no collapse boundary when nothing has resolved a snapshot', async () => {
+    // Absent is not the same claim as unavailable: sending an empty payload here would make the UI show a
+    // notice for a check that never ran.
+    const ctx = mkContext({ github: defaultGh({ pr: mkPR() }) as unknown as GitHubClient });
+    const { app } = createServer(ctx);
+
+    const ctrl = new AbortController();
+    const res = await app.request('/api/events', { signal: ctrl.signal });
+    const reader = new StreamReader(res.body!);
+    const events = (await reader.drain()) as SseEvent[];
+    expect(events.find((e) => e.event === 'collapse')).toBeUndefined();
 
     ctrl.abort();
     await reader.cancel();

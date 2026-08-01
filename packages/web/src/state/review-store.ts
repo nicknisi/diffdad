@@ -1,8 +1,11 @@
 import { create } from 'zustand';
 import type {
+  CapStats,
   Chapter,
+  ChapterCallers,
   ChapterState,
   CheckRun,
+  CollapseResult,
   DiffFile,
   DraftComment,
   LiveEvent,
@@ -29,6 +32,22 @@ type VisualStyle = 'stripe' | 'linear' | 'github';
 type LayoutMode = 'toc' | 'linear';
 type DisplayDensity = 'comfortable' | 'compact';
 export type RecapStatus = 'idle' | 'generating' | 'ready' | 'error';
+
+/**
+ * The blast-radius half of a narrative payload: which chapters are safe to hide, who imports them, and
+ * what the prompt budget dropped.
+ *
+ * Passed *with* the narrative rather than after it, because a `Chapter` seeds and transitions its
+ * `collapsed` state from its decision. One intermediate paint holding the new chapters with the old (or
+ * no) decisions is enough to leave the divider sitting above four expanded chapters, so every path that
+ * has both commits both in the same `set`. Absent fields land as cleared: "we have no answer" and "we
+ * looked and could not tell" are different claims, and only the second one gets a line on screen.
+ */
+export type BlastRadius = {
+  collapse?: CollapseResult | null;
+  callers?: ChapterCallers[];
+  capStats?: CapStats | null;
+};
 
 type ReviewState = {
   pr: PRData | null;
@@ -97,6 +116,18 @@ type ReviewState = {
   resolved: Record<string, boolean>;
   aiPath: 'api' | 'local-cli' | null;
 
+  /**
+   * Serve-time collapse selection for the narrative currently in the store, or null when the server sent
+   * none (still generating, or no repo snapshot answer yet). Never persisted and never carried across a
+   * chapter change: `CollapseDecision.chapterIndex` only means something against the chapters it was
+   * computed for, so every path that replaces `chapters` clears this.
+   */
+  collapse: CollapseResult | null;
+  /** Unchanged importers per chapter, from the same snapshot as `collapse`. Cleared alongside it. */
+  callers: ChapterCallers[];
+  /** Prompt budget stats for the generation that produced `narrative`; null on a cache hit. */
+  capStats: CapStats | null;
+
   /** Most recent plan from the planner pass; arrives via the `plan-ready` SSE event before any chapter prose lands. */
   plan: Plan | null;
   /** Theme IDs whose writer call hasn't returned yet — used to render shimmer/loading state on those chapters. */
@@ -114,7 +145,14 @@ type ReviewState = {
     repoUrl?: string | null,
     checkRuns?: CheckRun[],
     reviews?: PRReview[],
+    blast?: BlastRadius,
   ) => void;
+  /**
+   * Replace the blast-radius payload on its own, for the one path that has no narrative to attach it to:
+   * the `collapse` SSE event, which fills in a boundary for chapters the store already holds. Every other
+   * caller passes it *with* the narrative instead (`setData`, `applyUnitToStore`) — see `BlastRadius`.
+   */
+  setBlastRadius: (data: BlastRadius) => void;
   setActiveChapter: (id: string) => void;
   toggleReviewed: (idx: number) => void;
   setOpenLine: (key: string | null) => void;
@@ -464,7 +502,13 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
   plan: null,
   pendingChapterThemeIds: new Set<string>(),
 
-  setData: (pr, narrative, files, comments, repoUrl = null, checkRuns = [], reviews = []) => {
+  collapse: null,
+  callers: [],
+  capStats: null,
+
+  setBlastRadius: ({ collapse = null, callers = [], capStats = null }) => set({ collapse, callers, capStats }),
+
+  setData: (pr, narrative, files, comments, repoUrl = null, checkRuns = [], reviews = [], blast) => {
     const safeNarrative = sanitizeNarrative(narrative);
     const nextReviewKey = reviewDraftKey(repoUrl, pr.number);
     const next: Partial<ReviewState> = {
@@ -487,6 +531,12 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
       openLine: null,
       commentRangeStart: null,
       commentDrag: null,
+      // A new chapter array invalidates every `chapterIndex` in the old result, so this is a replace and
+      // never a merge. Callers that have a fresh result pass it as `blast` and it lands in this same
+      // `set`; the rest correctly show no boundary at all.
+      collapse: blast?.collapse ?? null,
+      callers: blast?.callers ?? [],
+      capStats: blast?.capStats ?? null,
     };
     // Display prefs are seeded by `applyConfigResponse` (from `GET /api/config`), not from the
     // narrative payload — see Phase 2. `setData` no longer touches theme/accent/etc.
@@ -697,7 +747,8 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
   applyPartialNarrative: (pr, narrative, files, comments) =>
     set((state) => {
       const safeNarrative = sanitizeNarrative(narrative);
-      const next: Partial<ReviewState> = { pr, narrative: safeNarrative };
+      // A streamed partial is a different chapter array than the one collapse was computed against.
+      const next: Partial<ReviewState> = { pr, narrative: safeNarrative, collapse: null, callers: [], capStats: null };
       if (files) next.files = files;
       if (comments) next.comments = comments;
       // Initialize chapter states for any newly streamed chapters without
@@ -754,6 +805,11 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
         pendingChapterThemeIds: pending,
         narrationOverrides: {},
         chapterDensity: {},
+        // Same reason the chapter states are rebuilt rather than merged: a new plan renumbers chapters,
+        // and a carried-over decision would describe a different chapter than the one it lands on.
+        collapse: null,
+        callers: [],
+        capStats: null,
         // `resolved` is deliberately NOT wiped: finding ids are content-addressed, so items the
         // reviewer already cleared stay cleared when the new plan re-raises the same questions.
         activeChapterId: state.activeChapterId ?? (placeholderChapters.length > 0 ? 'ch-0' : null),
@@ -831,7 +887,7 @@ export function useResolvedTheme(): 'light' | 'dark' {
  * comment effect. Clobbering them on every live re-apply would wipe the loaded thread each time
  * the unit's `updatedAt` ticks.
  */
-export function applyUnitToStore(unit: Unit): void {
+export function applyUnitToStore(unit: Unit, blast?: BlastRadius): void {
   const narrative = unit.narrative ?? null;
   const files = unit.files ?? [];
 
@@ -861,6 +917,11 @@ export function applyUnitToStore(unit: Unit): void {
     drafts: loadDrafts(nextReviewKey),
     ...(switchingReview
       ? {
+          // A different unit's collapse would point at this unit's chapters. Cleared here and then
+          // overwritten below by the `blast` from the very same response, in this one `set`.
+          collapse: null,
+          callers: [],
+          capStats: null,
           resolved: loadResolved(nextReviewKey),
           narrationOverrides: {},
           chapterDensity: {},
@@ -872,6 +933,12 @@ export function applyUnitToStore(unit: Unit): void {
           recapStatus: 'idle' as const,
           recapError: null,
         }
+      : {}),
+    // Last, so it wins over the switching-review clear: the unit routes recompute collapse per request
+    // and answer with it alongside the unit, and the chapters must never paint without it. The live SSE
+    // re-apply passes none and keeps whatever the load established.
+    ...(blast
+      ? { collapse: blast.collapse ?? null, callers: blast.callers ?? [], capStats: blast.capStats ?? null }
       : {}),
   });
 }

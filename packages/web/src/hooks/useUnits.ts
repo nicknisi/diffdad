@@ -56,6 +56,29 @@ export function useUnits() {
   return { groups, repos, facets, repoFilter, setRepoFilter, total: units.length, loaded };
 }
 
+/**
+ * Add any PR to the queue by reference (URL or `owner/repo#123`) — the add-PR field's half of
+ * POST /api/units. Returns the unit's id (plus whether it was already queued, so the caller can tell
+ * "minted" from "you're already reviewing this"). The server's message is thrown verbatim: it names
+ * the actual problem (unparseable reference, no such PR, GitHub not wired) and the field shows it.
+ */
+export async function addPrUnit(pr: string): Promise<{ unitId: string; existing: boolean }> {
+  const res = await fetch('/api/units', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pr }),
+  });
+  const data = (await res.json().catch(() => null)) as {
+    unit?: { unitId: string };
+    existing?: boolean;
+    error?: string;
+  } | null;
+  if (!res.ok || !data?.unit) {
+    throw new Error(data?.error ?? `Add failed (${res.status})`);
+  }
+  return { unitId: data.unit.unitId, existing: data.existing === true };
+}
+
 /** Remove a unit from the queue (manual cleanup of stale work). SSE repaints the list. */
 export async function removeUnit(unitId: string): Promise<void> {
   const res = await fetch(`/api/units/${encodeURIComponent(unitId)}`, { method: 'DELETE' });
