@@ -7,6 +7,14 @@ import { type TriageSummary, triageFiles } from '../narrative/triage';
 import { isDismissed, laneSplit, unitsPayload } from '../units/lane';
 
 /**
+ * Consecutive reviews-fetch failures before the pass gives up on the rollup entirely. Three rather than
+ * one: a single deleted or permission-blocked PR is ordinary and the remaining units still deserve their
+ * counts, but three in a row is the shared core rate limit, and every further request is pure burn against
+ * the budget hydrate and comment posting need.
+ */
+const REVIEW_FAILURE_CUTOFF = 3;
+
+/**
  * Build the `PRMetadata` a freshly-minted `github` unit carries from the PR metadata the poller
  * fetched. The diff/line counts ride along on the `PolledPr` (the search already fetched each PR), so
  * the row shows real numbers at mint — no zero-fill until the lazy on-open hydrate. The
@@ -276,14 +284,42 @@ export async function pollOnce(deps: {
   // a dismissed or decided unit's ordering is not being looked at, so spending a request on it is pure
   // rate-limit burn against a ceiling this reaches around forty open units.
   if (fetchReviews) {
+    let consecutive = 0;
+    let failed = 0;
+    let stoppedEarly = false;
+    let lastError: unknown;
     for (const unit of store.list()) {
       if (unit.source !== 'github' || unit.status !== 'queued' || isDismissed(unit)) continue;
+      // A *run* of failures is budget exhaustion, not bad luck. `getReviews` draws on the same core
+      // rate limit as hydrate, comment posting, and search enrichment, so spending the rest of the pass
+      // on calls that are already failing would starve the requests that actually block a review. Give
+      // up on this pass instead; the next one is sixty seconds away.
+      if (consecutive >= REVIEW_FAILURE_CUTOFF) {
+        stoppedEarly = true;
+        break;
+      }
       try {
         store.setReviewRollup(unit.unitId, await fetchReviews(unit));
-      } catch {
-        // Ordering information, not correctness. Keep the previous rollup and move on — one flaky
+        consecutive = 0;
+      } catch (err) {
+        // Ordering information, not correctness. Keep the previous rollup and carry on — one flaky
         // reviews call must never take down a whole poll pass.
+        consecutive++;
+        failed++;
+        lastError = err;
       }
+    }
+    // One aggregated line, not one per unit: this loop runs against every queued unit on every pass, so
+    // per-failure logging at parity with the triage fetch would emit dozens of lines a minute during the
+    // exact rate-limit cascade it exists to reveal — burying the reconciliation and lane-split lines.
+    // Silence was the real bug, though: without this, an exhausted budget freezes every approval count
+    // with no signal at all.
+    if (failed > 0) {
+      const detail = lastError instanceof Error ? lastError.message : String(lastError);
+      console.warn(
+        `[diffdad] reviews rollup degraded: ${failed} fetch${failed === 1 ? '' : 'es'} failed` +
+          `${stoppedEarly ? `, stopped after ${REVIEW_FAILURE_CUTOFF} in a row (rate limit?)` : ''} — ${detail}`,
+      );
     }
   }
 

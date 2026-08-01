@@ -897,16 +897,102 @@ describe('pollOnce triage', () => {
 
   it('survives a failing reviews fetch — ordering data must not fail a poll pass', async () => {
     const store = new UnitStore([], det());
-    const result = await pollOnce({
-      search: search([mkPr()]),
-      store,
-      broadcast: () => {},
-      fetchReviews: async () => {
-        throw new Error('rate limited');
-      },
-    });
-    expect(result.minted).toBe(1);
-    expect(store.list()[0]!.reviewRollup).toBeUndefined();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const result = await pollOnce({
+        search: search([mkPr()]),
+        store,
+        broadcast: () => {},
+        fetchReviews: async () => {
+          throw new Error('rate limited');
+        },
+      });
+      expect(result.minted).toBe(1);
+      expect(store.list()[0]!.reviewRollup).toBeUndefined();
+      // Silence here would freeze every approval count with no signal at all — the degradation has to be
+      // visible to whoever is watching the daemon, since nothing else surfaces an exhausted budget.
+      const line = warn.mock.calls.map((c) => String(c[0])).find((m) => m.includes('reviews rollup degraded'));
+      expect(line).toBeDefined();
+      expect(line).toContain('rate limited');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('stops the reviews pass after a run of failures rather than burning the shared rate limit', async () => {
+    // `getReviews` shares the core budget with hydrate and comment posting, so a cascade must not spend
+    // the rest of the pass on calls that are already failing.
+    const store = new UnitStore([], det());
+    for (let n = 1; n <= 8; n++) {
+      await store.addGithubUnit({
+        owner: 'octo',
+        repo: 'demo',
+        number: n,
+        title: `t${n}`,
+        headBranch: 'feat/x',
+        headSha: 'sha-1',
+        author: 'octocat',
+        url: `https://github.com/octo/demo/pull/${n}`,
+        metadata: { ...mkMetadata('x'), headSha: 'sha-1' },
+      });
+    }
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      let attempts = 0;
+      await pollOnce({
+        search: search([]),
+        store,
+        broadcast: () => {},
+        fetchReviews: async () => {
+          attempts++;
+          throw new Error('API rate limit exceeded');
+        },
+      });
+      expect(attempts).toBe(3); // the cutoff, not all eight
+      const line = warn.mock.calls.map((c) => String(c[0])).find((m) => m.includes('reviews rollup degraded'));
+      expect(line).toContain('stopped after 3 in a row');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('does not give up on the pass for isolated failures between successes', async () => {
+    // A deleted or permission-blocked PR is ordinary; only a *run* means the budget is gone.
+    const store = new UnitStore([], det());
+    for (let n = 1; n <= 6; n++) {
+      await store.addGithubUnit({
+        owner: 'octo',
+        repo: 'demo',
+        number: n,
+        title: `t${n}`,
+        headBranch: 'feat/x',
+        headSha: 'sha-1',
+        author: 'octocat',
+        url: `https://github.com/octo/demo/pull/${n}`,
+        metadata: { ...mkMetadata('x'), headSha: 'sha-1' },
+      });
+    }
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await pollOnce({
+        search: search([]),
+        store,
+        broadcast: () => {},
+        // Every other one fails, so `consecutive` never reaches the cutoff.
+        fetchReviews: async (unit) => {
+          if (unit.prNumber! % 2 === 0) throw new Error('gone');
+          return { approved: 1, changesRequested: 0 };
+        },
+      });
+      const odds = store.list().filter((u) => u.prNumber! % 2 === 1);
+      expect(odds).toHaveLength(3);
+      for (const u of odds) expect(u.reviewRollup).toEqual({ approved: 1, changesRequested: 0 });
+      const line = warn.mock.calls.map((c) => String(c[0])).find((m) => m.includes('reviews rollup degraded'));
+      expect(line).toContain('3 fetches failed');
+      expect(line).not.toContain('stopped after');
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('logs a lane split each pass', async () => {
