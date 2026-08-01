@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.15.0](https://github.com/nicknisi/diffdad/compare/v0.14.0...v0.15.0) (2026-08-01)
+
+
+### Features
+
+* attention lanes — sort the queue by what actually needs a human ([#57](https://github.com/nicknisi/diffdad/issues/57)) ([f785ca1](https://github.com/nicknisi/diffdad/commit/f785ca1bff8f5c86f24516aa3a4b0672abcfa649))
+* collapse what a reviewer can skip, backed by repo-wide blast radius ([#55](https://github.com/nicknisi/diffdad/issues/55)) ([35a7733](https://github.com/nicknisi/diffdad/commit/35a77333ba8a943319aa9812eaa11b272532b2e0))
+
 ## [0.14.0](https://github.com/nicknisi/diffdad/compare/v0.13.0...v0.14.0) (2026-07-25)
 
 
