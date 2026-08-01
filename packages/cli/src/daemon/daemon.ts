@@ -174,6 +174,9 @@ export function buildGitHubWiring(
     // Metadata only — the add-PR route mints from this and lets the drill-in's lazy hydrate do the
     // expensive half (diff + narrative), so typing in a PR never blocks on generation.
     prFetcher: (owner, repo, number) => client.getPR(owner, repo, number),
+    // The add-PR route's triage fetch. One page of files, no patch text, no model call — the same
+    // inputs the poller gathers, so both mint doors produce identically-triaged units.
+    fileSummaryFetcher: (owner, repo, number) => client.getPRFileSummary(owner, repo, number),
     pollNow: async () => {
       const counts = await pollOnce({
         search: () => client.searchReviewRequested(),
@@ -181,6 +184,22 @@ export function buildGitHubWiring(
         broadcast,
         fetchPrState,
         missStreaks,
+        fetchFileSummary: (pr) => client.getPRFileSummary(pr.owner, pr.repo, pr.number),
+        fetchReviews: async (unit) => {
+          const [owner, repo] = unit.repo.split('/');
+          const reviews = await client.getReviews(owner!, repo!, unit.prNumber!);
+          // Latest verdict per reviewer, mirroring GitHub's own rollup: APPROVED/CHANGES_REQUESTED set
+          // it, DISMISSED clears it, COMMENTED leaves it — so one person can never be double-counted.
+          const byUser = new Map<string, 'APPROVED' | 'CHANGES_REQUESTED'>();
+          for (const r of [...reviews].sort((a, b) => a.submittedAt.localeCompare(b.submittedAt))) {
+            if (r.state === 'APPROVED' || r.state === 'CHANGES_REQUESTED') byUser.set(r.user, r.state);
+            else if (r.state === 'DISMISSED') byUser.delete(r.user);
+          }
+          let approved = 0;
+          let changesRequested = 0;
+          for (const v of byUser.values()) v === 'APPROVED' ? approved++ : changesRequested++;
+          return { approved, changesRequested };
+        },
       });
       // Warm the snapshots the drill-in will need, so opening a unit is not the first fetch. Started but
       // NOT awaited: the manual refresh route awaits `pollNow` for its toast counts, and a cold cache

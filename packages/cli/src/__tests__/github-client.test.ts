@@ -133,6 +133,51 @@ describe('GitHubClient.getPR', () => {
   });
 });
 
+describe('GitHubClient.getPRFileSummary — file-list fetch', () => {
+  const rows = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({
+      filename: `src/f${i}.ts`,
+      status: 'modified',
+      additions: 2,
+      deletions: 1,
+      patch: '@@ -1 +1 @@\n-a\n+b', // must be discarded, never stored
+    }));
+
+  it('issues exactly one request and drops patch text', async () => {
+    setResponder(() => jsonResponse(rows(3)));
+    const out = await new GitHubClient('t').getPRFileSummary('o', 'r', 5);
+
+    expect(calls).toHaveLength(1); // never paginates — the whole point
+    expect(calls[0]?.url).toBe('https://api.github.com/repos/o/r/pulls/5/files?per_page=100');
+    expect(out.truncated).toBe(false);
+    expect(out.files).toHaveLength(3);
+    expect(out.files[0]).toEqual({ path: 'src/f0.ts', status: 'modified', additions: 2, deletions: 1 });
+    expect(JSON.stringify(out.files)).not.toContain('@@'); // patch text never survives
+  });
+
+  it('flags truncated at a full page instead of fetching page two', async () => {
+    // A PR bigger than one page must be flagged, not paginated: the unseen files are exactly the ones
+    // that could change the lane, so "look at it" is the only safe answer.
+    setResponder(() => jsonResponse(rows(100)));
+    const out = await new GitHubClient('t').getPRFileSummary('o', 'r', 5);
+
+    expect(calls).toHaveLength(1);
+    expect(out.truncated).toBe(true);
+    expect(out.files).toHaveLength(100);
+  });
+
+  it('handles an empty PR without inventing files', async () => {
+    setResponder(() => jsonResponse([]));
+    const out = await new GitHubClient('t').getPRFileSummary('o', 'r', 5);
+    expect(out).toEqual({ files: [], truncated: false });
+  });
+
+  it('throws on a non-2xx like every other client call', async () => {
+    setResponder(() => new Response('nope', { status: 500 }));
+    await expect(new GitHubClient('t').getPRFileSummary('o', 'r', 5)).rejects.toThrow(/500/);
+  });
+});
+
 describe('GitHubClient.getDiff', () => {
   it('requests the v3.diff accept header and parses the result', async () => {
     setResponder(

@@ -3,6 +3,7 @@ import { join } from 'path';
 import { dataDir } from '../paths';
 import type { DiffFile, PRMetadata } from '../github/types';
 import type { PromptCapStats } from '../narrative/prompt';
+import type { TriageSummary } from '../narrative/triage';
 import type { NarrativeResponse } from '../narrative/types';
 import { type Decision, IllegalTransitionError, type ReviewUnit, type UnitStatus, UnknownUnitError } from './types';
 
@@ -130,6 +131,7 @@ export class UnitStore {
     baseRef?: string;
     metadata: PRMetadata;
     pinned?: boolean;
+    triage?: TriageSummary;
   }): ReviewUnit {
     const ts = this.now();
     const unit: ReviewUnit = {
@@ -151,6 +153,7 @@ export class UnitStore {
       prAuthor: input.author,
       lastReviewedSha: undefined,
       pinned: input.pinned ? true : undefined,
+      triage: input.triage,
       createdAt: ts,
       updatedAt: ts,
     };
@@ -238,6 +241,52 @@ export class UnitStore {
       changedFiles: counts.changedFiles,
       commits: counts.commits,
     };
+    unit.updatedAt = this.now();
+    void this.save(unit);
+    return unit;
+  }
+
+  /**
+   * Attach path-derived triage inputs. Used by both mint doors, by the head-SHA refresh, and by the
+   * backfill heal for units that predate the field — one setter for all four, since they differ only in
+   * when they fire, never in what they write.
+   */
+  setTriage(unitId: string, triage: TriageSummary): ReviewUnit {
+    const unit = this.require(unitId);
+    unit.triage = triage;
+    unit.updatedAt = this.now();
+    void this.save(unit);
+    return unit;
+  }
+
+  /** Store the latest reviews rollup. Orders units within a lane; never decides one. */
+  setReviewRollup(unitId: string, rollup: { approved: number; changesRequested: number }): ReviewUnit {
+    const unit = this.require(unitId);
+    unit.reviewRollup = rollup;
+    unit.updatedAt = this.now();
+    void this.save(unit);
+    return unit;
+  }
+
+  /**
+   * Hide a unit until its author pushes past `headSha`.
+   *
+   * Deliberately not a delete: `classify` routes any PR whose unit already exists to `existing-github`,
+   * so keeping the unit is precisely what stops the next poll from re-minting it. A hard delete of a
+   * still-requested PR survives about sixty seconds.
+   */
+  dismiss(unitId: string, headSha: string): ReviewUnit {
+    const unit = this.require(unitId);
+    unit.dismissedAtSha = headSha;
+    unit.updatedAt = this.now();
+    void this.save(unit);
+    return unit;
+  }
+
+  /** Clear a dismissal — the author pushed, so there is genuinely new work to look at. */
+  undismiss(unitId: string): ReviewUnit {
+    const unit = this.require(unitId);
+    unit.dismissedAtSha = undefined;
     unit.updatedAt = this.now();
     void this.save(unit);
     return unit;

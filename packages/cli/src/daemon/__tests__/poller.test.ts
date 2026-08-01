@@ -619,8 +619,10 @@ describe('pollOnce reconciliation', () => {
         fetchPrState: closedState,
         missStreaks: new Map(),
       });
-      expect(logSpy).toHaveBeenCalledTimes(1);
-      const line = String(logSpy.mock.calls[0]![0]);
+      // Find the reconciliation line among the pass's log output — the lane-split line is also emitted
+      // every pass, so asserting a single call would couple this test to unrelated instrumentation.
+      const line = logSpy.mock.calls.map((c) => String(c[0])).find((l) => l.includes('reconciled queue'));
+      expect(line).toBeDefined();
       expect(line).toContain('octo/demo#99');
       expect(line).toContain('closed');
     } finally {
@@ -703,12 +705,326 @@ describe('pollOnce archived repos', () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     try {
       await pollOnce({ search: search([mkPr({ archived: true })]), store, broadcast: () => {} });
-      expect(logSpy).toHaveBeenCalledTimes(1);
-      const line = String(logSpy.mock.calls[0]![0]);
+      const line = logSpy.mock.calls.map((c) => String(c[0])).find((l) => l.includes('reconciled queue'));
+      expect(line).toBeDefined();
       expect(line).toContain('octo/demo#42');
       expect(line).toContain('archived');
     } finally {
       logSpy.mockRestore();
     }
+  });
+});
+
+describe('pollOnce triage', () => {
+  /** Counting fake for the file-list fetch — separates mint-time fetches from backfill heals. */
+  function summarySpy(files: string[] = ['README.md']) {
+    const calls: { owner: string; repo: string; number: number }[] = [];
+    const fn = async (pr: { owner: string; repo: string; number: number }) => {
+      calls.push(pr);
+      return {
+        files: files.map((path) => ({ path, status: 'modified', additions: 1, deletions: 0 })),
+        truncated: false,
+      };
+    };
+    return { fn, calls };
+  }
+
+  it('mints a unit carrying a triage summary, with exactly one file-list fetch', async () => {
+    const store = new UnitStore([], det());
+    const spy = summarySpy(['README.md', 'docs/a.md']);
+
+    await pollOnce({ search: search([mkPr()]), store, broadcast: () => {}, fetchFileSummary: spy.fn });
+
+    expect(spy.calls).toHaveLength(1); // one page, one request — never paginated
+    const u = store.list()[0]!;
+    expect(u.triage).toBeDefined();
+    expect(u.triage!.sha).toBe('sha-1');
+    expect(u.triage!.files.map((f) => f.kind)).toEqual(['docs', 'docs']);
+  });
+
+  it('mints with no model call — the poller has no AI dependency to reach for', async () => {
+    // Structural, not behavioural: pollOnce's signature has no AI dep, so narrative generation is
+    // unreachable from a poll pass. The assertion that matters is that a minted unit is un-narrated —
+    // if that ever changes, minting started costing tokens.
+    const store = new UnitStore([], det());
+    const spy = summarySpy();
+    await pollOnce({ search: search([mkPr()]), store, broadcast: () => {}, fetchFileSummary: spy.fn });
+    const u = store.list()[0]!;
+    expect(u.narrative).toBeUndefined();
+    expect(u.files).toEqual([]);
+  });
+
+  it('re-triages when the head sha moves, so stale evidence cannot outlive the diff', async () => {
+    const store = new UnitStore([], det());
+    const docs = summarySpy(['README.md']);
+    await pollOnce({ search: search([mkPr()]), store, broadcast: () => {}, fetchFileSummary: docs.fn });
+    const id = store.list()[0]!.unitId;
+    expect(store.get(id)!.triage!.files[0]!.kind).toBe('docs');
+
+    // The author pushes a source file onto what was a docs-only PR.
+    const src = summarySpy(['README.md', 'src/auth/token.ts']);
+    await pollOnce({
+      search: search([mkPr({ headSha: 'sha-2' })]),
+      store,
+      broadcast: () => {},
+      fetchFileSummary: src.fn,
+    });
+
+    const after = store.get(id)!;
+    expect(after.triage!.sha).toBe('sha-2');
+    expect(after.triage!.criticality).toContain('auth');
+  });
+
+  it('does not re-triage when the head sha is unchanged', async () => {
+    const store = new UnitStore([], det());
+    const first = summarySpy();
+    await pollOnce({ search: search([mkPr()]), store, broadcast: () => {}, fetchFileSummary: first.fn });
+    const second = summarySpy();
+    await pollOnce({ search: search([mkPr()]), store, broadcast: () => {}, fetchFileSummary: second.fn });
+    expect(second.calls).toHaveLength(0); // same sha → no fetch at all
+  });
+
+  it('backfills a legacy unit that carries no triage summary', async () => {
+    const store = new UnitStore([], det());
+    // A unit as it would have been persisted before this feature existed.
+    const u = store.addGithubUnit({
+      owner: 'octo',
+      repo: 'demo',
+      number: 42,
+      title: 'Add widgets',
+      headBranch: 'feat/widgets',
+      headSha: 'sha-1',
+      author: 'octocat',
+      url: 'https://github.com/octo/demo/pull/42',
+      metadata: { ...mkMetadata('feat/widgets'), headSha: 'sha-1' },
+    });
+    expect(store.get(u.unitId)!.triage).toBeUndefined();
+
+    const spy = summarySpy(['bun.lock']);
+    // Search returns nothing: the heal must not depend on the PR being polled this pass.
+    await pollOnce({ search: search([]), store, broadcast: () => {}, fetchFileSummary: spy.fn });
+
+    expect(spy.calls).toHaveLength(1);
+    expect(store.get(u.unitId)!.triage!.files[0]!.kind).toBe('lockfile');
+  });
+
+  it('counts a backfill heal separately from a mint fetch', async () => {
+    const store = new UnitStore([], det());
+    store.addGithubUnit({
+      owner: 'octo',
+      repo: 'other',
+      number: 7,
+      title: 'Legacy',
+      headBranch: 'x',
+      headSha: 'sha-old',
+      author: 'octocat',
+      url: 'https://github.com/octo/other/pull/7',
+      metadata: { ...mkMetadata('x'), headSha: 'sha-old' },
+    });
+    const spy = summarySpy();
+
+    // One brand-new PR minted + one legacy unit healed = 2 fetches, but only one of them is a mint.
+    const result = await pollOnce({
+      search: search([mkPr()]),
+      store,
+      broadcast: () => {},
+      fetchFileSummary: spy.fn,
+    });
+
+    expect(result.minted).toBe(1);
+    expect(spy.calls).toHaveLength(2);
+    expect(spy.calls.filter((c) => c.number === 42)).toHaveLength(1); // the mint
+    expect(spy.calls.filter((c) => c.number === 7)).toHaveLength(1); // the heal
+  });
+
+  it('leaves the unit un-triaged rather than fabricating a summary when the fetch fails', async () => {
+    const store = new UnitStore([], det());
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await pollOnce({
+        search: search([mkPr()]),
+        store,
+        broadcast: () => {},
+        fetchFileSummary: async () => {
+          throw new Error('502 bad gateway');
+        },
+      });
+      // An empty summary would read as "we looked and found nothing" — absence of evidence must stay absent.
+      expect(store.list()[0]!.triage).toBeUndefined();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('fetches a reviews rollup per poll for queued units only, skipping decided and dismissed', async () => {
+    // Seeded with three units so exclusion is actually proven: a single queued unit would pass this
+    // test against an implementation that fetched for everything.
+    const store = new UnitStore([], det());
+    const mk = (number: number) =>
+      store.addGithubUnit({
+        owner: 'octo',
+        repo: 'demo',
+        number,
+        title: `PR ${number}`,
+        headBranch: 'x',
+        headSha: 'sha-1',
+        author: 'octocat',
+        url: `https://github.com/octo/demo/pull/${number}`,
+        metadata: { ...mkMetadata('x'), headSha: 'sha-1' },
+      });
+    const queuedUnit = mk(1);
+    const decided = mk(2);
+    const hidden = mk(3);
+    (store.get(decided.unitId) as { status: string }).status = 'approved';
+    store.dismiss(hidden.unitId, 'sha-1');
+
+    const seen: number[] = [];
+    await pollOnce({
+      search: search([]),
+      store,
+      broadcast: () => {},
+      fetchReviews: async (unit) => {
+        seen.push(unit.prNumber!);
+        return { approved: 2, changesRequested: 0 };
+      },
+    });
+
+    expect(seen).toEqual([1]); // only the queued one
+    expect(store.get(queuedUnit.unitId)!.reviewRollup).toEqual({ approved: 2, changesRequested: 0 });
+    expect(store.get(decided.unitId)!.reviewRollup).toBeUndefined();
+    expect(store.get(hidden.unitId)!.reviewRollup).toBeUndefined();
+  });
+
+  it('survives a failing reviews fetch — ordering data must not fail a poll pass', async () => {
+    const store = new UnitStore([], det());
+    const result = await pollOnce({
+      search: search([mkPr()]),
+      store,
+      broadcast: () => {},
+      fetchReviews: async () => {
+        throw new Error('rate limited');
+      },
+    });
+    expect(result.minted).toBe(1);
+    expect(store.list()[0]!.reviewRollup).toBeUndefined();
+  });
+
+  it('logs a lane split each pass', async () => {
+    const store = new UnitStore([], det());
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await pollOnce({
+        search: search([mkPr()]),
+        store,
+        broadcast: () => {},
+        fetchFileSummary: summarySpy(['README.md']).fn,
+      });
+      const line = logSpy.mock.calls.map((c) => String(c[0])).find((l) => l.includes('lanes:'));
+      expect(line).toBeDefined();
+      expect(line).toContain('1 probably-not');
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+});
+
+describe('pollOnce dismiss', () => {
+  const seed = (store: UnitStore, headSha = 'sha-1') =>
+    store.addGithubUnit({
+      owner: 'octo',
+      repo: 'demo',
+      number: 42,
+      title: 'Add widgets',
+      headBranch: 'feat/widgets',
+      headSha,
+      author: 'octocat',
+      url: 'https://github.com/octo/demo/pull/42',
+      metadata: { ...mkMetadata('feat/widgets'), headSha },
+    });
+
+  it('does not re-mint a dismissed unit the search still returns', async () => {
+    // The whole point: a hard delete is undone by the next poll, because classify only checks existence.
+    const store = new UnitStore([], det());
+    const u = seed(store);
+    store.dismiss(u.unitId, 'sha-1');
+
+    const result = await pollOnce({ search: search([mkPr()]), store, broadcast: () => {} });
+
+    expect(result.minted).toBe(0);
+    expect(store.list()).toHaveLength(1);
+    expect(store.get(u.unitId)!.dismissedAtSha).toBe('sha-1');
+  });
+
+  it('brings a dismissed unit back when the author pushes past the dismissed sha', async () => {
+    const store = new UnitStore([], det());
+    const u = seed(store);
+    store.dismiss(u.unitId, 'sha-1');
+
+    await pollOnce({ search: search([mkPr({ headSha: 'sha-2' })]), store, broadcast: () => {} });
+
+    expect(store.get(u.unitId)!.dismissedAtSha).toBeUndefined();
+  });
+
+  it('excludes dismissed units from the lane split', async () => {
+    const store = new UnitStore([], det());
+    const u = seed(store);
+    store.dismiss(u.unitId, 'sha-1');
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await pollOnce({ search: search([mkPr()]), store, broadcast: () => {} });
+      const line = logSpy.mock.calls.map((c) => String(c[0])).find((l) => l.includes('lanes:'));
+      expect(line).toContain('0 tracked');
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it('still hard-removes a dismissed unit whose repo is archived', async () => {
+    // Dismissal hides work you could do; archived removal drops work you cannot. The second must win.
+    const store = new UnitStore([], det());
+    const u = seed(store);
+    store.dismiss(u.unitId, 'sha-1');
+
+    const result = await pollOnce({ search: search([mkPr({ archived: true })]), store, broadcast: () => {} });
+
+    expect(result.removed).toBe(1);
+    expect(store.list()).toEqual([]);
+  });
+});
+
+describe('pollOnce dismiss — reconcile exemption', () => {
+  it('never reconciles a dismissed unit away, because removing it would resurrect the PR', async () => {
+    // The subtle failure this guards: the dismissal lives ON the unit, so a hard delete drops the stamp
+    // with it and the next pass mints a fresh unit that has never heard of the dismissal. Two
+    // eventually-consistent search misses would silently un-dismiss a PR at the same sha.
+    const store = new UnitStore([], det());
+    const u = store.addGithubUnit({
+      owner: 'octo',
+      repo: 'demo',
+      number: 99,
+      title: 'Hidden',
+      headBranch: 'x',
+      headSha: 'sha-1',
+      author: 'octocat',
+      url: 'https://github.com/octo/demo/pull/99',
+      metadata: { ...mkMetadata('x'), headSha: 'sha-1' },
+    });
+    store.dismiss(u.unitId, 'sha-1');
+    const streaks = new Map<string, number>();
+
+    // Absent from the search, PR still open — the exact shape that trips the two-miss removal.
+    for (let i = 0; i < 3; i++) {
+      await pollOnce({
+        search: search([]),
+        store,
+        broadcast: () => {},
+        fetchPrState: async () => ({ open: true }),
+        missStreaks: streaks,
+      });
+    }
+
+    expect(store.get(u.unitId)).toBeDefined();
+    expect(store.get(u.unitId)!.dismissedAtSha).toBe('sha-1');
+    expect(streaks.get(u.unitId)).toBeUndefined(); // streak reset, never accumulated
   });
 });

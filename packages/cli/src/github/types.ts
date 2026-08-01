@@ -23,6 +23,18 @@ export type PRMetadata = {
   archived?: boolean;
 };
 
+/**
+ * One row of `GET /pulls/:n/files`, minus the patch text. Lives here rather than beside the triage
+ * classifier that consumes it because it describes a GitHub payload, and `github/` sits below
+ * `narrative/` — the client must not import upward to name its own return type.
+ */
+export type PrFileSummary = {
+  path: string;
+  status: string;
+  additions: number;
+  deletions: number;
+};
+
 export type PRComment = {
   id: number;
   author: string;

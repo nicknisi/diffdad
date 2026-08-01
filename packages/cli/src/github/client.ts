@@ -1,5 +1,15 @@
 import { parseDiff } from './diff-parser';
-import type { CheckRun, DiffFile, ForcePushEvent, IssueRef, PRComment, PRCommit, PRMetadata, PRReview } from './types';
+import type {
+  CheckRun,
+  DiffFile,
+  ForcePushEvent,
+  IssueRef,
+  PRComment,
+  PRCommit,
+  PRMetadata,
+  PrFileSummary,
+  PRReview,
+} from './types';
 import type { PolledPr } from '../units/types';
 
 const GITHUB_API = 'https://api.github.com';
@@ -200,6 +210,40 @@ export class GitHubClient {
     const all = [...reviewComments, ...issueComments];
     all.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     return all;
+  }
+
+  /**
+   * One page of a PR's changed files — paths and line counts, never patch text.
+   *
+   * Deliberately does NOT paginate. The endpoint pages at 100, and the caller (queue triage) uses this
+   * to decide whether a PR is low-stakes enough to skim; a PR with more than 100 files is not that under
+   * any reading, so `truncated` forces it into the high-attention lane instead. Paginating would spend
+   * N requests to reach the same answer, and worse, a 150-file PR could otherwise hide a critical file
+   * on page two and read as safe. The 100-exactly case over-reports truncation by one page-boundary PR,
+   * which fails toward "look at it" — the correct direction.
+   */
+  async getPRFileSummary(
+    owner: string,
+    repo: string,
+    number: number,
+  ): Promise<{ files: PrFileSummary[]; truncated: boolean }> {
+    const res = await this.fetch(`/repos/${owner}/${repo}/pulls/${number}/files?per_page=100`);
+    const data = (await res.json()) as Array<{
+      filename: string;
+      status: string;
+      additions: number;
+      deletions: number;
+    }>;
+    const rows = Array.isArray(data) ? data : [];
+    return {
+      files: rows.map((f) => ({
+        path: f.filename,
+        status: f.status,
+        additions: f.additions ?? 0,
+        deletions: f.deletions ?? 0,
+      })),
+      truncated: rows.length >= 100,
+    };
   }
 
   async getCheckRuns(owner: string, repo: string, ref: string): Promise<CheckRun[]> {

@@ -1,0 +1,155 @@
+<!doctype html>
+<!--
+  Implementation-notes shell — copied VERBATIM by execute-spec on the first logged entry.
+  This file is the single owner of the implementation-notes format. Do not restate its
+  structure or styles elsewhere; change the format here and every future phase inherits it.
+  Copier substitutes: 1 (phase number, twice), Attention Lanes, 2026-07-31, Triage inputs and the lane function —
+  then deletes the example entry and appends real ones inside <main class="doc-content">.
+-->
+<html lang="en" data-theme="auto">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Implementation Notes — Phase 1</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #ffffff;
+        --fg: #1a1a2e;
+        --muted: #5a5a72;
+        --border: #d8d8e4;
+        --accent: #0f3460;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #12121c;
+          --fg: #e8e8f0;
+          --muted: #9a9ab0;
+          --border: #2e2e42;
+          --accent: #7fb3ff;
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0 auto;
+        max-width: 46rem;
+        padding: 2rem 1.25rem 4rem;
+        background: var(--bg);
+        color: var(--fg);
+        font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      .doc-header { border-bottom: 1px solid var(--border); padding-bottom: 1rem; margin-bottom: 2rem; }
+      .doc-header h1 { margin: 0 0 0.25rem; font-size: 1.5rem; }
+      .doc-meta { margin: 0; color: var(--muted); font-size: 0.875rem; }
+      .note-entry { border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1.5rem; }
+      .note-entry h3 { margin: 0 0 0.75rem; font-size: 1.05rem; color: var(--accent); }
+      .note-entry dl { margin: 0; }
+      .note-entry dt { font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin-top: 0.75rem; }
+      .note-entry dt:first-child { margin-top: 0; }
+      .note-entry dd { margin: 0.15rem 0 0; }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.9em;
+        background: color-mix(in srgb, var(--fg) 8%, transparent);
+        padding: 0.1em 0.3em;
+        border-radius: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="doc-header">
+      <h1>Implementation Notes — Phase 1</h1>
+      <p class="doc-meta">Attention Lanes · 2026-07-31 · Triage inputs and the lane function</p>
+    </header>
+    <main class="doc-content">
+      <section class="note-entry">
+        <h3>Dismissed units — split out of the units payload, not just kept in the store</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            The spec made <code>DELETE /api/units/:id</code> a soft delete so the poller cannot re-mint a
+            dismissed PR, but it never said how a dismissed unit leaves the <em>view</em>. Its manual
+            checklist implies the row disappears in phase 1 ("✕ a row, wait two poll passes, confirm it
+            stays gone"), while its failure-modes table describes the unit as "reachable behind the
+            dismissed count" — a phase 2 affordance. Meanwhile every payload returned
+            <code>store.list()</code> raw, so ✕ kept the unit and the very next SSE frame repainted the
+            row it had just hidden. Shipping phase 1 alone would have made ✕ look broken in a new way.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            Added a single <code>unitsPayload()</code> helper in <code>daemon/app.ts</code> that splits a
+            unit list into <code>{ units, dismissed }</code>, and routed every emission point through it
+            (GET /api/units, /api/narrative, all four broadcasts, the SSE bootstrap, and the poller's own
+            post-pass broadcast). Dismissed units ride along under <code>dismissed</code> rather than
+            being dropped, so phase 2's reveal has something to render and a dismissal is never silently
+            unreachable. The existing frontend reads <code>units</code> only, so ✕ works immediately with
+            no web change.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            Accept the regression until phase 2 lands on the same branch. Rejected: the two phases are
+            separately committable, and a phase whose headline control visibly does nothing is worse than
+            one extra server-side helper. Also rejected: dropping dismissed units from the payload
+            entirely, which would have left phase 2 with no way to build the reveal without a second
+            round trip.
+          </dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3>Reviews rollup — narrowed to queued units, narrower than the spec's wording</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            The spec says to fetch the reviews rollup for "open units" and its failure-mode mitigation
+            says to skip dismissed and cleared ones. It does not say to skip
+            <code>changes_requested</code> (the In flight lane), and the rollup's stated purpose is
+            ordering within a lane — which in principle includes that one.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            Fetch only for <code>status === 'queued'</code>. This is the one genuinely recurring cost in
+            a poll pass — the contract's own G2 puts it at roughly double the API traffic, approaching
+            GitHub's 5000/hr ceiling near forty open units — and an In flight PR is waiting on its author,
+            so its position in a lane nobody is triaging is not worth a request every sixty seconds.
+            Recorded here rather than left as a silent narrowing.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            Include <code>changes_requested</code> for literal spec conformance. Rejected on the rate-limit
+            budget the contract already made explicit; revisit if In flight ever gains an ordering that
+            depends on approvals.
+          </dd>
+        </dl>
+      </section>
+
+      <section class="note-entry">
+        <h3>Scout — unavailable, explored inline instead</h3>
+        <dl>
+          <dt>Context</dt>
+          <dd>
+            <code>execute-spec</code> step 2 dispatches the read-only Scout to map the codebase across
+            five readiness gates and persist a <code>context-map.md</code>. The agent was invoked, went
+            idle twice without returning any output, and did not answer a direct request for its map.
+          </dd>
+          <dt>Decision</dt>
+          <dd>
+            Proceeded using the skill's documented fallback for an unavailable scout: explore inline by
+            reading the spec's "Pattern to follow" paths and every file in its Modified Files table. Risk
+            was lower than usual because those files — <code>risk.ts</code>, <code>diff-filter.ts</code>,
+            <code>collapse.ts</code>, <code>client.ts</code>, <code>poller.ts</code>,
+            <code>store.ts</code>, <code>linking.ts</code>, <code>app.ts</code> — had all been read
+            directly during the interview that produced the spec. No <code>context-map.md</code> exists
+            for this phase.
+          </dd>
+          <dt>Alternative</dt>
+          <dd>
+            Block the phase until the scout responded. Rejected: it had already failed twice, and the
+            reviewer agent (which did run, and returned five findings) is the gate that actually protects
+            the commit.
+          </dd>
+        </dl>
+      </section>
+    </main>
+  </body>
+</html>
