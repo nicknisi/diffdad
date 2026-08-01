@@ -11,7 +11,7 @@ import { buildChapterAiPrompt } from '../narrative/chapter-ai';
 import { type ChapterCallers, chapterCallers, type CollapseResult, resolveCollapse } from '../narrative/collapse';
 import { buildReviewSummaryPrompt } from '../narrative/review-summary';
 import { type TriageSummary, triageFiles } from '../narrative/triage';
-import { isDismissed, laneOf } from '../units/lane';
+import { isDismissed, laneOf, unitsPayload } from '../units/lane';
 import type { CheckRun, PRReview } from '../github/types';
 import type { Broadcast } from '../mcp/broadcast';
 import type { RepoContext } from '../repo/snapshot';
@@ -185,21 +185,6 @@ export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
   app.get('/api/narrative', (c) => c.json({ mode: 'command-center', ...unitsPayload(store.list()) }));
 
   // --- Units API ------------------------------------------------------------
-  /**
-   * Split a unit list into what the queue shows and what it hides.
-   *
-   * Dismissed units stay in the store — that is what stops the poller re-minting them — but they must
-   * not come back through the front door, or ✕ would repaint the row it just hid and read as broken.
-   * They ride along under `dismissed` rather than being dropped, so the reveal affordance has something
-   * to render and a dismissal is never silently unreachable.
-   */
-  function unitsPayload(units: ReviewUnit[]): { units: ReviewUnit[]; dismissed: ReviewUnit[] } {
-    const visible: ReviewUnit[] = [];
-    const dismissed: ReviewUnit[] = [];
-    for (const unit of units) (isDismissed(unit) ? dismissed : visible).push(unit);
-    return { units: visible, dismissed };
-  }
-
   app.get('/api/units', (c) => {
     const status = c.req.query('status') as ReviewUnit['status'] | undefined;
     const repo = c.req.query('repo');

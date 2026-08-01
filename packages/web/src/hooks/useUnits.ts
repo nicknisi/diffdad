@@ -11,6 +11,7 @@ import type { Unit } from '../state/types';
  */
 export function useUnits() {
   const units = useReviewStore((s) => s.units);
+  const dismissed = useReviewStore((s) => s.dismissed);
   const setUnits = useReviewStore((s) => s.setUnits);
   const [repoFilter, setRepoFilter] = useState<string | null>(null);
   // Distinguish "still fetching the first snapshot" from "fetched, genuinely empty" so the command
@@ -27,8 +28,8 @@ export function useUnits() {
         const res = await fetch('/api/units');
         if (cancelled) return;
         if (res.ok) {
-          const data = (await res.json()) as { units: Unit[] };
-          if (!cancelled) setUnits(data.units ?? []);
+          const data = (await res.json()) as { units: Unit[]; dismissed?: Unit[] };
+          if (!cancelled) setUnits(data.units ?? [], data.dismissed ?? []);
         }
       } catch {
         // ignore — the SSE stream backfills the queue
@@ -49,11 +50,18 @@ export function useUnits() {
   }, [repoFilter, repos]);
 
   const visible = useMemo(() => (repoFilter ? units.filter((u) => u.repo === repoFilter) : units), [units, repoFilter]);
-  const groups: GroupedUnits = useMemo(() => groupUnits(visible), [visible]);
+  const hidden = useMemo(
+    () => (repoFilter ? dismissed.filter((u) => u.repo === repoFilter) : dismissed),
+    [dismissed, repoFilter],
+  );
+  // Dismissed rows go *through* groupUnits rather than around it: it filters them out of every lane and
+  // counts them, so the count and the exclusion can't fall out of step. The server sends them under a
+  // separate key precisely so they never reach `units` and inflate the facets or the empty state.
+  const groups: GroupedUnits = useMemo(() => groupUnits([...visible, ...hidden]), [visible, hidden]);
   // Facets are derived from the UNFILTERED list so selecting a repo never changes the counts.
   const facets: RepoFacets = useMemo(() => buildRepoFacets(units), [units]);
 
-  return { groups, repos, facets, repoFilter, setRepoFilter, total: units.length, loaded };
+  return { groups, dismissed: hidden, repos, facets, repoFilter, setRepoFilter, total: units.length, loaded };
 }
 
 /**

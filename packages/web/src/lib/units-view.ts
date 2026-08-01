@@ -1,4 +1,4 @@
-import type { CheckRun, PRReview, Unit, UnitStatus } from '../state/types';
+import type { CheckRun, Lane, PRReview, TriageKind, TriagedFile, Unit, UnitStatus } from '../state/types';
 
 /**
  * The command center's three lanes. Status grouping is primary (repo is a filter, per the
@@ -34,31 +34,178 @@ function updatedAtMs(u: Unit): number {
   return Number.isNaN(t) ? 0 : t;
 }
 
-export type GroupedUnits = { needsYou: Unit[]; inFlight: Unit[]; cleared: Unit[] };
+/**
+ * The lane a row renders in — **read from the server, never derived**.
+ *
+ * `laneOf` lives in `packages/cli/src/units/lane.ts` and stays there by contract decision: the daemon
+ * logs lane splits while this renders them, and two implementations of one rule would drift, corrupting
+ * exactly the data the "am I opening fewer PRs I didn't need to?" judgment rests on. So the server sends
+ * the answer and this reads it.
+ *
+ * The fallback is not a second implementation — it is what the queue did before lanes existed. A payload
+ * from an older daemon carries no `lane`, and degrading to today's status grouping beats an empty screen.
+ */
+export function laneOf(unit: Unit): Lane {
+  return unit.lane ?? groupOf(unit.status);
+}
+
+/** Whether ✕ has hidden this row. Mirrors `isDismissed` in the CLI's lane module. */
+function isDismissed(unit: Unit): boolean {
+  return typeof unit.dismissedAtSha === 'string' && unit.dismissedAtSha.length > 0;
+}
+
+export type GroupedUnits = {
+  needsYou: Unit[];
+  probablyNot: Unit[];
+  inFlight: Unit[];
+  cleared: Unit[];
+  /** Not a lane — a count behind a reveal. Dismissed rows are excluded from all four buckets. */
+  dismissedCount: number;
+};
+
+/** Criticality outranks everything: a tagged PR leads the queue whatever else is true of it. */
+const hasCriticality = (u: Unit): number => (u.triage && u.triage.criticality.length > 0 ? 1 : 0);
+
+/** Nobody has approved yet ⇒ you may be the only thing standing between this and main. Sorts first. */
+const unapproved = (u: Unit): number => (u.reviewRollup && u.reviewRollup.approved > 0 ? 0 : 1);
 
 /**
- * Partition + order units for display. needs-you leads with the riskiest, and within a risk the
- * longest-waiting first — the queue should pull Nick back to stale, high-stakes work. in-flight
- * and cleared show most-recent activity first.
+ * Partition + order units for display, on the lane the server assigned.
+ *
+ * needs-you leads with criticality, then with work nobody else has approved, then oldest-first — the
+ * queue should still pull toward stale work. probably-not sorts oldest-first only: ranking within a lane
+ * you are being told not to read is wasted signal. in-flight and cleared are untouched by this feature
+ * and keep their most-recent-activity order.
  */
 export function groupUnits(units: Unit[]): GroupedUnits {
   const needsYou: Unit[] = [];
+  const probablyNot: Unit[] = [];
   const inFlight: Unit[] = [];
   const cleared: Unit[] = [];
+  let dismissedCount = 0;
   for (const u of units) {
-    const g = groupOf(u.status);
-    if (g === 'needs-you') needsYou.push(u);
-    else if (g === 'cleared') cleared.push(u);
+    if (isDismissed(u)) {
+      dismissedCount++;
+      continue;
+    }
+    const lane = laneOf(u);
+    if (lane === 'needs-you') needsYou.push(u);
+    else if (lane === 'probably-not') probablyNot.push(u);
+    else if (lane === 'cleared') cleared.push(u);
     else inFlight.push(u);
   }
-  needsYou.sort((a, b) => {
-    const rank = VERDICT_RANK[verdictTone(b.verdict)] - VERDICT_RANK[verdictTone(a.verdict)];
-    return rank !== 0 ? rank : updatedAtMs(a) - updatedAtMs(b); // oldest (longest-waiting) first
-  });
+  const oldestFirst = (a: Unit, b: Unit) => updatedAtMs(a) - updatedAtMs(b);
+  // Criticality, then work nobody has approved, then — for units actually opened — the narrative's own
+  // verdict, then oldest-first. The verdict key is kept rather than dropped: it is uniformly `neutral`
+  // across unhydrated rows (so it costs nothing there, which is precisely why it was never a usable lead
+  // signal), but on a PR that *has* been read it is a real measurement, and this feature has no business
+  // discarding one.
+  needsYou.sort(
+    (a, b) =>
+      hasCriticality(b) - hasCriticality(a) ||
+      unapproved(b) - unapproved(a) ||
+      VERDICT_RANK[verdictTone(b.verdict)] - VERDICT_RANK[verdictTone(a.verdict)] ||
+      oldestFirst(a, b),
+  );
+  probablyNot.sort(oldestFirst);
   const recentFirst = (a: Unit, b: Unit) => updatedAtMs(b) - updatedAtMs(a);
   inFlight.sort(recentFirst);
   cleared.sort(recentFirst);
-  return { needsYou, inFlight, cleared };
+  return { needsYou, probablyNot, inFlight, cleared, dismissedCount };
+}
+
+// --- Row evidence (the reason line + visual weight) --------------------------------------------
+
+/**
+ * Mirror of `isMechanicalKind` in `packages/cli/src/narrative/triage.ts`, expressed as the complement of
+ * `source` rather than as a copy of its ten-member set — because that is what the CLI's own type doc says
+ * `source` *means*: "classifies as nothing mechanical". Mirroring the rule instead of the enumeration is
+ * what keeps the two from silently disagreeing the day a new mechanical kind is added CLI-side.
+ */
+const isMechanicalKind = (kind: TriageKind): boolean => kind !== 'source';
+
+/** What a fully-mechanical PR is made of: 'docs only' / 'tests only' / 'lockfile + manifest' / 'a + b'. */
+function kindSummary(files: TriagedFile[]): string {
+  const kinds = [...new Set(files.map((f) => f.kind))];
+  if (kinds.length === 1) {
+    const only = kinds[0]!;
+    return only === 'docs' ? 'docs only' : only === 'test-only' ? 'tests only' : only;
+  }
+  if (kinds.every((k) => k === 'manifest' || k === 'lockfile')) return 'lockfile + manifest';
+  return kinds.join(' + ');
+}
+
+/** The copy for a unit nobody has measured — an absence, stated as one. Never a verdict. */
+export const NOT_MEASURED = 'not looked at yet';
+
+/**
+ * The one line under the title: why this row is where it is, in facts.
+ *
+ * It states what was *found*, never what to do about it — no "safe", no "fine", no "approved". The
+ * advisory lane earns its keep by being auditable, and a line that reads as a safety claim is exactly
+ * what the rejected approve-button decision was protecting against.
+ *
+ * The branch order mirrors `needsYouReason` in the CLI's lane module, and the probably-not case defers to
+ * the lane outright rather than re-deriving it. What that ordering buys is narrow but worth stating: every
+ * branch below states a fact that is true of the PR independent of which branch won, so if the two ever
+ * fall out of step the row shows a *different true fact*, never a false one.
+ */
+export function reasonLine(unit: Unit): string {
+  const t = unit.triage;
+  if (!t || t.files.length === 0) return NOT_MEASURED;
+  // The lane already certified every veto clear for this one, so the only honest line is what the files are.
+  if (laneOf(unit) === 'probably-not') return kindSummary(t.files);
+  if (t.truncated) return 'over 100 files';
+  if (t.criticality.length > 0) return t.criticality.join(' · ');
+  const source = t.files.filter((f) => !isMechanicalKind(f.kind));
+  if (source.length > 0) return source.length === 1 ? '1 source file' : `${source.length} source files`;
+  return kindSummary(t.files);
+}
+
+/**
+ * The one sentence under the evidence drawer's file table: what the list above actually establishes.
+ *
+ * This is the trust mechanism. "Probably not" has to be auditable in one click or it is a claim taken on
+ * faith, which is the thing the rejected approve-button decision was guarding against — so the sentence
+ * describes the *method* (paths were classified) and never vouches for the code.
+ */
+export function drawerNote(unit: Unit): string {
+  const lane = laneOf(unit);
+  if (lane === 'in-flight' || lane === 'cleared') {
+    return 'Not triaged by lane at all — this row is here because of its status, not its files.';
+  }
+  const t = unit.triage;
+  if (!t || t.files.length === 0) {
+    return 'No file list was gathered for this PR, so there is nothing above to weigh. Absence of evidence is not evidence of absence, which is why it sits in the lane that needs you.';
+  }
+  if (lane === 'probably-not') {
+    return 'Every file above classifies as mechanical and no path matched a criticality keyword. That is the entire basis for this row — the code was never read.';
+  }
+  if (t.truncated) {
+    return 'This PR has more files than one request returns, so the list above is partial. A PR too large to see at once is not a low-stakes one under any reading.';
+  }
+  if (t.criticality.length > 0) {
+    return `Paths matched criticality keywords: ${t.criticality.join(', ')}. That is a match on a file path, not a judgment about what the code does.`;
+  }
+  const source = t.files.filter((f) => !isMechanicalKind(f.kind)).length;
+  return `${source === 1 ? 'One file classifies' : `${source} files classify`} as ordinary source. One is enough to keep a PR out of the low-attention lane.`;
+}
+
+/**
+ * Visual weight only — never lane membership. A four-line typo fix and a nine-hundred-line auth refactor
+ * render identically today, which is the specific thing that makes the queue unscannable.
+ *
+ * A unit with no triage sits at `mid`: it is not known to be small, and inflating it to `high` would make
+ * every un-backfilled row shout.
+ */
+export function stakesOf(unit: Unit): 'high' | 'mid' | 'low' {
+  const t = unit.triage;
+  if (!t) return 'mid';
+  if (t.criticality.length > 0 || t.truncated) return 'high';
+  const churn = t.additions + t.deletions;
+  if (churn >= 200 || t.files.length >= 10) return 'high';
+  if (churn <= 20 && t.files.length <= 2) return 'low';
+  return 'mid';
 }
 
 /** Distinct repos across the queue, sorted — the repo filter's option list. */
@@ -103,9 +250,10 @@ const byBusiest = (a: RepoFacet, b: RepoFacet): number =>
   b.needsYou - a.needsYou || b.total - a.total || a.repo.localeCompare(b.repo);
 
 /**
- * Fold the queue into sidebar facets. Per-repo `needs-you` reuses `groupOf` so a row's count matches
- * the "Needs you" lane exactly; repos with none drop into `quiet` (they still hold in-flight/cleared
- * units, so they stay reachable behind the toggle).
+ * Fold the queue into sidebar facets. Per-repo `needs-you` reads the same server-assigned lane the
+ * "Needs you" header counts, so the two can never disagree — on `groupOf` alone the sidebar would keep
+ * counting probably-not units and quietly claim more work than the lane shows. Repos with none drop into
+ * `quiet` (they still hold other units, so they stay reachable behind the toggle).
  */
 export function buildRepoFacets(units: Unit[]): RepoFacets {
   const byRepo = new Map<string, RepoFacet>();
@@ -117,7 +265,7 @@ export function buildRepoFacets(units: Unit[]): RepoFacets {
       byRepo.set(u.repo, facet);
     }
     facet.total++;
-    if (groupOf(u.status) === 'needs-you') {
+    if (laneOf(u) === 'needs-you') {
       facet.needsYou++;
       needsYou++;
     }

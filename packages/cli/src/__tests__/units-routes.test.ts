@@ -509,6 +509,24 @@ describe('units payload — dismissed rows leave the queue', () => {
     expect(body.dismissed.map((x) => x.unitId)).toContain(u.unitId);
   });
 
+  it('stamps every payload unit with its lane, on the wire', async () => {
+    // The browser cannot import laneOf across the package boundary, so an un-stamped payload means the
+    // queue silently falls back to status-only grouping and the low-attention lane never appears at all
+    // — a failure that looks exactly like "no PR qualified today".
+    const { store, app } = setup();
+    const visible = await addUnit(store);
+    const hidden = await addUnit(store, 'owner/b');
+    await app.request(`/api/units/${hidden.unitId}`, { method: 'DELETE' });
+
+    const body = (await (await app.request('/api/units')).json()) as {
+      units: { unitId: string; lane?: string }[];
+      dismissed: { unitId: string; lane?: string }[];
+    };
+    expect(body.units.find((x) => x.unitId === visible.unitId)!.lane).toBe('needs-you');
+    // The dismissed list is stamped too — the reveal renders real rows, not a bare count.
+    expect(body.dismissed.find((x) => x.unitId === hidden.unitId)!.lane).toBe('needs-you');
+  });
+
   it('un-hides a dismissed PR when the reviewer adds it back by hand', async () => {
     const { fetcher } = prFetcherSpy2();
     const { store, app } = setup({ prFetcher: fetcher });

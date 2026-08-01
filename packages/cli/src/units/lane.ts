@@ -1,5 +1,5 @@
 import { isMechanicalKind, type TriageSummary } from '../narrative/triage';
-import type { UnitStatus } from './types';
+import type { ReviewUnit, UnitStatus } from './types';
 
 /**
  * Which attention lane a unit belongs in — the single source of truth, deliberately CLI-side.
@@ -81,4 +81,29 @@ export function laneSplit(units: (LaneInput & { dismissedAtSha?: string })[]): R
     split[laneOf(unit)]++;
   }
   return split;
+}
+
+/** A unit as it rides the wire: everything the store holds, plus the lane the browser must not compute. */
+export type WireUnit = ReviewUnit & { lane: Lane };
+
+/**
+ * Split a unit list into what the queue shows and what it hides, stamping each with its lane.
+ *
+ * Dismissed units stay in the store — that is what stops the poller re-minting them — but they must not
+ * come back through the front door, or ✕ would repaint the row it just hid and read as broken. They ride
+ * along under `dismissed` rather than being dropped, so the reveal affordance has something to render and
+ * a dismissal is never silently unreachable.
+ *
+ * The lane is attached *here*, in the one place every emission point shares, rather than at each of the
+ * nine call sites. `packages/web` cannot import {@link laneOf} across the package boundary, so the answer
+ * has to be sent; sending it from nine independent spots is how a row's lane would come to depend on which
+ * broadcast painted it. One builder makes that particular drift unrepresentable.
+ */
+export function unitsPayload(units: ReviewUnit[]): { units: WireUnit[]; dismissed: WireUnit[] } {
+  const visible: WireUnit[] = [];
+  const dismissed: WireUnit[] = [];
+  for (const unit of units) {
+    (isDismissed(unit) ? dismissed : visible).push({ ...unit, lane: laneOf(unit) });
+  }
+  return { units: visible, dismissed };
 }

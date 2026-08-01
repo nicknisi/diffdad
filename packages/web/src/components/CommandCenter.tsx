@@ -26,11 +26,16 @@ function freshness(lastUnitsAt: number, now: number): string {
   return `checked ${Math.floor(secs / 60)}m ago`;
 }
 
-function GroupLabel({ title, count }: { title: string; count: number }) {
+/**
+ * A lane header. `note` states the rule that put rows here — the rule *is* the product, so it belongs on
+ * the surface rather than one click into a drawer.
+ */
+function GroupLabel({ title, count, note }: { title: string; count: number; note?: string }) {
   return (
-    <div className="mb-2 mt-6 flex items-baseline gap-2 px-1">
+    <div className="mb-2 mt-6 flex flex-wrap items-baseline gap-x-2 px-1">
       <h2 className="text-[12px] font-semibold uppercase tracking-[0.06em] text-[var(--fg-2)]">{title}</h2>
       <span className="text-[12px] tabular-nums text-[var(--fg-3)]">{count}</span>
+      {note && <span className="text-[12px] text-[var(--fg-3)]">{note}</span>}
     </div>
   );
 }
@@ -57,7 +62,7 @@ function Panel({ children }: { children: React.ReactNode[] }) {
  * Live via the shared SSE stream; a row click drills into that unit's review.
  */
 export function CommandCenter() {
-  const { groups, repos, facets, repoFilter, setRepoFilter, total, loaded } = useUnits();
+  const { groups, dismissed, repos, facets, repoFilter, setRepoFilter, total, loaded } = useUnits();
   const navigate = useReviewStore((s) => s.navigate);
   // Effective GitHub state now lives in the store (fed by GET /api/config + the SSE `config` event),
   // so a token saved from the settings page brings the daemon UI alive without a restart. Default
@@ -72,6 +77,7 @@ export function CommandCenter() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showCleared, setShowCleared] = useState(false);
+  const [showDismissed, setShowDismissed] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [toast, setToast] = useState<{ kind: 'ok' | 'error'; message: string } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -322,7 +328,10 @@ export function CommandCenter() {
                   </p>
                 </div>
               </div>
-            ) : total === 0 ? (
+            ) : /* Dismissed rows count as queue content even though they render in no lane. Without them in
+                   this condition, ✕-ing the last visible row lands on "All clear, champ" — a claim over work
+                   that is merely hidden, with the count and its reveal stranded in the branch below. */
+            total === 0 && groups.dismissedCount === 0 ? (
               <div className="pt-24 text-center">
                 <DadMark size={64} bg={markBg} shape="circle" showBadge className="mx-auto mb-4 opacity-90" />
                 <p className="text-[15px] font-medium text-[var(--fg-2)]">All clear, champ. Nothing in the queue.</p>
@@ -333,7 +342,11 @@ export function CommandCenter() {
               </div>
             ) : (
               <>
-                <GroupLabel title="Needs you" count={groups.needsYou.length} />
+                <GroupLabel
+                  title="Needs you"
+                  count={groups.needsYou.length}
+                  note="criticality first, then whether anyone else has approved"
+                />
                 {groups.needsYou.length === 0 ? (
                   <p className="px-1 text-[13px] text-[var(--fg-3)]">Nothing waiting on you. 🎉</p>
                 ) : (
@@ -344,9 +357,29 @@ export function CommandCenter() {
                   </Panel>
                 )}
 
+                {/* Renders nothing at all when empty — a lane header with a "0" beside it is chrome. */}
+                {groups.probablyNot.length > 0 && (
+                  <>
+                    <GroupLabel
+                      title="Probably not"
+                      count={groups.probablyNot.length}
+                      note="every file classified mechanical · no criticality keyword"
+                    />
+                    <Panel>
+                      {groups.probablyNot.map((u) => (
+                        <UnitRow key={u.unitId} {...rowProps(u)} onOpen={open} onRemove={remove} />
+                      ))}
+                    </Panel>
+                  </>
+                )}
+
                 {groups.inFlight.length > 0 && (
                   <>
-                    <GroupLabel title="In flight" count={groups.inFlight.length} />
+                    <GroupLabel
+                      title="In flight"
+                      count={groups.inFlight.length}
+                      note="unchanged — the ball is with the author"
+                    />
                     <Panel>
                       {groups.inFlight.map((u) => (
                         <UnitRow key={u.unitId} {...rowProps(u)} onOpen={open} onRemove={remove} />
@@ -355,27 +388,53 @@ export function CommandCenter() {
                   </>
                 )}
 
-                {groups.cleared.length > 0 && (
+                {(groups.cleared.length > 0 || groups.dismissedCount > 0) && (
                   <>
-                    <div className="mb-2 mt-6 flex items-baseline gap-2 px-1">
+                    <div className="mb-2 mt-6 flex flex-wrap items-baseline gap-x-2 px-1">
                       <h2 className="text-[12px] font-semibold uppercase tracking-[0.06em] text-[var(--fg-2)]">
                         Cleared
                       </h2>
                       <span className="text-[12px] tabular-nums text-[var(--fg-3)]">{groups.cleared.length}</span>
-                      <button
-                        type="button"
-                        onClick={() => setShowCleared((v) => !v)}
-                        className="ml-1 text-[12px] font-medium text-[var(--blue-11)]"
-                      >
-                        {showCleared ? 'hide' : 'show'}
-                      </button>
+                      {groups.cleared.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setShowCleared((v) => !v)}
+                          className="text-[12px] font-medium text-[var(--blue-11)]"
+                        >
+                          {showCleared ? 'hide' : 'show'}
+                        </button>
+                      )}
+                      {/* A dismissal self-clears the moment its author pushes, so this needs a count and a
+                          reveal — not an un-dismiss flow, and not a tab of its own. */}
+                      {groups.dismissedCount > 0 && (
+                        <span className="text-[12px] text-[var(--fg-3)]">
+                          · {groups.dismissedCount} dismissed until they push{' '}
+                          <button
+                            type="button"
+                            onClick={() => setShowDismissed((v) => !v)}
+                            className="font-medium text-[var(--blue-11)]"
+                          >
+                            {showDismissed ? 'hide' : 'show'}
+                          </button>
+                        </span>
+                      )}
                     </div>
-                    {showCleared && (
+                    {showCleared && groups.cleared.length > 0 && (
                       <Panel>
                         {groups.cleared.map((u) => (
                           <UnitRow key={u.unitId} {...rowProps(u)} onOpen={open} onRemove={remove} />
                         ))}
                       </Panel>
+                    )}
+                    {showDismissed && dismissed.length > 0 && (
+                      // No ✕ on these: they are already dismissed, and the way back is the author pushing.
+                      <div className={showCleared && groups.cleared.length > 0 ? 'mt-2' : undefined}>
+                        <Panel>
+                          {dismissed.map((u) => (
+                            <UnitRow key={u.unitId} {...rowProps(u)} onOpen={open} />
+                          ))}
+                        </Panel>
+                      </div>
                     )}
                   </>
                 )}

@@ -4,7 +4,7 @@ import type { UnitStore } from '../units/store';
 import type { PolledPr, ReviewUnit } from '../units/types';
 import type { PrFileSummary, PRMetadata } from '../github/types';
 import { type TriageSummary, triageFiles } from '../narrative/triage';
-import { isDismissed, laneSplit } from '../units/lane';
+import { isDismissed, laneSplit, unitsPayload } from '../units/lane';
 
 /**
  * Build the `PRMetadata` a freshly-minted `github` unit carries from the PR metadata the poller
@@ -299,13 +299,8 @@ export async function pollOnce(deps: {
   // `polledAt` marks this as a real GitHub check (interval or manual /api/poll), so the command
   // center stamps its "checked …" freshness caption only on true poll passes — not on the other
   // `units` broadcasts (decision/delete/hydrate/review/initial snapshot) that never re-query GitHub.
-  // Same split the routes apply: a dismissed unit stays in the store but never rides the wire as
-  // visible, or the next poll would repaint the row the reviewer just hid.
-  const all = store.list();
-  broadcast('units', {
-    units: all.filter((u) => !isDismissed(u)),
-    dismissed: all.filter(isDismissed),
-    polledAt: Date.now(),
-  });
+  // The split and the lane stamp both come from the shared builder the routes use, so this ninth
+  // emission point can't drift from the other eight.
+  broadcast('units', { ...unitsPayload(store.list()), polledAt: Date.now() });
   return { minted, resurfaced, removed };
 }
