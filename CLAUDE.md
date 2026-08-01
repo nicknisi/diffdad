@@ -13,7 +13,9 @@ bun install              # install dependencies
 bun run build            # build web frontend (required before running CLI)
 bun run build:bin        # build standalone binary
 bun run dev              # vite dev server (frontend only)
-bun run test             # run CLI tests
+bun run test             # run every suite (CLI + web)
+bun run test:cli         # bun test, whole packages/cli/src tree
+bun run test:web         # vitest, packages/web
 bun run lint             # oxlint
 bun run format           # oxfmt
 bun run release          # bump version, tag, push (triggers CI release)
@@ -28,8 +30,12 @@ bun packages/cli/src/cli.ts review owner/repo#123
 Run a single test:
 
 ```sh
-bun test packages/cli/src/__tests__/diff-parser.test.ts
+bun test packages/cli/src/__tests__/diff-parser.test.ts        # CLI
+bun run --filter '@diffdad/web' test units-view                # web (vitest name filter)
 ```
+
+Test files live in `__tests__/` directories throughout both packages — `bun run test:cli` walks the
+whole `packages/cli/src` tree, so a new `__tests__/` dir anywhere under it is picked up automatically.
 
 ## Architecture
 
