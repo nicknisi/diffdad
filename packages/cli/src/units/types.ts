@@ -103,6 +103,8 @@ export type PolledPr = {
   deletions: number;
   changedFiles: number;
   commits: number;
+  /** The base repo is archived — GitHub serves it read-only, so the PR is not reviewable work. */
+  archived?: boolean;
 };
 
 /** Thrown when a mutation references a unit id the store doesn't hold. */

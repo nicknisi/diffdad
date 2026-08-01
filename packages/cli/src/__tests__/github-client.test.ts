@@ -95,6 +95,38 @@ describe('GitHubClient.getPR', () => {
     expect(pr.body).toBe('');
   });
 
+  // `base.repo` is a full repository object on the PR payload, so `archived` costs no extra request.
+  it.each([
+    ['archived base repo', { ref: 'main', repo: { archived: true } }, true],
+    ['live base repo', { ref: 'main', repo: { archived: false } }, false],
+    // A payload without `repo` is the shape every existing test fixture uses — it must not throw, and
+    // must read false rather than undefined, so `archived === true` gating stays total.
+    ['base repo omitted', { ref: 'main' }, false],
+  ])('reads archived from %s', async (_label, base, expected) => {
+    setResponder(() =>
+      jsonResponse({
+        number: 1,
+        title: 't',
+        body: null,
+        state: 'open',
+        draft: false,
+        merged: false,
+        user: null,
+        head: { ref: 'f', sha: 'h' },
+        base,
+        labels: [],
+        created_at: '',
+        updated_at: '',
+        additions: 0,
+        deletions: 0,
+        changed_files: 0,
+        commits: 0,
+      }),
+    );
+    const pr = await new GitHubClient('t').getPR('o', 'r', 1);
+    expect(pr.archived).toBe(expected);
+  });
+
   it('throws on non-2xx response with the body included', async () => {
     setResponder(() => new Response('not found', { status: 404 }));
     await expect(new GitHubClient('t').getPR('o', 'r', 99)).rejects.toThrow(/404/);
@@ -567,6 +599,8 @@ describe('GitHubClient.searchReviewRequested', () => {
       deletions: 4,
       changedFiles: 3,
       commits: 2,
+      // Also free from that fetch — the poller drops archived repos before minting.
+      archived: false,
     });
   });
 

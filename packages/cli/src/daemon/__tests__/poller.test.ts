@@ -628,3 +628,87 @@ describe('pollOnce reconciliation', () => {
     }
   });
 });
+
+describe('pollOnce archived repos', () => {
+  it('never mints a PR whose base repo is archived', async () => {
+    const store = new UnitStore([], det());
+
+    const result = await pollOnce({ search: search([mkPr({ archived: true })]), store, broadcast: () => {} });
+
+    expect(result).toEqual({ minted: 0, resurfaced: 0, removed: 0 });
+    expect(store.list()).toEqual([]);
+  });
+
+  it('still mints the non-archived PRs in the same pass', async () => {
+    const store = new UnitStore([], det());
+
+    const result = await pollOnce({
+      search: search([mkPr({ number: 1, archived: true }), mkPr({ number: 2 })]),
+      store,
+      broadcast: () => {},
+    });
+
+    expect(result.minted).toBe(1);
+    expect(store.list().map((u) => u.prNumber)).toEqual([2]);
+  });
+
+  it('drops a unit already in the queue once its repo is archived', async () => {
+    const store = new UnitStore([], det());
+    await pollOnce({ search: search([mkPr()]), store, broadcast: () => {} });
+    expect(store.list().length).toBe(1);
+
+    // Same PR, now archived upstream.
+    const result = await pollOnce({ search: search([mkPr({ archived: true })]), store, broadcast: () => {} });
+
+    expect(result.removed).toBe(1);
+    expect(store.list()).toEqual([]);
+  });
+
+  it('drops it without a fetchPrState dep — the search keeps returning it, so no miss streak ever fires', async () => {
+    const store = new UnitStore([], det());
+    await pollOnce({ search: search([mkPr()]), store, broadcast: () => {} });
+
+    // No `fetchPrState`: reconciliation is skipped entirely, yet the archived unit must still go.
+    const result = await pollOnce({ search: search([mkPr({ archived: true })]), store, broadcast: () => {} });
+
+    expect(result.removed).toBe(1);
+    expect(store.list()).toEqual([]);
+  });
+
+  it('keeps a pinned unit whose repo is archived — reading still works, and you asked for that one', async () => {
+    const store = new UnitStore([], det());
+    store.addGithubUnit({
+      owner: 'octo',
+      repo: 'demo',
+      number: 42,
+      title: 'Add widgets',
+      headBranch: 'feat/widgets',
+      headSha: 'sha-1',
+      author: 'octocat',
+      url: 'https://github.com/octo/demo/pull/42',
+      baseRef: 'main',
+      metadata: mkMetadata(),
+      pinned: true,
+    });
+
+    const result = await pollOnce({ search: search([mkPr({ archived: true })]), store, broadcast: () => {} });
+
+    expect(result.removed).toBe(0);
+    expect(store.list().length).toBe(1);
+  });
+
+  it('names the archived reason in the reconciliation log line', async () => {
+    const store = new UnitStore([], det());
+    await pollOnce({ search: search([mkPr()]), store, broadcast: () => {} });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await pollOnce({ search: search([mkPr({ archived: true })]), store, broadcast: () => {} });
+      expect(logSpy).toHaveBeenCalledTimes(1);
+      const line = String(logSpy.mock.calls[0]![0]);
+      expect(line).toContain('octo/demo#42');
+      expect(line).toContain('archived');
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+});

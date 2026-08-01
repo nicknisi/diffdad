@@ -28,6 +28,7 @@ function metadataFromPr(pr: PolledPr): PRMetadata {
     changedFiles: pr.changedFiles,
     commits: pr.commits,
     headSha: pr.headSha,
+    archived: pr.archived,
   };
 }
 
@@ -48,6 +49,11 @@ function countsDiffer(meta: PRMetadata, pr: PolledPr): boolean {
  * store's synchronous mutators, so it's testable with a fake search and a real store. After the pass it
  * broadcasts a `units` snapshot over the daemon's SSE spine so the command center reflects the new inbox
  * immediately.
+ *
+ * PRs whose base repo is archived are dropped before any of that: GitHub serves archived repos
+ * read-only, so approving or commenting would 403 and the PR is not work the reviewer can do. They are
+ * never minted, and an existing (non-`pinned`) unit for one is removed — this runs with or without the
+ * reconcile dep, since the search keeps returning them and the miss streak would never fire.
  *
  * With `fetchPrState` wired, the pass also reconciles the store against the search: a github unit whose
  * PR the search stopped returning is dropped — immediately if GitHub reports it closed/merged, else
@@ -72,8 +78,31 @@ export async function pollOnce(deps: {
   let minted = 0;
   let resurfaced = 0;
   let removed = 0;
+  const removals: string[] = [];
+
+  // GitHub serves archived repositories read-only: approving, commenting, and merging all fail. A PR
+  // there is not work you can do, so it never enters the queue — and one already in it is dropped now
+  // rather than left to the miss-streak path, which would never fire (the search still returns it).
+  // `pinned` units are exempt, matching the reconciliation exemption below: reading an archived PR
+  // still works, and a hand-added one was asked for by name.
+  const archived = new Set<string>();
+  for (const pr of prs) {
+    if (pr.archived) archived.add(`${pr.owner}/${pr.repo}#${pr.number}`);
+  }
+  if (archived.size > 0) {
+    for (const unit of store.list()) {
+      if (unit.source !== 'github' || unit.prNumber === undefined || unit.pinned) continue;
+      const key = `${unit.repo}#${unit.prNumber}`;
+      if (!archived.has(key)) continue;
+      await store.remove(unit.unitId);
+      missStreaks?.delete(unit.unitId);
+      removals.push(`${key} (archived repo)`);
+      removed++;
+    }
+  }
 
   for (const pr of prs) {
+    if (pr.archived) continue; // read-only upstream — never mint, never resurface
     const c = classify(store.list(), pr);
     if (c.kind === 'create') {
       store.addGithubUnit({
@@ -116,7 +145,6 @@ export async function pollOnce(deps: {
     const streaks = missStreaks ?? new Map<string, number>();
     // Search keys are `owner/repo#number`; a unit's `repo` is already `owner/name`.
     const polled = new Set(prs.map((pr) => `${pr.owner}/${pr.repo}#${pr.number}`));
-    const removals: string[] = [];
     for (const unit of store.list()) {
       if (unit.source !== 'github' || unit.prNumber === undefined) continue;
       // Hand-added PRs are exempt: the reviewer typed one in precisely because GitHub was NOT asking
@@ -166,9 +194,11 @@ export async function pollOnce(deps: {
         }
       }
     }
-    if (removed > 0) {
-      console.log(`[diffdad] reconciled queue: dropped ${removals.join(', ')}`);
-    }
+  }
+
+  // Outside the `fetchPrState` block: archived removals happen without a reconcile dep wired.
+  if (removals.length > 0) {
+    console.log(`[diffdad] reconciled queue: dropped ${removals.join(', ')}`);
   }
 
   // `polledAt` marks this as a real GitHub check (interval or manual /api/poll), so the command

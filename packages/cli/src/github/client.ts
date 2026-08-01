@@ -25,7 +25,7 @@ type GhPullResponse = {
   merged: boolean;
   user: GhUser;
   head: { ref: string; sha: string };
-  base: { ref: string };
+  base: { ref: string; repo?: { archived?: boolean } };
   labels: Array<{ name: string }>;
   created_at: string;
   updated_at: string;
@@ -127,6 +127,8 @@ export class GitHubClient {
       changedFiles: data.changed_files,
       commits: data.commits,
       headSha: data.head.sha,
+      // Rides along on the PR payload we already fetched — `base.repo` is a full repository object.
+      archived: data.base.repo?.archived === true,
     };
   }
 
@@ -537,6 +539,7 @@ export class GitHubClient {
           deletions: pr.deletions,
           changedFiles: pr.changedFiles,
           commits: pr.commits,
+          archived: pr.archived,
         });
       } catch (err) {
         console.warn(

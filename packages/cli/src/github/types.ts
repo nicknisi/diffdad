@@ -15,6 +15,12 @@ export type PRMetadata = {
   changedFiles: number;
   commits: number;
   headSha: string;
+  /**
+   * The PR's base repository is archived. Optional because it is a fact we may never have looked up:
+   * units persisted before this field existed carry no value, and `false` there would be a claim
+   * rather than an absence. Read `archived === true`, never `!archived`.
+   */
+  archived?: boolean;
 };
 
 export type PRComment = {
