@@ -12,6 +12,7 @@
   "dependencies": {
     "@radix-ui/themes": "^3",
     "dompurify": "^3",
+    "markdown-it": "^15.0.0",
     "mermaid": "^11.14.0",
     "react": "^19",
     "react-dom": "^19",
