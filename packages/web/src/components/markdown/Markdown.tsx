@@ -1,5 +1,5 @@
 import DOMPurify, { type Config } from 'dompurify';
-import MarkdownIt from 'markdown-it';
+import MarkdownIt, { type MarkdownIt as MarkdownItInstance, type StateInline, type Token } from 'markdown-it';
 import { useEffect, useMemo, useState } from 'react';
 import { highlightLine } from '../../lib/shiki';
 import { useResolvedTheme } from '../../state/review-store';
@@ -80,7 +80,7 @@ function isWordChar(code: number): boolean {
 // text rule first; the whitespace/start guard matches the old regex and keeps `name@host` literal.
 // The `linkLevel` guard skips link text so `[@user](url)` leaves the handle as plain text (the old
 // regex ran after link conversion and saw `>` before `@`, so it never chipified inside links either).
-function mentionRule(state: MarkdownIt.StateInline, silent: boolean): boolean {
+function mentionRule(state: StateInline, silent: boolean): boolean {
   const start = state.pos;
   if (state.src.charCodeAt(start) !== 0x40 /* @ */) return false;
   if (state.linkLevel > 0) return false;
@@ -110,7 +110,7 @@ function mentionRule(state: MarkdownIt.StateInline, silent: boolean): boolean {
 // `text` never gets a chance mid-paragraph. Code spans are `code_inline` tokens (no text children),
 // so they're naturally skipped; link text is skipped via a link_open/link_close depth counter so the
 // ref doesn't produce a nested `<a>`.
-function splitRepoRefs(content: string, TokenCtor: typeof MarkdownIt.Token, out: MarkdownIt.Token[]): void {
+function splitRepoRefs(content: string, TokenCtor: typeof MarkdownIt.Token, out: Token[]): void {
   const re = /[\w-]+\/[\w-]+#\d+/g;
   let last = 0;
   let match: RegExpExecArray | null;
@@ -135,11 +135,11 @@ function splitRepoRefs(content: string, TokenCtor: typeof MarkdownIt.Token, out:
   }
 }
 
-function repoRefPlugin(md: MarkdownIt): void {
+function repoRefPlugin(md: MarkdownItInstance): void {
   md.core.ruler.after('inline', 'diffdad_repo_ref', (state) => {
     for (const tok of state.tokens) {
       if (tok.type !== 'inline' || !tok.children) continue;
-      const next: MarkdownIt.Token[] = [];
+      const next: Token[] = [];
       let inLink = 0;
       for (const child of tok.children) {
         if (child.type === 'link_open') {
@@ -168,7 +168,7 @@ function repoRefPlugin(md: MarkdownIt): void {
 // so this preserves the original `&#9745;`/`&#9744;` glyph markup instead. Runs after the inline parse
 // so the item's children already exist; the checkbox prefix is stripped from the first text child and
 // an inline-flex wrapper + glyph are spliced in front. A per-item stack handles nested lists.
-function taskListsPlugin(md: MarkdownIt): void {
+function taskListsPlugin(md: MarkdownItInstance): void {
   md.core.ruler.after('inline', 'diffdad_task_lists', (state) => {
     const firstInlineRemaining: boolean[] = [];
     for (const t of state.tokens) {
