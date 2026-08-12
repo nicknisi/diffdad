@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.1](https://github.com/nicknisi/diffdad/compare/v0.15.0...v0.15.1) (2026-08-12)
+
+
+### Bug Fixes
+
+* **cli:** make Bedrock Claude Opus 5 generation work (reasoning stream crash + thinking token burn) ([#54](https://github.com/nicknisi/diffdad/issues/54)) ([0b68c64](https://github.com/nicknisi/diffdad/commit/0b68c64323097e1b6b14da7a49e97543227f0447))
+
 ## [0.15.0](https://github.com/nicknisi/diffdad/compare/v0.14.0...v0.15.0) (2026-08-01)
 
 
