@@ -16,6 +16,7 @@ bun run dev              # vite dev server (frontend only)
 bun run test             # run every suite (CLI + web)
 bun run test:cli         # bun test, whole packages/cli/src tree
 bun run test:web         # vitest, packages/web
+bun run typecheck        # tsc across cli, web, and site (CI-gating — run before pushing)
 bun run lint             # oxlint
 bun run format           # oxfmt
 bun run release          # bump version, tag, push (triggers CI release)

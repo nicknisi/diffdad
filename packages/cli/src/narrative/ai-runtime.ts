@@ -3,10 +3,16 @@ import { streamText, wrapLanguageModel } from 'ai';
 import { createAmazonBedrock } from '@ai-sdk/amazon-bedrock';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createOpenAI } from '@ai-sdk/openai';
-import type { FinishReason, LanguageModelUsage, LanguageModelV1, LanguageModelV1Middleware } from 'ai';
+import type {
+  FinishReason,
+  LanguageModelUsage,
+  LanguageModelV1,
+  LanguageModelV1Middleware,
+  LanguageModelV1StreamPart,
+} from 'ai';
 import { DEFAULT_CLI_MODELS, LOCAL_CLIS, type DiffDadConfig, type LocalCli } from '../config';
 import { resolveBedrockCreds } from './bedrock-credentials';
-import { resolveBedrockRegion, toInvokeAuth } from './bedrock-models';
+import { type FetchLike, resolveBedrockRegion, toInvokeAuth } from './bedrock-models';
 
 export type AiChunkHandler = (delta: string) => void;
 export type AiUsage = { inputTokens?: number; outputTokens?: number };
@@ -118,14 +124,81 @@ const stripTemperature: LanguageModelV1Middleware = {
   transformParams: async ({ params }) => ({ ...params, temperature: undefined }),
 };
 
+/**
+ * Claude Opus 5 thinks by default with its thinking display "omitted": the stream carries a
+ * reasoning block's signature delta but never any reasoning text. ai@4's accumulator throws
+ * InvalidStreamPart ("reasoning-signature without reasoning") on a signature with no preceding
+ * reasoning text, killing the whole generation. We are single-turn and never replay assistant
+ * messages, so the signature (a replay-integrity token) is dead weight — drop it before the
+ * accumulator sees it.
+ */
+const stripReasoningSignature: LanguageModelV1Middleware = {
+  wrapStream: async ({ doStream }) => {
+    const { stream, ...rest } = await doStream();
+    return {
+      stream: stream.pipeThrough(
+        new TransformStream<LanguageModelV1StreamPart, LanguageModelV1StreamPart>({
+          transform(part, controller) {
+            if (part.type === 'reasoning-signature') return;
+            controller.enqueue(part);
+          },
+        }),
+      ),
+      ...rest,
+    };
+  },
+};
+
+/**
+ * Injects `thinking: { type: 'disabled' }` into the outgoing Anthropic Messages request body.
+ * @ai-sdk/anthropic only serializes a `thinking` field when its type is 'enabled' (it drops
+ * `{type:'disabled'}` on the floor), so providerOptions can't turn thinking off — this fetch shim
+ * adds the raw field the same way the Bedrock case uses additionalModelRequestFields. A no-op on
+ * any body that isn't a JSON object or that already carries a `thinking` field. `createAnthropic`
+ * exposes `fetch` explicitly as a request-interception hook, so this is the supported seam.
+ */
+export function disableThinkingFetch(fetchImpl?: FetchLike): FetchLike {
+  return (input, init) => {
+    // Resolve the delegate per call rather than binding it once: `createAmazonBedrock`'s fetch is
+    // captured at construction, but this shim is built inside getModel and must honor a later
+    // `globalThis.fetch` swap (a test replacing fetch after the model is built).
+    const base = fetchImpl ?? globalThis.fetch;
+    const body = init?.body;
+    if (typeof body === 'string') {
+      try {
+        const parsed = JSON.parse(body) as Record<string, unknown>;
+        if (parsed !== null && typeof parsed === 'object' && !('thinking' in parsed)) {
+          return base(input, { ...init, body: JSON.stringify({ ...parsed, thinking: { type: 'disabled' } }) });
+        }
+      } catch {
+        // Body isn't JSON we can rewrite — forward it untouched.
+      }
+    }
+    return base(input, init);
+  };
+}
+
 export function getModel(config: DiffDadConfig): LanguageModelV1 {
   const provider = config.aiProvider ?? 'anthropic';
 
   switch (provider) {
     case 'anthropic': {
-      const anthropic = createAnthropic({ apiKey: config.aiApiKey });
+      const modelId = config.aiModel ?? DEFAULT_ANTHROPIC_MODEL;
+      // Same token-burn guard as the Bedrock case below, and for the same reason: a
+      // thinking-by-default Claude (e.g. claude-opus-5) spends the shared maxTokens budget on
+      // hidden reasoning against writer-sized limits (WRITER_MAX_TOKENS = 3_000), which can yield
+      // an empty response (finishReason: length). Both providers disable thinking for Claude
+      // models. The direct API can't take the field through providerOptions (see
+      // disableThinkingFetch), so it goes in via the request-body fetch shim — the direct-API
+      // equivalent of Bedrock's additionalModelRequestFields passthrough. Fable/Mythos reject an
+      // explicit disable (400), so they're excluded here just as they are on Bedrock.
+      const disableThinking = /claude/.test(modelId) && !/fable|mythos/.test(modelId);
+      const anthropic = createAnthropic({
+        apiKey: config.aiApiKey,
+        fetch: disableThinking ? (disableThinkingFetch() as typeof globalThis.fetch) : undefined,
+      });
       return wrapLanguageModel({
-        model: anthropic(config.aiModel ?? DEFAULT_ANTHROPIC_MODEL),
+        model: anthropic(modelId),
         middleware: stripTemperature,
       });
     }
@@ -159,11 +232,23 @@ export function getModel(config: DiffDadConfig): LanguageModelV1 {
         // bearer-injecting fetch; otherwise a credentialProvider the SDK uses over its own env.
         ...toInvokeAuth(resolveBedrockCreds(config)),
       });
+      // `||` not `??`: the settings form saves '' to mean "use the default model".
+      const modelId = config.aiModel || DEFAULT_BEDROCK_MODEL;
+      // Claude thinks by default from Opus 5 onward, and maxTokens caps thinking + visible text
+      // together — our budgets are sized for the deliverable text, so omitted thinking can consume
+      // the whole budget and yield an empty response (finishReason: length). Turn thinking off for
+      // Claude models. Fable/Mythos reject an explicit disable (400) and non-Claude models don't
+      // know the field, so both are skipped.
+      // Safe only while we don't send output_config.effort — Opus 5 accepts thinking:{type:'disabled'}
+      // at effort 'high' or below, but pairing it with 'xhigh'/'max' is a 400.
+      const disableThinking = /anthropic\.claude/.test(modelId) && !/fable|mythos/.test(modelId);
       return wrapLanguageModel({
         // Bedrock-hosted Claude has the same temperature-deprecation behavior as the direct API.
-        // `||` not `??`: the settings form saves '' to mean "use the default model".
-        model: bedrock(config.aiModel || DEFAULT_BEDROCK_MODEL),
-        middleware: stripTemperature,
+        model: bedrock(
+          modelId,
+          disableThinking ? { additionalModelRequestFields: { thinking: { type: 'disabled' } } } : undefined,
+        ),
+        middleware: [stripTemperature, stripReasoningSignature],
       });
     }
     default: {
@@ -192,6 +277,15 @@ export async function withResolvedBedrockRegion(config: DiffDadConfig): Promise<
 // fields that shape it; a settings save changes the key and so invalidates. The chain itself
 // refreshes expired credentials internally, so holding one instance long-term is safe.
 let bedrockModelCache: { key: string; model: LanguageModelV1 } | undefined;
+
+/**
+ * Clears the module-scoped Bedrock model cache. Exists for tests: the cached model captures the
+ * `fetch` that was current when it was built, so a suite that swaps `fetch` per case must reset
+ * between cases to avoid reusing a prior test's (restored) fetch spy.
+ */
+export function resetBedrockModelCache(): void {
+  bedrockModelCache = undefined;
+}
 
 async function getBedrockModel(config: DiffDadConfig): Promise<LanguageModelV1> {
   const key = [
@@ -447,16 +541,33 @@ export async function callAi(
   let text = '';
   let finishReason: FinishReason | undefined;
   let usage: LanguageModelUsage | undefined;
-  for await (const part of stream.fullStream) {
-    if (part.type === 'text-delta') {
-      if (part.textDelta.length === 0) continue;
-      text += part.textDelta;
-      onChunk?.(part.textDelta);
-    } else if (part.type === 'error') {
-      throw asError(part.error);
-    } else if (part.type === 'finish') {
-      finishReason = part.finishReason;
-      usage = part.usage;
+  // DIFFDAD_DEBUG_AI=1 prints one stderr summary per AI call — which provider/model ran, why the
+  // stream stopped, token usage, and a tally of every stream part type. The tally is the signal
+  // for model-behavior surprises: e.g. thinking burning the token budget shows up as 'reasoning'
+  // counts next to finishReason=length with textChars=0.
+  const debugAi = process.env.DIFFDAD_DEBUG_AI === '1' || process.env.DIFFDAD_DEBUG_AI === 'true';
+  const partCounts: Record<string, number> = {};
+  try {
+    for await (const part of stream.fullStream) {
+      if (debugAi) partCounts[part.type] = (partCounts[part.type] ?? 0) + 1;
+      if (part.type === 'text-delta') {
+        if (part.textDelta.length === 0) continue;
+        text += part.textDelta;
+        onChunk?.(part.textDelta);
+      } else if (part.type === 'error') {
+        throw asError(part.error);
+      } else if (part.type === 'finish') {
+        finishReason = part.finishReason;
+        usage = part.usage;
+      }
+    }
+  } finally {
+    if (debugAi) {
+      console.error(
+        `[diffdad:ai] provider=${provider} model=${effectiveConfig.aiModel ?? 'default'} maxTokens=${maxTokens ?? 'unset'} ` +
+          `finishReason=${finishReason ?? 'none'} textChars=${text.length} ` +
+          `usage=${usage ? JSON.stringify(usage) : 'none'} parts=${JSON.stringify(partCounts)}`,
+      );
     }
   }
 

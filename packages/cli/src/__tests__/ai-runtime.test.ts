@@ -1,7 +1,16 @@
-import { afterAll, beforeAll, describe, expect, it, spyOn } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import * as credentialProviders from '@aws-sdk/credential-providers';
-import { callAi, getModel, withResolvedBedrockRegion } from '../narrative/ai-runtime';
+import { EventStreamCodec } from '@smithy/eventstream-codec';
+import { fromUtf8, toUtf8 } from '@smithy/util-utf8';
+import {
+  callAi,
+  disableThinkingFetch,
+  getModel,
+  resetBedrockModelCache,
+  withResolvedBedrockRegion,
+} from '../narrative/ai-runtime';
 import * as bedrockModels from '../narrative/bedrock-models';
+import type { FetchLike } from '../narrative/bedrock-models';
 import type { DiffDadConfig } from '../config';
 
 /**
@@ -226,4 +235,338 @@ describe('withResolvedBedrockRegion', () => {
       spy.mockRestore();
     }
   });
+});
+
+/**
+ * These tests exercise callAi's Bedrock ConverseStream path against canned AWS
+ * eventstream responses, encoded with the same @smithy codec the provider
+ * decodes with. The frames mirror what Claude Opus 5 actually sends: thinking
+ * is on by default and its display defaults to "omitted", so reasoning blocks
+ * arrive as a bare signature delta with no reasoning text.
+ */
+describe('callAi amazon-bedrock stream path', () => {
+  // The Bedrock model is cached at module scope, and the cached model holds the fetch that was
+  // current when it was built. Reset the cache before each case so a test builds its model against
+  // its own fetch spy rather than reusing a prior test's (restored) one.
+  beforeEach(() => {
+    resetBedrockModelCache();
+  });
+
+  function bedrockConfig(): DiffDadConfig {
+    return {
+      aiProvider: 'amazon-bedrock',
+      aiRegion: 'us-east-1',
+      aiAccessKeyId: 'AKIAEXAMPLE',
+      aiSecretAccessKey: 'secret',
+      aiModel: 'us.anthropic.claude-opus-5',
+    };
+  }
+
+  function eventFrame(eventType: string, payload: unknown): Uint8Array {
+    const codec = new EventStreamCodec(toUtf8, fromUtf8);
+    return codec.encode({
+      headers: {
+        ':event-type': { type: 'string', value: eventType },
+        ':content-type': { type: 'string', value: 'application/json' },
+        ':message-type': { type: 'string', value: 'event' },
+      },
+      body: new TextEncoder().encode(JSON.stringify(payload)),
+    });
+  }
+
+  // Cast: Bun's `typeof fetch` demands a `preconnect` property that plain mock closures lack and
+  // the AI SDK never touches (same cast as toInvokeAuth in bedrock-models.ts).
+  function mockFetch(impl: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>) {
+    return spyOn(globalThis, 'fetch').mockImplementation(impl as unknown as typeof fetch);
+  }
+
+  function converseStreamResponse(frames: Uint8Array[]): Response {
+    const total = frames.reduce((n, f) => n + f.length, 0);
+    const body = new Uint8Array(total);
+    let offset = 0;
+    for (const f of frames) {
+      body.set(f, offset);
+      offset += f.length;
+    }
+    return new Response(body, {
+      headers: { 'content-type': 'application/vnd.amazon.eventstream' },
+    });
+  }
+
+  it(
+    'survives an omitted-thinking stream (reasoning signature with no reasoning text)',
+    async () => {
+      // Opus 5 shape: the model thinks, but display defaults to "omitted" — the
+      // stream carries the reasoning block's signature and never any reasoning
+      // text. ai@4's accumulator throws InvalidStreamPart ("reasoning-signature
+      // without reasoning") on that sequence unless the signature is stripped.
+      const fetchSpy = mockFetch(async () =>
+        converseStreamResponse([
+          eventFrame('contentBlockDelta', {
+            contentBlockIndex: 0,
+            delta: { reasoningContent: { signature: 'sig-abc' } },
+          }),
+          eventFrame('contentBlockStop', { contentBlockIndex: 0 }),
+          eventFrame('contentBlockDelta', { contentBlockIndex: 1, delta: { text: 'OK' } }),
+          eventFrame('contentBlockStop', { contentBlockIndex: 1 }),
+          eventFrame('messageStop', { stopReason: 'end_turn' }),
+          eventFrame('metadata', { usage: { inputTokens: 5, outputTokens: 2 } }),
+        ]),
+      );
+      try {
+        const deltas: string[] = [];
+        const result = await callAi(bedrockConfig(), 'system', 'user', 256, (d) => deltas.push(d));
+
+        expect(fetchSpy.mock.calls[0]?.[0]).toContain('bedrock-runtime.us-east-1.amazonaws.com');
+        expect(result.text).toBe('OK');
+        expect(deltas).toEqual(['OK']);
+        expect(result.truncated).toBe(false);
+      } finally {
+        fetchSpy.mockRestore();
+      }
+    },
+    { timeout: 10000 },
+  );
+
+  it(
+    'keeps reasoning text out of the returned text when thinking is streamed with content',
+    async () => {
+      // Summarized-display shape: reasoning text deltas precede the signature.
+      // Only the answer text may reach the caller — reasoning is discarded.
+      const fetchSpy = mockFetch(async () =>
+        converseStreamResponse([
+          eventFrame('contentBlockDelta', {
+            contentBlockIndex: 0,
+            delta: { reasoningContent: { text: 'Let me think about this.' } },
+          }),
+          eventFrame('contentBlockDelta', {
+            contentBlockIndex: 0,
+            delta: { reasoningContent: { signature: 'sig-abc' } },
+          }),
+          eventFrame('contentBlockStop', { contentBlockIndex: 0 }),
+          eventFrame('contentBlockDelta', { contentBlockIndex: 1, delta: { text: 'OK' } }),
+          eventFrame('contentBlockStop', { contentBlockIndex: 1 }),
+          eventFrame('messageStop', { stopReason: 'end_turn' }),
+          eventFrame('metadata', { usage: { inputTokens: 5, outputTokens: 2 } }),
+        ]),
+      );
+      try {
+        const result = await callAi(bedrockConfig(), 'system', 'user', 256);
+        expect(result.text).toBe('OK');
+      } finally {
+        fetchSpy.mockRestore();
+      }
+    },
+    { timeout: 10000 },
+  );
+
+  it(
+    'requests thinking disabled for Claude models (maxTokens must budget visible text, not thinking)',
+    async () => {
+      // From Opus 5 onward Claude thinks by default and maxTokens caps thinking + text together —
+      // a writer-sized budget can be consumed entirely by omitted thinking, yielding the
+      // empty-response error (finishReason: length). The request must turn thinking off.
+      let requestBody: string | undefined;
+      const fetchSpy = mockFetch(async (_input, init) => {
+        requestBody = typeof init?.body === 'string' ? init.body : undefined;
+        return converseStreamResponse([
+          eventFrame('contentBlockDelta', { contentBlockIndex: 0, delta: { text: 'OK' } }),
+          eventFrame('contentBlockStop', { contentBlockIndex: 0 }),
+          eventFrame('messageStop', { stopReason: 'end_turn' }),
+          eventFrame('metadata', { usage: { inputTokens: 5, outputTokens: 2 } }),
+        ]);
+      });
+      try {
+        await callAi(bedrockConfig(), 'system', 'user', 256);
+        expect(requestBody).toBeDefined();
+        const parsed = JSON.parse(requestBody!) as {
+          additionalModelRequestFields?: { thinking?: { type?: string } };
+        };
+        expect(parsed.additionalModelRequestFields?.thinking?.type).toBe('disabled');
+      } finally {
+        fetchSpy.mockRestore();
+      }
+    },
+    { timeout: 10000 },
+  );
+
+  it(
+    'does not send the Anthropic thinking field to non-Claude Bedrock models',
+    async () => {
+      let requestBody: string | undefined;
+      const fetchSpy = mockFetch(async (_input, init) => {
+        requestBody = typeof init?.body === 'string' ? init.body : undefined;
+        return converseStreamResponse([
+          eventFrame('contentBlockDelta', { contentBlockIndex: 0, delta: { text: 'OK' } }),
+          eventFrame('contentBlockStop', { contentBlockIndex: 0 }),
+          eventFrame('messageStop', { stopReason: 'end_turn' }),
+          eventFrame('metadata', { usage: { inputTokens: 5, outputTokens: 2 } }),
+        ]);
+      });
+      try {
+        const config = { ...bedrockConfig(), aiModel: 'us.meta.llama4-maverick-17b-instruct-v1:0' };
+        await callAi(config, 'system', 'user', 256);
+        expect(requestBody).toBeDefined();
+        const parsed = JSON.parse(requestBody!) as { additionalModelRequestFields?: Record<string, unknown> };
+        expect(parsed.additionalModelRequestFields?.thinking).toBeUndefined();
+      } finally {
+        fetchSpy.mockRestore();
+      }
+    },
+    { timeout: 10000 },
+  );
+
+  it(
+    'emits a DIFFDAD_DEBUG_AI summary line with finishReason, usage, and stream part tallies',
+    async () => {
+      const fetchSpy = mockFetch(async () =>
+        converseStreamResponse([
+          eventFrame('contentBlockDelta', { contentBlockIndex: 0, delta: { text: 'OK' } }),
+          eventFrame('contentBlockStop', { contentBlockIndex: 0 }),
+          eventFrame('messageStop', { stopReason: 'end_turn' }),
+          eventFrame('metadata', { usage: { inputTokens: 5, outputTokens: 2 } }),
+        ]),
+      );
+      const errorSpy = spyOn(console, 'error').mockImplementation(() => {});
+      process.env.DIFFDAD_DEBUG_AI = '1';
+      try {
+        await callAi(bedrockConfig(), 'system', 'user', 256);
+        const line = errorSpy.mock.calls.map((c) => String(c[0])).find((s) => s.includes('[diffdad:ai]'));
+        expect(line).toBeDefined();
+        expect(line).toContain('finishReason=stop');
+        expect(line).toContain('textChars=2');
+        expect(line).toContain('"text-delta":1');
+      } finally {
+        delete process.env.DIFFDAD_DEBUG_AI;
+        errorSpy.mockRestore();
+        fetchSpy.mockRestore();
+      }
+    },
+    { timeout: 10000 },
+  );
+});
+
+describe('disableThinkingFetch', () => {
+  function captureFetch(): { fetch: FetchLike; body: () => string | undefined } {
+    let sent: string | undefined;
+    const fetch: FetchLike = async (_input, init) => {
+      sent = typeof init?.body === 'string' ? init.body : undefined;
+      return new Response('{}', { status: 200 });
+    };
+    return { fetch, body: () => sent };
+  }
+
+  it('injects thinking:{type:disabled} into a JSON message body', async () => {
+    const cap = captureFetch();
+    await disableThinkingFetch(cap.fetch)('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      body: JSON.stringify({ model: 'claude-opus-5', messages: [] }),
+    });
+    expect(JSON.parse(cap.body()!)).toMatchObject({ thinking: { type: 'disabled' } });
+  });
+
+  it('does not clobber a request that already sets thinking', async () => {
+    const cap = captureFetch();
+    await disableThinkingFetch(cap.fetch)('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      body: JSON.stringify({ thinking: { type: 'enabled', budgetTokens: 100 } }),
+    });
+    expect(JSON.parse(cap.body()!).thinking).toEqual({ type: 'enabled', budgetTokens: 100 });
+  });
+
+  it('forwards a non-JSON body untouched', async () => {
+    let sent: unknown;
+    const base: FetchLike = async (_input, init) => {
+      sent = init?.body;
+      return new Response('{}', { status: 200 });
+    };
+    await disableThinkingFetch(base)('https://api.anthropic.com/v1/messages', { method: 'POST', body: 'not-json' });
+    expect(sent).toBe('not-json');
+  });
+});
+
+describe('callAi anthropic disable-thinking wiring', () => {
+  // Cast: Bun's `typeof fetch` demands a `preconnect` property plain mock closures lack (same cast
+  // as the Bedrock stream tests above).
+  function mockFetch(impl: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>) {
+    return spyOn(globalThis, 'fetch').mockImplementation(impl as unknown as typeof fetch);
+  }
+
+  // Minimal Anthropic Messages SSE stream that yields a single text block and ends the turn.
+  function anthropicSse(): Response {
+    const events: [string, unknown][] = [
+      [
+        'message_start',
+        {
+          type: 'message_start',
+          message: {
+            id: 'msg_1',
+            type: 'message',
+            role: 'assistant',
+            model: 'claude-opus-5',
+            content: [],
+            stop_reason: null,
+            stop_sequence: null,
+            usage: { input_tokens: 5, output_tokens: 0 },
+          },
+        },
+      ],
+      ['content_block_start', { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }],
+      ['content_block_delta', { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'OK' } }],
+      ['content_block_stop', { type: 'content_block_stop', index: 0 }],
+      [
+        'message_delta',
+        { type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 1 } },
+      ],
+      ['message_stop', { type: 'message_stop' }],
+    ];
+    const body = events.map(([event, data]) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join('');
+    return new Response(body, { headers: { 'content-type': 'text/event-stream' } });
+  }
+
+  it(
+    'sends thinking disabled in the request body for a Claude model on the direct Anthropic API',
+    async () => {
+      let requestBody: string | undefined;
+      const fetchSpy = mockFetch(async (_input, init) => {
+        requestBody = typeof init?.body === 'string' ? init.body : undefined;
+        return anthropicSse();
+      });
+      try {
+        const result = await callAi(
+          { aiProvider: 'anthropic', aiApiKey: 'k', aiModel: 'claude-opus-5' },
+          'system',
+          'user',
+          256,
+        );
+        expect(result.text).toBe('OK');
+        expect(requestBody).toBeDefined();
+        const parsed = JSON.parse(requestBody!) as { thinking?: { type?: string } };
+        expect(parsed.thinking?.type).toBe('disabled');
+      } finally {
+        fetchSpy.mockRestore();
+      }
+    },
+    { timeout: 10000 },
+  );
+
+  it(
+    'does not disable thinking for Fable/Mythos models (they reject an explicit disable)',
+    async () => {
+      let requestBody: string | undefined;
+      const fetchSpy = mockFetch(async (_input, init) => {
+        requestBody = typeof init?.body === 'string' ? init.body : undefined;
+        return anthropicSse();
+      });
+      try {
+        await callAi({ aiProvider: 'anthropic', aiApiKey: 'k', aiModel: 'claude-fable-5' }, 'system', 'user', 256);
+        expect(requestBody).toBeDefined();
+        const parsed = JSON.parse(requestBody!) as { thinking?: unknown };
+        expect(parsed.thinking).toBeUndefined();
+      } finally {
+        fetchSpy.mockRestore();
+      }
+    },
+    { timeout: 10000 },
+  );
 });
