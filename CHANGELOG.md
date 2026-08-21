@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.2](https://github.com/nicknisi/diffdad/compare/v0.15.1...v0.15.2) (2026-08-21)
+
+
+### Bug Fixes
+
+* **release:** publish Linux ARM64 binaries ([#60](https://github.com/nicknisi/diffdad/issues/60)) ([365b394](https://github.com/nicknisi/diffdad/commit/365b3943f0271377aa7a74d9189e7ee749c98fc2))
+
 ## [0.15.1](https://github.com/nicknisi/diffdad/compare/v0.15.0...v0.15.1) (2026-08-12)
 
 
