@@ -108,20 +108,32 @@ jobs:
           TAP_PATH: ${{ matrix.path }}
         run: |
           VER="${VERSION#v}"
-          SHA_ARM64=$(shasum -a 256 dad-darwin-arm64.tar.gz | cut -d' ' -f1)
-          SHA_X86_64=$(shasum -a 256 dad-darwin-x86_64.tar.gz | cut -d' ' -f1)
-          SHA_LINUX=$(shasum -a 256 dad-linux-x86_64.tar.gz | cut -d' ' -f1)
+          export SHA_DARWIN_ARM64=$(shasum -a 256 dad-darwin-arm64.tar.gz | cut -d' ' -f1)
+          export SHA_DARWIN_X86_64=$(shasum -a 256 dad-darwin-x86_64.tar.gz | cut -d' ' -f1)
+          export SHA_LINUX_X86_64=$(shasum -a 256 dad-linux-x86_64.tar.gz | cut -d' ' -f1)
+          export SHA_LINUX_ARM64=$(shasum -a 256 dad-linux-aarch64.tar.gz | cut -d' ' -f1)
           cd "$TAP_PATH"
           sed -i "s/version \".*\"/version \"${VER}\"/" Formula/dad.rb
-          python3 -c "
-          import re
+          # Map each exact artifact filename to its checksum. Each substitution
+          # must hit exactly one formula branch; a missing/renamed branch (count
+          # != 1) fails the release instead of publishing a wrong checksum.
+          python3 - <<'PY'
+          import os, re, sys
           f = 'Formula/dad.rb'
           txt = open(f).read()
-          shas = {'arm64': '${SHA_ARM64}', 'x86_64': '${SHA_X86_64}', 'linux': '${SHA_LINUX}'}
-          for arch, sha in shas.items():
-              txt = re.sub(r'(dad-.*' + arch + r'.*\n\s*sha256 \")([a-fA-F0-9]+|PLACEHOLDER_\w+)(\")', lambda m: m.group(1) + sha + m.group(3), txt)
+          mapping = {
+              'dad-darwin-arm64.tar.gz': os.environ['SHA_DARWIN_ARM64'],
+              'dad-darwin-x86_64.tar.gz': os.environ['SHA_DARWIN_X86_64'],
+              'dad-linux-x86_64.tar.gz': os.environ['SHA_LINUX_X86_64'],
+              'dad-linux-aarch64.tar.gz': os.environ['SHA_LINUX_ARM64'],
+          }
+          for artifact, sha in mapping.items():
+              pattern = re.compile(r'(' + re.escape(artifact) + r'"\n\s*sha256 ")([a-fA-F0-9]+|PLACEHOLDER_\w+)(")')
+              txt, n = pattern.subn(lambda m: m.group(1) + sha + m.group(3), txt)
+              if n != 1:
+                  sys.exit(f'expected exactly one sha256 substitution for {artifact}, got {n}')
           open(f, 'w').write(txt)
-          "
+          PY
 
       - name: Commit formula
         env:

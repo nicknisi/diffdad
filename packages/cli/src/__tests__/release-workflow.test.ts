@@ -52,3 +52,45 @@ describe('release workflow build matrix', () => {
     }
   });
 });
+
+// Guards the Homebrew tap update so each published artifact's checksum is mapped
+// to exactly one formula branch by exact filename. A broad arch/OS regex could
+// match the wrong branch (e.g. `x86_64` hitting both darwin and linux) or a
+// missing branch could silently publish a stale/wrong sha256.
+describe('release workflow homebrew formula update', () => {
+  const updateStep = workflow.slice(workflow.indexOf('name: Update formula'));
+
+  it('computes a checksum for every published artifact, including linux aarch64', () => {
+    for (const artifact of [
+      'dad-darwin-arm64.tar.gz',
+      'dad-darwin-x86_64.tar.gz',
+      'dad-linux-x86_64.tar.gz',
+      'dad-linux-aarch64.tar.gz',
+    ]) {
+      expect(updateStep, `no shasum for ${artifact}`).toContain(`shasum -a 256 ${artifact}`);
+    }
+  });
+
+  it('maps each exact artifact filename to its checksum env var', () => {
+    const expected: Record<string, string> = {
+      'dad-darwin-arm64.tar.gz': 'SHA_DARWIN_ARM64',
+      'dad-darwin-x86_64.tar.gz': 'SHA_DARWIN_X86_64',
+      'dad-linux-x86_64.tar.gz': 'SHA_LINUX_X86_64',
+      'dad-linux-aarch64.tar.gz': 'SHA_LINUX_ARM64',
+    };
+    for (const [artifact, envVar] of Object.entries(expected)) {
+      expect(updateStep).toContain(`'${artifact}': os.environ['${envVar}']`);
+    }
+    // Reject any residual broad arch/OS regex that could match multiple branches.
+    expect(updateStep).not.toContain("'arm64':");
+    expect(updateStep).not.toContain('dad-.*');
+  });
+
+  it('honors the tap PLACEHOLDER_LINUX_ARM64 contract and fails on count != 1', () => {
+    // The coordinated homebrew-formulae PR adds the linux ARM branch with this
+    // placeholder; the substitution must accept it and require exactly one hit.
+    expect(updateStep).toContain('PLACEHOLDER_\\w+');
+    expect(updateStep).toContain('if n != 1:');
+    expect(updateStep).toContain('expected exactly one sha256 substitution');
+  });
+});
