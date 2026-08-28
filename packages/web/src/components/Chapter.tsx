@@ -317,6 +317,16 @@ export function Chapter({ index, chapter, resolve, decision, callers }: Props) {
     if (hasDecision && !prevHadDecision.current && !touched.current) setCollapsed(true);
     prevHadDecision.current = hasDecision;
   }, [decision]);
+  // A TOC jump to a collapsed chapter opens it before the scroll lands, then clears the request so it
+  // fires once. Counts as the reviewer acting (`touched`) so a later decision cannot re-collapse it.
+  const pendingExpandChapterId = useReviewStore((s) => s.pendingExpandChapterId);
+  const requestExpandChapter = useReviewStore((s) => s.requestExpandChapter);
+  useEffect(() => {
+    if (pendingExpandChapterId !== id) return;
+    touched.current = true;
+    setCollapsed(false);
+    requestExpandChapter(null);
+  }, [pendingExpandChapterId, id, requestExpandChapter]);
   // `reviewed` wins: both seeds produce the same collapsed row, so precedence only decides which line
   // explains it, and the reviewer's own action outranks the tool's inference.
   const reasonLine = collapseReason(decision, reviewed);
