@@ -104,7 +104,7 @@ async function runOne(
     const totalMs = Date.now() - startedAt;
     provider = result.provider;
     const proseWordCount = countProseWords(result.narrative);
-    let scores = { comprehensiveness: 0, rationality: 0, conciseness: 0, expressiveness: 0 };
+    let scores = { comprehensiveness: 0, rationality: 0, conciseness: 0, expressiveness: 0, omission: 0 };
     let scoreNotes = '';
     try {
       const judged = await scoreNarrative(result.narrative, fixture, judgeConfig);
@@ -146,7 +146,7 @@ async function runOne(
       provider,
       totalMs: 0,
       proseWordCount: 0,
-      scores: { comprehensiveness: 0, rationality: 0, conciseness: 0, expressiveness: 0 },
+      scores: { comprehensiveness: 0, rationality: 0, conciseness: 0, expressiveness: 0, omission: 0 },
       scoreNotes: '',
       defectDetection: { surfaced: 0, expected: fixture.groundTruth.expectedConcerns.length, detail: [] },
       hotspotPlacement: HOTSPOTS_UNSCORED,
@@ -166,6 +166,7 @@ export function aggregate(runs: EvalRun[]): Baseline['aggregate'] {
       avgRationality: 0,
       avgConciseness: 0,
       avgExpressiveness: 0,
+      avgOmission: 0,
       avgTimeToFirstPartialMs: null,
       avgTotalMs: 0,
       avgProseWordCount: 0,
@@ -189,6 +190,7 @@ export function aggregate(runs: EvalRun[]): Baseline['aggregate'] {
     avgRationality: avg(runs.map((r) => r.scores.rationality)),
     avgConciseness: avg(runs.map((r) => r.scores.conciseness)),
     avgExpressiveness: avg(runs.map((r) => r.scores.expressiveness)),
+    avgOmission: avg(runs.map((r) => r.scores.omission)),
     avgTimeToFirstPartialMs: ttfp.length > 0 ? Math.round(avg(ttfp)) : null,
     avgTotalMs: Math.round(avg(runs.map((r) => r.totalMs))),
     avgProseWordCount: Math.round(avg(runs.map((r) => r.proseWordCount))),
@@ -249,7 +251,7 @@ async function main() {
     }
     const s = run.scores;
     console.log(
-      `  scores: comp=${s.comprehensiveness} rat=${s.rationality} con=${s.conciseness} exp=${s.expressiveness}${run.scoreNotes ? `\n  notes: ${run.scoreNotes}` : ''}`,
+      `  scores: comp=${s.comprehensiveness} rat=${s.rationality} con=${s.conciseness} exp=${s.expressiveness} omit=${s.omission}${run.scoreNotes ? `\n  notes: ${run.scoreNotes}` : ''}`,
     );
     if (run.errors?.length) {
       for (const e of run.errors) console.log(`  ! ${e}`);
@@ -268,7 +270,7 @@ async function main() {
   await writeFile(outputPath, JSON.stringify(baseline, null, 2) + '\n');
   console.log(`\nBaseline written: ${outputPath}`);
   console.log(
-    `Aggregate: comp=${baseline.aggregate.avgComprehensiveness.toFixed(2)} rat=${baseline.aggregate.avgRationality.toFixed(2)} con=${baseline.aggregate.avgConciseness.toFixed(2)} exp=${baseline.aggregate.avgExpressiveness.toFixed(2)} recall=${baseline.aggregate.avgDefectRecall} hotspots=${baseline.aggregate.avgHotspotPlacement} ttfp=${baseline.aggregate.avgTimeToFirstPartialMs ?? 'n/a'}ms total=${baseline.aggregate.avgTotalMs}ms`,
+    `Aggregate: comp=${baseline.aggregate.avgComprehensiveness.toFixed(2)} rat=${baseline.aggregate.avgRationality.toFixed(2)} con=${baseline.aggregate.avgConciseness.toFixed(2)} exp=${baseline.aggregate.avgExpressiveness.toFixed(2)} omit=${baseline.aggregate.avgOmission.toFixed(2)} recall=${baseline.aggregate.avgDefectRecall} hotspots=${baseline.aggregate.avgHotspotPlacement} ttfp=${baseline.aggregate.avgTimeToFirstPartialMs ?? 'n/a'}ms total=${baseline.aggregate.avgTotalMs}ms`,
   );
 }
 

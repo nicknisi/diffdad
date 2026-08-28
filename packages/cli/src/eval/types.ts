@@ -48,6 +48,8 @@ export type RubricScores = {
   rationality: number;
   conciseness: number;
   expressiveness: number;
+  /** Words spent proportional to importance — penalizes narrating mechanical/low-risk changes at all. */
+  omission: number;
 };
 
 export type DefectDetectionResult = {
@@ -117,6 +119,7 @@ export type Baseline = {
     avgRationality: number;
     avgConciseness: number;
     avgExpressiveness: number;
+    avgOmission: number;
     avgTimeToFirstPartialMs: number | null;
     avgTotalMs: number;
     avgProseWordCount: number;

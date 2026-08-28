@@ -66,8 +66,19 @@ const MAX_THEMES = 7;
 // interpretation legend, and every risk score moved with the rescaled centrality term. Risk hints reach
 // the planner through `buildSharedHeader`, so plans change too — without both bumps, every PR already
 // reviewed at the same head SHA would keep serving its diff-only narrative from cache.
-export const PLANNER_PROMPT_REVISION = 2;
-export const NARRATIVE_PROMPT_REVISION = 3;
+// Bumped again for the reader-contract + omission mandate added to the prose prompts (single-pass,
+// writer, and planner prose guidance). Both keys move so every cached plan and narrative regenerates
+// against the new instructions.
+export const PLANNER_PROMPT_REVISION = 3;
+export const NARRATIVE_PROMPT_REVISION = 4;
+
+// Shared reader-contract + omission mandate injected into every prompt that produces reader-facing
+// prose. (a) forces the model to spend its budget deciding what to leave out; (b) pins the reader's
+// knowledge to the PR text + this narrative, so mid-implementation jargon never leaks through.
+const READER_CONTRACT = `## Reader contract & omission mandate
+
+- **Omit aggressively.** Spend substantial reasoning effort deciding what to OMIT rather than what to include; deep analysis followed by a small amount of clear output is the correct tradeoff. Every word taxes the reader.
+- **Reader model.** The reader sees ONLY the PR title/description and your narrative. Never reference internal abstractions, temporary names, or mid-implementation concepts as if the reader already knows them.`;
 
 const RESPONSE_SCHEMA = `{
   "title": "string — short title for the PR's review story",
@@ -199,6 +210,8 @@ const SYSTEM_PROMPT = `You are Diff Dad, a senior engineer producing a code revi
 
 ${SHARED_PRINCIPLES}
 
+${READER_CONTRACT}
+
 ## What to produce
 
 ### tldr (1 sentence)
@@ -269,6 +282,10 @@ ${RESPONSE_SCHEMA}`;
 const PLANNER_SYSTEM_PROMPT = `You are Diff Dad's planner. You are running the FIRST of two passes: you decide the chapter structure for a PR review, then a second pass writes the prose.
 
 ${SHARED_PRINCIPLES}
+
+${READER_CONTRACT}
+
+The reading plan, concerns, tldr, and theme rationales you emit here are reader-facing prose — the omission mandate and reader model above apply to every one of them.
 
 ## Your job in this pass
 
@@ -396,6 +413,8 @@ ${PLAN_RESPONSE_SCHEMA}`;
 const WRITER_SYSTEM_PROMPT = `You are Diff Dad's writer. You are running the SECOND of two passes: a planner has already decided the chapter structure; you write the prose for ONE theme.
 
 ${SHARED_PRINCIPLES}
+
+${READER_CONTRACT}
 
 ## Your job in this pass
 
@@ -631,6 +650,8 @@ export interface WriterPromptInput {
   fullFileTree: string[];
   /** Base-branch snapshot, when one resolved. See {@link NarrativePromptInput.repoContext}. */
   repoContext?: RepoContext;
+  /** Formatted anchoring-error feedback from a previous failed attempt at this chapter. */
+  retryFeedback?: string;
 }
 
 function normalizePath(p: string): string {
@@ -687,7 +708,7 @@ function formatThemeDiff(files: DiffFile[], theme: PlanTheme): string {
 
 /** Build the writer prompt for one theme — second pass of the two-pass pipeline. */
 export function buildWriterPrompt(input: WriterPromptInput): NarrativePrompt {
-  const { plan, theme, files, fullFileTree, repoContext } = input;
+  const { plan, theme, files, fullFileTree, repoContext, retryFeedback } = input;
   const risks = computeRisk(files, repoContext);
   const diffBlock = formatThemeDiff(files, theme);
 
@@ -721,6 +742,16 @@ export function buildWriterPrompt(input: WriterPromptInput): NarrativePrompt {
   if (fullFileTree.length > 0) {
     const tree = fullFileTree.slice(0, 50).join(', ');
     parts.push(`(Project file tree, first 50: ${tree})`, '');
+  }
+
+  if (retryFeedback) {
+    parts.push(
+      '---',
+      '',
+      'Your previous attempt at this chapter had these anchoring errors. Fix them: reference only the hunks listed above, at valid hunk indices, and drop any section that points at a file or hunk not in this theme.',
+      retryFeedback,
+      '',
+    );
   }
 
   // Suppressed themes never reach the writer — the engine synthesizes them via
