@@ -254,7 +254,8 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
   const { app, broadcast, refreshRepoContext, blastRadius } = createServer(ctx);
   const portFlag = Bun.argv.find((f) => f.startsWith('--port='));
   const port = portFlag ? parseInt(portFlag.split('=')[1] ?? '0') : 0;
-  const server = Bun.serve({ fetch: app.fetch, port, idleTimeout: 255 });
+  // Loopback only: the server has no auth and serves private data (session prompts, billable AI routes).
+  const server = Bun.serve({ fetch: app.fetch, port, hostname: '127.0.0.1', idleTimeout: 255 });
   const url = `http://localhost:${server.port}`;
 
   if (cached) {

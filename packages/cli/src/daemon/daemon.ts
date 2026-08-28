@@ -545,7 +545,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<number> {
 
   let server: ReturnType<typeof Bun.serve>;
   try {
-    server = Bun.serve({ fetch: app.fetch, port, idleTimeout: 255 });
+    // Loopback only — same posture as the per-PR server: no auth, private data.
+    server = Bun.serve({ fetch: app.fetch, port, hostname: '127.0.0.1', idleTimeout: 255 });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`\n  ${a.red}${a.bold}error:${a.reset} could not bind port ${port}: ${msg}`);
