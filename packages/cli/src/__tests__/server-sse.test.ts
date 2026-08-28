@@ -168,6 +168,7 @@ type GhStub = {
   getCheckRuns: (...args: unknown[]) => Promise<CheckRun[]>;
   getReviews: (...args: unknown[]) => Promise<PRReview[]>;
   getDiff: (...args: unknown[]) => Promise<DiffFile[]>;
+  getReviewThreadResolution?: (...args: unknown[]) => Promise<Map<number, boolean> | null>;
 };
 
 function defaultGh(state: {
@@ -183,6 +184,7 @@ function defaultGh(state: {
     getCheckRuns: async () => state.checks ?? [],
     getReviews: async () => state.reviews ?? [],
     getDiff: async () => state.files ?? [],
+    getReviewThreadResolution: async () => null,
   };
 }
 
@@ -683,6 +685,7 @@ describe('GET /api/events — polling cycle', () => {
       getComments: async () => [],
       getCheckRuns: async () => [],
       getReviews: async () => [],
+      getReviewThreadResolution: async () => null,
       getDiff: async () => {
         await diffGate;
         return [];
@@ -791,6 +794,7 @@ describe('GET /api/events — polling cycle', () => {
       getComments: async () => [],
       getCheckRuns: async () => [],
       getReviews: async () => [],
+      getReviewThreadResolution: async () => null,
       getDiff: async () => [],
     };
     const ctx = mkContext({ github: gh as unknown as GitHubClient });
