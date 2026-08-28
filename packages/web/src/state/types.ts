@@ -8,6 +8,7 @@ import type { WireUnit } from '@diffdad/contracts';
  */
 export type {
   Callout,
+  CallStackFrame,
   CapStats,
   ChapterCallers,
   CheckRun,

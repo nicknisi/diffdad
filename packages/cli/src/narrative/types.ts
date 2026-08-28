@@ -84,6 +84,23 @@ export type HunkAnchor = {
   contentHash: string;
 };
 
+/**
+ * One frame in a base-vs-head call-tree diff. `depth` is the 0-based indent (root frames at 0).
+ * `file`+`hunkIndex` optionally link the frame into a diff section the same way a `diff` section does;
+ * both must be present for the link to be live. Unlike diff sections, frames carry no re-resolution
+ * anchor — the validate/repair path nulls a dead link in place rather than re-resolving it.
+ */
+export type CallStackFrame = {
+  /** e.g. 'handleSubmit — src/form.ts'. */
+  label: string;
+  change: 'added' | 'removed' | 'unchanged' | 'modified';
+  /** 0-based indentation level. Clamped to 0-8 by normalizeNarrative. */
+  depth: number;
+  file?: string;
+  /** 0-based index into DiffFile.hunks — same semantics as a diff section. */
+  hunkIndex?: number;
+};
+
 export type NarrativeSection =
   | { type: 'narrative'; content: string }
   | {
@@ -94,7 +111,8 @@ export type NarrativeSection =
       hunkIndex: number;
       /** Content-derived re-resolution anchor. Absent on narratives cached before this field existed. */
       anchor?: HunkAnchor;
-    };
+    }
+  | { type: 'callstack'; title: string; frames: CallStackFrame[] };
 
 const CONCERN_CATEGORIES: ConcernCategory[] = [
   'logic',
@@ -116,6 +134,48 @@ function normalizeReadingPlanStep(input: unknown): ReadingPlanStep | null {
     chapterIndex: typeof obj.chapterIndex === 'number' ? obj.chapterIndex : undefined,
     why: typeof obj.why === 'string' ? obj.why : undefined,
   };
+}
+
+const CALLSTACK_CHANGES: CallStackFrame['change'][] = ['added', 'removed', 'unchanged', 'modified'];
+const MAX_FRAME_DEPTH = 8;
+const MAX_FRAMES = 30;
+
+function normalizeCallStackFrame(input: unknown): CallStackFrame | null {
+  if (!input || typeof input !== 'object') return null;
+  const obj = input as Record<string, unknown>;
+  if (typeof obj.label !== 'string' || obj.label.length === 0) return null;
+  const change = CALLSTACK_CHANGES.includes(obj.change as CallStackFrame['change'])
+    ? (obj.change as CallStackFrame['change'])
+    : 'unchanged';
+  const rawDepth = typeof obj.depth === 'number' && Number.isFinite(obj.depth) ? Math.floor(obj.depth) : 0;
+  const depth = Math.min(Math.max(rawDepth, 0), MAX_FRAME_DEPTH);
+  return {
+    label: obj.label,
+    change,
+    depth,
+    file: typeof obj.file === 'string' ? obj.file : undefined,
+    hunkIndex: typeof obj.hunkIndex === 'number' ? obj.hunkIndex : undefined,
+  };
+}
+
+/**
+ * Normalize one section. Prose and diff sections pass through untouched (they are validated elsewhere);
+ * callstack sections get defensive frame handling: malformed frames dropped, depth clamped, frame count
+ * capped, missing/unknown change coerced to 'unchanged'. Unknown section types pass through so the UI's
+ * safe default can drop them.
+ */
+function normalizeSection(input: unknown): NarrativeSection {
+  if (input && typeof input === 'object' && (input as Record<string, unknown>).type === 'callstack') {
+    const obj = input as Record<string, unknown>;
+    const frames = Array.isArray(obj.frames)
+      ? obj.frames
+          .map(normalizeCallStackFrame)
+          .filter((f): f is CallStackFrame => f !== null)
+          .slice(0, MAX_FRAMES)
+      : [];
+    return { type: 'callstack', title: typeof obj.title === 'string' ? obj.title : '', frames };
+  }
+  return input as NarrativeSection;
 }
 
 function normalizeConcern(input: unknown): Concern | null {
@@ -162,7 +222,7 @@ export function normalizeNarrative(input: unknown): NarrativeResponse {
       risk: (c.risk === 'low' || c.risk === 'medium' || c.risk === 'high'
         ? c.risk
         : 'medium') as NarrativeChapter['risk'],
-      sections: Array.isArray(c.sections) ? (c.sections as NarrativeSection[]) : [],
+      sections: Array.isArray(c.sections) ? c.sections.map(normalizeSection) : [],
       callouts: Array.isArray(c.callouts) ? (c.callouts as Callout[]) : undefined,
       reshow: Array.isArray(c.reshow) ? (c.reshow as ReshowEntry[]) : undefined,
       themeId: typeof c.themeId === 'string' ? c.themeId : undefined,

@@ -130,6 +130,54 @@ describe('repairNarrative', () => {
     expect(out.chapters[0]!.reshow).toEqual([{ ref: 1, file: 'a.ts' }]);
   });
 
+  it('nulls out a callstack frame dead link but keeps the frame and its prose', () => {
+    const files = [file('a.ts', 1)];
+    const n = narrative([
+      {
+        title: 'A',
+        summary: '',
+        whyMatters: '',
+        risk: 'low',
+        sections: [
+          diffSection('a.ts', 0),
+          {
+            type: 'callstack',
+            title: 'flow',
+            frames: [
+              { label: 'root', change: 'unchanged', depth: 0 },
+              { label: 'gone', change: 'added', depth: 1, file: 'ghost.ts', hunkIndex: 0 },
+              { label: 'oob', change: 'modified', depth: 1, file: 'a.ts', hunkIndex: 9 },
+              { label: 'good', change: 'added', depth: 1, file: 'a.ts', hunkIndex: 0 },
+            ],
+          },
+        ],
+      },
+    ]);
+    const { narrative: out, dropped } = repairNarrative(n, files);
+    const section = out.chapters[0]!.sections[1]!;
+    expect(section.type).toBe('callstack');
+    if (section.type === 'callstack') {
+      expect(section.frames).toHaveLength(4); // no frame dropped
+      expect(section.frames[1]).toEqual({
+        label: 'gone',
+        change: 'added',
+        depth: 1,
+        file: undefined,
+        hunkIndex: undefined,
+      });
+      expect(section.frames[2]).toEqual({
+        label: 'oob',
+        change: 'modified',
+        depth: 1,
+        file: undefined,
+        hunkIndex: undefined,
+      });
+      expect(section.frames[3]).toEqual({ label: 'good', change: 'added', depth: 1, file: 'a.ts', hunkIndex: 0 });
+    }
+    expect(dropped).toHaveLength(2);
+    expect(dropped.map((d) => d.kind).sort()).toEqual(['invalid-hunk-index', 'unknown-file']);
+  });
+
   it('produces a narrative with no unresolvable refs left (validator agrees)', () => {
     const files = [file('a.ts', 2)];
     const n = narrative([

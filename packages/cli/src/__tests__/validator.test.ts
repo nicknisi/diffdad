@@ -210,6 +210,34 @@ describe('validateNarrative', () => {
     expect(findKind(r.violations, 'orphan-hunk')).toEqual([]);
   });
 
+  it('flags a callstack frame linking an unknown file or out-of-range hunkIndex', () => {
+    const files = [file('a.ts', 1)];
+    const n = narrative([
+      {
+        title: '1',
+        summary: '',
+        whyMatters: '',
+        risk: 'low',
+        sections: [
+          diffSection('a.ts', 0),
+          {
+            type: 'callstack',
+            title: 'flow',
+            frames: [
+              { label: 'root', change: 'unchanged', depth: 0 }, // no link — ignored
+              { label: 'gone', change: 'added', depth: 1, file: 'ghost.ts', hunkIndex: 0 }, // unknown-file
+              { label: 'oob', change: 'modified', depth: 1, file: 'a.ts', hunkIndex: 9 }, // invalid-hunk-index
+              { label: 'good', change: 'added', depth: 1, file: 'a.ts', hunkIndex: 0 }, // valid
+            ],
+          },
+        ],
+      },
+    ]);
+    const r = validateNarrative(n, files);
+    expect(findKind(r.violations, 'unknown-file')).toMatchObject([{ file: 'ghost.ts', chapter: 0 }]);
+    expect(findKind(r.violations, 'invalid-hunk-index')).toMatchObject([{ file: 'a.ts', hunkIndex: 9, chapter: 0 }]);
+  });
+
   it('formatViolation produces a non-empty string for every kind', () => {
     const samples: ValidationViolation[] = [
       { kind: 'duplicate-primary', file: 'a', hunkIndex: 0, chapters: [0, 1] },

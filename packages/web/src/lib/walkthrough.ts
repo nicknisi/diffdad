@@ -160,7 +160,7 @@ export function buildWalkthrough(narrative: NarrativeResponse, files: DiffFile[]
     const sections: BeatSection[] = [];
     for (const s of ch.sections ?? []) {
       if (s.type === 'narrative') sections.push({ kind: 'prose', text: s.content });
-      else if (hunkResolves(files, s.file, s.hunkIndex)) {
+      else if (s.type === 'diff' && hunkResolves(files, s.file, s.hunkIndex)) {
         sections.push({ kind: 'diff', file: s.file, hunkIndex: s.hunkIndex });
       }
     }

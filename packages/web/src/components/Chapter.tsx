@@ -13,6 +13,7 @@ import type {
   DiffHunk,
   HunkAnchor,
 } from '../state/types';
+import { CallStackSection } from './CallStackSection';
 import { Hunk } from './Hunk';
 import { IconCheck, IconChevron } from './Icons';
 import { NarrationAnchor } from './NarrationAnchor';
@@ -259,6 +260,29 @@ export function Chapter({ index, chapter, resolve, decision, callers }: Props) {
     return map;
   }, [narrative]);
 
+  // DOM id for a hunk rendered in this chapter, so a callstack frame can scroll to it.
+  const hunkDomId = (file: string, hunkIndex: number) => `${id}-hunk-${normalizePath(file)}-${hunkIndex}`;
+
+  // `${normFile}:${hunkIndex}` -> DOM id for every diff-section hunk this chapter renders. A callstack
+  // frame link resolves through this: only hunks actually shown here are scroll targets.
+  const renderedHunkIds = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const section of chapter.sections) {
+      if (section.type !== 'diff') continue;
+      const flat = findHunk(files, section.file, section.hunkIndex, section.anchor);
+      if (!flat) continue;
+      map.set(`${normalizePath(flat.file)}:${flat.hunkIndex}`, hunkDomId(flat.file, flat.hunkIndex));
+    }
+    return map;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chapter.sections, files, id]);
+
+  const resolveHunkId = (file: string, hunkIndex: number): string | null => {
+    const flat = findHunk(files, file, hunkIndex);
+    if (!flat) return null;
+    return renderedHunkIds.get(`${normalizePath(flat.file)}:${flat.hunkIndex}`) ?? null;
+  };
+
   // Hunks already rendered as diff sections by earlier chapters — duplicates render as reshow.
   const priorHunks = useMemo(() => {
     const set = new Set<string>();
@@ -503,6 +527,13 @@ export function Chapter({ index, chapter, resolve, decision, callers }: Props) {
           if (i !== firstNarrativeIndex) return null;
           return <NarrationBlock key={i} content={section.content} chapterKey={id} />;
         }
+        if (section.type === 'callstack') {
+          return (
+            <CallStackSection key={i} title={section.title} frames={section.frames} resolveHunkId={resolveHunkId} />
+          );
+        }
+        // Unknown section types (stale cache) render nothing.
+        if (section.type !== 'diff') return null;
         const flat = findHunk(files, section.file, section.hunkIndex, section.anchor);
         if (!flat) {
           return <MissingHunkBanner key={i} file={section.file} hunkIndex={section.hunkIndex} />;
@@ -524,6 +555,7 @@ export function Chapter({ index, chapter, resolve, decision, callers }: Props) {
                 hunk={flat.hunk}
                 isNewFile={flat.isNewFile}
                 hunkIndex={flat.hunkIndex}
+                anchorId={hunkDomId(flat.file, flat.hunkIndex)}
                 highlight={highlight}
               />
             </ReshowBlock>
@@ -537,6 +569,7 @@ export function Chapter({ index, chapter, resolve, decision, callers }: Props) {
             hunk={flat.hunk}
             isNewFile={flat.isNewFile}
             hunkIndex={flat.hunkIndex}
+            anchorId={hunkDomId(flat.file, flat.hunkIndex)}
             highlight={highlight}
             resolve={annotationPlacement.bySection[i]?.resolve}
             callouts={annotationPlacement.bySection[i]?.callouts}

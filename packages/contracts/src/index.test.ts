@@ -165,6 +165,47 @@ describe('narrative payload', () => {
     };
     expect(() => narrativeResponseSchema.parse(bad)).toThrow();
   });
+
+  test('round-trips a callstack section', () => {
+    const withCallstack = {
+      ...narrative,
+      chapters: [
+        {
+          ...chapter,
+          sections: [
+            {
+              type: 'callstack' as const,
+              title: 'Submit path revalidates',
+              frames: [
+                { label: 'handleSubmit — src/form.ts', change: 'unchanged' as const, depth: 0 },
+                {
+                  label: 'validate — src/form.ts',
+                  change: 'added' as const,
+                  depth: 1,
+                  file: 'src/form.ts',
+                  hunkIndex: 0,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    expect(narrativeResponseSchema.parse(withCallstack)).toEqual(withCallstack);
+  });
+
+  test('rejects a callstack frame with a bad change enum', () => {
+    const bad = {
+      ...narrative,
+      chapters: [
+        {
+          ...chapter,
+          sections: [{ type: 'callstack', title: 't', frames: [{ label: 'f', change: 'nuked', depth: 0 }] }],
+        },
+      ],
+    };
+    expect(() => narrativeResponseSchema.parse(bad)).toThrow();
+  });
 });
 
 describe('comments', () => {

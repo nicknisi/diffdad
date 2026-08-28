@@ -73,6 +73,8 @@ function summarizeNarrative(narrative: NarrativeResponse): string {
     for (const s of ch.sections) {
       if (s.type === 'narrative') {
         parts.push(`    narrative: ${s.content}`);
+      } else if (s.type === 'callstack') {
+        parts.push(`    callstack[${s.frames.length}]: ${s.title}`);
       } else {
         parts.push(`    diff-ref: ${s.file}:${s.startLine}-${s.endLine}`);
       }
