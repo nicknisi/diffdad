@@ -129,7 +129,7 @@ describe('renderMarkdown: mermaid', () => {
     expect(html).not.toContain('mermaid-pending');
   });
 
-  it('intercepts a ```mermaid fence embedded inside a raw HTML block', () => {
+  it('intercepts a ```mermaid fence even when adjacent raw HTML is present', () => {
     const { html, mermaidSources } = renderMarkdown('<div>\n```mermaid\ngraph TD\nA-->B\n```\n</div>', 'light', {});
     expect(html).toContain('mermaid-pending');
     expect(mermaidSources).toEqual(['graph TD\nA-->B']);
@@ -203,8 +203,10 @@ describe('renderMarkdown: HTML handling', () => {
     expect(html).toContain('b');
   });
 
-  it('passes raw HTML blocks (bot comments) through verbatim for DOMPurify', () => {
+  it('escapes raw HTML instead of rendering it as HTML (hardening)', () => {
     const { html } = renderMarkdown('<div class="x">hello</div>', 'light', {});
-    expect(html).toContain('<div class="x">hello</div>');
+    expect(html).not.toContain('<div class="x">');
+    expect(html).toContain('&lt;div');
+    expect(html).toContain('hello');
   });
 });
