@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@diffdad/contracts": "workspace:*",
     "@radix-ui/themes": "^3",
     "dompurify": "^3",
     "markdown-it": "^15.0.0",

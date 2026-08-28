@@ -12,6 +12,7 @@
     "bench:narrative": "bun run scripts/bench-narrative.ts"
   },
   "dependencies": {
+    "@diffdad/contracts": "workspace:*",
     "@ai-sdk/amazon-bedrock": "^2",
     "@ai-sdk/anthropic": "^1",
     "@ai-sdk/openai": "^1",
