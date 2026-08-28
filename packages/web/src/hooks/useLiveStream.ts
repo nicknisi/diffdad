@@ -1,23 +1,25 @@
 import { useEffect } from 'react';
+import { type SseEvent, sseEventSchema } from '@diffdad/contracts';
 import { useReviewStore } from '../state/review-store';
-import type {
-  CapStats,
-  Chapter,
-  ChapterCallers,
-  CheckRun,
-  CollapseResult,
-  DiffFile,
-  LiveEvent,
-  LiveEventKind,
-  NarrativeResponse,
-  Plan,
-  PRComment,
-  PRData,
-  PRReview,
-  Unit,
-} from '../state/types';
-import type { RecapResponse } from '../state/recap-types';
+import type { CheckRun, LiveEvent, LiveEventKind, PRReview } from '../state/types';
 import type { ConfigResponse } from '../lib/config-client';
+
+/** The `data` payload type for a given SSE event name, drawn from the contract union. */
+type SseData<E extends SseEvent['event']> = Extract<SseEvent, { event: E }>['data'];
+
+/**
+ * Type-level SSE decode: `JSON.parse` the message and hand back the contract-typed payload for
+ * `event`. No runtime zod on the hot path — the DEV-only `safeParse` is a drift tripwire, compiled
+ * out of production builds by `import.meta.env.DEV`.
+ */
+function parseSse<E extends SseEvent['event']>(event: E, e: MessageEvent): SseData<E> {
+  const data = JSON.parse(e.data) as SseData<E>;
+  if (import.meta.env.DEV) {
+    const res = sseEventSchema.safeParse({ event, data });
+    if (!res.success) console.warn(`[sse] ${event} payload failed contract validation`, res.error.issues);
+  }
+  return data;
+}
 
 function makeEventId(): string {
   return `ev-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -40,12 +42,7 @@ function makeEvent(kind: LiveEventKind, summary: string, data?: unknown): LiveEv
  */
 export function handleNarrativePartialEvent(e: MessageEvent): void {
   try {
-    const data = JSON.parse(e.data) as {
-      narrative: NarrativeResponse;
-      pr: PRData;
-      files?: DiffFile[];
-      comments?: PRComment[];
-    };
+    const data = parseSse('narrative.partial', e);
     const store = useReviewStore.getState();
     store.applyPartialNarrative(data.pr, data.narrative, data.files, data.comments);
     store.setLastEventAt(Date.now());
@@ -63,11 +60,7 @@ export function handleNarrativePartialEvent(e: MessageEvent): void {
  */
 export function handleCollapseEvent(e: MessageEvent): void {
   try {
-    const data = JSON.parse(e.data) as {
-      collapse?: CollapseResult;
-      callers?: ChapterCallers[];
-      capStats?: CapStats;
-    };
+    const data = parseSse('collapse', e);
     const store = useReviewStore.getState();
     // Nothing to say: a snapshot that resolved to no answer at all leaves the screen as it was.
     if (!data.collapse) return;
@@ -75,8 +68,9 @@ export function handleCollapseEvent(e: MessageEvent): void {
       collapse: data.collapse,
       callers: data.callers ?? [],
       // The event describes a snapshot, not a generation — keep whatever budget stats the payload that
-      // brought the narrative established, rather than clearing them as a side effect.
-      capStats: data.capStats ?? store.capStats,
+      // brought the narrative established. The `collapse` event carries no `capStats` of its own
+      // (contract: `SseEvent` → `collapse`), so this always reads the store's existing value.
+      capStats: store.capStats,
     });
     store.setLastEventAt(Date.now());
   } catch {
@@ -92,7 +86,7 @@ export function handleCollapseEvent(e: MessageEvent): void {
  */
 export function handleUnitCommentEvent(e: MessageEvent): void {
   try {
-    const { unitId, comment } = JSON.parse(e.data) as { unitId: string; comment: PRComment };
+    const { unitId, comment } = parseSse('unit-comment', e);
     const state = useReviewStore.getState();
     const open = state.mode === 'command-center' && state.route.name === 'unit' && state.route.unitId === unitId;
     if (!open) return;
@@ -122,7 +116,7 @@ export function useLiveStream() {
 
     const onComment = (e: MessageEvent) => {
       try {
-        const comment = JSON.parse(e.data) as PRComment;
+        const comment = parseSse('comment', e);
         useReviewStore.setState((state) => {
           if (state.comments.find((c) => c.id === comment.id)) return state;
           return { comments: [...state.comments, comment] };
@@ -136,7 +130,7 @@ export function useLiveStream() {
 
     const onComments = (e: MessageEvent) => {
       try {
-        const comments = JSON.parse(e.data) as PRComment[];
+        const comments = parseSse('comments', e);
         useReviewStore.getState().setComments(comments);
         setLastEventAt(Date.now());
       } catch {
@@ -146,7 +140,7 @@ export function useLiveStream() {
 
     const onChecks = (e: MessageEvent) => {
       try {
-        const checks = JSON.parse(e.data) as CheckRun[];
+        const checks = parseSse('checks', e);
         setCheckRuns(checks);
         setLastEventAt(Date.now());
         addLiveEvent(makeEvent('ci', `CI status updated (${checks.length} checks)`, checks));
@@ -157,7 +151,7 @@ export function useLiveStream() {
 
     const onReviews = (e: MessageEvent) => {
       try {
-        const reviews = JSON.parse(e.data) as PRReview[];
+        const reviews = parseSse('reviews', e);
         useReviewStore.getState().setReviews(reviews);
         setLastEventAt(Date.now());
       } catch {
@@ -181,7 +175,7 @@ export function useLiveStream() {
 
     const onPr = (e: MessageEvent) => {
       try {
-        const pr = JSON.parse(e.data) as PRData;
+        const pr = parseSse('pr', e);
         useReviewStore.getState().setPr(pr);
         setLastEventAt(Date.now());
       } catch {
@@ -192,7 +186,7 @@ export function useLiveStream() {
     // Command center: the daemon broadcasts the full cross-repo queue on every unit change.
     const onUnits = (e: MessageEvent) => {
       try {
-        const data = JSON.parse(e.data) as { units: Unit[]; dismissed?: Unit[]; polledAt?: number };
+        const data = parseSse('units', e);
         useReviewStore.getState().setUnits(data.units ?? [], data.dismissed ?? []);
         // Only stamp the freshness caption on real GitHub poll passes: `pollOnce` tags its broadcast
         // with `polledAt`. Other `units` broadcasts (decision/delete/hydrate/review/initial snapshot,
@@ -206,7 +200,7 @@ export function useLiveStream() {
 
     const onRegenerating = (e: MessageEvent) => {
       try {
-        const data = JSON.parse(e.data) as { previousSha: string; newSha: string };
+        const data = parseSse('regenerating', e);
         addLiveEvent(
           makeEvent('system', `New commits detected (${data.previousSha} → ${data.newSha}). Regenerating narrative...`),
         );
@@ -219,7 +213,7 @@ export function useLiveStream() {
 
     const onNarrativeProgress = (e: MessageEvent) => {
       try {
-        const data = JSON.parse(e.data) as { chars: number };
+        const data = parseSse('narrative-progress', e);
         useReviewStore.getState().setNarrativeProgressChars(data.chars);
         setLastEventAt(Date.now());
       } catch {
@@ -229,7 +223,7 @@ export function useLiveStream() {
 
     const onNarrativeError = (e: MessageEvent) => {
       try {
-        const data = JSON.parse(e.data) as { message: string };
+        const data = parseSse('narrative-error', e);
         // Only a successful `narrative` event clears `regenerating`; without this the spinner would spin
         // forever after a failed regeneration. Surface the reason in the activity feed too.
         useReviewStore.getState().setRegenerating(false);
@@ -242,15 +236,7 @@ export function useLiveStream() {
 
     const onNarrative = (e: MessageEvent) => {
       try {
-        const data = JSON.parse(e.data) as {
-          narrative: NarrativeResponse;
-          pr: PRData;
-          files: DiffFile[];
-          comments: PRComment[];
-          collapse?: CollapseResult;
-          callers?: ChapterCallers[];
-          capStats?: CapStats;
-        };
+        const data = parseSse('narrative', e);
         const state = useReviewStore.getState();
         // The narrative that just landed brings its own boundary, committed with it rather than after it:
         // the streaming path already mounted placeholder chapters under these same keys, so a paint with
@@ -278,7 +264,7 @@ export function useLiveStream() {
 
     const onPlanReady = (e: MessageEvent) => {
       try {
-        const data = JSON.parse(e.data) as { plan: Plan };
+        const data = parseSse('plan-ready', e);
         useReviewStore.getState().applyPlan(data.plan);
         setLastEventAt(Date.now());
         addLiveEvent(makeEvent('system', `Plan ready (${data.plan.themes.length} themes) — chapters streaming in...`));
@@ -289,7 +275,7 @@ export function useLiveStream() {
 
     const onChapterReady = (e: MessageEvent) => {
       try {
-        const data = JSON.parse(e.data) as { themeId: string; index: number; chapter: Chapter };
+        const data = parseSse('chapter-ready', e);
         useReviewStore.getState().applyChapter(data.index, data.chapter, data.themeId);
         setLastEventAt(Date.now());
       } catch {
@@ -299,7 +285,7 @@ export function useLiveStream() {
 
     const onRecap = (e: MessageEvent) => {
       try {
-        const data = JSON.parse(e.data) as { recap: RecapResponse };
+        const data = parseSse('recap', e);
         useReviewStore.getState().setRecap(data.recap);
         setLastEventAt(Date.now());
         addLiveEvent(makeEvent('system', 'Recap ready'));
@@ -315,7 +301,7 @@ export function useLiveStream() {
 
     const onRecapError = (e: MessageEvent) => {
       try {
-        const data = JSON.parse(e.data) as { error: string };
+        const data = parseSse('recap-error', e);
         useReviewStore.getState().setRecapError(data.error);
       } catch {
         // ignore

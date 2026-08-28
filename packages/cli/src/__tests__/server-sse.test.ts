@@ -326,7 +326,9 @@ describe('GET /api/events — initial connection', () => {
     const reader = new StreamReader(res.body!);
     await reader.drain(); // consume connected
 
-    broadcast('comment', { id: 1, body: 'hi' });
+    // Partial payload on purpose: this asserts transport fan-out, not shape. `broadcast` is typed
+    // against the contracts union now, so cast past the compile-time shape check.
+    broadcast('comment', { id: 1, body: 'hi' } as unknown as PRComment);
     const events = (await reader.drain()) as SseEvent[];
     expect(events.find((e) => e.event === 'comment')).toBeDefined();
 
@@ -779,7 +781,8 @@ describe('GET /api/events — disconnect cleanup', () => {
 
     // Broadcasting after abort shouldn't error and shouldn't deliver to the
     // (now removed) client.
-    expect(() => broadcast('comment', { id: 999 })).not.toThrow();
+    // Partial payload on purpose (transport-only assertion); cast past the typed shape check.
+    expect(() => broadcast('comment', { id: 999 } as unknown as PRComment)).not.toThrow();
 
     await reader.cancel();
   });
