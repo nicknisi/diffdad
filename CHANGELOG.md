@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.17.0](https://github.com/nicknisi/diffdad/compare/v0.16.0...v0.17.0) (2026-08-28)
+
+
+### Features
+
+* **narrative:** sequence diagram section type with guided tour ([#78](https://github.com/nicknisi/diffdad/issues/78)) ([71a7013](https://github.com/nicknisi/diffdad/commit/71a70139a366e55bb6ce9d9636702b542be5f6d9))
+* **server:** real thread resolution via the GraphQL reviewThreads API ([#76](https://github.com/nicknisi/diffdad/issues/76)) ([cca85d0](https://github.com/nicknisi/diffdad/commit/cca85d0810a214cc09583380e97b5c176728d01e))
+* verified trace quotes, staleness banner, and re-narrate ([#77](https://github.com/nicknisi/diffdad/issues/77)) ([897688f](https://github.com/nicknisi/diffdad/commit/897688fc9b86ce42a0fb57abf4fd2e3056585c9b))
+
 ## [0.16.0](https://github.com/nicknisi/diffdad/compare/v0.15.2...v0.16.0) (2026-08-28)
 
 
