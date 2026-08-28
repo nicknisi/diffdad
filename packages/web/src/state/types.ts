@@ -33,6 +33,7 @@ export type {
   PRMetadata as PRData,
   PRReview,
   ReadingPlanStep,
+  ReviewRound,
   TriagedFile,
   TriageKind,
   TriageSummary,

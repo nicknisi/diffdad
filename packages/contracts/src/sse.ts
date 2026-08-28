@@ -1,7 +1,14 @@
 import { z } from 'zod';
 import { chapterCallersSchema, capStatsSchema, collapseResultSchema } from './collapse';
 import { configResponseSchema } from './config';
-import { checkRunSchema, diffFileSchema, prCommentSchema, prMetadataSchema, prReviewSchema } from './github';
+import {
+  checkRunSchema,
+  diffFileSchema,
+  prCommentSchema,
+  prMetadataSchema,
+  prReviewSchema,
+  reviewRoundSchema,
+} from './github';
 import { narrativeChapterSchema, narrativeResponseSchema } from './narrative';
 import { planSchema } from './plan';
 import { recapResponseSchema } from './recap';
@@ -20,6 +27,8 @@ const narrativePayloadSchema = z.object({
   comments: z.array(prCommentSchema),
   ...blastRadiusShape,
   capStats: capStatsSchema.optional(),
+  /** Derived review-round status for the PR, when the server has computed one. */
+  round: reviewRoundSchema.optional(),
 });
 
 export const sseEventSchema = z.discriminatedUnion('event', [
@@ -32,6 +41,7 @@ export const sseEventSchema = z.discriminatedUnion('event', [
   z.object({ event: z.literal('comments'), data: z.array(prCommentSchema) }),
   z.object({ event: z.literal('checks'), data: z.array(checkRunSchema) }),
   z.object({ event: z.literal('reviews'), data: z.array(prReviewSchema) }),
+  z.object({ event: z.literal('review-round'), data: z.object({ round: reviewRoundSchema }) }),
   z.object({
     event: z.literal('review'),
     data: z.object({ event: z.enum(['COMMENT', 'APPROVE', 'REQUEST_CHANGES']), body: z.string().optional() }),
@@ -41,7 +51,12 @@ export const sseEventSchema = z.discriminatedUnion('event', [
   z.object({ event: z.literal('units'), data: unitsPayloadSchema }),
   z.object({
     event: z.literal('regenerating'),
-    data: z.object({ previousSha: z.string(), newSha: z.string() }),
+    data: z.object({
+      previousSha: z.string(),
+      newSha: z.string(),
+      /** Unresolved threads carried across the regeneration, so the UI can say "N threads carry over". */
+      carriedOverThreads: z.number().optional(),
+    }),
   }),
   z.object({ event: z.literal('narrative-progress'), data: z.object({ chars: z.number() }) }),
   z.object({ event: z.literal('narrative-error'), data: z.object({ message: z.string() }) }),

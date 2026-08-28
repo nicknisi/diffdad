@@ -10,6 +10,7 @@ import type {
   PRComment,
   PRData,
   PRReview,
+  ReviewRound,
   Unit,
 } from '../state/types';
 
@@ -33,6 +34,8 @@ type NarrativeApiResponse = {
   collapse?: CollapseResult;
   callers?: ChapterCallers[];
   capStats?: CapStats;
+  /** Derived review-round status, when the server has computed one. Purely additive; never blocks. */
+  round?: ReviewRound;
   /** Command-center bootstrap: the daemon seeds the initial queue so the dashboard paints at once. */
   units?: Unit[];
   /** Command-center bootstrap: rows ✕ has hidden until their author pushes. Counted, never rendered inline. */
@@ -113,6 +116,7 @@ export function useNarrative() {
             { collapse: data.collapse ?? null, callers: data.callers ?? [], capStats: data.capStats ?? null },
           );
           useReviewStore.getState().setAiPath(data.aiPath ?? null);
+          if (data.round) useReviewStore.getState().setReviewRound(data.round);
         }
 
         useReviewStore.getState().setMode(data.mode ?? 'pr');
