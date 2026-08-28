@@ -12,12 +12,13 @@ import type {
 
 const JUDGE_SYSTEM = `You are a strict code-review-quality judge. You evaluate AI-generated PR review narratives against ground truth.
 
-Use this 4-axis rubric (1-5 each, integer):
+Use this 5-axis rubric (1-5 each, integer):
 
 - COMPREHENSIVENESS: did the narrative cover the meaningful changes? Penalize if it missed major behavior changes the diff makes. (1=missed most, 5=covered all material changes)
 - RATIONALITY: did each chapter explain WHY (whyMatters) the change matters, not just describe WHAT? Penalize "describes the code" output. (1=mostly describes, 5=consistently explains consequences)
 - CONCISENESS: tight prose, no padding, no repetition? Penalize bloated narration with low insight density. (1=very padded, 5=very tight)
 - EXPRESSIVENESS: clear, specific, well-anchored to file:line? Penalize vague "it does several things" prose. (1=vague, 5=specific and anchored)
+- OMISSION: were words spent proportional to importance? Distinct from CONCISENESS (tightness of the prose that exists): OMISSION judges what got prose AT ALL. Penalize any narration of mechanical or low-risk changes — renames, formatting, lockfiles, generated code, boilerplate, test scaffolding — that deserved silence or a one-line mention. Reward narratives that skip or compress the unimportant even when the diff includes plenty of it. (1=narrates everything equally, 5=every word lands where the risk is)
 
 Return ONLY this JSON, no markdown fences, no prose:
 {
@@ -25,6 +26,7 @@ Return ONLY this JSON, no markdown fences, no prose:
   "rationality": <1-5>,
   "conciseness": <1-5>,
   "expressiveness": <1-5>,
+  "omission": <1-5>,
   "notes": "<2-3 sentences explaining the lowest score>"
 }`;
 
@@ -134,6 +136,7 @@ export async function scoreNarrative(
     rationality: number;
     conciseness: number;
     expressiveness: number;
+    omission: number;
     notes?: string;
   }>(result.text);
 
@@ -153,6 +156,7 @@ export async function scoreNarrative(
       rationality: clamp(parsed.rationality),
       conciseness: clamp(parsed.conciseness),
       expressiveness: clamp(parsed.expressiveness),
+      omission: clamp(parsed.omission),
     },
     notes: typeof parsed.notes === 'string' ? parsed.notes : '',
   };

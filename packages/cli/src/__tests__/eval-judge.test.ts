@@ -99,7 +99,7 @@ function runWith(hotspotPlacement: HotspotPlacementResult, fixtureId = 'syntheti
     provider: 'test',
     totalMs: 1000,
     proseWordCount: 100,
-    scores: { comprehensiveness: 4, rationality: 4, conciseness: 4, expressiveness: 4 },
+    scores: { comprehensiveness: 4, rationality: 4, conciseness: 4, expressiveness: 4, omission: 4 },
     scoreNotes: '',
     defectDetection: { surfaced: 1, expected: 1, detail: [] },
     hotspotPlacement,
