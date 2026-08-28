@@ -1,5 +1,6 @@
 import type { DiffFile } from '../github/types';
-import type { NarrativeResponse } from './types';
+import { computeHunkAnchor, enrichNarrativeAnchors, resolveAnchor } from './anchors';
+import type { NarrativeResponse, NarrativeSection } from './types';
 
 export type ValidationViolation =
   | { kind: 'duplicate-primary'; file: string; hunkIndex: number; chapters: number[] }
@@ -155,24 +156,66 @@ export function repairNarrative(narrative: NarrativeResponse, files: DiffFile[])
   const primaryRefs = new Map<string, number[]>();
 
   const chapters = narrative.chapters.map((ch, ci) => {
-    const sections = ch.sections.filter((s) => {
-      if (s.type !== 'diff') return true;
+    const sections: NarrativeSection[] = [];
+    for (const s of ch.sections) {
+      if (s.type !== 'diff') {
+        sections.push(s);
+        continue;
+      }
       const norm = normalizePath(s.file);
       const file = fileMap.get(norm);
+      const inRange = file ? s.hunkIndex >= 0 && s.hunkIndex < file.hunks.length : false;
+      const record = (keyNorm: string, idx: number) => {
+        const key = `${keyNorm}:${idx}`;
+        const arr = primaryRefs.get(key);
+        if (arr) arr.push(ci);
+        else primaryRefs.set(key, [ci]);
+      };
+
+      // When the section carries a content anchor it is the authoritative join key: re-resolve it
+      // against the current diff so a shifted (or now-wrong) hunkIndex is fixed in place rather than
+      // trusting a raw index the diff may have moved out from under. During generation sections have
+      // no anchor yet (enrichment runs after repair), so this branch only bites on cache load, which
+      // is exactly where indices have drifted.
+      if (s.anchor) {
+        const resolved = resolveAnchor(files, s.anchor);
+        if (resolved) {
+          const resolvedNorm = normalizePath(resolved.file);
+          const resolvedFile = fileMap.get(resolvedNorm)!;
+          const fixed: NarrativeSection = {
+            ...s,
+            file: resolved.file,
+            hunkIndex: resolved.hunkIndex,
+            anchor: computeHunkAnchor(resolvedFile, resolved.hunkIndex),
+          };
+          record(resolvedNorm, resolved.hunkIndex);
+          sections.push(fixed);
+          continue;
+        }
+        // Anchor couldn't place it. Keep a structurally-valid raw index (a real hunk, just not the one
+        // the anchor described); drop only when the index points at nothing.
+        if (file && inRange) {
+          record(norm, s.hunkIndex);
+          sections.push(s);
+          continue;
+        }
+        if (!file) dropped.push({ kind: 'unknown-file', file: s.file, chapter: ci });
+        else dropped.push({ kind: 'invalid-hunk-index', file: s.file, hunkIndex: s.hunkIndex, chapter: ci });
+        continue;
+      }
+
+      // No anchor (fresh generation, or a narrative cached before anchors existed): raw index only.
       if (!file) {
         dropped.push({ kind: 'unknown-file', file: s.file, chapter: ci });
-        return false;
+        continue;
       }
-      if (s.hunkIndex < 0 || s.hunkIndex >= file.hunks.length) {
+      if (!inRange) {
         dropped.push({ kind: 'invalid-hunk-index', file: s.file, hunkIndex: s.hunkIndex, chapter: ci });
-        return false;
+        continue;
       }
-      const key = `${norm}:${s.hunkIndex}`;
-      const arr = primaryRefs.get(key);
-      if (arr) arr.push(ci);
-      else primaryRefs.set(key, [ci]);
-      return true;
-    });
+      record(norm, s.hunkIndex);
+      sections.push(s);
+    }
 
     let reshow = ch.reshow;
     if (reshow && reshow.length > 0) {
@@ -203,6 +246,17 @@ export function repairNarrative(narrative: NarrativeResponse, files: DiffFile[])
   });
 
   return { narrative: { ...narrative, chapters }, dropped };
+}
+
+/**
+ * Cache-load boundary: a narrative from cache meets a freshly-fetched diff whose hunk indices may have
+ * shifted. Re-resolve stale refs via their anchors (fixing in place), drop only the truly unresolvable,
+ * then refresh anchors so subsequent loads keep re-resolving. Safe on older cached narratives that
+ * carry no anchors — those simply fall through to the existing drop behavior.
+ */
+export function reanchorNarrative(narrative: NarrativeResponse, files: DiffFile[]): NarrativeResponse {
+  const { narrative: repaired } = repairNarrative(narrative, files);
+  return enrichNarrativeAnchors(repaired, files);
 }
 
 /** One-line human-readable summary of a violation, for warning logs. */

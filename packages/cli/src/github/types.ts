@@ -64,6 +64,12 @@ export type DiffHunk = {
   newStart: number;
   newCount: number;
   lines: DiffLine[];
+  /**
+   * First 12 hex of sha256 over this hunk's line contents (op + content per line). Populated at parse
+   * time so the browser can compare anchors by string equality without hashing. Optional because
+   * DiffFiles that predate this field (or are constructed by tests) may carry no value.
+   */
+  contentHash?: string;
 };
 
 export type DiffFile = {

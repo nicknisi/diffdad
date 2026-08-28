@@ -10,6 +10,7 @@ import type {
   Callout as CCallout,
   Concern as CConcern,
   ConcernCategory as CConcernCategory,
+  HunkAnchor as CHunkAnchor,
   NarrativeChapter as CNarrativeChapter,
   NarrativeResponse as CNarrativeResponse,
   NarrativeSection as CNarrativeSection,
@@ -43,6 +44,7 @@ import type {
   DiffHunk,
   DiffLine,
   HelpSuggestion,
+  HunkAnchor,
   HunkRef,
   NarrativeChapter,
   NarrativeResponse,
@@ -73,6 +75,7 @@ type _Callout = Expect<Equal<Callout, CCallout>>;
 type _NarrativeChapter = Expect<Equal<NarrativeChapter, CNarrativeChapter>>;
 type _ReshowEntry = Expect<Equal<ReshowEntry, CReshowEntry>>;
 type _NarrativeSection = Expect<Equal<NarrativeSection, CNarrativeSection>>;
+type _HunkAnchor = Expect<Equal<HunkAnchor, CHunkAnchor>>;
 
 // github/types.ts — exact equality
 type _PRMetadata = Expect<Equal<PRMetadata, CPRMetadata>>;

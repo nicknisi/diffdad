@@ -68,6 +68,8 @@ export const diffHunkSchema = z.object({
   newStart: z.number(),
   newCount: z.number(),
   lines: z.array(diffLineSchema),
+  /** First 12 hex of sha256 over the hunk body; lets the browser re-resolve anchors by string compare. */
+  contentHash: z.string().optional(),
 });
 export type DiffHunk = z.infer<typeof diffHunkSchema>;
 

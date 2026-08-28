@@ -5,6 +5,7 @@ import { GitHubClient } from './github/client';
 import { type ParsedPr, parsePrRef } from './github/pr-ref';
 import { cacheNarrative, clearCache, computePromptMetaHash, getCachedNarrative } from './narrative/cache';
 import { generateNarrative, resolveAiPath, resolveProviderKey, setCliOverride } from './narrative/engine';
+import { reanchorNarrative } from './narrative/validator';
 import { migrateLegacyData } from './paths';
 import { getCachedRecap } from './recap/cache';
 import { describeRepoContext, resolveRepoContext } from './repo/snapshot';
@@ -228,7 +229,8 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
   const cachedRecap = noCache ? null : await getCachedRecap(parsed.owner, parsed.repo, parsed.number, metadata.headSha);
 
   const ctx: ServerContext = {
-    narrative: cached,
+    // Re-resolve any stale hunk refs against the diff just fetched for this SHA before serving.
+    narrative: cached ? reanchorNarrative(cached, files) : null,
     pr: metadata,
     files,
     comments,

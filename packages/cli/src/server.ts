@@ -10,6 +10,7 @@ import type { GitHubClient } from './github/client';
 import { mapCommentsToChapters } from './github/comments';
 import type { CheckRun, DiffFile, PRComment, PRMetadata, PRReview } from './github/types';
 import { cacheNarrative, computePromptMetaHash, getCachedNarrative, getLastGoodNarrative } from './narrative/cache';
+import { reanchorNarrative } from './narrative/validator';
 import { chapterCallers, resolveCollapse } from './narrative/collapse';
 import { callAi, generateNarrative, resolveAiPath, resolveProviderKey } from './narrative/engine';
 import { buildChapterAiPrompt } from './narrative/chapter-ai';
@@ -437,7 +438,10 @@ export function createServer(ctx: ServerContext) {
                   providerKey,
                 );
                 if (cached) {
-                  ctx.narrative = cached;
+                  // The cached narrative was anchored against a prior diff; the SHA just changed and
+                  // `freshFiles` may have shifted hunk indices. Re-resolve via content anchors so refs
+                  // survive the reshape instead of dropping.
+                  ctx.narrative = reanchorNarrative(cached, freshFiles);
                   // A cached narrative carries no budget stats, and inventing them would tell the
                   // reviewer a story built from a truncated diff was complete.
                   ctx.capStats = null;

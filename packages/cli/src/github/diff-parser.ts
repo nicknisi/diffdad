@@ -1,4 +1,17 @@
+import { createHash } from 'crypto';
 import type { DiffFile, DiffHunk, DiffLine } from './types';
+
+const LINE_OP: Record<DiffLine['type'], string> = { add: '+', remove: '-', context: ' ' };
+
+/**
+ * Deterministic content hash of a hunk's body: `op + content` per line, joined by newline, hashed to
+ * the first 12 hex of sha256. Stable across re-fetches of an identical hunk and changes when any line
+ * changes. The single source of truth for both the server-side anchor and the wire `contentHash`.
+ */
+export function hashHunkLines(lines: DiffLine[]): string {
+  const body = lines.map((l) => LINE_OP[l.type] + l.content).join('\n');
+  return createHash('sha256').update(body).digest('hex').slice(0, 12);
+}
 
 const HUNK_HEADER_RE = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
 // Accept any git prefix, not just a/ b/ — `diff.mnemonicPrefix` emits c/ w/ i/ o/, and merge
@@ -123,6 +136,7 @@ function parseFileChunk(chunk: string[]): DiffFile {
       newStart,
       newCount,
       lines: hunkLines,
+      contentHash: hashHunkLines(hunkLines),
     });
   }
 

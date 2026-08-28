@@ -5,6 +5,7 @@ import { buildNarrativePrompt, type PreviousNarrativeContext, type PromptCapStat
 import { partitionMechanicalFiles } from './diff-filter';
 import { normalizeNarrative, type NarrativeChapter, type NarrativeResponse } from './types';
 import { formatViolation, repairNarrative, validateNarrative, type ValidationViolation } from './validator';
+import { enrichNarrativeAnchors } from './anchors';
 import { callAi as _callAi, resolveAiPath, type AiChunkHandler } from './ai-runtime';
 import { extractJson, tryParsePartialJson } from './json-parse';
 import { computeHints } from './hints';
@@ -110,7 +111,9 @@ function logNarrativeViolations(narrative: NarrativeResponse, files: DiffFile[])
 function repairAndLog(narrative: NarrativeResponse, files: DiffFile[]): NarrativeResponse {
   const { narrative: repaired, dropped } = repairNarrative(narrative, files);
   logViolationList('Narrative repair dropped unresolvable refs', dropped);
-  return repaired;
+  // Stamp a content-derived anchor onto every surviving diff section so a later re-fetch can
+  // re-resolve a shifted hunkIndex instead of dropping the reference. Runs on both generation paths.
+  return enrichNarrativeAnchors(repaired, files);
 }
 
 export type NarrativeGenerationOptions = {

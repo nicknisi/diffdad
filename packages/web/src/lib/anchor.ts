@@ -1,4 +1,5 @@
-import type { DiffLine } from '../state/types';
+import type { DiffFile, DiffLine, HunkAnchor } from '../state/types';
+import { normalizePath } from './paths';
 
 /**
  * Anchors line-scoped annotations (resolve items, callouts) to the diff row they
@@ -37,4 +38,36 @@ export function anchorByNewLine(
   });
 
   return { byLine, trailing };
+}
+
+/**
+ * Wire-side mirror of the server's `resolveAnchor`. Re-resolves a diff section's content anchor when
+ * its `hunkIndex` no longer lands on the right hunk (diff re-fetch, truncation, off-by-one). The
+ * browser never hashes: it compares the `contentHash` the server stamped onto each wire hunk. Ladder,
+ * scoped to the named file:
+ *   1. exact  — same contentHash at the same new-side start
+ *   2. moved  — same contentHash anywhere in that file
+ *   3. range  — overlapping new-side line range in that file
+ *   4. null   — nothing plausible
+ */
+export function resolveAnchor(files: DiffFile[], anchor: HunkAnchor): { file: DiffFile; hunkIndex: number } | null {
+  const norm = normalizePath(anchor.file);
+  const named = files.find((f) => normalizePath(f.file) === norm);
+  if (!named) return null;
+
+  let idx = named.hunks.findIndex((h) => h.contentHash === anchor.contentHash && h.newStart === anchor.newStart);
+  if (idx !== -1) return { file: named, hunkIndex: idx };
+
+  idx = named.hunks.findIndex((h) => h.contentHash != null && h.contentHash === anchor.contentHash);
+  if (idx !== -1) return { file: named, hunkIndex: idx };
+
+  const aStart = anchor.newStart;
+  const aEnd = anchor.newStart + Math.max(anchor.newLines - 1, 0);
+  idx = named.hunks.findIndex((h) => {
+    const hEnd = h.newStart + Math.max(h.newCount - 1, 0);
+    return h.newStart <= aEnd && aStart <= hEnd;
+  });
+  if (idx !== -1) return { file: named, hunkIndex: idx };
+
+  return null;
 }
