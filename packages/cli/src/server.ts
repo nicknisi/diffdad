@@ -7,7 +7,7 @@ import { readConfig } from './config';
 import type { GitHubClient } from './github/client';
 import { mapCommentsToChapters } from './github/comments';
 import type { CheckRun, DiffFile, PRComment, PRMetadata, PRReview } from './github/types';
-import { cacheNarrative, computePromptMetaHash, getCachedNarrative } from './narrative/cache';
+import { cacheNarrative, computePromptMetaHash, getCachedNarrative, getLastGoodNarrative } from './narrative/cache';
 import { chapterCallers, resolveCollapse } from './narrative/collapse';
 import { callAi, generateNarrative, resolveAiPath, resolveProviderKey } from './narrative/engine';
 import { buildChapterAiPrompt } from './narrative/chapter-ai';
@@ -519,10 +519,19 @@ export function createServer(ctx: ServerContext) {
                 });
               } catch (err) {
                 const msg = err instanceof Error ? err.message : String(err);
-                console.error(`  \x1b[38;5;204m✗\x1b[0m Regeneration failed: ${msg}`);
-                // The terminal log is invisible to the browser tab, which otherwise keeps showing stale
-                // content with no hint that the refresh failed. Push the error so the UI can surface it.
-                broadcast('narrative-error', { message: msg });
+                // generateNarrative threw before assigning ctx.narrative, so ctx still holds the prior
+                // (last successfully served) narrative. If a sealed last-good revision exists for this
+                // PR, keep serving what the reviewer already has instead of surfacing a fatal error to
+                // the UI — a failed regen must not blank the tab.
+                const lastGood = await getLastGoodNarrative(ctx.owner, ctx.repo, ctx.pr.number);
+                if (lastGood) {
+                  console.warn(`  \x1b[38;5;221m⚠\x1b[0m Regeneration failed (${msg}); keeping last-good narrative.`);
+                } else {
+                  console.error(`  \x1b[38;5;204m✗\x1b[0m Regeneration failed: ${msg}`);
+                  // The terminal log is invisible to the browser tab, which otherwise keeps showing stale
+                  // content with no hint that the refresh failed. Push the error so the UI can surface it.
+                  broadcast('narrative-error', { message: msg });
+                }
               } finally {
                 regenerating = false;
               }
