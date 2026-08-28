@@ -6,7 +6,15 @@ import { useInlineComments } from '../hooks/useInlineComments';
 import { IconChat } from './Icons';
 
 const CheckIcon = () => (
-  <svg viewBox="0 0 12 12" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg
+    viewBox="0 0 12 12"
+    className="h-3 w-3"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
     <path d="M2.5 6.5l2 2 4.5-5" />
   </svg>
 );
@@ -23,7 +31,13 @@ function Badge({ entry }: { entry: TocEntry }) {
       className="mt-[1px] inline-flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center rounded-full font-mono text-[10.5px] font-bold"
       style={style}
     >
-      {entry.reviewed ? <CheckIcon /> : entry.kind === 'discussion' ? <IconChat className="h-[10px] w-[10px]" /> : entry.number}
+      {entry.reviewed ? (
+        <CheckIcon />
+      ) : entry.kind === 'discussion' ? (
+        <IconChat className="h-[10px] w-[10px]" />
+      ) : (
+        entry.number
+      )}
     </span>
   );
 }
@@ -209,18 +223,29 @@ export function ChapterTOC() {
             onClick={() => setPillOpen((v) => !v)}
             aria-expanded={pillOpen}
             className="fixed bottom-4 left-4 z-50 flex max-w-[calc(100vw-2rem)] items-center gap-2 rounded-full px-3.5 py-2 text-left text-[13px] shadow-lg"
-            style={{ background: 'var(--bg-panel)', color: 'var(--fg-1)', boxShadow: '0 6px 20px var(--gray-a7), inset 0 0 0 1px var(--gray-a5)' }}
+            style={{
+              background: 'var(--bg-panel)',
+              color: 'var(--fg-1)',
+              boxShadow: '0 6px 20px var(--gray-a7), inset 0 0 0 1px var(--gray-a5)',
+            }}
           >
             <Badge entry={current} />
             <span className="min-w-0 flex-1 truncate font-medium">{current.title}</span>
-            <span aria-hidden className="text-[var(--fg-3)]" style={{ transform: pillOpen ? 'rotate(180deg)' : undefined }}>
+            <span
+              aria-hidden
+              className="text-[var(--fg-3)]"
+              style={{ transform: pillOpen ? 'rotate(180deg)' : undefined }}
+            >
               ▾
             </span>
           </button>
           {pillOpen && (
             <div
               className="fixed bottom-16 left-4 z-50 max-h-[60vh] w-[calc(100vw-2rem)] max-w-[320px] overflow-auto rounded-xl p-1.5"
-              style={{ background: 'var(--bg-panel)', boxShadow: '0 10px 30px var(--gray-a8), inset 0 0 0 1px var(--gray-a5)' }}
+              style={{
+                background: 'var(--bg-panel)',
+                boxShadow: '0 10px 30px var(--gray-a8), inset 0 0 0 1px var(--gray-a5)',
+              }}
             >
               <ul className="m-0 list-none p-0">
                 {entries.map((entry) => (

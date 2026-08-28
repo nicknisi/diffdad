@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 import type { Chapter } from '../../state/types';
 import { activeTocEntry, buildTocEntries, reviewedProgress } from '../../lib/toc';
 
-function chapter(title: string, hunks: number, risk: Chapter['risk'] = 'low'): Pick<Chapter, 'title' | 'risk' | 'sections'> {
+function chapter(
+  title: string,
+  hunks: number,
+  risk: Chapter['risk'] = 'low',
+): Pick<Chapter, 'title' | 'risk' | 'sections'> {
   return {
     title,
     risk,
