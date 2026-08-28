@@ -317,16 +317,15 @@ export function Chapter({ index, chapter, resolve, decision, callers }: Props) {
     if (hasDecision && !prevHadDecision.current && !touched.current) setCollapsed(true);
     prevHadDecision.current = hasDecision;
   }, [decision]);
-  // A TOC jump to a collapsed chapter opens it before the scroll lands, then clears the request so it
-  // fires once. Counts as the reviewer acting (`touched`) so a later decision cannot re-collapse it.
-  const pendingExpandChapterId = useReviewStore((s) => s.pendingExpandChapterId);
-  const requestExpandChapter = useReviewStore((s) => s.requestExpandChapter);
+  // A TOC jump or find-widget navigation targeting this chapter forces it open so the destination is
+  // visible. Keyed on `nonce` so revealing the same chapter twice still expands it after a manual
+  // re-collapse. Counts as the reviewer acting (`touched`) so a later decision cannot re-collapse it.
+  const chapterReveal = useReviewStore((s) => s.chapterReveal);
   useEffect(() => {
-    if (pendingExpandChapterId !== id) return;
+    if (chapterReveal?.chid !== id) return;
     touched.current = true;
     setCollapsed(false);
-    requestExpandChapter(null);
-  }, [pendingExpandChapterId, id, requestExpandChapter]);
+  }, [chapterReveal, id]);
   // `reviewed` wins: both seeds produce the same collapsed row, so precedence only decides which line
   // explains it, and the reviewer's own action outranks the tool's inference.
   const reasonLine = collapseReason(decision, reviewed);

@@ -144,6 +144,14 @@ type ReviewState = {
   recapStatus: RecapStatus;
   recapError: string | null;
 
+  /**
+   * A one-shot request from the find widget to expand a specific chapter so a match inside it becomes
+   * visible. Chapter collapse state is local to the `Chapter` component, so this is the channel the
+   * widget uses to reach it: the target `chid` plus a `nonce` that changes on every request, so asking
+   * to reveal the same chapter twice still fires the effect.
+   */
+  chapterReveal: { chid: string; nonce: number } | null;
+
   setData: (
     pr: PRData,
     narrative: NarrativeResponse,
@@ -161,13 +169,6 @@ type ReviewState = {
    */
   setBlastRadius: (data: BlastRadius) => void;
   setActiveChapter: (id: string) => void;
-  /**
-   * A TOC jump to a chapter that may be collapsed. Chapters own their collapsed state locally, so the
-   * TOC cannot open one directly: it names the target here and the matching `Chapter` opens itself, then
-   * clears the request. `null` is the resting state.
-   */
-  pendingExpandChapterId: string | null;
-  requestExpandChapter: (id: string | null) => void;
   toggleReviewed: (idx: number) => void;
   setOpenLine: (key: string | null) => void;
   /** Open a comment thread on `key`. When `extend` is true and `openLine` is
@@ -245,6 +246,8 @@ type ReviewState = {
   setRecap: (recap: RecapResponse | null) => void;
   setRecapStatus: (status: RecapStatus) => void;
   setRecapError: (error: string | null) => void;
+  /** Ask the chapter with this `chid` to expand (find-widget navigation into a collapsed chapter). */
+  revealChapter: (chid: string) => void;
 };
 
 /**
@@ -476,7 +479,6 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
   repoUrl: null,
   chapterStates: {},
   activeChapterId: null,
-  pendingExpandChapterId: null,
   reviewKey: null,
   drafts: [],
   openLine: null,
@@ -515,6 +517,8 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
   recap: null,
   recapStatus: 'idle',
   recapError: null,
+
+  chapterReveal: null,
 
   plan: null,
   pendingChapterThemeIds: new Set<string>(),
@@ -561,8 +565,6 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
   },
 
   setActiveChapter: (id) => set({ activeChapterId: id }),
-
-  requestExpandChapter: (id) => set({ pendingExpandChapterId: id }),
 
   toggleReviewed: (idx) =>
     set((state) => {
@@ -884,6 +886,7 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
   setRecap: (recap) => set({ recap, recapStatus: recap ? 'ready' : 'idle', recapError: null }),
   setRecapStatus: (recapStatus) => set({ recapStatus }),
   setRecapError: (recapError) => set({ recapError, recapStatus: recapError ? 'error' : 'idle' }),
+  revealChapter: (chid) => set((s) => ({ chapterReveal: { chid, nonce: (s.chapterReveal?.nonce ?? 0) + 1 } })),
 }));
 
 export function useResolvedTheme(): 'light' | 'dark' {

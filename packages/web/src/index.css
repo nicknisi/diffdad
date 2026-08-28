@@ -720,3 +720,20 @@ code {
   font-size: 0.75em;
   color: var(--fg-3);
 }
+
+/* Find-in-review: CSS Custom Highlight API paints matches without mutating the DOM. */
+::highlight(diffdad-find) {
+  background: var(--purple-a4);
+  color: inherit;
+}
+::highlight(diffdad-find-active) {
+  background: var(--purple-a8);
+  color: inherit;
+}
+/* Fallback for browsers without the Highlight API: a temporary outline on the target chapter. */
+.diffdad-find-fallback {
+  outline: 2px solid var(--purple-9);
+  outline-offset: 4px;
+  border-radius: 6px;
+  transition: outline-color 0.4s ease;
+}

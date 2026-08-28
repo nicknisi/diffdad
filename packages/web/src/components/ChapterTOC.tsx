@@ -61,7 +61,7 @@ export function ChapterTOC() {
   const railCollapsed = useReviewStore((s) => s.railCollapsed);
   const setRailCollapsed = useReviewStore((s) => s.setRailCollapsed);
   const setActiveChapter = useReviewStore((s) => s.setActiveChapter);
-  const requestExpandChapter = useReviewStore((s) => s.requestExpandChapter);
+  const revealChapter = useReviewStore((s) => s.revealChapter);
 
   const [pillOpen, setPillOpen] = useState(false);
 
@@ -111,7 +111,7 @@ export function ChapterTOC() {
   // Open the chapter first (it may be collapsed), then scroll on the next frame so the target is laid
   // out before the browser measures it.
   function jump(id: string) {
-    requestExpandChapter(id);
+    revealChapter(id);
     setActiveChapter(id);
     setPillOpen(false);
     requestAnimationFrame(() => {
