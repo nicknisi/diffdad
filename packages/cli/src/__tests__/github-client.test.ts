@@ -267,6 +267,79 @@ describe('GitHubClient.getComments', () => {
   });
 });
 
+describe('GitHubClient.getReviewThreadResolution', () => {
+  function threadsPage(
+    nodes: Array<{ isResolved: boolean; ids: number[] }>,
+    page: { hasNextPage: boolean; endCursor: string | null } = { hasNextPage: false, endCursor: null },
+  ) {
+    return {
+      data: {
+        repository: {
+          pullRequest: {
+            reviewThreads: {
+              pageInfo: page,
+              nodes: nodes.map((n) => ({
+                isResolved: n.isResolved,
+                comments: { nodes: n.ids.map((id) => ({ databaseId: id })) },
+              })),
+            },
+          },
+        },
+      },
+    };
+  }
+
+  it('maps every comment databaseId to its thread resolution state', async () => {
+    setResponder((call) => {
+      expect(call.url).toBe('https://api.github.com/graphql');
+      expect(call.init.method).toBe('POST');
+      return jsonResponse(
+        threadsPage([
+          { isResolved: true, ids: [1, 2] },
+          { isResolved: false, ids: [3] },
+        ]),
+      );
+    });
+    const map = await new GitHubClient('t').getReviewThreadResolution('o', 'r', 5);
+    expect(map).not.toBeNull();
+    expect(map!.get(1)).toBe(true);
+    expect(map!.get(2)).toBe(true);
+    expect(map!.get(3)).toBe(false);
+    expect(map!.size).toBe(3);
+  });
+
+  it('forwards the endCursor when a second page is available', async () => {
+    let page = 0;
+    setResponder(() => {
+      page++;
+      if (page === 1) {
+        return jsonResponse(
+          threadsPage([{ isResolved: false, ids: [1] }], { hasNextPage: true, endCursor: 'CURSOR2' }),
+        );
+      }
+      return jsonResponse(threadsPage([{ isResolved: true, ids: [2] }]));
+    });
+    const map = await new GitHubClient('t').getReviewThreadResolution('o', 'r', 5);
+    expect(map!.get(1)).toBe(false);
+    expect(map!.get(2)).toBe(true);
+    expect(calls).toHaveLength(2);
+    expect(JSON.parse(String(calls[1]?.init.body)).variables.cursor).toBe('CURSOR2');
+    expect(JSON.parse(String(calls[0]?.init.body)).variables.cursor).toBeNull();
+  });
+
+  it('returns null when GraphQL responds with an errors array', async () => {
+    setResponder(() => jsonResponse({ data: null, errors: [{ message: 'Bad credentials' }] }));
+    expect(await new GitHubClient('t').getReviewThreadResolution('o', 'r', 5)).toBeNull();
+  });
+
+  it('returns null on a network failure', async () => {
+    setResponder(() => {
+      throw new Error('network down');
+    });
+    expect(await new GitHubClient('t').getReviewThreadResolution('o', 'r', 5)).toBeNull();
+  });
+});
+
 describe('GitHubClient.getReviews', () => {
   it('keeps only the latest review per user', async () => {
     setResponder(() =>

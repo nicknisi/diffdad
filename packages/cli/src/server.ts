@@ -68,6 +68,12 @@ export type ServerContext = {
   /** Last derived review-round status, cached so the poll only broadcasts `review-round` when it changes. */
   reviewRound?: ReviewRound | null;
   /**
+   * GitHub's real per-thread resolution state (comment `databaseId` -> `isResolved`), fetched via
+   * GraphQL and fed to `deriveReviewRound`. `undefined`/`null` means the derivation falls back to the
+   * last-word heuristic — either never fetched, the fetch failed, or the last-known map went stale.
+   */
+  reviewThreadResolution?: Map<number, boolean> | null;
+  /**
    * Local authoring-session intent, mined once per server process from ~/.claude/projects. `undefined`
    * means not looked yet; an empty array means looked and found nothing (feature stays invisible).
    */
@@ -91,6 +97,13 @@ type PostCommentBody = {
  * malformed payload must still reach the wire so the bug is observable in the browser, not swallowed.
  */
 const SSE_VALIDATE = Boolean(process.env.DIFFDAD_DEBUG);
+
+/**
+ * How long a last-known review-thread resolution map survives after a GraphQL fetch starts failing.
+ * Until then the poll keeps serving the stale map (better than snapping back to the heuristic on one
+ * transient failure); past it, the map is dropped so the round falls back to the heuristic.
+ */
+const RESOLUTION_STALE_MS = 5 * 60_000;
 function validateSseData(event: SseEventName, data: unknown): void {
   const schema = sseDataSchemaFor(event);
   if (!schema) {
@@ -125,6 +138,7 @@ export function createServer(ctx: ServerContext) {
       reviews: ctx.reviews,
       commits,
       prAuthor: ctx.pr.author.login,
+      ...(ctx.reviewThreadResolution ? { resolutionByCommentId: ctx.reviewThreadResolution } : {}),
     });
     const changed = JSON.stringify(round) !== JSON.stringify(ctx.reviewRound ?? null);
     ctx.reviewRound = round;
@@ -429,6 +443,13 @@ export function createServer(ctx: ServerContext) {
         let regenFailedSha: string | null = null;
         let regenFailedAt = 0;
         const REGEN_RETRY_MS = 5 * 60_000;
+        // Review-thread resolution fetch state. The GraphQL call is expensive relative to the 10s tick,
+        // so it only fires on the first poll and whenever the comment set or review signature changes —
+        // never on idle ticks. `resolutionFailedAt` marks when the last-known map started going stale.
+        let resolutionInitialDone = false;
+        let resolutionCommentSig = '';
+        let resolutionReviewSig = '';
+        let resolutionFailedAt: number | null = null;
         const interval = setInterval(async () => {
           try {
             const gh = ctx.github;
@@ -482,6 +503,37 @@ export function createServer(ctx: ServerContext) {
             } catch {
               // degrade the round (no push boundary) rather than aborting the poll
             }
+            // Thread resolution is the one signal only GraphQL carries. Refetch only when the inputs
+            // that could change it moved (a new/removed comment, or a review submitted) or once at
+            // startup; idle ticks reuse the cached map so the poll stays a single REST round-trip.
+            const commentSig = [...freshIds].sort((a, b) => a - b).join(',');
+            const reviewSig = freshReviews
+              .map((r) => `${r.id}:${r.state}:${r.submittedAt}`)
+              .sort()
+              .join('|');
+            if (!resolutionInitialDone || commentSig !== resolutionCommentSig || reviewSig !== resolutionReviewSig) {
+              resolutionInitialDone = true;
+              resolutionCommentSig = commentSig;
+              resolutionReviewSig = reviewSig;
+              const map = await gh.getReviewThreadResolution(ctx.owner, ctx.repo, ctx.pr.number);
+              if (map) {
+                ctx.reviewThreadResolution = map;
+                resolutionFailedAt = null;
+              } else if (resolutionFailedAt === null) {
+                // Keep the last-known map for now; start the staleness clock.
+                resolutionFailedAt = Date.now();
+              }
+            }
+            // Once a failed fetch has gone unrecovered past the stale window, drop the map so the round
+            // falls back to the heuristic instead of trusting an increasingly old snapshot.
+            if (
+              resolutionFailedAt !== null &&
+              ctx.reviewThreadResolution &&
+              Date.now() - resolutionFailedAt > RESOLUTION_STALE_MS
+            ) {
+              ctx.reviewThreadResolution = null;
+            }
+
             const round = recomputeReviewRound(freshCommits);
 
             const regenCoolingDown = regenFailedSha === freshPr.headSha && Date.now() - regenFailedAt < REGEN_RETRY_MS;

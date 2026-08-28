@@ -168,6 +168,87 @@ describe('answered-thread heuristic', () => {
   });
 });
 
+describe('reviewThreads resolution map (GraphQL isResolved)', () => {
+  test('a resolved thread wins over the last-word heuristic', () => {
+    // Reviewer got the last word -> heuristic would call this unresolved; GitHub says resolved.
+    const round = deriveReviewRound({
+      headSha: 'a',
+      lastNarratedSha: 'a',
+      comments: [comment({ id: 1, author: REVIEWER, createdAt: '2024-01-01T00:00:00Z' })],
+      reviews: [],
+      prAuthor: AUTHOR,
+      resolutionByCommentId: new Map([[1, true]]),
+    });
+    expect(round.unresolvedThreads).toBe(0);
+  });
+
+  test('an unresolved thread wins over an author last word', () => {
+    // Author replied last -> heuristic would call this answered; GitHub says still open.
+    const round = deriveReviewRound({
+      headSha: 'a',
+      lastNarratedSha: 'a',
+      comments: [
+        comment({ id: 1, author: REVIEWER, createdAt: '2024-01-01T00:00:00Z' }),
+        comment({ id: 2, author: AUTHOR, createdAt: '2024-01-02T00:00:00Z', inReplyToId: 1 }),
+      ],
+      reviews: [],
+      prAuthor: AUTHOR,
+      resolutionByCommentId: new Map([[1, false]]),
+    });
+    expect(round.unresolvedThreads).toBe(1);
+  });
+
+  test('any comment in the thread appearing in the map decides it', () => {
+    // Reviewer got the last word (heuristic unresolved); the map only carries the MIDDLE comment,
+    // and it maps to resolved -> the whole thread is resolved.
+    const round = deriveReviewRound({
+      headSha: 'a',
+      lastNarratedSha: 'a',
+      comments: [
+        comment({ id: 1, author: REVIEWER, createdAt: '2024-01-01T00:00:00Z' }),
+        comment({ id: 2, author: AUTHOR, createdAt: '2024-01-02T00:00:00Z', inReplyToId: 1 }),
+        comment({ id: 3, author: REVIEWER, createdAt: '2024-01-03T00:00:00Z', inReplyToId: 1 }),
+      ],
+      reviews: [],
+      prAuthor: AUTHOR,
+      resolutionByCommentId: new Map([[2, true]]),
+    });
+    expect(round.unresolvedThreads).toBe(0);
+  });
+
+  test('a partial map decides covered threads and leaves the rest to the heuristic', () => {
+    const round = deriveReviewRound({
+      headSha: 'a',
+      lastNarratedSha: 'a',
+      comments: [
+        // Thread A: reviewer-only (heuristic unresolved) but the map marks it resolved.
+        comment({ id: 1, author: REVIEWER, createdAt: '2024-01-01T00:00:00Z', path: 'src/a.ts' }),
+        // Thread B: reviewer-only, absent from the map -> heuristic keeps it unresolved.
+        comment({ id: 2, author: REVIEWER, createdAt: '2024-01-01T00:00:00Z', path: 'src/b.ts' }),
+      ],
+      reviews: [],
+      prAuthor: AUTHOR,
+      resolutionByCommentId: new Map([[1, true]]),
+    });
+    expect(round.unresolvedThreads).toBe(1);
+  });
+
+  test('carriedOver honors the same per-thread resolution decision', () => {
+    // Head advanced past the narrated SHA, no commit timestamps -> every unresolved thread would carry
+    // over. The map resolves the only thread, so both counts collapse to zero.
+    const round = deriveReviewRound({
+      headSha: 'b',
+      lastNarratedSha: 'a',
+      comments: [comment({ id: 1, author: REVIEWER, createdAt: '2024-01-01T00:00:00Z' })],
+      reviews: [],
+      prAuthor: AUTHOR,
+      resolutionByCommentId: new Map([[1, true]]),
+    });
+    expect(round.unresolvedThreads).toBe(0);
+    expect(round.carriedOverThreads).toBe(0);
+  });
+});
+
 describe('carriedOverThreads', () => {
   test('is zero when head has not moved past the narrated SHA', () => {
     const round = deriveReviewRound({

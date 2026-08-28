@@ -401,6 +401,76 @@ export class GitHubClient {
     return [...latestByUser.values()];
   }
 
+  /**
+   * Map every review comment's `databaseId` to its thread's GitHub resolution state (`isResolved`),
+   * the real signal the last-word heuristic only approximates. GraphQL-only (the REST API doesn't
+   * expose thread resolution), so it stands apart from the calls above.
+   *
+   * Returns null on ANY failure \u2014 a GraphQL `errors` array, an unexpected/missing shape, a token
+   * without the scope the GraphQL API needs, or a network throw. The caller falls back to the
+   * heuristic, so a resolution lookup can degrade but never blocks.
+   *
+   * ponytail: capped at 3 pages / 300 threads. A PR with more review threads than that keeps the
+   * heuristic for the overflow rather than fanning unbounded GraphQL pages out on every poll.
+   */
+  async getReviewThreadResolution(owner: string, repo: string, number: number): Promise<Map<number, boolean> | null> {
+    const query = `query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
+      repository(owner: $owner, name: $repo) {
+        pullRequest(number: $number) {
+          reviewThreads(first: 100, after: $cursor) {
+            pageInfo { hasNextPage endCursor }
+            nodes {
+              isResolved
+              comments(first: 50) { nodes { databaseId } }
+            }
+          }
+        }
+      }
+    }`;
+
+    const out = new Map<number, boolean>();
+    let cursor: string | null = null;
+    try {
+      for (let page = 0; page < 3; page++) {
+        const res = await this.fetch('https://api.github.com/graphql', {
+          method: 'POST',
+          body: JSON.stringify({ query, variables: { owner, repo, number, cursor } }),
+          headers: { 'Content-Type': 'application/json' },
+        });
+        const json = (await res.json()) as {
+          data?: {
+            repository?: {
+              pullRequest?: {
+                reviewThreads?: {
+                  pageInfo?: { hasNextPage?: boolean; endCursor?: string | null };
+                  nodes?: Array<{
+                    isResolved?: boolean;
+                    comments?: { nodes?: Array<{ databaseId?: number | null }> };
+                  }>;
+                };
+              };
+            };
+          };
+          errors?: unknown[];
+        };
+        if (Array.isArray(json.errors) && json.errors.length > 0) return null;
+        const threads = json.data?.repository?.pullRequest?.reviewThreads;
+        if (!threads || !Array.isArray(threads.nodes)) return null;
+        for (const thread of threads.nodes) {
+          const resolved = thread.isResolved === true;
+          for (const c of thread.comments?.nodes ?? []) {
+            if (typeof c.databaseId === 'number') out.set(c.databaseId, resolved);
+          }
+        }
+        if (!threads.pageInfo?.hasNextPage || !threads.pageInfo.endCursor) break;
+        cursor = threads.pageInfo.endCursor;
+      }
+      return out;
+    } catch {
+      return null;
+    }
+  }
+
   async submitReview(
     owner: string,
     repo: string,

@@ -24,6 +24,13 @@ export type DeriveReviewRoundInput = {
    * through from the PR metadata.
    */
   prAuthor: string;
+  /**
+   * GitHub's real per-thread resolution state, keyed by comment `databaseId` (from the GraphQL
+   * `reviewThreads` API). When present, a thread whose comments appear here is decided by GitHub
+   * (resolved iff any of its comments maps to `true`), overriding the last-word heuristic. Threads
+   * with no comment in the map still fall back to the heuristic. Omitted entirely = pure heuristic.
+   */
+  resolutionByCommentId?: Map<number, boolean>;
 };
 
 /**
@@ -38,9 +45,9 @@ export type DeriveReviewRoundInput = {
  * With no reviews at all, the round is `awaiting-review`.
  */
 export function deriveReviewRound(input: DeriveReviewRoundInput): ReviewRound {
-  const { headSha, lastNarratedSha, comments, reviews, commits = [], prAuthor } = input;
+  const { headSha, lastNarratedSha, comments, reviews, commits = [], prAuthor, resolutionByCommentId } = input;
 
-  const threads = groupInlineThreads(comments, prAuthor);
+  const threads = groupInlineThreads(comments, prAuthor, resolutionByCommentId);
   const unresolvedThreads = threads.filter((t) => t.unresolved).length;
 
   // Only submitted reviews carry a decision; PENDING is a draft the author hasn't sent, DISMISSED is a
@@ -91,13 +98,21 @@ type InlineThread = { rootId: number; rootCreatedAt: string; unresolved: boolean
  * Group inline review comments into threads: a root is an inline comment (has `path`) with no
  * `inReplyToId`; replies chain to it via `inReplyToId`. Non-inline (PR-level) comments are ignored.
  *
- * ponytail: "unresolved" here is a heuristic, not GitHub's real resolution state. GitHub only exposes
- * thread resolution through the GraphQL `reviewThreads` API (`isResolved`), which diff dad doesn't use.
- * We approximate: a thread is answered when its LAST comment is by the PR author, otherwise unresolved.
- * A reviewer marking a thread resolved on GitHub won't clear it here, and an author's reply that doesn't
- * actually resolve anything will. Swap this for `reviewThreads.isResolved` when GraphQL lands.
+ * Resolution precedence: when `resolution` carries GitHub's real `isResolved` (keyed by comment
+ * databaseId), any thread with a comment in that map is decided by GitHub (resolved iff any of its
+ * comments maps to `true`). Two ceilings remain where the heuristic still runs:
+ *   1. Pagination cap — the GraphQL fetch stops at 3 pages / 300 threads, so threads past that cap
+ *      carry no map entry and fall back here.
+ *   2. Per-thread fallback — a thread with no comment in the map (map omitted, or a partial map that
+ *      never covers this thread) is answered when its LAST comment is by the PR author, otherwise
+ *      unresolved. A reviewer marking such a thread resolved on GitHub won't clear it, and an author's
+ *      reply that doesn't actually resolve anything will.
  */
-function groupInlineThreads(comments: PRComment[], prAuthor: string): InlineThread[] {
+function groupInlineThreads(
+  comments: PRComment[],
+  prAuthor: string,
+  resolution?: Map<number, boolean>,
+): InlineThread[] {
   const byId = new Map<number, PRComment>(comments.map((c) => [c.id, c]));
 
   function rootOf(c: PRComment): PRComment {
@@ -124,7 +139,10 @@ function groupInlineThreads(comments: PRComment[], prAuthor: string): InlineThre
     const sorted = [...members].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
     const last = sorted[sorted.length - 1]!;
     const root = byId.get(rootId)!;
-    threads.push({ rootId, rootCreatedAt: root.createdAt, unresolved: last.author !== prAuthor });
+    const mapped = resolution ? sorted.map((c) => c.id).filter((id) => resolution.has(id)) : [];
+    const unresolved =
+      mapped.length > 0 ? !mapped.some((id) => resolution!.get(id) === true) : last.author !== prAuthor;
+    threads.push({ rootId, rootCreatedAt: root.createdAt, unresolved });
   }
   return threads;
 }
