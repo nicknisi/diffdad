@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { resolveAnchor } from '../lib/anchor';
 import { collapseReason, initialCollapsed } from '../lib/collapse';
 import { normalizePath } from '../lib/paths';
 import { useReviewStore } from '../state/review-store';
@@ -10,6 +11,7 @@ import type {
   CollapseDecision,
   DiffFile,
   DiffHunk,
+  HunkAnchor,
 } from '../state/types';
 import { Hunk } from './Hunk';
 import { IconCheck, IconChevron } from './Icons';
@@ -179,15 +181,38 @@ function ReshowBlock({
   );
 }
 
-type FlatHunk = { hunk: DiffHunk; file: string; isNewFile: boolean };
+type FlatHunk = { hunk: DiffHunk; file: string; isNewFile: boolean; hunkIndex: number };
 
-function findHunk(files: DiffFile[], file: string, hunkIndex: number): FlatHunk | null {
+/**
+ * Resolve a diff section to a concrete hunk. Prefers the direct `hunks[hunkIndex]` lookup, but falls
+ * back to the content anchor when the index is missing OR the hunk it lands on no longer matches the
+ * anchor's `contentHash` (the diff shifted shape since the narrative was written). `hunkIndex` in the
+ * result is the resolved index, which may differ from the requested one.
+ */
+function findHunk(files: DiffFile[], file: string, hunkIndex: number, anchor?: HunkAnchor): FlatHunk | null {
   const norm = normalizePath(file);
   const diffFile = files.find((f) => normalizePath(f.file) === norm);
-  if (!diffFile) return null;
-  const hunk = diffFile.hunks[hunkIndex];
-  if (!hunk) return null;
-  return { hunk, file: diffFile.file, isNewFile: diffFile.isNewFile };
+  const direct = diffFile?.hunks[hunkIndex];
+  const directMatchesAnchor =
+    !anchor || direct == null || direct.contentHash == null || direct.contentHash === anchor.contentHash;
+
+  if (diffFile && direct && directMatchesAnchor) {
+    return { hunk: direct, file: diffFile.file, isNewFile: diffFile.isNewFile, hunkIndex };
+  }
+
+  if (anchor) {
+    const resolved = resolveAnchor(files, anchor);
+    if (resolved) {
+      const hunk = resolved.file.hunks[resolved.hunkIndex]!;
+      return { hunk, file: resolved.file.file, isNewFile: resolved.file.isNewFile, hunkIndex: resolved.hunkIndex };
+    }
+  }
+
+  // No anchor (or it failed): fall back to the direct hit if one exists at all.
+  if (diffFile && direct) {
+    return { hunk: direct, file: diffFile.file, isNewFile: diffFile.isNewFile, hunkIndex };
+  }
+  return null;
 }
 
 export function Chapter({ index, chapter, resolve, decision, callers }: Props) {
@@ -258,9 +283,9 @@ export function Chapter({ index, chapter, resolve, decision, callers }: Props) {
     const bucket = (i: number) => (bySection[i] ??= { resolve: [], callouts: [] });
     chapter.sections.forEach((section, i) => {
       if (section.type !== 'diff') return;
-      const flat = findHunk(files, section.file, section.hunkIndex);
+      const flat = findHunk(files, section.file, section.hunkIndex, section.anchor);
       if (!flat) return;
-      const nf = normalizePath(section.file);
+      const nf = normalizePath(flat.file);
       const start = flat.hunk.newStart;
       const end = start + Math.max(flat.hunk.newCount - 1, 0);
       for (const item of items) {
@@ -343,7 +368,7 @@ export function Chapter({ index, chapter, resolve, decision, callers }: Props) {
     let count = 0;
     for (const section of hunkSections) {
       if (section.type !== 'diff') continue;
-      const flat = findHunk(files, section.file, section.hunkIndex);
+      const flat = findHunk(files, section.file, section.hunkIndex, section.anchor);
       if (!flat) continue;
       const start = flat.hunk.newStart;
       const end = start + Math.max(flat.hunk.newCount - 1, 0);
@@ -478,11 +503,11 @@ export function Chapter({ index, chapter, resolve, decision, callers }: Props) {
           if (i !== firstNarrativeIndex) return null;
           return <NarrationBlock key={i} content={section.content} chapterKey={id} />;
         }
-        const flat = findHunk(files, section.file, section.hunkIndex);
+        const flat = findHunk(files, section.file, section.hunkIndex, section.anchor);
         if (!flat) {
           return <MissingHunkBanner key={i} file={section.file} hunkIndex={section.hunkIndex} />;
         }
-        const hunkKey = `${section.file}:${section.hunkIndex}`;
+        const hunkKey = `${flat.file}:${flat.hunkIndex}`;
         const isDuplicate = priorHunks.has(hunkKey);
         const hunkCoversAll =
           section.startLine <= flat.hunk.newStart &&
@@ -498,7 +523,7 @@ export function Chapter({ index, chapter, resolve, decision, callers }: Props) {
                 file={flat.file}
                 hunk={flat.hunk}
                 isNewFile={flat.isNewFile}
-                hunkIndex={section.hunkIndex}
+                hunkIndex={flat.hunkIndex}
                 highlight={highlight}
               />
             </ReshowBlock>
@@ -511,7 +536,7 @@ export function Chapter({ index, chapter, resolve, decision, callers }: Props) {
             file={flat.file}
             hunk={flat.hunk}
             isNewFile={flat.isNewFile}
-            hunkIndex={section.hunkIndex}
+            hunkIndex={flat.hunkIndex}
             highlight={highlight}
             resolve={annotationPlacement.bySection[i]?.resolve}
             callouts={annotationPlacement.bySection[i]?.callouts}

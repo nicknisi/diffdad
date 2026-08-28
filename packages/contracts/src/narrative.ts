@@ -50,6 +50,14 @@ export const reshowEntrySchema = z.object({
 });
 export type ReshowEntry = z.infer<typeof reshowEntrySchema>;
 
+export const hunkAnchorSchema = z.object({
+  file: z.string(),
+  newStart: z.number(),
+  newLines: z.number(),
+  contentHash: z.string(),
+});
+export type HunkAnchor = z.infer<typeof hunkAnchorSchema>;
+
 export const narrativeSectionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('narrative'), content: z.string() }),
   z.object({
@@ -58,6 +66,7 @@ export const narrativeSectionSchema = z.discriminatedUnion('type', [
     startLine: z.number(),
     endLine: z.number(),
     hunkIndex: z.number(),
+    anchor: hunkAnchorSchema.optional(),
   }),
 ]);
 export type NarrativeSection = z.infer<typeof narrativeSectionSchema>;

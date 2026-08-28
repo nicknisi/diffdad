@@ -71,6 +71,19 @@ export type ReshowEntry = {
   highlight?: { from: number; to: number };
 };
 
+/**
+ * Deterministic, content-derived anchor for a diff section, computed server-side alongside the
+ * fragile `hunkIndex`. `contentHash` is {@link import('../github/diff-parser').hashHunkLines} over the
+ * hunk body: stable across re-fetches, changes when the hunk changes. Used to re-resolve a stale
+ * `hunkIndex` after the diff shifts shape instead of dropping the reference.
+ */
+export type HunkAnchor = {
+  file: string;
+  newStart: number;
+  newLines: number;
+  contentHash: string;
+};
+
 export type NarrativeSection =
   | { type: 'narrative'; content: string }
   | {
@@ -79,6 +92,8 @@ export type NarrativeSection =
       startLine: number;
       endLine: number;
       hunkIndex: number;
+      /** Content-derived re-resolution anchor. Absent on narratives cached before this field existed. */
+      anchor?: HunkAnchor;
     };
 
 const CONCERN_CATEGORIES: ConcernCategory[] = [

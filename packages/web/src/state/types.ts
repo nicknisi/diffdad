@@ -21,6 +21,7 @@ export type {
   DiffFile,
   DiffHunk,
   DiffLine,
+  HunkAnchor,
   HunkRef,
   Lane,
   NarrativeChapter as Chapter,

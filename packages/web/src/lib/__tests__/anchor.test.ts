@@ -1,50 +1,62 @@
 import { describe, expect, it } from 'vitest';
-import { anchorByNewLine } from '../anchor';
-import type { DiffLine } from '../../state/types';
+import { resolveAnchor } from '../anchor';
+import type { DiffFile, DiffHunk, HunkAnchor } from '../../state/types';
 
-// A small hunk spanning new-side lines 10..13, with one removed line (no new number).
-//   idx 0  context  new 10
-//   idx 1  remove   old 11   (no new)
-//   idx 2  add      new 11
-//   idx 3  add      new 12
-//   idx 4  context  new 13
-function mkLines(): DiffLine[] {
-  return [
-    { type: 'context', content: 'a', lineNumber: { old: 10, new: 10 } },
-    { type: 'remove', content: 'b', lineNumber: { old: 11 } },
-    { type: 'add', content: 'c', lineNumber: { new: 11 } },
-    { type: 'add', content: 'd', lineNumber: { new: 12 } },
-    { type: 'context', content: 'e', lineNumber: { old: 12, new: 13 } },
-  ];
+function hunk(newStart: number, newCount: number, contentHash?: string): DiffHunk {
+  return {
+    header: `@@ +${newStart},${newCount} @@`,
+    oldStart: newStart,
+    oldCount: 1,
+    newStart,
+    newCount,
+    lines: [],
+    contentHash,
+  };
 }
 
-describe('anchorByNewLine', () => {
-  it('anchors an item to the line index whose NEW-side number equals item.line', () => {
-    const { byLine, trailing } = anchorByNewLine(mkLines(), [{ line: 12 }]);
-    expect(byLine.get(3)).toEqual([0]); // new 12 lives at index 3
-    expect(trailing).toEqual([]);
+function file(path: string, hunks: DiffHunk[]): DiffFile {
+  return { file: path, isNewFile: false, isDeleted: false, hunks };
+}
+
+const anchor: HunkAnchor = { file: 'a.ts', newStart: 20, newLines: 2, contentHash: 'abc123' };
+
+describe('web resolveAnchor', () => {
+  it('exact: hash + position match', () => {
+    const files = [file('a.ts', [hunk(20, 2, 'abc123')])];
+    expect(resolveAnchor(files, anchor)).toEqual({ file: files[0], hunkIndex: 0 });
   });
 
-  it('groups multiple items on one line in items order', () => {
-    const { byLine } = anchorByNewLine(mkLines(), [{ line: 11 }, { line: 13 }, { line: 11 }]);
-    expect(byLine.get(2)).toEqual([0, 2]); // both line-11 items at index 2
-    expect(byLine.get(4)).toEqual([1]); // line-13 item at index 4
+  it('moved hunk found by hash at a shifted index', () => {
+    const files = [file('a.ts', [hunk(1, 1, 'other'), hunk(40, 2, 'abc123')])];
+    const r = resolveAnchor(files, anchor);
+    expect(r?.hunkIndex).toBe(1);
   });
 
-  it('sends items with no matching new-side line to trailing', () => {
-    const { byLine, trailing } = anchorByNewLine(mkLines(), [{ line: 99 }]);
-    expect(byLine.size).toBe(0);
-    expect(trailing).toEqual([0]);
+  it('missing hash falls back to overlapping line range', () => {
+    // Hunk shifted a line and its content changed, so no contentHash match; range [20,21] overlaps [21,22].
+    const files = [file('a.ts', [hunk(21, 2, 'changed')])];
+    expect(resolveAnchor(files, anchor)?.hunkIndex).toBe(0);
   });
 
-  it('never anchors to a removed line (line 11 is an add, not the removed old-11)', () => {
-    const { byLine } = anchorByNewLine(mkLines(), [{ line: 11 }]);
-    expect(byLine.get(2)).toEqual([0]); // the add at index 2, not the remove at index 1
-    expect(byLine.has(1)).toBe(false);
+  it('both hash and range fail -> null', () => {
+    const files = [file('a.ts', [hunk(200, 1, 'changed')])];
+    expect(resolveAnchor(files, anchor)).toBeNull();
   });
 
-  it('treats null/undefined line as trailing', () => {
-    const { trailing } = anchorByNewLine(mkLines(), [{ line: null }, { line: undefined }, {}]);
-    expect(trailing).toEqual([0, 1, 2]);
+  it('named file absent -> null', () => {
+    const files = [file('other.ts', [hunk(20, 2, 'abc123')])];
+    expect(resolveAnchor(files, anchor)).toBeNull();
+  });
+
+  it('does not match on an undefined contentHash even if the anchor hash is also falsy-adjacent', () => {
+    // A wire hunk with no contentHash must not accidentally match; only line-range can save it.
+    const files = [file('a.ts', [hunk(20, 2, undefined)])];
+    // range overlaps, so it resolves via the range rung, not the hash rung.
+    expect(resolveAnchor(files, anchor)?.hunkIndex).toBe(0);
+  });
+
+  it('normalizes path prefixes', () => {
+    const files = [file('a.ts', [hunk(20, 2, 'abc123')])];
+    expect(resolveAnchor(files, { ...anchor, file: 'b/a.ts' })?.hunkIndex).toBe(0);
   });
 });

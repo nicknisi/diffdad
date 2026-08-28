@@ -8,6 +8,7 @@ import { GitHubClient, type PostCommentOptions } from '../github/client';
 import { parseDiff } from '../github/diff-parser';
 import type { CheckRun, PRComment, PRReview } from '../github/types';
 import { cacheNarrative, computePromptMetaHash, getCachedNarrative } from '../narrative/cache';
+import { reanchorNarrative } from '../narrative/validator';
 import { callAi, generateNarrative, resolveProviderKey } from '../narrative/engine';
 import { describeRepoContext, type RepoContext, resolveRepoContext } from '../repo/snapshot';
 import { UnitStore } from '../units/store';
@@ -349,8 +350,10 @@ function makeHydrate(
       const cached = await getCachedNarrative(owner, name, prNumber, sha, metaHash, providerKey);
       if (cached) {
         // No `capStats`: a cached narrative measured no diff, so the drill-in states nothing about
-        // truncation rather than implying the story covered everything.
-        store.attachReview(unit.unitId, files, cached, cached.concerns?.length ?? 0);
+        // truncation rather than implying the story covered everything. Re-anchor first so a cached
+        // narrative meeting a freshly-parsed diff re-resolves shifted hunk indices.
+        const reanchored = reanchorNarrative(cached, files);
+        store.attachReview(unit.unitId, files, reanchored, reanchored.concerns?.length ?? 0);
         return store.get(unit.unitId)!;
       }
     }
