@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.16.0](https://github.com/nicknisi/diffdad/compare/v0.15.2...v0.16.0) (2026-08-28)
+
+
+### Features
+
+* **cache:** sealed narrative revisions with last-good fallback ([#65](https://github.com/nicknisi/diffdad/issues/65)) ([b43719c](https://github.com/nicknisi/diffdad/commit/b43719ce7caa4cc5716526e8ce105bac8c17356c))
+* **contracts:** shared wire-contract package, adopted on both sides ([#69](https://github.com/nicknisi/diffdad/issues/69)) ([85e2dd5](https://github.com/nicknisi/diffdad/commit/85e2dd55bea16ada02443d94c1c969da35b675c4))
+* **narrative:** callstack section type for call-flow changes ([#73](https://github.com/nicknisi/diffdad/issues/73)) ([ad75257](https://github.com/nicknisi/diffdad/commit/ad752572b29ca152887ff9b9e9f10f0133d0475f))
+* **narrative:** content-derived anchors that re-resolve stale hunk refs ([#70](https://github.com/nicknisi/diffdad/issues/70)) ([93f8209](https://github.com/nicknisi/diffdad/commit/93f820988bd1151d839d91f19e520a5e2f1d5817))
+* **narrative:** enforce anchor validation with retry and repair ([#64](https://github.com/nicknisi/diffdad/issues/64)) ([1d89cdc](https://github.com/nicknisi/diffdad/commit/1d89cdc3556c2ed5dbc553234684642007faf177))
+* **recap:** surface the prompts that drove an agent-authored PR ([#72](https://github.com/nicknisi/diffdad/issues/72)) ([90be9c8](https://github.com/nicknisi/diffdad/commit/90be9c8ac915218a76471a465d48329790f9c3d1))
+* **server:** derive review-round status from GitHub state ([#71](https://github.com/nicknisi/diffdad/issues/71)) ([1a0c85f](https://github.com/nicknisi/diffdad/commit/1a0c85f19938db48184b0a665b73a2d98f18748e))
+* **web:** find-in-review widget ([#68](https://github.com/nicknisi/diffdad/issues/68)) ([5f3e041](https://github.com/nicknisi/diffdad/commit/5f3e041280c2a4d5b776e7667aed946a2647d80f))
+* **web:** rail-to-pill chapter TOC with scroll-spy ([#67](https://github.com/nicknisi/diffdad/issues/67)) ([cca7420](https://github.com/nicknisi/diffdad/commit/cca7420018fdc9f9485c597889f851218434cf98))
+
+
+### Bug Fixes
+
+* **release:** update Homebrew for Linux ARM64 ([#62](https://github.com/nicknisi/diffdad/issues/62)) ([32b68f8](https://github.com/nicknisi/diffdad/commit/32b68f817f6d21925fbef290ac1967869fab1b8a))
+* **server:** snapshot regen state, back off failed regens, bind loopback ([#74](https://github.com/nicknisi/diffdad/issues/74)) ([9278603](https://github.com/nicknisi/diffdad/commit/9278603c74153ee405c0a5824177a1661d310cf1))
+* **web:** harden markdown rendering against HTML and URL injection ([#66](https://github.com/nicknisi/diffdad/issues/66)) ([0252bc2](https://github.com/nicknisi/diffdad/commit/0252bc20d9d7c2a920a043dd73cdaba9b0caba81))
+
 ## [0.15.2](https://github.com/nicknisi/diffdad/compare/v0.15.1...v0.15.2) (2026-08-21)
 
 
