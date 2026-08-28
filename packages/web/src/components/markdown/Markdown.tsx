@@ -18,6 +18,60 @@ function escapeHtml(s: string): string {
     .replace(/'/g, '&#39;');
 }
 
+// URL hardening for LLM/GitHub-user content. diffdad has no trusted-author markdown, so every href/src
+// is untrusted. Only http/https/mailto and relative anchors are allowed through as clickable; anything
+// else (javascript:, data:, file:, vbscript:, local filesystem paths) is neutralized to plain text.
+const SAFE_PROTOCOLS = ['http:', 'https:', 'mailto:'];
+
+function isLocalFilesystemHref(value: string): boolean {
+  const trimmed = value.trim();
+  if (/^file:/i.test(trimmed)) return true;
+  if (/^~[\\/]/.test(trimmed)) return true; // ~/ home shorthand
+  if (/^[a-z]:[\\/]/i.test(trimmed)) return true; // Windows drive path
+  return /^\/(?:Users|home|tmp|var|private|Volumes|mnt|workspace|etc|root|opt)\//.test(trimmed);
+}
+
+// Returns the original href when safe to link, or null when it must be rendered as plain text.
+function safeUrl(value: string | number | null | undefined): string | null {
+  if (value === null || value === undefined || value === '') return null;
+  const raw = String(value);
+  const trimmed = raw.trim();
+  if (trimmed.startsWith('#')) return raw; // relative anchor
+  if (isLocalFilesystemHref(trimmed)) return null;
+  try {
+    const url = new URL(trimmed, 'http://localhost/');
+    return SAFE_PROTOCOLS.includes(url.protocol) ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
+// Neutralizes unsafe markdown links to plain text: a link_open whose href fails the allowlist is
+// flagged (with its paired link_close) so the render rules emit no <a> wrapper, leaving the link text
+// inline. Runs as a core rule so it also applies through renderInline (which runs core.process).
+function sanitizeLinksPlugin(md: MarkdownItInstance): void {
+  md.core.ruler.after('inline', 'diffdad_safe_links', (state) => {
+    for (const tok of state.tokens) {
+      if (tok.type !== 'inline' || !tok.children) continue;
+      const neutralized: boolean[] = [];
+      for (const child of tok.children) {
+        if (child.type === 'link_open') {
+          const safe = safeUrl(child.attrGet('href'));
+          if (safe === null) {
+            child.meta = { ...child.meta, neutralized: true };
+            neutralized.push(true);
+          } else {
+            child.attrSet('href', safe);
+            neutralized.push(false);
+          }
+        } else if (child.type === 'link_close') {
+          if (neutralized.pop()) child.meta = { ...child.meta, neutralized: true };
+        }
+      }
+    }
+  });
+}
+
 function highlightBlock(code: string, lang: string, theme: 'light' | 'dark'): string {
   const lines = code.split('\n');
   return lines.map((line) => highlightLine(line, lang, theme) ?? escapeHtml(line)).join('\n');
@@ -217,11 +271,12 @@ const HEADING_SIZES: Record<number, string> = {
   6: 'text-[0.9em] font-semibold',
 };
 
-// `html: true` passes bot comments' raw HTML through for DOMPurify to sanitize. `linkify: false`
-// preserves the old behaviour of not autolinking bare URLs (flip it on for full GFM autolinking).
-// `breaks: false` matches the old paragraph joining — a single newline is a soft break, not `<br>`.
+// `html: false` is a hardening requirement: diffdad renders only untrusted LLM/GitHub-user markdown, so
+// raw HTML is never parsed into html_block/html_inline tokens — the parser escapes it to visible text
+// instead of passing it through for DOMPurify to allow-list. `linkify: false` preserves the old
+// behaviour of not autolinking bare URLs. `breaks: false` — a single newline is a soft break, not `<br>`.
 const md = new MarkdownIt({
-  html: true,
+  html: false,
   breaks: false,
   linkify: false,
   typographer: false,
@@ -231,6 +286,7 @@ md.enable(['table', 'strikethrough']);
 // from the first text child first, then repoRef splits any owner/repo#N that remains in that text.
 md.use(taskListsPlugin);
 md.use(repoRefPlugin);
+md.use(sanitizeLinksPlugin);
 md.inline.ruler.before('text', 'diffdad_mention', mentionRule);
 
 type RenderEnv = {
@@ -280,15 +336,20 @@ md.renderer.rules.code_inline = (tokens, idx) =>
   `<code style="background:var(--gray-a3);border-radius:3px;padding:1px 5px;font-size:0.9em">${escapeHtml(tokens[idx]!.content)}</code>`;
 
 md.renderer.rules.link_open = (tokens, idx) => {
+  // sanitizeLinksPlugin flags links that failed the protocol allowlist — drop the <a> wrapper so the
+  // link text renders as plain, non-clickable text.
+  if (tokens[idx]!.meta?.neutralized) return '';
   const href = tokens[idx]!.attrGet('href') ?? '#';
   return `<a href="${escapeHtml(String(href))}" target="_blank" rel="noopener noreferrer" style="color:var(--brand);text-decoration:underline">`;
 };
-md.renderer.rules.link_close = () => '</a>';
+md.renderer.rules.link_close = (tokens, idx) => (tokens[idx]!.meta?.neutralized ? '' : '</a>');
 
 md.renderer.rules.image = (tokens, idx) => {
-  const src = tokens[idx]!.attrGet('src') ?? '';
+  const src = safeUrl(tokens[idx]!.attrGet('src'));
   const alt = tokens[idx]!.content;
-  return `<img alt="${escapeHtml(alt)}" src="${escapeHtml(String(src))}" class="inline-block max-h-[1.4em] align-text-bottom" />`;
+  // Unsafe image src (data:, file:, javascript:, local path) — render the alt text as plain text.
+  if (src === null) return escapeHtml(alt);
+  return `<img alt="${escapeHtml(alt)}" src="${escapeHtml(src)}" class="inline-block max-h-[1.4em] align-text-bottom" />`;
 };
 
 // Fenced code: shiki per-line highlighting + a lang label, matching the old renderer. mermaid fences
@@ -314,17 +375,6 @@ md.renderer.rules.fence = (tokens, idx, _opts, env) => {
 // let these fall through to a paragraph; markdown-it parses them, which matches GitHub.
 md.renderer.rules.code_block = (tokens, idx) =>
   `<pre class="my-2 overflow-x-auto rounded-[6px] p-3 font-mono text-sm leading-snug" style="background:var(--gray-2);border:1px solid var(--gray-a4)"><code>${escapeHtml(tokens[idx]!.content)}</code></pre>`;
-
-// Raw HTML blocks (bot comments) pass through verbatim, except a ```mermaid fence embedded inside one
-// (e.g. inside <details>) is still intercepted for the effect to hydrate — preserving the old behaviour.
-md.renderer.rules.html_block = (tokens, idx, _opts, env) => {
-  const e = env as RenderEnv;
-  return tokens[idx]!.content.replace(/```mermaid\s*\n([\s\S]*?)```/g, (_, src: string) => {
-    const source = src.trim();
-    e.mermaidSources.push(source);
-    return mermaidBlockHtml(source, e.svgCache);
-  });
-};
 
 // Exported so the renderer can be tested as a pure string→string function — the component around it
 // needs DOMPurify + mermaid + the zustand store, none of which exist in the node test environment.
