@@ -32,6 +32,10 @@ export const sseEventSchema = z.discriminatedUnion('event', [
   z.object({ event: z.literal('comments'), data: z.array(prCommentSchema) }),
   z.object({ event: z.literal('checks'), data: z.array(checkRunSchema) }),
   z.object({ event: z.literal('reviews'), data: z.array(prReviewSchema) }),
+  z.object({
+    event: z.literal('review'),
+    data: z.object({ event: z.enum(['COMMENT', 'APPROVE', 'REQUEST_CHANGES']), body: z.string().optional() }),
+  }),
   z.object({ event: z.literal('config'), data: configResponseSchema }),
   z.object({ event: z.literal('pr'), data: prMetadataSchema }),
   z.object({ event: z.literal('units'), data: unitsPayloadSchema }),
@@ -62,3 +66,14 @@ export const sseEventSchema = z.discriminatedUnion('event', [
   z.object({ event: z.literal('recap-error'), data: z.object({ error: z.string() }) }),
 ]);
 export type SseEvent = z.infer<typeof sseEventSchema>;
+
+/** Every valid SSE event name (the discriminant of {@link SseEvent}). Type-only. */
+export type SseEventName = SseEvent['event'];
+
+/** The `data` payload type carried by a given SSE event name. Type-only. */
+export type SseDataFor<E extends SseEventName> = Extract<SseEvent, { event: E }>['data'];
+
+/** Runtime schema for a given SSE event's `data`, for dev-only `safeParse` validation. */
+export function sseDataSchemaFor(event: SseEventName) {
+  return sseEventSchema.options.find((opt) => opt.shape.event.value === event)?.shape.data;
+}

@@ -1,3 +1,5 @@
+import { sseDataSchemaFor, type SseDataFor, type SseEventName } from '@diffdad/contracts';
+import type { PRComment as WirePRComment } from '@diffdad/contracts';
 import { existsSync } from 'fs';
 import { Hono } from 'hono';
 import { serveStatic } from 'hono/bun';
@@ -65,18 +67,36 @@ type PostCommentBody = {
   inReplyToId?: number;
 };
 
+/**
+ * Dev-only SSE payload validation. Off unless `DIFFDAD_DEBUG` is set, so production pays nothing:
+ * the `SSE_VALIDATE` guard short-circuits before any schema work. Logs mismatches, never throws — a
+ * malformed payload must still reach the wire so the bug is observable in the browser, not swallowed.
+ */
+const SSE_VALIDATE = Boolean(process.env.DIFFDAD_DEBUG);
+function validateSseData(event: SseEventName, data: unknown): void {
+  const schema = sseDataSchemaFor(event);
+  if (!schema) {
+    console.error(`[sse] no schema for event "${event}"`);
+    return;
+  }
+  const result = schema.safeParse(data);
+  if (!result.success) {
+    console.error(`[sse] "${event}" payload failed schema validation:`, result.error.issues);
+  }
+}
+
 export function createServer(ctx: ServerContext) {
   const app = new Hono();
-  type SseClient = (event: string, data: unknown) => void;
+  type SseClient = <E extends SseEventName>(event: E, data: SseDataFor<E>) => void;
   const sseClients = new Set<SseClient>();
   let hadClients = false;
   let exitTimer: ReturnType<typeof setTimeout> | null = null;
 
   let narrativeProgressChars = 0;
 
-  function broadcast(event: string, data: unknown) {
+  function broadcast<E extends SseEventName>(event: E, data: SseDataFor<E>) {
     if (event === 'narrative-progress') {
-      narrativeProgressChars = (data as { chars?: number }).chars ?? 0;
+      narrativeProgressChars = (data as unknown as { chars?: number }).chars ?? 0;
     } else if (event === 'regenerating' || event === 'narrative') {
       narrativeProgressChars = 0;
     }
@@ -157,19 +177,25 @@ export function createServer(ctx: ServerContext) {
         ),
       ),
     ];
-    return c.json({
+    // The shared narrative payload is typed against the contracts `narrative` SSE payload so its shape
+    // can't drift from what the browser (and the `broadcast('narrative', ...)` sites) expect. The HTTP
+    // response then adds the GET-only fields (checkRuns/reviews/repoUrl/mode/aiPath/_debug) on top.
+    const narrativePayload = {
       narrative: ctx.narrative,
       pr: ctx.pr,
       files: ctx.files,
       comments: mapCommentsToChapters(ctx.comments, ctx.narrative),
+      ...blastRadius(),
+      // Absent on a cache hit, and deliberately so — see `ServerContext.capStats`.
+      capStats: ctx.capStats ?? undefined,
+    } satisfies SseDataFor<'narrative'>;
+    return c.json({
+      ...narrativePayload,
       checkRuns: ctx.checkRuns,
       reviews: ctx.reviews,
       repoUrl: `https://github.com/${ctx.owner}/${ctx.repo}`,
       mode: 'pr',
       aiPath,
-      ...blastRadius(),
-      // Absent on a cache hit, and deliberately so — see `ServerContext.capStats`.
-      capStats: ctx.capStats ?? undefined,
       _debug: {
         totalComments: ctx.comments.length,
         commentPaths,
@@ -303,14 +329,16 @@ export function createServer(ctx: ServerContext) {
     if (!ctx.github) return c.json([]);
     const fresh = await ctx.github.getComments(ctx.owner, ctx.repo, ctx.pr.number);
     ctx.comments = fresh;
-    return c.json(ctx.narrative ? mapCommentsToChapters(fresh, ctx.narrative) : fresh);
+    const body = (ctx.narrative ? mapCommentsToChapters(fresh, ctx.narrative) : fresh) satisfies WirePRComment[];
+    return c.json(body);
   });
 
   app.get('/api/events', (c) => {
     const stream = new ReadableStream({
       start(controller) {
         const encoder = new TextEncoder();
-        const send = (event: string, data: unknown) => {
+        const send = <E extends SseEventName>(event: E, data: SseDataFor<E>) => {
+          if (SSE_VALIDATE) validateSseData(event, data);
           try {
             controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
           } catch {
@@ -611,7 +639,7 @@ export function createServer(ctx: ServerContext) {
     const posted = await ctx.github.postComment(ctx.owner, ctx.repo, ctx.pr.number, payload.body, opts);
     ctx.comments = [...ctx.comments, posted];
     broadcast('comment', posted);
-    return c.json(posted, 201);
+    return c.json(posted satisfies WirePRComment, 201);
   });
 
   app.post('/api/review', async (c) => {

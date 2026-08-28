@@ -18,16 +18,20 @@ import { callAi } from './narrative/engine';
  * stored secret untouched (the browser never holds the raw value, so it cannot echo one back).
  */
 
-/** Wire shape sent to the browser — secrets reduced to flags. */
-export interface RedactedConfig extends Omit<
+/**
+ * Wire shape sent to the browser — secrets reduced to flags. A `type` (not `interface`) so it stays
+ * assignable to the contracts `config` payload's `Record<string, unknown>` modeling (interfaces lack
+ * the implicit index signature that structural assignment to a record requires).
+ */
+export type RedactedConfig = Omit<
   DiffDadConfig,
   'githubToken' | 'aiApiKey' | 'aiSecretAccessKey' | 'aiBedrockApiKey'
-> {
+> & {
   githubTokenSet: boolean;
   aiApiKeySet: boolean;
   aiSecretAccessKeySet: boolean;
   aiBedrockApiKeySet: boolean;
-}
+};
 
 export interface ConfigResponse {
   config: RedactedConfig;
