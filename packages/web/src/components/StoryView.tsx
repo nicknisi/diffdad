@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { type CSSProperties, Fragment, useEffect, useMemo, useState } from 'react';
 import { useScrollTracker } from '../hooks/useScrollTracker';
 import {
   callersByChapter,
@@ -15,7 +15,7 @@ import { useReviewStore } from '../state/review-store';
 import { useInlineComments } from '../hooks/useInlineComments';
 import { useWalkthrough } from '../hooks/useWalkthrough';
 import type { CapStats, CollapseResult, CommentId, DiffFile } from '../state/types';
-import { BeatRail } from './BeatRail';
+import { ChapterTOC } from './ChapterTOC';
 import type { ResolveItem } from '../lib/walkthrough';
 import { Chapter } from './Chapter';
 import { Comment } from './Comment';
@@ -340,7 +340,6 @@ export function StoryView() {
   const layoutMode = useReviewStore((s) => s.layoutMode);
   const displayDensity = useReviewStore((s) => s.displayDensity);
   const railCollapsed = useReviewStore((s) => s.railCollapsed);
-  const setRailCollapsed = useReviewStore((s) => s.setRailCollapsed);
   const storyStructure = useReviewStore((s) => s.storyStructure);
   const collapse = useReviewStore((s) => s.collapse);
   const callers = useReviewStore((s) => s.callers);
@@ -400,25 +399,15 @@ export function StoryView() {
     return <div className={`mx-auto max-w-[880px] px-6 ${padY}`}>{body}</div>;
   }
 
-  const gridCols = railCollapsed ? 'grid-cols-[28px_minmax(0,1fr)]' : 'grid-cols-[220px_minmax(0,1fr)]';
+  // Below `lg` the rail column collapses to zero and ChapterTOC renders its fixed breadcrumb pill
+  // instead; at `lg`+ it is the left rail, narrowed to a strip when the reader collapses it.
+  const railWidth = railCollapsed ? '28px' : '220px';
   return (
-    <div className={`mx-auto grid max-w-[1100px] ${gridCols} gap-7 px-6 ${padY}`}>
-      {railCollapsed ? (
-        <div className="sticky top-[160px] self-start">
-          <button
-            type="button"
-            onClick={() => setRailCollapsed(false)}
-            title="Show walkthrough"
-            aria-label="Show walkthrough"
-            className="flex h-7 w-7 items-center justify-center rounded-md text-[14px] leading-none text-[var(--fg-3)] transition-colors hover:bg-[var(--gray-a3)] hover:text-[var(--fg-1)]"
-            style={{ boxShadow: 'inset 0 0 0 1px var(--gray-a4)' }}
-          >
-            »
-          </button>
-        </div>
-      ) : (
-        <BeatRail />
-      )}
+    <div
+      className={`mx-auto grid max-w-[1100px] grid-cols-[minmax(0,1fr)] gap-7 px-6 lg:grid-cols-[var(--rail-w)_minmax(0,1fr)] ${padY}`}
+      style={{ '--rail-w': railWidth } as CSSProperties}
+    >
+      <ChapterTOC />
       {body}
     </div>
   );

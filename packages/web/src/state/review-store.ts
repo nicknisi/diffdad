@@ -161,6 +161,13 @@ type ReviewState = {
    */
   setBlastRadius: (data: BlastRadius) => void;
   setActiveChapter: (id: string) => void;
+  /**
+   * A TOC jump to a chapter that may be collapsed. Chapters own their collapsed state locally, so the
+   * TOC cannot open one directly: it names the target here and the matching `Chapter` opens itself, then
+   * clears the request. `null` is the resting state.
+   */
+  pendingExpandChapterId: string | null;
+  requestExpandChapter: (id: string | null) => void;
   toggleReviewed: (idx: number) => void;
   setOpenLine: (key: string | null) => void;
   /** Open a comment thread on `key`. When `extend` is true and `openLine` is
@@ -469,6 +476,7 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
   repoUrl: null,
   chapterStates: {},
   activeChapterId: null,
+  pendingExpandChapterId: null,
   reviewKey: null,
   drafts: [],
   openLine: null,
@@ -553,6 +561,8 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
   },
 
   setActiveChapter: (id) => set({ activeChapterId: id }),
+
+  requestExpandChapter: (id) => set({ pendingExpandChapterId: id }),
 
   toggleReviewed: (idx) =>
     set((state) => {
