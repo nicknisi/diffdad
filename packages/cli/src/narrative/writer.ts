@@ -15,6 +15,8 @@ export type WriterInput = {
   config: DiffDadConfig;
   /** Base-branch snapshot, when one resolved — widens inbound-reference counting to repo-wide. */
   repoContext?: RepoContext;
+  /** Formatted anchoring-error feedback from a previous failed attempt at this chapter. */
+  retryFeedback?: string;
 };
 
 export type WriterResult = {
@@ -37,8 +39,8 @@ function normalizePath(p: string): string {
 }
 
 export async function writeChapter(input: WriterInput): Promise<WriterResult> {
-  const { plan, theme, files, fileTree, config, repoContext } = input;
-  const prompt = buildWriterPrompt({ plan, theme, files, fullFileTree: fileTree, repoContext });
+  const { plan, theme, files, fileTree, config, repoContext, retryFeedback } = input;
+  const prompt = buildWriterPrompt({ plan, theme, files, fullFileTree: fileTree, repoContext, retryFeedback });
 
   const result = await callAi(config, prompt.system, prompt.user, WRITER_MAX_TOKENS);
   const parsed = parseChapterResponse(result.text, theme.id);

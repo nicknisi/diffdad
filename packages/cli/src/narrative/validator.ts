@@ -129,6 +129,82 @@ export function validateNarrative(narrative: NarrativeResponse, files: DiffFile[
   return { ok: violations.length === 0, violations };
 }
 
+export type RepairResult = {
+  narrative: NarrativeResponse;
+  dropped: ValidationViolation[];
+};
+
+/**
+ * Pure repair pass: strip any diff section or reshow entry that references a hunk the UI cannot
+ * resolve (unknown file, out-of-range hunkIndex, or a reshow that points at a nonexistent hunk).
+ * Prose (narrative sections, titles, summaries, callouts) is untouched — only broken code refs are
+ * removed. The returned narrative is safe to ship: the UI will never receive a reference to a
+ * hunk that does not exist. `dropped` lists exactly what was removed, for logging.
+ *
+ * Kept intentionally narrow: `orphan-hunk` (a real hunk nobody references) and `duplicate-primary`
+ * / `reshow-forward-ref` (refs that DO resolve to a real hunk, just structurally suboptimal) are
+ * NOT stripped — they don't point at anything nonexistent.
+ */
+export function repairNarrative(narrative: NarrativeResponse, files: DiffFile[]): RepairResult {
+  const dropped: ValidationViolation[] = [];
+  const fileMap = new Map<string, DiffFile>();
+  for (const f of files) fileMap.set(normalizePath(f.file), f);
+
+  // (file:hunkIndex) referenced as a primary diff section by an earlier chapter — mirrors the
+  // frontend fallback used to resolve a reshow entry with no explicit `file`.
+  const primaryRefs = new Map<string, number[]>();
+
+  const chapters = narrative.chapters.map((ch, ci) => {
+    const sections = ch.sections.filter((s) => {
+      if (s.type !== 'diff') return true;
+      const norm = normalizePath(s.file);
+      const file = fileMap.get(norm);
+      if (!file) {
+        dropped.push({ kind: 'unknown-file', file: s.file, chapter: ci });
+        return false;
+      }
+      if (s.hunkIndex < 0 || s.hunkIndex >= file.hunks.length) {
+        dropped.push({ kind: 'invalid-hunk-index', file: s.file, hunkIndex: s.hunkIndex, chapter: ci });
+        return false;
+      }
+      const key = `${norm}:${s.hunkIndex}`;
+      const arr = primaryRefs.get(key);
+      if (arr) arr.push(ci);
+      else primaryRefs.set(key, [ci]);
+      return true;
+    });
+
+    let reshow = ch.reshow;
+    if (reshow && reshow.length > 0) {
+      reshow = reshow.filter((entry) => {
+        let resolvedNorm: string | undefined;
+        if (entry.file) {
+          resolvedNorm = normalizePath(entry.file);
+        } else {
+          for (const [key, owners] of primaryRefs) {
+            const sep = key.lastIndexOf(':');
+            if (Number(key.slice(sep + 1)) === entry.ref && owners.some((c) => c < ci)) {
+              resolvedNorm = key.slice(0, sep);
+              break;
+            }
+          }
+        }
+        const file = resolvedNorm ? fileMap.get(resolvedNorm) : undefined;
+        if (!file || entry.ref < 0 || entry.ref >= file.hunks.length) {
+          dropped.push({ kind: 'reshow-unresolved', chapter: ci, ref: entry.ref, file: entry.file });
+          return false;
+        }
+        return true;
+      });
+      if (reshow.length === 0) reshow = undefined;
+    }
+
+    return { ...ch, sections, reshow };
+  });
+
+  return { narrative: { ...narrative, chapters }, dropped };
+}
+
 /** One-line human-readable summary of a violation, for warning logs. */
 export function formatViolation(v: ValidationViolation): string {
   switch (v.kind) {

@@ -4,7 +4,7 @@ import type { RepoContext } from '../repo/snapshot';
 import { buildNarrativePrompt, type PreviousNarrativeContext, type PromptCapStats } from './prompt';
 import { partitionMechanicalFiles } from './diff-filter';
 import { normalizeNarrative, type NarrativeChapter, type NarrativeResponse } from './types';
-import { formatViolation, validateNarrative } from './validator';
+import { formatViolation, repairNarrative, validateNarrative, type ValidationViolation } from './validator';
 import { callAi as _callAi, resolveAiPath, type AiChunkHandler } from './ai-runtime';
 import { extractJson, tryParsePartialJson } from './json-parse';
 import { computeHints } from './hints';
@@ -85,19 +85,32 @@ function logPromptStats(stats: PromptCapStats, mechanicalSkipped: number): void 
   for (const l of lines) console.error(`  ${l}`);
 }
 
-function logNarrativeViolations(narrative: NarrativeResponse, files: DiffFile[]): void {
-  const validation = validateNarrative(narrative, files);
-  if (validation.ok) return;
+function logViolationList(prefix: string, violations: ValidationViolation[]): void {
+  if (violations.length === 0) return;
   const counts = new Map<string, number>();
-  for (const v of validation.violations) counts.set(v.kind, (counts.get(v.kind) ?? 0) + 1);
+  for (const v of violations) counts.set(v.kind, (counts.get(v.kind) ?? 0) + 1);
   const summary = [...counts.entries()].map(([k, n]) => `${n} ${k}`).join(', ');
-  console.error(`${YELLOW}  ⚠ Narrative validation: ${summary}${RESET}`);
-  for (const v of validation.violations.slice(0, 10)) {
+  console.error(`${YELLOW}  ⚠ ${prefix}: ${summary}${RESET}`);
+  for (const v of violations.slice(0, 10)) {
     console.error(`${DIM}      ${formatViolation(v)}${RESET}`);
   }
-  if (validation.violations.length > 10) {
-    console.error(`${DIM}      … and ${validation.violations.length - 10} more${RESET}`);
+  if (violations.length > 10) {
+    console.error(`${DIM}      … and ${violations.length - 10} more${RESET}`);
   }
+}
+
+function logNarrativeViolations(narrative: NarrativeResponse, files: DiffFile[]): void {
+  logViolationList('Narrative validation', validateNarrative(narrative, files).violations);
+}
+
+/**
+ * Blocking repair boundary: strip any diff/reshow ref the UI cannot resolve, log what was dropped,
+ * and return the ship-safe narrative. After this call no chapter references a nonexistent hunk.
+ */
+function repairAndLog(narrative: NarrativeResponse, files: DiffFile[]): NarrativeResponse {
+  const { narrative: repaired, dropped } = repairNarrative(narrative, files);
+  logViolationList('Narrative repair dropped unresolvable refs', dropped);
+  return repaired;
 }
 
 export type NarrativeGenerationOptions = {
@@ -338,10 +351,49 @@ async function generateNarrativeTwoPass(
   });
   await runWithConcurrency(tasks, writerConcurrency);
 
-  const narrative = normalizeNarrative(assembleNarrative(plan, chapters));
   // Validate against the same filtered set the plan was built from — mechanical files (lockfiles,
   // generated) are deliberately unplanned, so checking fullFiles would report them all as orphans.
-  logNarrativeViolations(narrative, narrate);
+  let assembled = normalizeNarrative(assembleNarrative(plan, chapters));
+  const validation = validateNarrative(assembled, narrate);
+  if (!validation.ok) {
+    logNarrativeViolations(assembled, narrate);
+    // Retry ONLY the offending non-suppressed chapters, once, with their own violations as
+    // anchoring feedback. Chapters map 1:1 to plan.themes by index.
+    const perChapter = new Map<number, ValidationViolation[]>();
+    for (const v of validation.violations) {
+      const chapterIdxs = v.kind === 'duplicate-primary' ? v.chapters : 'chapter' in v ? [v.chapter] : [];
+      for (const ci of chapterIdxs) {
+        const arr = perChapter.get(ci);
+        if (arr) arr.push(v);
+        else perChapter.set(ci, [v]);
+      }
+    }
+    const retryTasks = [...perChapter.entries()]
+      .filter(([ci]) => plan.themes[ci] && !plan.themes[ci]!.suppress)
+      .map(([ci, vs]) => async () => {
+        const theme = plan.themes[ci]!;
+        const result = await writeChapter({
+          plan,
+          theme,
+          files: fullFiles,
+          fileTree,
+          config,
+          repoContext: options.repoContext,
+          retryFeedback: vs.map(formatViolation).join('\n'),
+        });
+        if (!writerProvider) writerProvider = result.provider;
+        chapters[ci] = result.chapter;
+        options.onChapter?.({ themeId: theme.id, index: ci, chapter: result.chapter });
+        if (options.onPartial) options.onPartial(assembleNarrative(plan, chapters));
+      });
+    if (retryTasks.length > 0) {
+      console.error(`${DIM}  Retrying ${retryTasks.length} chapter(s) with anchoring feedback${RESET}`);
+      await runWithConcurrency(retryTasks, writerConcurrency);
+      assembled = normalizeNarrative(assembleNarrative(plan, chapters));
+    }
+  }
+  // Final blocking boundary: strip whatever still doesn't resolve so the UI never sees a bad ref.
+  const narrative = repairAndLog(assembled, narrate);
   const provider = writerProvider ? `${plannerProvider} + ${writerProvider}` : plannerProvider;
   return { narrative, provider, capStats };
 }
@@ -374,67 +426,83 @@ async function generateNarrativeSinglePass(
   const debugPerf = Boolean(process.env.DIFFDAD_DEBUG_PERF);
   const startedAt = Date.now();
 
-  const MAX_RETRIES = 2;
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    let chars = 0;
-    let buffer = '';
-    let lastEmittedHash = '';
-    let firstChunkAt: number | undefined;
-    let firstPartialAt: number | undefined;
+  // One streamed generation with internal truncation retries. Returns a parsed narrative, or throws.
+  const runAttempt = async (userPrompt: string): Promise<{ narrative: NarrativeResponse; provider: string }> => {
+    const MAX_RETRIES = 2;
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      let chars = 0;
+      let buffer = '';
+      let lastEmittedHash = '';
+      let firstChunkAt: number | undefined;
+      let firstPartialAt: number | undefined;
 
-    const emitPartialIfChanged = (onPartial: NarrativePartialHandler) => {
-      const parsed = tryParsePartialJson(buffer);
-      if (!parsed) return;
-      const partial = normalizeNarrative(parsed);
-      const planChars = partial.readingPlan.reduce((s, p) => s + p.step.length + (p.why?.length ?? 0), 0);
-      const concernChars = partial.concerns.reduce((s, c) => s + c.question.length + c.why.length, 0);
-      const chapterChars = partial.chapters.reduce(
-        (s, c) => s + c.title.length + c.summary.length + c.whyMatters.length,
-        0,
-      );
-      const hash = `${partial.title.length}|${partial.tldr.length}|${partial.verdict}|${partial.readingPlan.length}|${partial.concerns.length}|${partial.chapters.length}|${planChars}|${concernChars}|${chapterChars}`;
-      if (hash === lastEmittedHash) return;
-      lastEmittedHash = hash;
-      if (firstPartialAt === undefined) firstPartialAt = Date.now();
-      onPartial(partial);
-    };
+      const emitPartialIfChanged = (onPartial: NarrativePartialHandler) => {
+        const parsed = tryParsePartialJson(buffer);
+        if (!parsed) return;
+        const partial = normalizeNarrative(parsed);
+        const planChars = partial.readingPlan.reduce((s, p) => s + p.step.length + (p.why?.length ?? 0), 0);
+        const concernChars = partial.concerns.reduce((s, c) => s + c.question.length + c.why.length, 0);
+        const chapterChars = partial.chapters.reduce(
+          (s, c) => s + c.title.length + c.summary.length + c.whyMatters.length,
+          0,
+        );
+        const hash = `${partial.title.length}|${partial.tldr.length}|${partial.verdict}|${partial.readingPlan.length}|${partial.concerns.length}|${partial.chapters.length}|${planChars}|${concernChars}|${chapterChars}`;
+        if (hash === lastEmittedHash) return;
+        lastEmittedHash = hash;
+        if (firstPartialAt === undefined) firstPartialAt = Date.now();
+        onPartial(partial);
+      };
 
-    const onChunk: AiChunkHandler | undefined =
-      options.onProgress || options.onPartial || debugPerf
-        ? (delta) => {
-            chars += delta.length;
-            buffer += delta;
-            if (firstChunkAt === undefined) firstChunkAt = Date.now();
-            options.onProgress?.({ delta, chars });
-            if (options.onPartial) emitPartialIfChanged(options.onPartial);
-          }
-        : undefined;
+      const onChunk: AiChunkHandler | undefined =
+        options.onProgress || options.onPartial || debugPerf
+          ? (delta) => {
+              chars += delta.length;
+              buffer += delta;
+              if (firstChunkAt === undefined) firstChunkAt = Date.now();
+              options.onProgress?.({ delta, chars });
+              if (options.onPartial) emitPartialIfChanged(options.onPartial);
+            }
+          : undefined;
 
-    const result = await _callAi(config, system, user, NARRATIVE_MAX_TOKENS, onChunk);
+      const result = await _callAi(config, system, userPrompt, NARRATIVE_MAX_TOKENS, onChunk);
 
-    const json = extractJson(result.text);
-    try {
-      const parsed = JSON.parse(json);
-      const narrative = normalizeNarrative(parsed);
-      if (debugPerf) {
-        const { path } = resolveAiPath(config);
-        const fmt = (t: number | undefined) => (t === undefined ? '-' : `${((t - startedAt) / 1000).toFixed(1)}s`);
-        const total = ((Date.now() - startedAt) / 1000).toFixed(1);
-        console.error(
-          `Narrative perf: path=${path} provider="${result.provider}" firstChunk=${fmt(firstChunkAt)} firstPartial=${fmt(firstPartialAt)} total=${total}s chapters=${narrative.chapters.length} chars=${chars}`,
+      const json = extractJson(result.text);
+      try {
+        const parsed = JSON.parse(json);
+        const narrative = normalizeNarrative(parsed);
+        if (debugPerf) {
+          const { path } = resolveAiPath(config);
+          const fmt = (t: number | undefined) => (t === undefined ? '-' : `${((t - startedAt) / 1000).toFixed(1)}s`);
+          const total = ((Date.now() - startedAt) / 1000).toFixed(1);
+          console.error(
+            `Narrative perf: path=${path} provider="${result.provider}" firstChunk=${fmt(firstChunkAt)} firstPartial=${fmt(firstPartialAt)} total=${total}s chapters=${narrative.chapters.length} chars=${chars}`,
+          );
+        }
+        return { narrative, provider: result.provider };
+      } catch (err) {
+        if (result.truncated && attempt < MAX_RETRIES) {
+          console.log(`Narrative truncated (attempt ${attempt + 1}/${MAX_RETRIES + 1}), retrying...`);
+          continue;
+        }
+        throw new Error(
+          `Failed to parse narrative JSON: ${(err as Error).message}${result.truncated ? " (response was truncated — PR may be too large for the model's output limit)" : ''}`,
         );
       }
-      logNarrativeViolations(narrative, narrate);
-      return { narrative, provider: result.provider, capStats: stats };
-    } catch (err) {
-      if (result.truncated && attempt < MAX_RETRIES) {
-        console.log(`Narrative truncated (attempt ${attempt + 1}/${MAX_RETRIES + 1}), retrying...`);
-        continue;
-      }
-      throw new Error(
-        `Failed to parse narrative JSON: ${(err as Error).message}${result.truncated ? " (response was truncated — PR may be too large for the model's output limit)" : ''}`,
-      );
     }
+    throw new Error('Unreachable');
+  };
+
+  // Validation retry: generate, and if the narrative anchors to nonexistent hunks, retry ONCE with the
+  // violations appended as feedback. Then repair whatever still doesn't resolve before shipping.
+  let attemptResult = await runAttempt(user);
+  const validation = validateNarrative(attemptResult.narrative, narrate);
+  if (!validation.ok) {
+    logNarrativeViolations(attemptResult.narrative, narrate);
+    const feedback = validation.violations.map(formatViolation).join('\n');
+    const retryUser = `${user}\n\n---\n\nYour previous attempt had these anchoring errors. Fix them: every diff section and reshow must reference a real file and a valid hunkIndex from the diff above. Drop any reference you cannot anchor.\n${feedback}`;
+    console.error(`${DIM}  Retrying single-pass narrative with anchoring feedback${RESET}`);
+    attemptResult = await runAttempt(retryUser);
   }
-  throw new Error('Unreachable');
+  const narrative = repairAndLog(attemptResult.narrative, narrate);
+  return { narrative, provider: attemptResult.provider, capStats: stats };
 }
