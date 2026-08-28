@@ -2,6 +2,7 @@ export * from './narrative';
 export * from './github';
 export * from './plan';
 export * from './recap';
+export * from './trace';
 export * from './collapse';
 export * from './units';
 export * from './config';

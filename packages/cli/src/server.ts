@@ -23,6 +23,8 @@ import { cacheRecap } from './recap/cache';
 import { generateRecap } from './recap/engine';
 import { gatherRecapSources } from './recap/sources';
 import type { RecapResponse } from './recap/types';
+import { findMatchingSessions } from './trace/local-sessions';
+import type { TraceSessionSummary } from '@diffdad/contracts';
 import { describeRepoContext, resolveRepoContext } from './repo/snapshot';
 
 export type ServerContext = {
@@ -64,6 +66,11 @@ export type ServerContext = {
   narratedSha?: string | null;
   /** Last derived review-round status, cached so the poll only broadcasts `review-round` when it changes. */
   reviewRound?: ReviewRound | null;
+  /**
+   * Local authoring-session intent, mined once per server process from ~/.claude/projects. `undefined`
+   * means not looked yet; an empty array means looked and found nothing (feature stays invisible).
+   */
+  traceIntent?: TraceSessionSummary[];
 };
 
 type PostCommentBody = {
@@ -298,6 +305,24 @@ export function createServer(ctx: ServerContext) {
     }
     if (ctx.recap) return c.json({ status: 'ready', recap: ctx.recap });
     return c.json({ status: 'generating' });
+  });
+
+  // Local-only, read-only intent from the coding session that authored this branch. Filesystem work,
+  // no LLM, no upload: prompts live only in this response. Cached in-memory per server process.
+  app.get('/api/trace/intent', async (c) => {
+    if (ctx.traceIntent === undefined) {
+      try {
+        ctx.traceIntent = await findMatchingSessions({
+          repoDirHints: [ctx.repo],
+          branch: ctx.pr.branch,
+          changedFiles: ctx.files.map((f) => f.file),
+          since: ctx.pr.createdAt ? new Date(ctx.pr.createdAt) : undefined,
+        });
+      } catch {
+        ctx.traceIntent = []; // best-effort: any failure means the feature stays invisible
+      }
+    }
+    return c.json({ sessions: ctx.traceIntent });
   });
 
   app.post('/api/ai', async (c) => {
