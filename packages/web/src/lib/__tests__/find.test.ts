@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  collectTargets,
-  compileFindQuery,
-  findInNarrative,
-  matchTargets,
-  wrapIndex,
-} from '../find';
+import { collectTargets, compileFindQuery, findInNarrative, matchTargets, wrapIndex } from '../find';
 import type { Chapter, DiffFile, DiffLine, NarrativeResponse, Section } from '../../state/types';
 
 // --- fixtures -------------------------------------------------------------
