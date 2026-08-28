@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtemp, mkdir, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { findMatchingSessions } from '../local-sessions';
+import { collapseWhitespace, findMatchingSessions, verifyPromptText } from '../local-sessions';
 
 let root: string;
 
@@ -106,8 +106,45 @@ describe('findMatchingSessions', () => {
     expect(out).toHaveLength(1);
     const prompts = out[0]!.userPrompts;
     expect(prompts).toHaveLength(20); // list cap
-    expect(prompts).not.toContain('/clear'); // slash command dropped
-    expect(prompts[0]!).toHaveLength(2000); // per-prompt cap
+    expect(prompts.map((p) => p.text)).not.toContain('/clear'); // slash command dropped
+    expect(prompts[0]!.text).toHaveLength(2000); // per-prompt cap
+    expect(prompts[0]!.truncated).toBe(true); // capped display is a truncated prefix
+  });
+
+  it('extracts prompts as all-verified quotes on a clean fixture', async () => {
+    await writeSession('clean-proj', 'g.jsonl', [
+      { ...userLine({ content: 'first prompt' }), cwd: '/x/repo' },
+      { ...userLine({ content: 'second prompt' }), cwd: '/x/repo' },
+    ]);
+    const out = await findMatchingSessions({ repoDirHints: ['repo'], changedFiles: [], logRoot: root });
+    expect(out).toHaveLength(1);
+    const prompts = out[0]!.userPrompts;
+    expect(prompts.map((p) => p.text)).toEqual(['first prompt', 'second prompt']);
+    expect(prompts.every((p) => p.verified)).toBe(true);
+    expect(prompts.every((p) => !p.truncated)).toBe(true);
+  });
+});
+
+describe('verifyPromptText', () => {
+  it('verifies an exact match', () => {
+    expect(verifyPromptText('fix the bug', 'fix the bug')).toEqual({ verified: true });
+  });
+
+  it('verifies a whitespace-collapsed match', () => {
+    expect(verifyPromptText('fix   the\n\tbug', 'fix the bug')).toEqual({ verified: true });
+    expect(collapseWhitespace('fix   the\n\tbug')).toBe('fix the bug');
+  });
+
+  it('flags a truncated prefix', () => {
+    expect(verifyPromptText('fix the', 'fix the bug now')).toEqual({ verified: true, truncated: true });
+  });
+
+  it('returns false for corrupted text not in the transcript', () => {
+    expect(verifyPromptText('delete everything', 'fix the bug')).toEqual({ verified: false });
+  });
+
+  it('returns false for empty text', () => {
+    expect(verifyPromptText('', 'fix the bug')).toEqual({ verified: false });
   });
 
   it('takes at most the top 3 scoring sessions', async () => {

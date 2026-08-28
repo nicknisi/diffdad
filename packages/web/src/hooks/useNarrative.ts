@@ -36,6 +36,10 @@ type NarrativeApiResponse = {
   capStats?: CapStats;
   /** Derived review-round status, when the server has computed one. Purely additive; never blocks. */
   round?: ReviewRound;
+  /** The SHA the narrative was generated against; drives the staleness banner. */
+  narratedSha?: string | null;
+  /** References the narration could not re-anchor to the current diff. */
+  droppedRefs?: number;
   /** Command-center bootstrap: the daemon seeds the initial queue so the dashboard paints at once. */
   units?: Unit[];
   /** Command-center bootstrap: rows ✕ has hidden until their author pushes. Counted, never rendered inline. */
@@ -117,6 +121,7 @@ export function useNarrative() {
           );
           useReviewStore.getState().setAiPath(data.aiPath ?? null);
           if (data.round) useReviewStore.getState().setReviewRound(data.round);
+          useReviewStore.getState().setStaleness(data.narratedSha ?? null, data.droppedRefs ?? 0);
         }
 
         useReviewStore.getState().setMode(data.mode ?? 'pr');

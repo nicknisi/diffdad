@@ -1,5 +1,13 @@
 import { describe, expect, test } from 'bun:test';
-import { narrativeResponseSchema, prCommentSchema, planSchema, recapResponseSchema, sseEventSchema } from './index';
+import {
+  narrativeResponseSchema,
+  prCommentSchema,
+  planSchema,
+  recapResponseSchema,
+  renarrateResponseSchema,
+  sseEventSchema,
+  traceSessionSummarySchema,
+} from './index';
 
 const chapter = {
   title: 'Auth boundary moves',
@@ -293,6 +301,43 @@ describe('plan and recap', () => {
   });
 });
 
+describe('trace + renarrate', () => {
+  test('round-trips a trace session with verified/truncated prompts', () => {
+    const session = {
+      sessionId: 's1',
+      path: '/tmp/s1.jsonl',
+      startedAt: '2024-01-01T00:00:00Z',
+      endedAt: '2024-01-01T01:00:00Z',
+      branch: 'feat/auth',
+      cwd: '/work/repo',
+      score: 6,
+      userPrompts: [
+        { text: 'move auth into middleware', verified: true },
+        { text: 'a very long prompt', verified: true, truncated: true },
+        { text: '', verified: false },
+      ],
+    };
+    expect(traceSessionSummarySchema.parse(session)).toEqual(session);
+  });
+
+  test('rejects a prompt missing the verified flag', () => {
+    const bad = {
+      sessionId: 's1',
+      path: '/tmp/s1.jsonl',
+      startedAt: '',
+      endedAt: '',
+      score: 0,
+      userPrompts: [{ text: 'hi' }],
+    };
+    expect(() => traceSessionSummarySchema.parse(bad)).toThrow();
+  });
+
+  test('round-trips a renarrate response', () => {
+    expect(renarrateResponseSchema.parse({ queued: true })).toEqual({ queued: true });
+    expect(() => renarrateResponseSchema.parse({ queued: 'yes' })).toThrow();
+  });
+});
+
 // One representative payload per SSE event kind.
 const sseCases: { event: string; data: unknown }[] = [
   { event: 'connected', data: { timestamp: 123 } },
@@ -329,6 +374,8 @@ const sseCases: { event: string; data: unknown }[] = [
       comments: [{ ...comment, chapterIndices: [0] }],
       collapse: { available: true, decisions: [], dividerBefore: null },
       callers: [{ chapterIndex: 0, callers: [], total: 0 }],
+      narratedSha: 'abc1234',
+      droppedRefs: 2,
     },
   },
   { event: 'collapse', data: { collapse: { available: false, reason: 'size-cap' }, callers: [] } },

@@ -329,8 +329,20 @@ export function repairNarrative(narrative: NarrativeResponse, files: DiffFile[])
  * carry no anchors — those simply fall through to the existing drop behavior.
  */
 export function reanchorNarrative(narrative: NarrativeResponse, files: DiffFile[]): NarrativeResponse {
-  const { narrative: repaired } = repairNarrative(narrative, files);
-  return enrichNarrativeAnchors(repaired, files);
+  return reanchorNarrativeWithDrops(narrative, files).narrative;
+}
+
+/**
+ * Same reshape as {@link reanchorNarrative}, but also reports how many code references the repair pass
+ * had to drop because no anchor could place them on the current diff. `droppedRefs > 0` means the
+ * narration no longer fully covers the diff — the caller can surface that to the reviewer.
+ */
+export function reanchorNarrativeWithDrops(
+  narrative: NarrativeResponse,
+  files: DiffFile[],
+): { narrative: NarrativeResponse; droppedRefs: number } {
+  const { narrative: repaired, dropped } = repairNarrative(narrative, files);
+  return { narrative: enrichNarrativeAnchors(repaired, files), droppedRefs: dropped.length };
 }
 
 /** One-line human-readable summary of a violation, for warning logs. */

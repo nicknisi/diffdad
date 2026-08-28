@@ -121,6 +121,10 @@ type ReviewState = {
   clusterBots: boolean;
   regenerating: boolean;
   narrativeProgressChars: number;
+  /** The SHA the on-screen narrative was generated against; null until a narrative payload lands. */
+  narratedSha: string | null;
+  /** References the last narration could not re-anchor to the current diff (0 = full coverage). */
+  droppedRefs: number;
   narrationOverrides: Record<string, string>;
   /** Resolve-item ids the reviewer has marked done (walkthrough resolve strips). */
   resolved: Record<string, boolean>;
@@ -235,6 +239,8 @@ type ReviewState = {
   setClusterBots: (v: boolean) => void;
   setRegenerating: (v: boolean) => void;
   setNarrativeProgressChars: (chars: number) => void;
+  /** Set the narrated SHA + dropped-ref count together (they always arrive on the same payload). */
+  setStaleness: (narratedSha: string | null, droppedRefs: number) => void;
   setAiPath: (path: 'api' | 'local-cli' | null) => void;
   setPr: (pr: PRData) => void;
   setNarrationOverride: (chapterKey: string, text: string) => void;
@@ -515,6 +521,8 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
   clusterBots: true,
   regenerating: false,
   narrativeProgressChars: 0,
+  narratedSha: null,
+  droppedRefs: 0,
   aiPath: null,
   narrationOverrides: {} as Record<string, string>,
   resolved: {},
@@ -769,6 +777,7 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
   setRegenerating: (regenerating) => set({ regenerating }),
   setNarrativeProgressChars: (narrativeProgressChars) =>
     set((state) => (state.narrativeProgressChars === narrativeProgressChars ? state : { narrativeProgressChars })),
+  setStaleness: (narratedSha, droppedRefs) => set({ narratedSha, droppedRefs }),
   setAiPath: (aiPath) => set({ aiPath }),
   setPr: (pr) => set({ pr }),
   applyPartialNarrative: (pr, narrative, files, comments) =>

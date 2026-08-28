@@ -727,6 +727,59 @@ describe('GET /api/events — polling cycle', () => {
     await cleanFixtureCache(newSha);
   });
 
+  it('POST /api/renarrate forces a regeneration on the next poll even when the SHA is unchanged', async () => {
+    const { cacheNarrative, computePromptMetaHash } = await import('../narrative/cache');
+    const { resolveProviderKey } = await import('../narrative/engine');
+    const { readConfig } = await import('../config');
+    const providerKey = await resolveProviderKey(await readConfig());
+    const sha = `sha-renarrate-${Date.now()}`;
+    const pr = mkPR({ headSha: sha });
+    const metaHash = computePromptMetaHash(pr);
+    // Seed the cache at the current head so the forced regen re-anchors instead of calling the LLM.
+    await cacheNarrative('o', 'r', 1, sha, metaHash, providerKey, { ...baseNarrative, title: 'renarrated' });
+
+    const state = { pr };
+    const ctx = mkContext({
+      headSha: sha,
+      pr: mkPR({ headSha: sha }),
+      narratedSha: sha,
+      github: defaultGh(state) as unknown as GitHubClient,
+    });
+    const { app } = createServer(ctx);
+    const ctrl = new AbortController();
+    const res = await app.request('/api/events', { signal: ctrl.signal });
+    const reader = new StreamReader(res.body!);
+    await reader.drain();
+
+    // Baseline: an unchanged SHA never regenerates on its own.
+    await runPoll();
+    await new Promise((r) => setTimeout(r, 30));
+    let events = (await reader.drain(80)) as SseEvent[];
+    expect(events.find((e) => e.event === 'regenerating')).toBeUndefined();
+
+    // Ask for a forced re-narration.
+    const renarrateRes = await app.request('/api/renarrate', { method: 'POST' });
+    expect(renarrateRes.status).toBe(202);
+    expect(await renarrateRes.json()).toEqual({ queued: true });
+    expect(ctx.renarrateRequested).toBe(true);
+
+    // The next poll tick starts a regeneration even though the SHA hasn't moved.
+    await runPoll();
+    await new Promise((r) => setTimeout(r, 30));
+    events = (await reader.drain(80)) as SseEvent[];
+    expect(events.find((e) => e.event === 'regenerating')).toBeDefined();
+    const narrEvt = events.find((e) => e.event === 'narrative');
+    expect(narrEvt).toBeDefined();
+    expect((narrEvt!.data as { narrative: { title: string } }).narrative.title).toBe('renarrated');
+    // Flag cleared once the attempt started.
+    expect(ctx.renarrateRequested).toBe(false);
+
+    ctrl.abort();
+    await reader.cancel();
+
+    await cleanFixtureCache(sha);
+  });
+
   it('swallows polling errors and keeps the loop alive', async () => {
     let pollCount = 0;
     const gh: GhStub = {

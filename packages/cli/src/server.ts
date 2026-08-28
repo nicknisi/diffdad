@@ -11,7 +11,7 @@ import type { GitHubClient } from './github/client';
 import { mapCommentsToChapters } from './github/comments';
 import type { CheckRun, DiffFile, PRComment, PRMetadata, PRReview } from './github/types';
 import { cacheNarrative, computePromptMetaHash, getCachedNarrative, getLastGoodNarrative } from './narrative/cache';
-import { reanchorNarrative } from './narrative/validator';
+import { reanchorNarrative, reanchorNarrativeWithDrops } from './narrative/validator';
 import { chapterCallers, resolveCollapse } from './narrative/collapse';
 import { callAi, generateNarrative, resolveAiPath, resolveProviderKey } from './narrative/engine';
 import { buildChapterAiPrompt } from './narrative/chapter-ai';
@@ -65,6 +65,14 @@ export type ServerContext = {
    * until the first narrative is narrated.
    */
   narratedSha?: string | null;
+  /**
+   * Set by `POST /api/renarrate` to force the next poll tick to regenerate even when the SHA is
+   * unchanged. Treated as SHA-changed-equivalent by the poll: it bypasses the failure cool-down and
+   * skips the plan cache. Cleared the moment the regen attempt starts.
+   */
+  renarrateRequested?: boolean;
+  /** References the last (re)narration could not re-anchor to the diff. Shipped with the narrative payload. */
+  droppedRefs?: number;
   /** Last derived review-round status, cached so the poll only broadcasts `review-round` when it changes. */
   reviewRound?: ReviewRound | null;
   /**
@@ -231,6 +239,8 @@ export function createServer(ctx: ServerContext) {
       ...blastRadius(),
       // Absent on a cache hit, and deliberately so — see `ServerContext.capStats`.
       capStats: ctx.capStats ?? undefined,
+      narratedSha: ctx.narratedSha ?? null,
+      droppedRefs: ctx.droppedRefs ?? undefined,
     } satisfies SseDataFor<'narrative'>;
     return c.json({
       ...narrativePayload,
@@ -298,6 +308,13 @@ export function createServer(ctx: ServerContext) {
     if (ctx.recapError) return c.json({ status: 'error', error: ctx.recapError });
     if (ctx.recapGenerating) return c.json({ status: 'generating' });
     return c.json({ status: 'idle' });
+  });
+
+  // Force a re-narration of the current head even when the SHA hasn't moved (the staleness banner's
+  // Re-narrate button). Sets a flag the poll honors on its next tick; returns immediately.
+  app.post('/api/renarrate', (c) => {
+    ctx.renarrateRequested = true;
+    return c.json({ queued: true }, 202);
   });
 
   app.post('/api/recap', async (c) => {
@@ -435,6 +452,8 @@ export function createServer(ctx: ServerContext) {
             if (!gh) return;
             const freshPr = await gh.getPR(ctx.owner, ctx.repo, ctx.pr.number);
             const shaChanged = freshPr.headSha !== ctx.headSha;
+            // A forced re-narration (staleness banner) regenerates even when the SHA hasn't moved.
+            const forceRenarrate = ctx.renarrateRequested === true;
 
             // These fields feed into the narrative prompt — changes here mean
             // the cached narrative is stale and we need to regenerate.
@@ -447,7 +466,7 @@ export function createServer(ctx: ServerContext) {
             // alongside the new narrative — skip the standalone 'pr' event then.
             // Also skip while a regen is in flight: mutating ctx.pr mid-regen would race the
             // snapshot the regen commits on success; the edit converges via its own regen next poll.
-            const willRegenerate = (shaChanged || promptMetaChanged) && !regenerating;
+            const willRegenerate = (shaChanged || promptMetaChanged || forceRenarrate) && !regenerating;
             if ((promptMetaChanged || otherMetaChanged) && !shaChanged && !willRegenerate && !regenerating) {
               ctx.pr = freshPr;
               send('pr', ctx.pr);
@@ -484,13 +503,19 @@ export function createServer(ctx: ServerContext) {
             }
             const round = recomputeReviewRound(freshCommits);
 
-            const regenCoolingDown = regenFailedSha === freshPr.headSha && Date.now() - regenFailedAt < REGEN_RETRY_MS;
-            if ((shaChanged || promptMetaChanged) && !regenerating && !regenCoolingDown) {
+            // A forced re-narration bypasses the failure cool-down (the reviewer explicitly asked).
+            const regenCoolingDown =
+              !forceRenarrate && regenFailedSha === freshPr.headSha && Date.now() - regenFailedAt < REGEN_RETRY_MS;
+            if ((shaChanged || promptMetaChanged || forceRenarrate) && !regenerating && !regenCoolingDown) {
               regenerating = true;
+              // Clear the flag the moment the attempt starts, so a later poll doesn't re-fire it.
+              if (forceRenarrate) ctx.renarrateRequested = false;
               const prevSha = ctx.headSha.slice(0, 7);
               const newSha = freshPr.headSha.slice(0, 7);
               if (shaChanged) {
                 console.log(`\n  \x1b[38;5;221m↻\x1b[0m New commits detected \x1b[2m(${prevSha} → ${newSha})\x1b[0m`);
+              } else if (forceRenarrate) {
+                console.log(`\n  \x1b[38;5;221m↻\x1b[0m Re-narration requested`);
               } else {
                 console.log(`\n  \x1b[38;5;221m↻\x1b[0m PR title/description/labels changed`);
               }
@@ -534,7 +559,14 @@ export function createServer(ctx: ServerContext) {
                   // The cached narrative was anchored against a prior diff; the SHA just changed and
                   // `freshFiles` may have shifted hunk indices. Re-resolve via content anchors so refs
                   // survive the reshape instead of dropping.
-                  freshNarrative = reanchorNarrative(cached, freshFiles);
+                  const reanchored = reanchorNarrativeWithDrops(cached, freshFiles);
+                  freshNarrative = reanchored.narrative;
+                  ctx.droppedRefs = reanchored.droppedRefs;
+                  if (reanchored.droppedRefs > 0) {
+                    console.warn(
+                      `  \x1b[38;5;221m⚠\x1b[0m ${reanchored.droppedRefs} narrative reference(s) could not be re-anchored to the new diff.`,
+                    );
+                  }
                   // A cached narrative carries no budget stats, and inventing them would tell the
                   // reviewer a story built from a truncated diff was complete.
                   freshCapStats = null;
@@ -580,6 +612,9 @@ export function createServer(ctx: ServerContext) {
                       },
                       {
                         repoContext,
+                        // A forced re-narration skips the plan cache so the reviewer gets a genuine
+                        // regeneration rather than a replay of the stale plan.
+                        force: forceRenarrate || undefined,
                         cacheKey: {
                           owner: ctx.owner,
                           repo: ctx.repo,
@@ -617,6 +652,8 @@ export function createServer(ctx: ServerContext) {
                     if (isTty) process.stdout.write('\r\x1b[2K');
                   }
                   freshNarrative = generated;
+                  // A fresh generation is enriched against the current diff, so nothing was dropped.
+                  ctx.droppedRefs = 0;
                   await cacheNarrative(
                     ctx.owner,
                     ctx.repo,
@@ -657,6 +694,8 @@ export function createServer(ctx: ServerContext) {
                   // the browser holding a boundary that describes the previous plan.
                   ...blastRadius(),
                   capStats: ctx.capStats ?? undefined,
+                  narratedSha: ctx.narratedSha ?? null,
+                  droppedRefs: ctx.droppedRefs ?? undefined,
                 });
               } catch (err) {
                 const msg = err instanceof Error ? err.message : String(err);
@@ -673,7 +712,14 @@ export function createServer(ctx: ServerContext) {
                   // surfacing a fatal error.
                   const lastGood = await getLastGoodNarrative(ctx.owner, ctx.repo, ctx.pr.number);
                   if (lastGood) {
-                    ctx.narrative = reanchorNarrative(lastGood.narrative, ctx.files);
+                    const reanchored = reanchorNarrativeWithDrops(lastGood.narrative, ctx.files);
+                    ctx.narrative = reanchored.narrative;
+                    ctx.droppedRefs = reanchored.droppedRefs;
+                    if (reanchored.droppedRefs > 0) {
+                      console.warn(
+                        `  \x1b[38;5;221m⚠\x1b[0m ${reanchored.droppedRefs} last-good reference(s) could not be re-anchored to the current diff.`,
+                      );
+                    }
                     console.warn(`  \x1b[38;5;221m⚠\x1b[0m Regeneration failed (${msg}); serving last-good narrative.`);
                     broadcast('narrative', {
                       narrative: ctx.narrative,
@@ -681,6 +727,8 @@ export function createServer(ctx: ServerContext) {
                       files: ctx.files,
                       comments: mapCommentsToChapters(ctx.comments, ctx.narrative),
                       ...blastRadius(),
+                      narratedSha: ctx.narratedSha ?? null,
+                      droppedRefs: ctx.droppedRefs ?? undefined,
                     });
                   } else {
                     console.error(`  \x1b[38;5;204m✗\x1b[0m Regeneration failed: ${msg}`);

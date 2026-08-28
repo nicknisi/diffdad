@@ -222,6 +222,65 @@ function RegeneratingBanner() {
 }
 
 /**
+ * A slim notice that the narration was generated against an older diff than the one now on screen.
+ * Shown only when both SHAs are known and differ, and hidden while a regeneration is already running.
+ * The Re-narrate button forces the server to regenerate the current head (POST /api/renarrate).
+ */
+function StalenessBanner() {
+  const pr = useReviewStore((s) => s.pr);
+  const narratedSha = useReviewStore((s) => s.narratedSha);
+  const droppedRefs = useReviewStore((s) => s.droppedRefs);
+  const regenerating = useReviewStore((s) => s.regenerating);
+  const [queued, setQueued] = useState(false);
+
+  const headSha = pr?.headSha ?? null;
+  useEffect(() => {
+    // A fresh narration catching up clears the queued state (the banner unmounts too).
+    if (narratedSha && headSha && narratedSha === headSha) setQueued(false);
+  }, [narratedSha, headSha]);
+
+  if (regenerating) return null;
+  if (!headSha || !narratedSha || headSha === narratedSha) return null;
+
+  const onRenarrate = () => {
+    setQueued(true);
+    void fetch('/api/renarrate', { method: 'POST' }).catch(() => {});
+  };
+
+  return (
+    <div
+      className="mb-6 flex items-center gap-3 rounded-[10px] px-4 py-2.5 text-[12.5px]"
+      style={{ background: 'var(--amber-2)', boxShadow: 'inset 0 0 0 1px var(--amber-a5)', color: 'var(--amber-11)' }}
+      data-staleness-banner
+    >
+      <span aria-hidden>⚠</span>
+      <span className="flex-1">
+        Narration covers <span className="font-mono">{narratedSha.slice(0, 7)}</span>; the diff is now at{' '}
+        <span className="font-mono">{headSha.slice(0, 7)}</span>
+        {droppedRefs > 0
+          ? ` — ${droppedRefs} ${droppedRefs === 1 ? 'reference' : 'references'} could not be re-anchored`
+          : ''}
+      </span>
+      <button
+        type="button"
+        onClick={onRenarrate}
+        disabled={queued}
+        className="shrink-0 rounded-md px-2.5 py-1 text-[12px] font-medium"
+        style={{
+          background: 'var(--amber-3)',
+          boxShadow: 'inset 0 0 0 1px var(--amber-a5)',
+          color: 'var(--amber-11)',
+          opacity: queued ? 0.6 : 1,
+          cursor: queued ? 'default' : 'pointer',
+        }}
+      >
+        {queued ? 'queued…' : 'Re-narrate'}
+      </button>
+    </div>
+  );
+}
+
+/**
  * The one collapse boundary, stated as a fact: how many chapters sit below it, how many diff lines they
  * hold, and what the collapse rests on. Lines rather than chapters because lines are what a reviewer
  * actually spends; chapter counts are gameable and say nothing about the reading saved.
@@ -374,6 +433,7 @@ export function StoryView() {
   const body = (
     <main className="min-w-0">
       <RegeneratingBanner />
+      <StalenessBanner />
       <TruncationBanner capStats={capStats} />
       <CollapseUnavailableNotice collapse={collapse} />
       <Overview />
