@@ -12,6 +12,7 @@ import { PRHeader } from './components/PRHeader';
 import { RecapView } from './components/RecapView';
 import { SettingsView } from './components/SettingsView';
 import { ShortcutsHelp } from './components/ShortcutsHelp';
+import { ReviewFind } from './components/ReviewFind';
 import { StoryView } from './components/StoryView';
 import { SubmitBar } from './components/SubmitBar';
 import { UnitReview } from './components/UnitReview';
@@ -186,6 +187,7 @@ export default function App() {
       <SubmitBar />
       <ActivityDrawer open={activityOpen} onClose={() => setActivityOpen(false)} />
       <ShortcutsHelp open={shortcutsHelpOpen} onClose={() => setShortcutsHelpOpen(false)} />
+      {narrative ? <ReviewFind /> : null}
     </div>
   );
 }
