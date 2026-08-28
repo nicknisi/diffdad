@@ -22,6 +22,12 @@ export type PromptRelevantMeta = {
   labels: string[];
 };
 
+/** Outcome of re-anchoring a narrative against its diff at seal time. Sealed alongside the revision. */
+export type ValidationSummary = {
+  /** How many code references could not be re-anchored to the diff (0 = the narration fully covers it). */
+  droppedRefs: number;
+};
+
 // Short stable hash over the PR fields the narrative prompt actually consumes.
 // If any of these change on GitHub, the cached narrative is no longer valid.
 export function computePromptMetaHash(meta: PromptRelevantMeta): string {
@@ -121,7 +127,7 @@ export async function cacheNarrative(
   metaHash: string,
   providerKey: string,
   narrative: NarrativeResponse,
-  opts: { cacheDir?: string } = {},
+  opts: { cacheDir?: string; validation?: ValidationSummary } = {},
 ): Promise<void> {
   const cacheDir = opts.cacheDir ?? CACHE_DIR;
   const path = join(cacheDir, narrativeCacheFileName(owner, repo, number, sha, metaHash, providerKey));
@@ -130,7 +136,10 @@ export async function cacheNarrative(
   // The revision log is a best-effort safety net layered on top of the primary cache. A failure to
   // seal a revision must never fail the narrative write the rest of the app depends on.
   try {
-    await appendNarrativeRevision(owner, repo, number, sha, metaHash, providerKey, narrative, { cacheDir });
+    await appendNarrativeRevision(owner, repo, number, sha, metaHash, providerKey, narrative, {
+      cacheDir,
+      validation: opts.validation,
+    });
   } catch {
     // swallow — the primary cache write already succeeded.
   }
@@ -141,6 +150,8 @@ export type RevisionMeta = {
   metaHash: string;
   providerKey: string;
   savedAt: number;
+  /** Re-anchor outcome recorded when the revision was sealed, when the caller measured one. */
+  validation?: ValidationSummary;
 };
 
 type RevisionRecord = {
@@ -187,7 +198,7 @@ export async function appendNarrativeRevision(
   metaHash: string,
   providerKey: string,
   narrative: NarrativeResponse,
-  opts: { cacheDir?: string } = {},
+  opts: { cacheDir?: string; validation?: ValidationSummary } = {},
 ): Promise<void> {
   const cacheDir = opts.cacheDir ?? CACHE_DIR;
   const dir = revisionsDir(cacheDir, owner, repo, number);
@@ -197,7 +208,16 @@ export async function appendNarrativeRevision(
     .update(canonicalJson({ narrative, sha, metaHash, providerKey }))
     .digest('hex')
     .slice(0, 12);
-  const record: RevisionRecord = { narrative, meta: { sha, metaHash, providerKey, savedAt: Date.now() } };
+  const record: RevisionRecord = {
+    narrative,
+    meta: {
+      sha,
+      metaHash,
+      providerKey,
+      savedAt: Date.now(),
+      ...(opts.validation ? { validation: opts.validation } : {}),
+    },
+  };
   await writeAtomic(join(dir, `${revision}.json`), JSON.stringify(record));
 
   await withLock(join(dir, '.lock'), async () => {

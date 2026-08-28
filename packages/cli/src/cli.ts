@@ -5,7 +5,7 @@ import { GitHubClient } from './github/client';
 import { type ParsedPr, parsePrRef } from './github/pr-ref';
 import { cacheNarrative, clearCache, computePromptMetaHash, getCachedNarrative } from './narrative/cache';
 import { generateNarrative, resolveAiPath, resolveProviderKey, setCliOverride } from './narrative/engine';
-import { reanchorNarrative } from './narrative/validator';
+import { reanchorNarrativeWithDrops } from './narrative/validator';
 import { migrateLegacyData } from './paths';
 import { getCachedRecap } from './recap/cache';
 import { describeRepoContext, resolveRepoContext } from './repo/snapshot';
@@ -228,9 +228,17 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
     : await getCachedNarrative(parsed.owner, parsed.repo, parsed.number, metadata.headSha, metaHash, providerKey);
   const cachedRecap = noCache ? null : await getCachedRecap(parsed.owner, parsed.repo, parsed.number, metadata.headSha);
 
+  // Re-resolve any stale hunk refs against the diff just fetched for this SHA before serving, and
+  // record how many references the cached narrative could not re-anchor.
+  const reanchored = cached ? reanchorNarrativeWithDrops(cached, files) : null;
+  if (reanchored && reanchored.droppedRefs > 0) {
+    console.warn(
+      `\n  ${a.dim}⚠ ${reanchored.droppedRefs} narrative reference(s) could not be re-anchored to the current diff.${a.reset}`,
+    );
+  }
+
   const ctx: ServerContext = {
-    // Re-resolve any stale hunk refs against the diff just fetched for this SHA before serving.
-    narrative: cached ? reanchorNarrative(cached, files) : null,
+    narrative: reanchored ? reanchored.narrative : null,
     pr: metadata,
     files,
     comments,
@@ -242,6 +250,7 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
     headSha: metadata.headSha,
     // A cached narrative was generated against this head; a fresh generation sets it below once done.
     narratedSha: cached ? metadata.headSha : null,
+    droppedRefs: reanchored ? reanchored.droppedRefs : undefined,
     recap: cachedRecap,
     recapGenerating: false,
     recapError: null,

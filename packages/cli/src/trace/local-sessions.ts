@@ -1,8 +1,30 @@
 import { readdir, readFile } from 'fs/promises';
 import { homedir } from 'os';
 import { basename, join } from 'path';
-import type { TraceSessionSummary } from '@diffdad/contracts';
+import type { TracePrompt, TraceSessionSummary } from '@diffdad/contracts';
 import { normalizeSession } from './normalize';
+
+/** Collapse every run of whitespace to a single space and trim the ends. Pure; exported for tests. */
+export function collapseWhitespace(s: string): string {
+  return s.replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Prove that `text` is a verbatim quote from `transcript`, comparing after collapsing whitespace runs to
+ * single spaces on both sides. An exact (whitespace-collapsed) substring verifies; a display-capped
+ * prefix of the full transcript verifies AND reports `truncated: true`. Anything else — corrupted or
+ * empty — fails, and a failed prompt is never quoted. Pure; exported for tests.
+ */
+export function verifyPromptText(text: string, transcript: string): { verified: boolean; truncated?: boolean } {
+  const needle = collapseWhitespace(text);
+  const haystack = collapseWhitespace(transcript);
+  if (!needle || !haystack) return { verified: false };
+  if (needle === haystack) return { verified: true };
+  // A truncated display is a proper prefix of the full transcript.
+  if (haystack.startsWith(needle)) return { verified: true, truncated: true };
+  if (haystack.includes(needle)) return { verified: true };
+  return { verified: false };
+}
 
 export type FindMatchingSessionsOptions = {
   /** Repo-name hints; a session whose cwd basename matches one scores the cwd rung. */
@@ -75,13 +97,17 @@ function isNoise(text: string): boolean {
   return false;
 }
 
-function extractPrompts(jsonlText: string): string[] {
-  const out: string[] = [];
+function extractPrompts(jsonlText: string): TracePrompt[] {
+  const out: TracePrompt[] = [];
   for (const ev of normalizeSession(jsonlText)) {
     if (ev.kind !== 'user') continue;
-    const text = ev.text.trim();
-    if (!text || isNoise(text)) continue;
-    out.push(text.length > MAX_PROMPT_CHARS ? text.slice(0, MAX_PROMPT_CHARS) : text);
+    const full = ev.text.trim();
+    if (!full || isNoise(full)) continue;
+    const display = full.length > MAX_PROMPT_CHARS ? full.slice(0, MAX_PROMPT_CHARS) : full;
+    // Verify the shown text against the full message it was sliced from, so a display-cap truncation
+    // surfaces as `truncated` and any mangling surfaces as `verified: false`.
+    const { verified, truncated } = verifyPromptText(display, full);
+    out.push({ text: display, verified, ...(truncated ? { truncated: true } : {}) });
     if (out.length >= MAX_PROMPTS) break;
   }
   return out;

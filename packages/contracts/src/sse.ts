@@ -29,7 +29,15 @@ const narrativePayloadSchema = z.object({
   capStats: capStatsSchema.optional(),
   /** Derived review-round status for the PR, when the server has computed one. */
   round: reviewRoundSchema.optional(),
+  /** The SHA the on-screen narrative was generated against. Null until the first narrative is narrated. */
+  narratedSha: z.string().nullable().optional(),
+  /** How many code references could not be re-anchored to the current diff on the last (re)narration. */
+  droppedRefs: z.number().optional(),
 });
+
+/** Response to `POST /api/renarrate`: the force-regeneration request was accepted and queued. */
+export const renarrateResponseSchema = z.object({ queued: z.boolean() });
+export type RenarrateResponse = z.infer<typeof renarrateResponseSchema>;
 
 export const sseEventSchema = z.discriminatedUnion('event', [
   z.object({ event: z.literal('connected'), data: z.object({ timestamp: z.number() }) }),

@@ -264,6 +264,7 @@ export function useLiveStream() {
           { collapse: data.collapse ?? null, callers: data.callers ?? [], capStats: data.capStats ?? null },
         );
         if (data.round) useReviewStore.getState().setReviewRound(data.round);
+        useReviewStore.getState().setStaleness(data.narratedSha ?? null, data.droppedRefs ?? 0);
         useReviewStore.getState().setRegenerating(false);
         useReviewStore.getState().setNarrativeProgressChars(0);
         setLastEventAt(Date.now());

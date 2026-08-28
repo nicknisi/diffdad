@@ -96,11 +96,19 @@ function TraceSessionCard({ session }: { session: TraceSessionSummary }) {
         <span className="ml-auto tabular-nums">score {session.score}</span>
       </div>
       <div className="mt-3 space-y-2">
-        {session.userPrompts.map((prompt, i) => (
-          <blockquote key={i} className="border-l-[3px] pl-3" style={{ borderColor: 'var(--purple-a5)' }}>
-            <Markdown source={prompt} />
-          </blockquote>
-        ))}
+        {session.userPrompts.map((prompt, i) =>
+          prompt.verified ? (
+            <blockquote key={i} className="border-l-[3px] pl-3" style={{ borderColor: 'var(--purple-a5)' }}>
+              <Markdown source={prompt.text} />
+              {prompt.truncated && <span className="mt-1 block text-[11.5px] text-[var(--fg-3)]">(truncated)</span>}
+            </blockquote>
+          ) : (
+            // Never show — or paraphrase — text we could not tie back to the transcript.
+            <p key={i} className="border-l-[3px] border-[var(--gray-a4)] pl-3 text-[13px] italic text-[var(--fg-3)]">
+              trace unavailable
+            </p>
+          ),
+        )}
       </div>
     </li>
   );
