@@ -69,8 +69,11 @@ const MAX_THEMES = 7;
 // Bumped again for the reader-contract + omission mandate added to the prose prompts (single-pass,
 // writer, and planner prose guidance). Both keys move so every cached plan and narrative regenerates
 // against the new instructions.
+// Bumped again for the new `callstack` section type in the writer/single-pass JSON contract: cached
+// narratives predate it and would never carry call-tree sections, so they regenerate against the new
+// instructions. Plans are untouched (the section type never appears in a plan), so PLANNER stays put.
 export const PLANNER_PROMPT_REVISION = 3;
-export const NARRATIVE_PROMPT_REVISION = 4;
+export const NARRATIVE_PROMPT_REVISION = 5;
 
 // Shared reader-contract + omission mandate injected into every prompt that produces reader-facing
 // prose. (a) forces the model to spend its budget deciding what to leave out; (b) pins the reader's
@@ -114,6 +117,19 @@ const RESPONSE_SCHEMA = `{
           "startLine": "number — first line in the new file (1-based)",
           "endLine": "number — last line in the new file (1-based)",
           "hunkIndex": "number — 0-based index into DiffFile.hunks for the file"
+        },
+        {
+          "type": "callstack",
+          "title": "string — short label for the call-flow delta, e.g. 'Submit path now revalidates'",
+          "frames": [
+            {
+              "label": "string — 'funcName — path/to/file.ts', caller above callee",
+              "change": "added | removed | unchanged | modified",
+              "depth": "number — 0-based indent; caller is shallower than callee",
+              "file": "string? — only when this frame's change is visible in the diff",
+              "hunkIndex": "number? — 0-based hunk index; only alongside file"
+            }
+          ]
         }
       ],
       "callouts": [
@@ -188,12 +204,36 @@ const CHAPTER_RESPONSE_SCHEMA = `{
       "startLine": "number — 1-based new side",
       "endLine": "number — 1-based new side",
       "hunkIndex": "number — must be one of this theme's hunkIndex values for the given file"
+    },
+    {
+      "type": "callstack",
+      "title": "string — short label for the call-flow delta",
+      "frames": [
+        {
+          "label": "string — 'funcName — path/to/file.ts', caller above callee",
+          "change": "added | removed | unchanged | modified",
+          "depth": "number — 0-based indent; caller shallower than callee",
+          "file": "string? — only when this frame's change is visible in this theme's diff",
+          "hunkIndex": "number? — 0-based hunk index for this theme; only alongside file"
+        }
+      ]
     }
   ],
   "callouts": [
     { "file": "string", "line": "number", "level": "nit | concern | warning", "message": "string" }
   ]
 }`;
+
+// Strict guidance for the optional `callstack` section, injected into both prose prompts. Prose+hunks
+// explain a changed call chain worst; this section renders a base-vs-head call tree with +/- gutters.
+const CALLSTACK_GUIDANCE = `## Call-stack sections (use rarely)
+
+A \`callstack\` section renders a base-vs-head call tree with +/- gutter markers. Use it ONLY when the chapter's central change IS a call-flow change: a function newly called, a call removed, or a call-order change (A→B→C became A→D→C). If the chapter is about anything else, do NOT emit one — a diff section is almost always the right tool.
+
+- **Label frames caller→callee, top-down.** The caller is shallower (\`depth\` smaller); the callee it invokes is one deeper. \`label\` is 'functionName — path/to/file.ts'.
+- **Mark only frames that actually changed.** \`change\` is 'added' (newly in the chain), 'removed' (no longer called), 'modified' (still called but its body changed), or 'unchanged' (context frame shown for orientation). Most frames in a typical tree are 'unchanged'.
+- **3-12 frames is typical.** Fewer than 3 is not a tree; more than ~12 is noise.
+- **Link frames only when the change is visible in the diff.** Set \`file\`+\`hunkIndex\` (both, or neither) so the reviewer can jump to the hunk. Omit them for orientation-only frames.`;
 
 const SHARED_PRINCIPLES = `Your job is to help a reviewer find the things they would otherwise miss. Empirical research on code review (Mantyla & Lassenius 2009) shows that human reviewers reliably catch style and structure issues but miss bugs in **logic, state, timing, and input validation**. Your value is on the slip set — not the obvious stuff.
 
@@ -211,6 +251,8 @@ const SYSTEM_PROMPT = `You are Diff Dad, a senior engineer producing a code revi
 ${SHARED_PRINCIPLES}
 
 ${READER_CONTRACT}
+
+${CALLSTACK_GUIDANCE}
 
 ## What to produce
 
@@ -441,6 +483,10 @@ Skip nits. Use \`concern\` (worth discussing) or \`warning\` (likely bug) sparin
 ## Diff conventions
 
 Same as the planner pass: \`hunkIndex\` is per-file 0-based; \`startLine\`/\`endLine\` are 1-based on the new side and FOCUS the viewer on a slice; truncation markers are real.
+
+${CALLSTACK_GUIDANCE}
+
+When a callstack frame links into the diff, its \`file\`+\`hunkIndex\` must come from this theme's hunks, exactly like a diff section.
 
 ## Output
 

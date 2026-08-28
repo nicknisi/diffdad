@@ -20,6 +20,8 @@ type Props = {
   isNewFile?: boolean;
   hunkIndex: number;
   highlight?: { from: number; to: number };
+  /** DOM id for the hunk's outer element, so a callstack frame can scroll to it. */
+  anchorId?: string;
   /** Open questions anchored in this hunk — render inline under the line they're about. */
   resolve?: ResolveItem[];
   /** Passive narrative callouts anchored in this hunk — render inline under their line. */
@@ -535,7 +537,7 @@ function HunkLines({
   );
 }
 
-export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight, resolve, callouts }: Props) {
+export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight, anchorId, resolve, callouts }: Props) {
   const openLine = useReviewStore((s) => s.openLine);
   const commentRangeStart = useReviewStore((s) => s.commentRangeStart);
   const commentDrag = useReviewStore((s) => s.commentDrag);
@@ -680,7 +682,8 @@ export function Hunk({ file, hunk, isNewFile, hunkIndex, highlight, resolve, cal
 
   return (
     <div
-      className="ml-[34px] mb-[14px] overflow-hidden rounded-[8px] bg-[var(--bg-panel)]"
+      id={anchorId}
+      className="ml-[34px] mb-[14px] overflow-hidden rounded-[8px] bg-[var(--bg-panel)] scroll-mt-[180px]"
       style={{ boxShadow: 'inset 0 0 0 1px var(--gray-a5)' }}
     >
       <div

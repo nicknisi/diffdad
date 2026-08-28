@@ -43,6 +43,66 @@ describe('normalizeNarrative', () => {
     expect(out.verdict).toBe('caution');
   });
 
+  it('accepts a callstack section and preserves valid frames', () => {
+    const out = normalizeNarrative({
+      chapters: [
+        {
+          title: 'C',
+          summary: 's',
+          whyMatters: 'w',
+          risk: 'low',
+          sections: [
+            {
+              type: 'callstack',
+              title: 'flow',
+              frames: [
+                { label: 'a — f.ts', change: 'added', depth: 0 },
+                { label: 'b — f.ts', change: 'modified', depth: 1, file: 'f.ts', hunkIndex: 2 },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    const section = out.chapters[0]?.sections[0];
+    expect(section?.type).toBe('callstack');
+    if (section?.type === 'callstack') {
+      expect(section.title).toBe('flow');
+      expect(section.frames).toHaveLength(2);
+      expect(section.frames[1]).toEqual({
+        label: 'b — f.ts',
+        change: 'modified',
+        depth: 1,
+        file: 'f.ts',
+        hunkIndex: 2,
+      });
+    }
+  });
+
+  it('clamps frame depth, coerces bad change, drops malformed frames, and caps frame count', () => {
+    const frames = [
+      { label: 'ok', change: 'weird', depth: 99 }, // change -> unchanged, depth -> 8
+      { label: 'deep', change: 'removed', depth: -3 }, // depth -> 0
+      { change: 'added', depth: 1 }, // no label -> dropped
+      { label: '', change: 'added', depth: 1 }, // empty label -> dropped
+      ...Array.from({ length: 40 }, (_, i) => ({ label: `f${i}`, change: 'unchanged', depth: 0 })),
+    ];
+    const out = normalizeNarrative({
+      chapters: [
+        { title: 'C', summary: '', whyMatters: '', risk: 'low', sections: [{ type: 'callstack', title: 't', frames }] },
+      ],
+    });
+    const section = out.chapters[0]?.sections[0];
+    expect(section?.type).toBe('callstack');
+    if (section?.type === 'callstack') {
+      expect(section.frames).toHaveLength(30); // capped
+      expect(section.frames[0]).toMatchObject({ change: 'unchanged', depth: 8 });
+      expect(section.frames[1]).toMatchObject({ change: 'removed', depth: 0 });
+      // the two malformed frames were dropped, so index 2 is the first synthesized filler
+      expect(section.frames[2]?.label).toBe('f0');
+    }
+  });
+
   it('upgrades old narratives missing the new fields', () => {
     const oldShape = {
       title: 'Old',

@@ -41,6 +41,23 @@ export function validateNarrative(narrative: NarrativeResponse, files: DiffFile[
 
   narrative.chapters.forEach((ch, ci) => {
     for (const s of ch.sections) {
+      if (s.type === 'callstack') {
+        // A frame links into the diff only when it carries BOTH file and hunkIndex; validate those refs
+        // the same way diff sections are validated, reported per frame via the shared violation kinds.
+        for (const frame of s.frames) {
+          if (frame.file === undefined || frame.hunkIndex === undefined) continue;
+          const norm = normalizePath(frame.file);
+          const file = fileMap.get(norm);
+          if (!file) {
+            violations.push({ kind: 'unknown-file', file: frame.file, chapter: ci });
+            continue;
+          }
+          if (frame.hunkIndex < 0 || frame.hunkIndex >= file.hunks.length) {
+            violations.push({ kind: 'invalid-hunk-index', file: frame.file, hunkIndex: frame.hunkIndex, chapter: ci });
+          }
+        }
+        continue;
+      }
       if (s.type !== 'diff') continue;
       const norm = normalizePath(s.file);
       const file = fileMap.get(norm);
@@ -158,6 +175,23 @@ export function repairNarrative(narrative: NarrativeResponse, files: DiffFile[])
   const chapters = narrative.chapters.map((ch, ci) => {
     const sections: NarrativeSection[] = [];
     for (const s of ch.sections) {
+      if (s.type === 'callstack') {
+        // Null out (never drop) a frame's dead file/hunkIndex pair: the frame's prose stays, only the
+        // broken link is removed. Frames carry no anchor, so there is nothing to re-resolve — an
+        // unresolvable pair is simply cleared.
+        const frames = s.frames.map((frame) => {
+          if (frame.file === undefined || frame.hunkIndex === undefined) return frame;
+          const norm = normalizePath(frame.file);
+          const file = fileMap.get(norm);
+          const inRange = file ? frame.hunkIndex >= 0 && frame.hunkIndex < file.hunks.length : false;
+          if (file && inRange) return frame;
+          if (!file) dropped.push({ kind: 'unknown-file', file: frame.file, chapter: ci });
+          else dropped.push({ kind: 'invalid-hunk-index', file: frame.file, hunkIndex: frame.hunkIndex, chapter: ci });
+          return { ...frame, file: undefined, hunkIndex: undefined };
+        });
+        sections.push({ ...s, frames });
+        continue;
+      }
       if (s.type !== 'diff') {
         sections.push(s);
         continue;

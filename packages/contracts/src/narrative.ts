@@ -58,6 +58,15 @@ export const hunkAnchorSchema = z.object({
 });
 export type HunkAnchor = z.infer<typeof hunkAnchorSchema>;
 
+export const callStackFrameSchema = z.object({
+  label: z.string(),
+  change: z.enum(['added', 'removed', 'unchanged', 'modified']),
+  depth: z.number(),
+  file: z.string().optional(),
+  hunkIndex: z.number().optional(),
+});
+export type CallStackFrame = z.infer<typeof callStackFrameSchema>;
+
 export const narrativeSectionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('narrative'), content: z.string() }),
   z.object({
@@ -67,6 +76,11 @@ export const narrativeSectionSchema = z.discriminatedUnion('type', [
     endLine: z.number(),
     hunkIndex: z.number(),
     anchor: hunkAnchorSchema.optional(),
+  }),
+  z.object({
+    type: z.literal('callstack'),
+    title: z.string(),
+    frames: z.array(callStackFrameSchema),
   }),
 ]);
 export type NarrativeSection = z.infer<typeof narrativeSectionSchema>;
