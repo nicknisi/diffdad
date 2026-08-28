@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
+import type { TraceSessionSummary } from '@diffdad/contracts';
 import { useReviewStore } from '../state/review-store';
 import { useRecapLazy } from '../hooks/useRecapLazy';
+import { useTraceIntent } from '../hooks/useTraceIntent';
 import type { Blocker, BlockerType, Decision, DecisionSourceType } from '../state/recap-types';
+import { Markdown } from './markdown/Markdown';
 import { DadMark } from './DadMark';
 import { getAccentMeta } from '../lib/accents';
 
@@ -69,6 +72,54 @@ const PHASES: Phase[] = [
     minMs: 99999, // sticks until the response arrives
   },
 ];
+
+function formatSessionDate(iso: string): string {
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return '';
+  return new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function TraceSessionCard({ session }: { session: TraceSessionSummary }) {
+  const started = formatSessionDate(session.startedAt);
+  return (
+    <li
+      className="rounded-lg p-4"
+      style={{ background: 'var(--bg-panel)', boxShadow: 'inset 0 0 0 1px var(--gray-a4)' }}
+    >
+      <div className="flex flex-wrap items-center gap-2 text-[12.5px] text-[var(--fg-3)]">
+        {session.branch && (
+          <span className="rounded-md bg-[var(--gray-3)] px-2 py-0.5 font-mono text-[11.5px] text-[var(--fg-2)]">
+            {session.branch}
+          </span>
+        )}
+        {started && <span>{started}</span>}
+        <span className="ml-auto tabular-nums">score {session.score}</span>
+      </div>
+      <div className="mt-3 space-y-2">
+        {session.userPrompts.map((prompt, i) => (
+          <blockquote key={i} className="border-l-[3px] pl-3" style={{ borderColor: 'var(--purple-a5)' }}>
+            <Markdown source={prompt} />
+          </blockquote>
+        ))}
+      </div>
+    </li>
+  );
+}
+
+function TraceIntentSection() {
+  const { sessions } = useTraceIntent();
+  if (sessions.length === 0) return null; // invisible when nothing matched
+  return (
+    <section>
+      <SectionHeader>What drove this change</SectionHeader>
+      <ul className="space-y-3">
+        {sessions.map((s) => (
+          <TraceSessionCard key={s.sessionId} session={s} />
+        ))}
+      </ul>
+    </section>
+  );
+}
 
 function SectionHeader({ children }: { children: React.ReactNode }) {
   return (
@@ -399,6 +450,8 @@ export function RecapView() {
           </pre>
         )}
       </section>
+
+      <TraceIntentSection />
 
       <section>
         <SectionHeader>How to help</SectionHeader>
