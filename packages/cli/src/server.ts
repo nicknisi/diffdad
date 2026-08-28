@@ -1,4 +1,4 @@
-import { sseDataSchemaFor, type SseDataFor, type SseEventName } from '@diffdad/contracts';
+import { sseDataSchemaFor, type ReviewRound, type SseDataFor, type SseEventName } from '@diffdad/contracts';
 import type { PRComment as WirePRComment } from '@diffdad/contracts';
 import { existsSync } from 'fs';
 import { Hono } from 'hono';
@@ -17,6 +17,7 @@ import { buildChapterAiPrompt } from './narrative/chapter-ai';
 import type { PromptCapStats } from './narrative/prompt';
 import { buildReviewSummaryPrompt } from './narrative/review-summary';
 import type { NarrativeResponse } from './narrative/types';
+import { deriveReviewRound } from './review-round';
 import type { RepoContext } from './repo/snapshot';
 import { cacheRecap } from './recap/cache';
 import { generateRecap } from './recap/engine';
@@ -55,6 +56,14 @@ export type ServerContext = {
   recapGenerating?: boolean;
   /** Set if the last recap generation attempt failed; cleared on retry. */
   recapError?: string | null;
+  /**
+   * The SHA the on-screen narrative was last generated against. Feeds `deriveReviewRound`'s carry-over
+   * count: when `headSha` advances past this, unresolved threads that predate the push carry over. Null
+   * until the first narrative is narrated.
+   */
+  narratedSha?: string | null;
+  /** Last derived review-round status, cached so the poll only broadcasts `review-round` when it changes. */
+  reviewRound?: ReviewRound | null;
 };
 
 type PostCommentBody = {
@@ -94,6 +103,29 @@ export function createServer(ctx: ServerContext) {
   let exitTimer: ReturnType<typeof setTimeout> | null = null;
 
   let narrativeProgressChars = 0;
+
+  /**
+   * Derive the review round from the data currently in `ctx` (plus freshly polled `commits`) and
+   * broadcast `review-round` only when it changes (JSON compare). Purely additive — never blocks.
+   */
+  function recomputeReviewRound(commits?: { sha: string; committedAt?: string }[]): ReviewRound {
+    const round = deriveReviewRound({
+      headSha: ctx.headSha,
+      lastNarratedSha: ctx.narratedSha ?? null,
+      comments: ctx.comments,
+      reviews: ctx.reviews,
+      commits,
+      prAuthor: ctx.pr.author.login,
+    });
+    const changed = JSON.stringify(round) !== JSON.stringify(ctx.reviewRound ?? null);
+    ctx.reviewRound = round;
+    if (changed) broadcast('review-round', { round });
+    return round;
+  }
+
+  // Seed the round from the data already in `ctx` so the bootstrap `GET /api/narrative` can carry it.
+  // No commits yet (the poll fetches those); this establishes review/thread state at once.
+  recomputeReviewRound();
 
   function broadcast<E extends SseEventName>(event: E, data: SseDataFor<E>) {
     if (event === 'narrative-progress') {
@@ -167,6 +199,7 @@ export function createServer(ctx: ServerContext) {
         repoUrl: `https://github.com/${ctx.owner}/${ctx.repo}`,
         mode: 'pr',
         aiPath,
+        round: ctx.reviewRound ?? undefined,
       });
     }
     const commentPaths = [...new Set(ctx.comments.map((cm) => cm.path).filter((p): p is string => Boolean(p)))];
@@ -197,6 +230,7 @@ export function createServer(ctx: ServerContext) {
       repoUrl: `https://github.com/${ctx.owner}/${ctx.repo}`,
       mode: 'pr',
       aiPath,
+      round: ctx.reviewRound ?? undefined,
       _debug: {
         totalComments: ctx.comments.length,
         commentPaths,
@@ -402,6 +436,19 @@ export function createServer(ctx: ServerContext) {
             ctx.reviews = freshReviews;
             send('reviews', freshReviews);
 
+            // Commit timestamps place the "latest push" boundary that `updated-since-review` and the
+            // carry-over count depend on. Mapped from author date (the only date `getPRCommits` returns).
+            // Isolated so a commits fetch failure degrades the round (no push boundary) rather than
+            // aborting the whole poll and its regeneration.
+            let freshCommits: { sha: string; committedAt?: string }[] = [];
+            try {
+              const cs = await gh.getPRCommits(ctx.owner, ctx.repo, ctx.pr.number);
+              freshCommits = cs.map((cm) => ({ sha: cm.sha, committedAt: cm.authoredAt }));
+            } catch {
+              // degrade the round (no push boundary) rather than aborting the poll
+            }
+            const round = recomputeReviewRound(freshCommits);
+
             if ((shaChanged || promptMetaChanged) && !regenerating) {
               regenerating = true;
               const prevSha = ctx.headSha.slice(0, 7);
@@ -412,7 +459,13 @@ export function createServer(ctx: ServerContext) {
                 console.log(`\n  \x1b[38;5;221m↻\x1b[0m PR title/description/labels changed`);
               }
               console.log(`  \x1b[2mRegenerating narrative...\x1b[0m`);
-              broadcast('regenerating', { previousSha: prevSha, newSha });
+              // Carry the surviving unresolved-thread count so the UI can say "regenerating — N threads
+              // carry over" instead of blurring a force-push into the reviewer's open threads.
+              broadcast('regenerating', {
+                previousSha: prevSha,
+                newSha,
+                ...(round.carriedOverThreads > 0 ? { carriedOverThreads: round.carriedOverThreads } : {}),
+              });
 
               try {
                 const prevTldr = ctx.narrative?.tldr;
@@ -538,11 +591,18 @@ export function createServer(ctx: ServerContext) {
                   );
                 }
 
+                // The narrative now describes the new head, so that head is the narrated SHA. Recompute
+                // the round against it (carry-over collapses to 0 once head == narrated) and ship it with
+                // the narrative payload.
+                ctx.narratedSha = ctx.headSha;
+                const postRegenRound = recomputeReviewRound(freshCommits);
+
                 broadcast('narrative', {
                   narrative: ctx.narrative,
                   pr: ctx.pr,
                   files: ctx.files,
                   comments: mapCommentsToChapters(ctx.comments, ctx.narrative),
+                  round: postRegenRound,
                   // Recomputed for the new chapter array: `CollapseDecision.chapterIndex` indexes the
                   // chapters it was computed against, so shipping the narrative without it would leave
                   // the browser holding a boundary that describes the previous plan.

@@ -159,6 +159,16 @@ export function useLiveStream() {
       }
     };
 
+    const onReviewRound = (e: MessageEvent) => {
+      try {
+        const data = parseSse('review-round', e);
+        useReviewStore.getState().setReviewRound(data.round);
+        setLastEventAt(Date.now());
+      } catch {
+        // ignore
+      }
+    };
+
     // A config PUT (from another tab, or the same-server saving tab) broadcasts the fresh
     // ConfigResponse. Funnel it through `applyConfigResponse` so open settings tabs and the header
     // theme/accent controls converge — this is also what brings a token-less daemon's UI alive when a
@@ -253,6 +263,7 @@ export function useLiveStream() {
           state.reviews,
           { collapse: data.collapse ?? null, callers: data.callers ?? [], capStats: data.capStats ?? null },
         );
+        if (data.round) useReviewStore.getState().setReviewRound(data.round);
         useReviewStore.getState().setRegenerating(false);
         useReviewStore.getState().setNarrativeProgressChars(0);
         setLastEventAt(Date.now());
@@ -314,6 +325,7 @@ export function useLiveStream() {
     es.addEventListener('comments', onComments as EventListener);
     es.addEventListener('checks', onChecks as EventListener);
     es.addEventListener('reviews', onReviews as EventListener);
+    es.addEventListener('review-round', onReviewRound as EventListener);
     es.addEventListener('config', onConfig as EventListener);
     es.addEventListener('pr', onPr as EventListener);
     es.addEventListener('units', onUnits as EventListener);
@@ -344,6 +356,7 @@ export function useLiveStream() {
       es.removeEventListener('comments', onComments as EventListener);
       es.removeEventListener('checks', onChecks as EventListener);
       es.removeEventListener('reviews', onReviews as EventListener);
+      es.removeEventListener('review-round', onReviewRound as EventListener);
       es.removeEventListener('config', onConfig as EventListener);
       es.removeEventListener('pr', onPr as EventListener);
       es.removeEventListener('units', onUnits as EventListener);

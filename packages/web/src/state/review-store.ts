@@ -15,6 +15,7 @@ import type {
   PRComment,
   PRData,
   PRReview,
+  ReviewRound,
   Unit,
 } from './types';
 import type { RecapResponse } from './recap-types';
@@ -73,6 +74,8 @@ type ReviewState = {
   route: Route;
   checkRuns: CheckRun[];
   reviews: PRReview[];
+  /** Derived review-round status (server-computed), or null before the first has landed. Never blocks. */
+  reviewRound: ReviewRound | null;
   repoUrl: string | null;
   chapterStates: Record<string, ChapterState>;
   activeChapterId: string | null;
@@ -213,6 +216,7 @@ type ReviewState = {
   setLastEventAt: (ts: number) => void;
   setCheckRuns: (checkRuns: CheckRun[]) => void;
   setReviews: (reviews: PRReview[]) => void;
+  setReviewRound: (round: ReviewRound | null) => void;
   setShortcutsHelpOpen: (open: boolean) => void;
   setSubmitOpen: (open: boolean) => void;
   setSettingsOpen: (open: boolean) => void;
@@ -476,6 +480,7 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
   route: typeof window !== 'undefined' ? parseRoute(window.location.pathname) : { name: 'center' },
   checkRuns: [],
   reviews: [],
+  reviewRound: null,
   repoUrl: null,
   chapterStates: {},
   activeChapterId: null,
@@ -726,6 +731,7 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
 
   setCheckRuns: (checkRuns) => set({ checkRuns }),
   setReviews: (reviews) => set({ reviews }),
+  setReviewRound: (reviewRound) => set({ reviewRound }),
 
   setShortcutsHelpOpen: (shortcutsHelpOpen) => set({ shortcutsHelpOpen }),
   setSubmitOpen: (submitOpen) => set({ submitOpen }),

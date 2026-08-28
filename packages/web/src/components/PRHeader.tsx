@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { copy } from '../lib/microcopy';
 import { pendingReviewComments, useReviewStore } from '../state/review-store';
-import type { CheckRun } from '../state/types';
+import type { CheckRun, ReviewRound } from '../state/types';
 import { IconCheck } from './Icons';
 import { ReviewViewTabs } from './ReviewViewTabs';
 import { SubmitDialog } from './SubmitDialog';
@@ -105,11 +105,55 @@ function timeAgo(iso: string | undefined | null): string {
   return `${yr}y ago`;
 }
 
+/**
+ * Compact, derived review-round status. Colors ride CSS custom properties (Radix scales), so both
+ * themes stay legible. Purely informational — mirrors GitHub, never blocks.
+ */
+function ReviewRoundChip({ round }: { round: ReviewRound }) {
+  const config =
+    round.state === 'changes-requested'
+      ? {
+          label:
+            round.unresolvedThreads > 0
+              ? `Changes requested · ${round.unresolvedThreads} unresolved`
+              : 'Changes requested',
+          bg: 'var(--red-3)',
+          fg: 'var(--red-11)',
+          title:
+            round.unresolvedThreads > 0
+              ? `A reviewer requested changes. ${round.unresolvedThreads} comment thread${round.unresolvedThreads === 1 ? '' : 's'} still awaiting an author reply.`
+              : 'A reviewer requested changes.',
+        }
+      : round.state === 'updated-since-review'
+        ? {
+            label: 'Updated since review',
+            bg: 'var(--blue-3)',
+            fg: 'var(--blue-11)',
+            title: 'New commits landed since the last review — the diff a reviewer saw may be stale.',
+          }
+        : {
+            label: 'Awaiting review',
+            bg: 'var(--gray-3)',
+            fg: 'var(--fg-2)',
+            title: 'No review has been submitted yet.',
+          };
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded-full px-2 py-[2px] text-[11.5px] font-bold uppercase tracking-[0.04em]"
+      style={{ background: config.bg, color: config.fg }}
+      title={config.title}
+    >
+      {config.label}
+    </span>
+  );
+}
+
 export function PRHeader() {
   const pr = useReviewStore((s) => s.pr);
   const repoUrl = useReviewStore((s) => s.repoUrl);
   const checkRuns = useReviewStore((s) => s.checkRuns);
   const reviews = useReviewStore((s) => s.reviews);
+  const reviewRound = useReviewStore((s) => s.reviewRound);
   const drafts = useReviewStore((s) => s.drafts);
   const clearDrafts = useReviewStore((s) => s.clearDrafts);
   const [open, setOpen] = useState(false);
@@ -224,6 +268,7 @@ export function PRHeader() {
         >
           {pr.state === 'merged' ? 'Merged' : pr.state === 'closed' ? 'Closed' : pr.draft ? 'Draft' : 'Open'}
         </span>
+        {reviewRound ? <ReviewRoundChip round={reviewRound} /> : null}
         <span className="rounded-[4px] bg-[var(--gray-3)] px-[7px] py-[2px] font-mono text-[12.5px] text-[var(--fg-2)]">
           <b className="font-medium text-[var(--fg-1)]">{pr.branch}</b> <span className="text-[var(--fg-3)]">→</span>{' '}
           <b className="font-medium text-[var(--fg-1)]">{pr.base}</b>

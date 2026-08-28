@@ -91,6 +91,19 @@ export const prReviewSchema = z.object({
 });
 export type PRReview = z.infer<typeof prReviewSchema>;
 
+/**
+ * A derived view of where a PR sits in its current review round. GitHub stays the source of truth; this
+ * is computed from comments/reviews/commits and never blocks anything. See `deriveReviewRound` in the
+ * CLI for the semantics of each state and the answered-thread heuristic.
+ */
+export const reviewRoundSchema = z.object({
+  state: z.enum(['awaiting-review', 'changes-requested', 'updated-since-review']),
+  unresolvedThreads: z.number(),
+  carriedOverThreads: z.number(),
+  lastReviewSubmittedAt: z.string().optional(),
+});
+export type ReviewRound = z.infer<typeof reviewRoundSchema>;
+
 export const checkRunSchema = z.object({
   id: z.number(),
   name: z.string(),

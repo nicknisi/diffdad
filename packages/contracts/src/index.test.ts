@@ -196,10 +196,22 @@ const sseCases: { event: string; data: unknown }[] = [
   { event: 'comments', data: [comment] },
   { event: 'checks', data: [checkRun] },
   { event: 'reviews', data: [review] },
+  {
+    event: 'review-round',
+    data: {
+      round: {
+        state: 'changes-requested',
+        unresolvedThreads: 2,
+        carriedOverThreads: 1,
+        lastReviewSubmittedAt: '2024-01-02T00:00:00Z',
+      },
+    },
+  },
   { event: 'config', data: configResponse },
   { event: 'pr', data: prMetadata },
   { event: 'units', data: { units: [wireUnit], dismissed: [], polledAt: 1 } },
   { event: 'regenerating', data: { previousSha: 'aaa', newSha: 'bbb' } },
+  { event: 'regenerating', data: { previousSha: 'aaa', newSha: 'bbb', carriedOverThreads: 3 } },
   { event: 'narrative-progress', data: { chars: 100 } },
   { event: 'narrative-error', data: { message: 'boom' } },
   { event: 'narrative.partial', data: { narrative, pr: prMetadata, files: [diffFile], comments: [comment] } },

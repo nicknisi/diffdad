@@ -240,6 +240,8 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
     owner: parsed.owner,
     repo: parsed.repo,
     headSha: metadata.headSha,
+    // A cached narrative was generated against this head; a fresh generation sets it below once done.
+    narratedSha: cached ? metadata.headSha : null,
     recap: cachedRecap,
     recapGenerating: false,
     recapError: null,
@@ -371,6 +373,7 @@ async function reviewCommand(prArg: string | undefined): Promise<number> {
     const generated = result.narrative;
     const usedProvider = result.provider;
     ctx.narrative = generated;
+    ctx.narratedSha = metadata.headSha;
     // Absent when the planner pass came off the plan cache — the banner then says nothing rather than
     // claim a diff nobody measured was complete.
     ctx.capStats = result.capStats ?? null;
