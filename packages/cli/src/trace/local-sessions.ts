@@ -148,9 +148,13 @@ export async function findMatchingSessions(opts: FindMatchingSessionsOptions): P
     if (opts.branch && meta.branch && meta.branch === opts.branch) score += SCORE_BRANCH;
     if (meta.cwd && hints.includes(basename(meta.cwd).toLowerCase())) score += SCORE_CWD;
     if (countFileMatches(text, opts.changedFiles) >= 2) score += SCORE_FILES;
+    // Recency is a tiebreaker, never an identity: without at least one identity rung (branch, cwd,
+    // or file overlap), a session from an unrelated project would qualify purely by being recent —
+    // and its private prompts would surface on the wrong PR.
+    const hasIdentity = score > 0;
     if (opts.since && meta.endedAt && Date.parse(meta.endedAt) >= opts.since.getTime()) score += SCORE_RECENCY;
 
-    if (score <= 0) continue;
+    if (!hasIdentity) continue;
 
     candidates.push({
       sessionId: meta.sessionId || basename(file, '.jsonl'),

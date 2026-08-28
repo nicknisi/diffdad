@@ -52,7 +52,9 @@ describe('handleNarrativePartialEvent', () => {
 
   it('applies partial narrative payloads to the store', () => {
     const before = useReviewStore.getState().lastEventAt;
-    handleNarrativePartialEvent(mkMessageEvent({ pr: mkPr(), narrative: mkNarrative('streamed-title') }));
+    handleNarrativePartialEvent(
+      mkMessageEvent({ pr: mkPr(), narrative: mkNarrative('streamed-title'), files: [], comments: [] }),
+    );
     const after = useReviewStore.getState();
     expect(after.narrative?.title).toBe('streamed-title');
     expect(after.pr?.number).toBe(1);
@@ -69,9 +71,11 @@ describe('handleNarrativePartialEvent', () => {
   });
 
   it('preserves user-set chapter states across partial updates', () => {
-    handleNarrativePartialEvent(mkMessageEvent({ pr: mkPr(), narrative: mkNarrative() }));
+    handleNarrativePartialEvent(mkMessageEvent({ pr: mkPr(), narrative: mkNarrative(), files: [], comments: [] }));
     useReviewStore.setState({ chapterStates: { 'ch-0': 'reviewed' } });
-    handleNarrativePartialEvent(mkMessageEvent({ pr: mkPr(), narrative: mkNarrative('updated') }));
+    handleNarrativePartialEvent(
+      mkMessageEvent({ pr: mkPr(), narrative: mkNarrative('updated'), files: [], comments: [] }),
+    );
     expect(useReviewStore.getState().chapterStates['ch-0']).toBe('reviewed');
     expect(useReviewStore.getState().narrative?.title).toBe('updated');
   });

@@ -666,11 +666,11 @@ describe('GET /api/events — polling cycle', () => {
     const newSha = `sha-reentrant-${Date.now()}`;
     const initialPr = mkPR({ headSha: newSha });
     const editedPr = mkPR({ headSha: newSha, title: 'Edited mid-regen' });
-    // Pre-seed the cache under the edited title's hash. The standalone 'pr'
-    // branch in poll 2 mutates ctx.pr before poll 1's getDiff resolves, so the
-    // post-await metaHash computation picks up the edited title.
-    const editedMeta = computePromptMetaHash(editedPr);
-    await cacheNarrative('o', 'r', 1, newSha, editedMeta, providerKey, baseNarrative);
+    // Pre-seed the cache under the INITIAL title's hash. Regen snapshots the PR at poll start
+    // (fresh state lives in locals until success), so a mid-flight title edit does not leak into
+    // poll 1's cache key — it triggers its own promptMetaChanged regen on a later poll instead.
+    const initialMeta = computePromptMetaHash(initialPr);
+    await cacheNarrative('o', 'r', 1, newSha, initialMeta, providerKey, baseNarrative);
 
     let releaseDiff!: () => void;
     const diffGate = new Promise<void>((res) => {
@@ -706,12 +706,13 @@ describe('GET /api/events — polling cycle', () => {
     // Mid-flight: someone edits the PR title.
     state.pr = editedPr;
 
-    // Second poll: should hit the regen guard and skip — but still emit 'pr'
-    // for the title change so the UI doesn't go stale.
+    // Second poll: should hit the regen guard and skip. The standalone 'pr' event is suppressed
+    // while a regen is in flight (mutating ctx.pr mid-regen would race the snapshot committed on
+    // success); the title edit converges via its own promptMetaChanged regen on a later poll.
     await capturedIntervalCb!();
     let events = (await reader.drain(50)) as SseEvent[];
     expect(events.filter((e) => e.event === 'regenerating')).toHaveLength(1);
-    expect(events.find((e) => e.event === 'pr')).toBeDefined();
+    expect(events.find((e) => e.event === 'pr')).toBeUndefined();
 
     // Let the first regen finish.
     releaseDiff();

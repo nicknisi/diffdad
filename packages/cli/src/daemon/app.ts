@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { serveStatic } from 'hono/bun';
 import { dirname, resolve } from 'path';
 import { type OnConfigChange, registerConfigRoutes } from '../config-api';
+import { localOnly } from '../local-only';
 import type { PostCommentOptions } from '../github/client';
 import { mapCommentsToChapters } from '../github/comments';
 import { parsePrRef } from '../github/pr-ref';
@@ -169,6 +170,7 @@ function resolveWebDist(override?: string): string {
 export function createDaemonApp(deps: DaemonAppDeps): { app: Hono } {
   const { store, hub, ai, wiring } = deps;
   const app = new Hono();
+  app.use('*', localOnly);
   const broadcast = hub.broadcast;
   // Single-flight state for POST /api/poll: concurrent manual refreshes share one in-flight poll.
   let inflight: Promise<{ minted: number; resurfaced: number; removed: number }> | null = null;

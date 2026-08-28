@@ -5,6 +5,7 @@ import { Hono } from 'hono';
 import { serveStatic } from 'hono/bun';
 import { dirname, resolve } from 'path';
 import { registerConfigRoutes } from './config-api';
+import { localOnly } from './local-only';
 import { readConfig } from './config';
 import type { GitHubClient } from './github/client';
 import { mapCommentsToChapters } from './github/comments';
@@ -104,6 +105,7 @@ function validateSseData(event: SseEventName, data: unknown): void {
 
 export function createServer(ctx: ServerContext) {
   const app = new Hono();
+  app.use('*', localOnly);
   type SseClient = <E extends SseEventName>(event: E, data: SseDataFor<E>) => void;
   const sseClients = new Set<SseClient>();
   let hadClients = false;
@@ -421,6 +423,12 @@ export function createServer(ctx: ServerContext) {
         }
 
         let regenerating = false;
+        // Failure backoff: a regen that threw must not retry every poll tick (each retry is an LLM
+        // call), but it must not pin the PR forever either. Retry when the head moves again or the
+        // cool-down passes. ponytail: fixed 5-minute cool-down; make it configurable if it ever matters.
+        let regenFailedSha: string | null = null;
+        let regenFailedAt = 0;
+        const REGEN_RETRY_MS = 5 * 60_000;
         const interval = setInterval(async () => {
           try {
             const gh = ctx.github;
@@ -437,8 +445,10 @@ export function createServer(ctx: ServerContext) {
             const otherMetaChanged = freshPr.draft !== ctx.pr.draft || freshPr.state !== ctx.pr.state;
             // If the regen branch below will fire, it'll broadcast the fresh PR
             // alongside the new narrative — skip the standalone 'pr' event then.
+            // Also skip while a regen is in flight: mutating ctx.pr mid-regen would race the
+            // snapshot the regen commits on success; the edit converges via its own regen next poll.
             const willRegenerate = (shaChanged || promptMetaChanged) && !regenerating;
-            if ((promptMetaChanged || otherMetaChanged) && !shaChanged && !willRegenerate) {
+            if ((promptMetaChanged || otherMetaChanged) && !shaChanged && !willRegenerate && !regenerating) {
               ctx.pr = freshPr;
               send('pr', ctx.pr);
             }
@@ -474,7 +484,8 @@ export function createServer(ctx: ServerContext) {
             }
             const round = recomputeReviewRound(freshCommits);
 
-            if ((shaChanged || promptMetaChanged) && !regenerating) {
+            const regenCoolingDown = regenFailedSha === freshPr.headSha && Date.now() - regenFailedAt < REGEN_RETRY_MS;
+            if ((shaChanged || promptMetaChanged) && !regenerating && !regenCoolingDown) {
               regenerating = true;
               const prevSha = ctx.headSha.slice(0, 7);
               const newSha = freshPr.headSha.slice(0, 7);
@@ -496,33 +507,37 @@ export function createServer(ctx: ServerContext) {
                 const prevTldr = ctx.narrative?.tldr;
                 const prevChapterTitles = ctx.narrative?.chapters.map((ch) => ch.title) ?? [];
 
-                ctx.pr = freshPr;
+                // Everything fresh stays in locals until generation succeeds. A throw below must leave
+                // ctx on the previously served (mutually consistent) state — advancing ctx.headSha early
+                // would make the next poll see "no change" and never retry, and pairing the old
+                // narrative with fresh files would mis-anchor every diff section.
+                const freshHeadSha = shaChanged ? freshPr.headSha : ctx.headSha;
                 let freshFiles = ctx.files;
                 if (shaChanged) {
-                  ctx.headSha = freshPr.headSha;
-                  freshFiles = await gh.getDiff(ctx.owner, ctx.repo, ctx.pr.number);
-                  ctx.files = freshFiles;
+                  freshFiles = await gh.getDiff(ctx.owner, ctx.repo, freshPr.number);
                 }
 
                 const config = await readConfig();
-                const metaHash = computePromptMetaHash(ctx.pr);
+                const metaHash = computePromptMetaHash(freshPr);
                 const providerKey = await resolveProviderKey(config);
                 const cached = await getCachedNarrative(
                   ctx.owner,
                   ctx.repo,
-                  ctx.pr.number,
-                  ctx.headSha,
+                  freshPr.number,
+                  freshHeadSha,
                   metaHash,
                   providerKey,
                 );
+                let freshNarrative: NarrativeResponse;
+                let freshCapStats: PromptCapStats | null;
                 if (cached) {
                   // The cached narrative was anchored against a prior diff; the SHA just changed and
                   // `freshFiles` may have shifted hunk indices. Re-resolve via content anchors so refs
                   // survive the reshape instead of dropping.
-                  ctx.narrative = reanchorNarrative(cached, freshFiles);
+                  freshNarrative = reanchorNarrative(cached, freshFiles);
                   // A cached narrative carries no budget stats, and inventing them would tell the
                   // reviewer a story built from a truncated diff was complete.
-                  ctx.capStats = null;
+                  freshCapStats = null;
                   console.log(`  \x1b[38;5;78m✓\x1b[0m Using cached narrative \x1b[2m(${newSha})\x1b[0m`);
                 } else {
                   const regenStartedAt = Date.now();
@@ -544,7 +559,7 @@ export function createServer(ctx: ServerContext) {
                   // Same resolution the CLI does before its first generation: the prompt builders call
                   // `computeRisk` synchronously, so the snapshot has to be in hand first. Warm on the
                   // regenerate path (the CLI fetched it at startup), so this is normally a cache read.
-                  const repoContext = await resolveRepoContext(gh, ctx.owner, ctx.repo, ctx.pr.base);
+                  const repoContext = await resolveRepoContext(gh, ctx.owner, ctx.repo, freshPr.base);
                   // Same snapshot the prompt was built from now backs collapse selection, so the
                   // boundary the reviewer sees describes the narrative they are reading.
                   ctx.repoContext = repoContext;
@@ -555,7 +570,7 @@ export function createServer(ctx: ServerContext) {
                   let provider: string;
                   try {
                     const result = await generateNarrative(
-                      ctx.pr,
+                      freshPr,
                       freshFiles,
                       [],
                       config,
@@ -568,8 +583,8 @@ export function createServer(ctx: ServerContext) {
                         cacheKey: {
                           owner: ctx.owner,
                           repo: ctx.repo,
-                          number: ctx.pr.number,
-                          sha: ctx.headSha,
+                          number: freshPr.number,
+                          sha: freshHeadSha,
                           metaHash,
                           providerKey,
                         },
@@ -581,7 +596,7 @@ export function createServer(ctx: ServerContext) {
                         onPartial: (partial) => {
                           broadcast('narrative.partial', {
                             narrative: partial,
-                            pr: ctx.pr,
+                            pr: freshPr,
                             files: freshFiles,
                             comments: ctx.comments,
                           });
@@ -596,17 +611,17 @@ export function createServer(ctx: ServerContext) {
                     );
                     generated = result.narrative;
                     provider = result.provider;
-                    ctx.capStats = result.capStats ?? null;
+                    freshCapStats = result.capStats ?? null;
                   } finally {
                     clearInterval(heartbeat);
                     if (isTty) process.stdout.write('\r\x1b[2K');
                   }
-                  ctx.narrative = generated;
+                  freshNarrative = generated;
                   await cacheNarrative(
                     ctx.owner,
                     ctx.repo,
-                    ctx.pr.number,
-                    ctx.headSha,
+                    freshPr.number,
+                    freshHeadSha,
                     metaHash,
                     providerKey,
                     generated,
@@ -615,6 +630,15 @@ export function createServer(ctx: ServerContext) {
                     `  \x1b[38;5;78m✓\x1b[0m ${generated.chapters.length} chapters regenerated \x1b[2mvia ${provider} in ${fmtRegenElapsed()}\x1b[0m`,
                   );
                 }
+
+                // Success: commit the fresh state atomically — narrative, files, and PR always describe
+                // the same head.
+                ctx.pr = freshPr;
+                ctx.headSha = freshHeadSha;
+                ctx.files = freshFiles;
+                ctx.narrative = freshNarrative;
+                ctx.capStats = freshCapStats;
+                regenFailedSha = null;
 
                 // The narrative now describes the new head, so that head is the narrated SHA. Recompute
                 // the round against it (carry-over collapses to 0 once head == narrated) and ship it with
@@ -636,18 +660,35 @@ export function createServer(ctx: ServerContext) {
                 });
               } catch (err) {
                 const msg = err instanceof Error ? err.message : String(err);
-                // generateNarrative threw before assigning ctx.narrative, so ctx still holds the prior
-                // (last successfully served) narrative. If a sealed last-good revision exists for this
-                // PR, keep serving what the reviewer already has instead of surfacing a fatal error to
-                // the UI — a failed regen must not blank the tab.
-                const lastGood = await getLastGoodNarrative(ctx.owner, ctx.repo, ctx.pr.number);
-                if (lastGood) {
-                  console.warn(`  \x1b[38;5;221m⚠\x1b[0m Regeneration failed (${msg}); keeping last-good narrative.`);
+                // ctx was never advanced (locals above), so it still holds the prior mutually
+                // consistent narrative+files. Record the failed head so the poll backs off instead of
+                // burning an LLM call every tick, then keep serving what the reviewer already has —
+                // a failed regen must not blank the tab.
+                regenFailedSha = freshPr.headSha;
+                regenFailedAt = Date.now();
+                if (ctx.narrative) {
+                  console.warn(`  \x1b[38;5;221m⚠\x1b[0m Regeneration failed (${msg}); keeping current narrative.`);
                 } else {
-                  console.error(`  \x1b[38;5;204m✗\x1b[0m Regeneration failed: ${msg}`);
-                  // The terminal log is invisible to the browser tab, which otherwise keeps showing stale
-                  // content with no hint that the refresh failed. Push the error so the UI can surface it.
-                  broadcast('narrative-error', { message: msg });
+                  // Nothing in memory to keep serving — fall back to the sealed revision log before
+                  // surfacing a fatal error.
+                  const lastGood = await getLastGoodNarrative(ctx.owner, ctx.repo, ctx.pr.number);
+                  if (lastGood) {
+                    ctx.narrative = reanchorNarrative(lastGood.narrative, ctx.files);
+                    console.warn(`  \x1b[38;5;221m⚠\x1b[0m Regeneration failed (${msg}); serving last-good narrative.`);
+                    broadcast('narrative', {
+                      narrative: ctx.narrative,
+                      pr: ctx.pr,
+                      files: ctx.files,
+                      comments: mapCommentsToChapters(ctx.comments, ctx.narrative),
+                      ...blastRadius(),
+                    });
+                  } else {
+                    console.error(`  \x1b[38;5;204m✗\x1b[0m Regeneration failed: ${msg}`);
+                    // The terminal log is invisible to the browser tab, which otherwise keeps showing
+                    // stale content with no hint that the refresh failed. Push the error so the UI can
+                    // surface it.
+                    broadcast('narrative-error', { message: msg });
+                  }
                 }
               } finally {
                 regenerating = false;

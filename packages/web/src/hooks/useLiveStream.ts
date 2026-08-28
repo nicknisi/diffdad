@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { type SseEvent, sseEventSchema } from '@diffdad/contracts';
 import { useReviewStore } from '../state/review-store';
-import type { CheckRun, LiveEvent, LiveEventKind, PRReview } from '../state/types';
+import type { CheckRun, LiveEvent, LiveEventKind } from '../state/types';
 import type { ConfigResponse } from '../lib/config-client';
 
 /** The `data` payload type for a given SSE event name, drawn from the contract union. */
