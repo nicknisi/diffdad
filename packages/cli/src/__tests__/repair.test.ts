@@ -178,6 +178,50 @@ describe('repairNarrative', () => {
     expect(dropped.map((d) => d.kind).sort()).toEqual(['invalid-hunk-index', 'unknown-file']);
   });
 
+  it('nulls out a sequence message dead link but keeps the message and its prose', () => {
+    const files = [file('a.ts', 1)];
+    const n = narrative([
+      {
+        title: 'A',
+        summary: '',
+        whyMatters: '',
+        risk: 'low',
+        sections: [
+          diffSection('a.ts', 0),
+          {
+            type: 'sequence',
+            title: 'flow',
+            participants: ['A', 'B'],
+            messages: [
+              { from: 'A', to: 'B', label: 'plain' },
+              { from: 'A', to: 'B', label: 'gone', note: 'why', file: 'ghost.ts', hunkIndex: 0 },
+              { from: 'B', to: 'A', label: 'oob', file: 'a.ts', hunkIndex: 9 },
+              { from: 'A', to: 'B', label: 'good', file: 'a.ts', hunkIndex: 0 },
+            ],
+          },
+        ],
+      },
+    ]);
+    const { narrative: out, dropped } = repairNarrative(n, files);
+    const section = out.chapters[0]!.sections[1]!;
+    expect(section.type).toBe('sequence');
+    if (section.type === 'sequence') {
+      expect(section.messages).toHaveLength(4); // no message dropped
+      expect(section.messages[1]).toEqual({
+        from: 'A',
+        to: 'B',
+        label: 'gone',
+        note: 'why',
+        file: undefined,
+        hunkIndex: undefined,
+      });
+      expect(section.messages[2]).toEqual({ from: 'B', to: 'A', label: 'oob', file: undefined, hunkIndex: undefined });
+      expect(section.messages[3]).toEqual({ from: 'A', to: 'B', label: 'good', file: 'a.ts', hunkIndex: 0 });
+    }
+    expect(dropped).toHaveLength(2);
+    expect(dropped.map((d) => d.kind).sort()).toEqual(['invalid-hunk-index', 'unknown-file']);
+  });
+
   it('produces a narrative with no unresolvable refs left (validator agrees)', () => {
     const files = [file('a.ts', 2)];
     const n = narrative([

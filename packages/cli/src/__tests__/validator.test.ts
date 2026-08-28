@@ -238,6 +238,38 @@ describe('validateNarrative', () => {
     expect(findKind(r.violations, 'invalid-hunk-index')).toMatchObject([{ file: 'a.ts', hunkIndex: 9, chapter: 0 }]);
   });
 
+  it('flags a sequence message linking an unknown file or out-of-range hunkIndex', () => {
+    const files = [file('a.ts', 1)];
+    const n = narrative([
+      {
+        title: '1',
+        summary: '',
+        whyMatters: '',
+        risk: 'low',
+        sections: [
+          diffSection('a.ts', 0),
+          {
+            type: 'sequence',
+            title: 'flow',
+            participants: ['A', 'B'],
+            messages: [
+              { from: 'A', to: 'B', label: 'unlinked' }, // no link — ignored
+              { from: 'A', to: 'B', label: 'gone', file: 'ghost.ts', hunkIndex: 0 }, // unknown-file
+              { from: 'B', to: 'A', label: 'oob', file: 'a.ts', hunkIndex: 9 }, // invalid-hunk-index
+              { from: 'A', to: 'B', label: 'good', file: 'a.ts', hunkIndex: 0 }, // valid
+            ],
+          },
+        ],
+      },
+    ]);
+    const r = validateNarrative(n, files);
+    expect(findKind(r.violations, 'unknown-file')).toMatchObject([{ file: 'ghost.ts', chapter: 0 }]);
+    expect(findKind(r.violations, 'invalid-hunk-index')).toMatchObject([{ file: 'a.ts', hunkIndex: 9, chapter: 0 }]);
+    // A sequence link is never a primary ref, so the good link does not create a duplicate/orphan.
+    expect(findKind(r.violations, 'duplicate-primary')).toEqual([]);
+    expect(findKind(r.violations, 'orphan-hunk')).toEqual([]);
+  });
+
   it('formatViolation produces a non-empty string for every kind', () => {
     const samples: ValidationViolation[] = [
       { kind: 'duplicate-primary', file: 'a', hunkIndex: 0, chapters: [0, 1] },

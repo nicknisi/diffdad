@@ -14,6 +14,7 @@ import type {
   HunkAnchor,
 } from '../state/types';
 import { CallStackSection } from './CallStackSection';
+import { SequenceSection } from './SequenceSection';
 import { Hunk } from './Hunk';
 import { IconCheck, IconChevron } from './Icons';
 import { NarrationAnchor } from './NarrationAnchor';
@@ -530,6 +531,17 @@ export function Chapter({ index, chapter, resolve, decision, callers }: Props) {
         if (section.type === 'callstack') {
           return (
             <CallStackSection key={i} title={section.title} frames={section.frames} resolveHunkId={resolveHunkId} />
+          );
+        }
+        if (section.type === 'sequence') {
+          return (
+            <SequenceSection
+              key={i}
+              title={section.title}
+              participants={section.participants}
+              messages={section.messages}
+              resolveHunkId={resolveHunkId}
+            />
           );
         }
         // Unknown section types (stale cache) render nothing.

@@ -103,6 +103,116 @@ describe('normalizeNarrative', () => {
     }
   });
 
+  it('accepts a sequence section, dedupes/caps participants and keeps valid messages', () => {
+    const out = normalizeNarrative({
+      chapters: [
+        {
+          title: 'C',
+          summary: 's',
+          whyMatters: 'w',
+          risk: 'low',
+          sections: [
+            {
+              type: 'sequence',
+              title: 'flow',
+              participants: ['Client', 'Client', 'Gateway'], // dupe dropped
+              messages: [
+                { from: 'Client', to: 'Gateway', label: 'GET /x', note: 'now retried', file: 'f.ts', hunkIndex: 2 },
+                { from: 'Gateway', to: 'Gateway', label: 'self-check' }, // self-message allowed
+                { from: 'Gateway', to: 'Client', label: '', note: 'x' }, // empty label dropped
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    const section = out.chapters[0]?.sections[0];
+    expect(section?.type).toBe('sequence');
+    if (section?.type === 'sequence') {
+      expect(section.title).toBe('flow');
+      expect(section.participants).toEqual(['Client', 'Gateway']);
+      expect(section.messages).toHaveLength(2);
+      expect(section.messages[0]).toEqual({
+        from: 'Client',
+        to: 'Gateway',
+        label: 'GET /x',
+        note: 'now retried',
+        file: 'f.ts',
+        hunkIndex: 2,
+      });
+      expect(section.messages[1]).toEqual({
+        from: 'Gateway',
+        to: 'Gateway',
+        label: 'self-check',
+        note: undefined,
+        file: undefined,
+        hunkIndex: undefined,
+      });
+    }
+  });
+
+  it('auto-adds an unknown participant under the cap and drops the message once the cap is hit', () => {
+    const out = normalizeNarrative({
+      chapters: [
+        {
+          title: 'C',
+          summary: '',
+          whyMatters: '',
+          risk: 'low',
+          sections: [
+            {
+              type: 'sequence',
+              title: 't',
+              participants: ['A', 'B', 'C', 'D', 'E'], // 5 of 6
+              messages: [
+                { from: 'A', to: 'F', label: 'auto-adds F' }, // F auto-added (6th)
+                { from: 'A', to: 'G', label: 'drops, cap reached' }, // G would be 7th -> message dropped
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    const section = out.chapters[0]?.sections[0];
+    expect(section?.type).toBe('sequence');
+    if (section?.type === 'sequence') {
+      expect(section.participants).toEqual(['A', 'B', 'C', 'D', 'E', 'F']);
+      expect(section.messages).toHaveLength(1);
+      expect(section.messages[0]?.label).toBe('auto-adds F');
+    }
+  });
+
+  it('caps messages at 20 and clears a lone file/hunkIndex half', () => {
+    const messages = [
+      { from: 'A', to: 'B', label: 'lone file', file: 'f.ts' }, // no hunkIndex -> link cleared
+      ...Array.from({ length: 25 }, (_, i) => ({ from: 'A', to: 'B', label: `m${i}` })),
+    ];
+    const out = normalizeNarrative({
+      chapters: [
+        {
+          title: 'C',
+          summary: '',
+          whyMatters: '',
+          risk: 'low',
+          sections: [{ type: 'sequence', title: 't', participants: ['A', 'B'], messages }],
+        },
+      ],
+    });
+    const section = out.chapters[0]?.sections[0];
+    expect(section?.type).toBe('sequence');
+    if (section?.type === 'sequence') {
+      expect(section.messages).toHaveLength(20);
+      expect(section.messages[0]).toEqual({
+        from: 'A',
+        to: 'B',
+        label: 'lone file',
+        note: undefined,
+        file: undefined,
+        hunkIndex: undefined,
+      });
+    }
+  });
+
   it('upgrades old narratives missing the new fields', () => {
     const oldShape = {
       title: 'Old',

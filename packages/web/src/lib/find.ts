@@ -16,7 +16,15 @@ export type FindOptions = {
 };
 
 /** Which slice of a chapter a target's text came from — kept for debugging/tests, not shown to users. */
-export type FindField = 'title' | 'summary' | 'whyMatters' | 'narrative' | 'diff' | 'callstack' | 'callout';
+export type FindField =
+  | 'title'
+  | 'summary'
+  | 'whyMatters'
+  | 'narrative'
+  | 'diff'
+  | 'callstack'
+  | 'sequence'
+  | 'callout';
 
 /**
  * A single searchable string plus where it lives. `chapterIndex` / `chid` are what navigation needs to
@@ -106,6 +114,9 @@ export function collectTargets(narrative: NarrativeResponse | null, files: DiffF
       } else if (section.type === 'callstack') {
         push(idx, chid, 'callstack', section.title ?? '');
         for (const frame of section.frames) push(idx, chid, 'callstack', frame.label ?? '');
+      } else if (section.type === 'sequence') {
+        push(idx, chid, 'sequence', section.title ?? '');
+        for (const message of section.messages) push(idx, chid, 'sequence', message.label ?? '');
       } else if (section.type === 'diff') {
         const norm = normalizePath(section.file);
         const diffFile = files.find((f) => normalizePath(f.file) === norm);

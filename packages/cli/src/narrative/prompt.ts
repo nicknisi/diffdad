@@ -72,8 +72,10 @@ const MAX_THEMES = 7;
 // Bumped again for the new `callstack` section type in the writer/single-pass JSON contract: cached
 // narratives predate it and would never carry call-tree sections, so they regenerate against the new
 // instructions. Plans are untouched (the section type never appears in a plan), so PLANNER stays put.
+// Bumped again for the new `sequence` section type added to both prose JSON contracts, same reasoning:
+// cached narratives predate it, plans are untouched.
 export const PLANNER_PROMPT_REVISION = 3;
-export const NARRATIVE_PROMPT_REVISION = 5;
+export const NARRATIVE_PROMPT_REVISION = 6;
 
 // Shared reader-contract + omission mandate injected into every prompt that produces reader-facing
 // prose. (a) forces the model to spend its budget deciding what to leave out; (b) pins the reader's
@@ -127,6 +129,21 @@ const RESPONSE_SCHEMA = `{
               "change": "added | removed | unchanged | modified",
               "depth": "number — 0-based indent; caller is shallower than callee",
               "file": "string? — only when this frame's change is visible in the diff",
+              "hunkIndex": "number? — 0-based hunk index; only alongside file"
+            }
+          ]
+        },
+        {
+          "type": "sequence",
+          "title": "string — short label for the interaction, e.g. 'Client retries through the gateway'",
+          "participants": ["string — 2-6 real component names, in the order they first act"],
+          "messages": [
+            {
+              "from": "string — a participant name",
+              "to": "string — a participant name (from === to is a self-message)",
+              "label": "string — the call/event/response for this step",
+              "note": "string? — one line on what changed about this step",
+              "file": "string? — only when this step's change is visible in the diff",
               "hunkIndex": "number? — 0-based hunk index; only alongside file"
             }
           ]
@@ -217,6 +234,21 @@ const CHAPTER_RESPONSE_SCHEMA = `{
           "hunkIndex": "number? — 0-based hunk index for this theme; only alongside file"
         }
       ]
+    },
+    {
+      "type": "sequence",
+      "title": "string — short label for the interaction",
+      "participants": ["string — 2-6 real component names, in the order they first act"],
+      "messages": [
+        {
+          "from": "string — a participant name",
+          "to": "string — a participant name (from === to is a self-message)",
+          "label": "string — the call/event/response for this step",
+          "note": "string? — one line on what changed about this step",
+          "file": "string? — only when this step's change is visible in this theme's diff",
+          "hunkIndex": "number? — 0-based hunk index for this theme; only alongside file"
+        }
+      ]
     }
   ],
   "callouts": [
@@ -234,6 +266,17 @@ A \`callstack\` section renders a base-vs-head call tree with +/- gutter markers
 - **Mark only frames that actually changed.** \`change\` is 'added' (newly in the chain), 'removed' (no longer called), 'modified' (still called but its body changed), or 'unchanged' (context frame shown for orientation). Most frames in a typical tree are 'unchanged'.
 - **3-12 frames is typical.** Fewer than 3 is not a tree; more than ~12 is noise.
 - **Link frames only when the change is visible in the diff.** Set \`file\`+\`hunkIndex\` (both, or neither) so the reviewer can jump to the hunk. Omit them for orientation-only frames.`;
+
+// Strict guidance for the optional `sequence` section, injected into both prose prompts. Renders a
+// hand-laid sequence diagram: participant columns, lifelines, top-down message arrows.
+const SEQUENCE_GUIDANCE = `## Sequence sections (use rarely)
+
+A \`sequence\` section renders a sequence diagram: participant columns with lifelines and top-down message arrows. Use it ONLY when the chapter's central change IS an interaction BETWEEN components: a request flow across services, an event-ordering change, a handshake, a retry path. For a call chain inside ONE component, prefer a \`callstack\` section; for anything else, a \`diff\` section is right.
+
+- **2-6 participants, named after real components** (services, modules, queues), in the order they first act.
+- **3-12 messages in temporal order.** Each \`from\`/\`to\` must be one of the participants. \`from === to\` is a self-message. \`label\` is the call, event, or response for that step.
+- **\`note\` is one line on what changed about that step** — omit it when the step is unchanged context.
+- **Link a step only when its change is visible in the diff.** Set \`file\`+\`hunkIndex\` (both, or neither) so the reviewer can jump to the hunk.`;
 
 const SHARED_PRINCIPLES = `Your job is to help a reviewer find the things they would otherwise miss. Empirical research on code review (Mantyla & Lassenius 2009) shows that human reviewers reliably catch style and structure issues but miss bugs in **logic, state, timing, and input validation**. Your value is on the slip set — not the obvious stuff.
 
@@ -253,6 +296,8 @@ ${SHARED_PRINCIPLES}
 ${READER_CONTRACT}
 
 ${CALLSTACK_GUIDANCE}
+
+${SEQUENCE_GUIDANCE}
 
 ## What to produce
 
@@ -486,7 +531,9 @@ Same as the planner pass: \`hunkIndex\` is per-file 0-based; \`startLine\`/\`end
 
 ${CALLSTACK_GUIDANCE}
 
-When a callstack frame links into the diff, its \`file\`+\`hunkIndex\` must come from this theme's hunks, exactly like a diff section.
+${SEQUENCE_GUIDANCE}
+
+When a callstack frame or sequence message links into the diff, its \`file\`+\`hunkIndex\` must come from this theme's hunks, exactly like a diff section.
 
 ## Output
 
