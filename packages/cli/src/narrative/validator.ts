@@ -58,6 +58,29 @@ export function validateNarrative(narrative: NarrativeResponse, files: DiffFile[
         }
         continue;
       }
+      if (s.type === 'sequence') {
+        // A message links into the diff only when it carries BOTH file and hunkIndex; validate exactly
+        // like callstack frames. Sequence links are never primary refs, so they are excluded from the
+        // duplicate-primary / orphan-hunk accounting below.
+        for (const message of s.messages) {
+          if (message.file === undefined || message.hunkIndex === undefined) continue;
+          const norm = normalizePath(message.file);
+          const file = fileMap.get(norm);
+          if (!file) {
+            violations.push({ kind: 'unknown-file', file: message.file, chapter: ci });
+            continue;
+          }
+          if (message.hunkIndex < 0 || message.hunkIndex >= file.hunks.length) {
+            violations.push({
+              kind: 'invalid-hunk-index',
+              file: message.file,
+              hunkIndex: message.hunkIndex,
+              chapter: ci,
+            });
+          }
+        }
+        continue;
+      }
       if (s.type !== 'diff') continue;
       const norm = normalizePath(s.file);
       const file = fileMap.get(norm);
@@ -190,6 +213,23 @@ export function repairNarrative(narrative: NarrativeResponse, files: DiffFile[])
           return { ...frame, file: undefined, hunkIndex: undefined };
         });
         sections.push({ ...s, frames });
+        continue;
+      }
+      if (s.type === 'sequence') {
+        // Null out (never drop) a message's dead file/hunkIndex pair, mirroring the callstack repair:
+        // the message's prose stays, only the broken link is cleared. No anchor, so nothing to re-resolve.
+        const messages = s.messages.map((message) => {
+          if (message.file === undefined || message.hunkIndex === undefined) return message;
+          const norm = normalizePath(message.file);
+          const file = fileMap.get(norm);
+          const inRange = file ? message.hunkIndex >= 0 && message.hunkIndex < file.hunks.length : false;
+          if (file && inRange) return message;
+          if (!file) dropped.push({ kind: 'unknown-file', file: message.file, chapter: ci });
+          else
+            dropped.push({ kind: 'invalid-hunk-index', file: message.file, hunkIndex: message.hunkIndex, chapter: ci });
+          return { ...message, file: undefined, hunkIndex: undefined };
+        });
+        sections.push({ ...s, messages });
         continue;
       }
       if (s.type !== 'diff') {

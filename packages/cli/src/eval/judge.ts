@@ -75,6 +75,8 @@ function summarizeNarrative(narrative: NarrativeResponse): string {
         parts.push(`    narrative: ${s.content}`);
       } else if (s.type === 'callstack') {
         parts.push(`    callstack[${s.frames.length}]: ${s.title}`);
+      } else if (s.type === 'sequence') {
+        parts.push(`    sequence-ref[${s.participants.length}p/${s.messages.length}m]: ${s.title}`);
       } else {
         parts.push(`    diff-ref: ${s.file}:${s.startLine}-${s.endLine}`);
       }

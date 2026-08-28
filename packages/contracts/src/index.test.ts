@@ -206,6 +206,70 @@ describe('narrative payload', () => {
     };
     expect(() => narrativeResponseSchema.parse(bad)).toThrow();
   });
+
+  test('round-trips a sequence section', () => {
+    const withSequence = {
+      ...narrative,
+      chapters: [
+        {
+          ...chapter,
+          sections: [
+            {
+              type: 'sequence' as const,
+              title: 'Client retries through the gateway',
+              participants: ['Client', 'Gateway', 'Service'],
+              messages: [
+                { from: 'Client', to: 'Gateway', label: 'POST /order' },
+                {
+                  from: 'Gateway',
+                  to: 'Service',
+                  label: 'forward',
+                  note: 'now wrapped in a retry',
+                  file: 'src/gateway.ts',
+                  hunkIndex: 0,
+                },
+                { from: 'Service', to: 'Service', label: 'validate' },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    expect(narrativeResponseSchema.parse(withSequence)).toEqual(withSequence);
+  });
+
+  test('rejects a sequence message missing its label', () => {
+    const bad = {
+      ...narrative,
+      chapters: [
+        {
+          ...chapter,
+          sections: [{ type: 'sequence', title: 't', participants: ['A'], messages: [{ from: 'A', to: 'A' }] }],
+        },
+      ],
+    };
+    expect(() => narrativeResponseSchema.parse(bad)).toThrow();
+  });
+
+  test('rejects a sequence message with a non-numeric hunkIndex', () => {
+    const bad = {
+      ...narrative,
+      chapters: [
+        {
+          ...chapter,
+          sections: [
+            {
+              type: 'sequence',
+              title: 't',
+              participants: ['A', 'B'],
+              messages: [{ from: 'A', to: 'B', label: 'x', file: 'a.ts', hunkIndex: 'nope' }],
+            },
+          ],
+        },
+      ],
+    };
+    expect(() => narrativeResponseSchema.parse(bad)).toThrow();
+  });
 });
 
 describe('comments', () => {

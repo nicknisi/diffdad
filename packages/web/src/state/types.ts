@@ -35,6 +35,7 @@ export type {
   PRReview,
   ReadingPlanStep,
   ReviewRound,
+  SequenceMessage,
   TriagedFile,
   TriageKind,
   TriageSummary,

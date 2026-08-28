@@ -101,6 +101,23 @@ export type CallStackFrame = {
   hunkIndex?: number;
 };
 
+/**
+ * One message in a sequence diagram: `from` sends to `to` with `label`. Both endpoints must name a
+ * participant. `from === to` is a self-message (renders as a small loop). `note` is one line on what
+ * changed about that step. `file`+`hunkIndex` optionally link the step into a diff section the same way
+ * a callstack frame does; both must be present for the link to be live, and the validate/repair path
+ * nulls a dead link in place rather than re-resolving it (no anchor).
+ */
+export type SequenceMessage = {
+  from: string;
+  to: string;
+  label: string;
+  note?: string;
+  file?: string;
+  /** 0-based index into DiffFile.hunks — same semantics as a diff section. */
+  hunkIndex?: number;
+};
+
 export type NarrativeSection =
   | { type: 'narrative'; content: string }
   | {
@@ -112,7 +129,8 @@ export type NarrativeSection =
       /** Content-derived re-resolution anchor. Absent on narratives cached before this field existed. */
       anchor?: HunkAnchor;
     }
-  | { type: 'callstack'; title: string; frames: CallStackFrame[] };
+  | { type: 'callstack'; title: string; frames: CallStackFrame[] }
+  | { type: 'sequence'; title: string; participants: string[]; messages: SequenceMessage[] };
 
 const CONCERN_CATEGORIES: ConcernCategory[] = [
   'logic',
@@ -139,6 +157,8 @@ function normalizeReadingPlanStep(input: unknown): ReadingPlanStep | null {
 const CALLSTACK_CHANGES: CallStackFrame['change'][] = ['added', 'removed', 'unchanged', 'modified'];
 const MAX_FRAME_DEPTH = 8;
 const MAX_FRAMES = 30;
+const MAX_PARTICIPANTS = 6;
+const MAX_MESSAGES = 20;
 
 function normalizeCallStackFrame(input: unknown): CallStackFrame | null {
   if (!input || typeof input !== 'object') return null;
@@ -175,7 +195,64 @@ function normalizeSection(input: unknown): NarrativeSection {
       : [];
     return { type: 'callstack', title: typeof obj.title === 'string' ? obj.title : '', frames };
   }
+  if (input && typeof input === 'object' && (input as Record<string, unknown>).type === 'sequence') {
+    return normalizeSequenceSection(input as Record<string, unknown>);
+  }
   return input as NarrativeSection;
+}
+
+/**
+ * Defensive sequence handling: participants deduped and capped; messages with empty labels dropped;
+ * a message referencing an unknown participant auto-adds it while the participant list is under cap,
+ * otherwise the message is dropped; message count capped. `file`/`hunkIndex` kept as an all-or-nothing
+ * pair (a lone half is cleared) so the validate/repair path only ever sees a live link or none.
+ */
+function normalizeSequenceSection(obj: Record<string, unknown>): NarrativeSection {
+  const participants: string[] = [];
+  const seen = new Set<string>();
+  if (Array.isArray(obj.participants)) {
+    for (const p of obj.participants) {
+      if (typeof p !== 'string' || p.length === 0) continue;
+      if (seen.has(p)) continue;
+      if (participants.length >= MAX_PARTICIPANTS) break;
+      seen.add(p);
+      participants.push(p);
+    }
+  }
+
+  const messages: SequenceMessage[] = [];
+  const rawMessages = Array.isArray(obj.messages) ? obj.messages : [];
+  for (const raw of rawMessages) {
+    if (messages.length >= MAX_MESSAGES) break;
+    if (!raw || typeof raw !== 'object') continue;
+    const m = raw as Record<string, unknown>;
+    if (typeof m.from !== 'string' || m.from.length === 0) continue;
+    if (typeof m.to !== 'string' || m.to.length === 0) continue;
+    if (typeof m.label !== 'string' || m.label.length === 0) continue;
+    const endpoints = m.from === m.to ? [m.from] : [m.from, m.to];
+    let ok = true;
+    for (const e of endpoints) {
+      if (seen.has(e)) continue;
+      if (participants.length >= MAX_PARTICIPANTS) {
+        ok = false;
+        break;
+      }
+      seen.add(e);
+      participants.push(e);
+    }
+    if (!ok) continue;
+    const hasLink = typeof m.file === 'string' && m.file.length > 0 && typeof m.hunkIndex === 'number';
+    messages.push({
+      from: m.from,
+      to: m.to,
+      label: m.label,
+      note: typeof m.note === 'string' && m.note.length > 0 ? m.note : undefined,
+      file: hasLink ? (m.file as string) : undefined,
+      hunkIndex: hasLink ? (m.hunkIndex as number) : undefined,
+    });
+  }
+
+  return { type: 'sequence', title: typeof obj.title === 'string' ? obj.title : '', participants, messages };
 }
 
 function normalizeConcern(input: unknown): Concern | null {

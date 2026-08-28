@@ -67,6 +67,16 @@ export const callStackFrameSchema = z.object({
 });
 export type CallStackFrame = z.infer<typeof callStackFrameSchema>;
 
+export const sequenceMessageSchema = z.object({
+  from: z.string(),
+  to: z.string(),
+  label: z.string(),
+  note: z.string().optional(),
+  file: z.string().optional(),
+  hunkIndex: z.number().optional(),
+});
+export type SequenceMessage = z.infer<typeof sequenceMessageSchema>;
+
 export const narrativeSectionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('narrative'), content: z.string() }),
   z.object({
@@ -81,6 +91,12 @@ export const narrativeSectionSchema = z.discriminatedUnion('type', [
     type: z.literal('callstack'),
     title: z.string(),
     frames: z.array(callStackFrameSchema),
+  }),
+  z.object({
+    type: z.literal('sequence'),
+    title: z.string(),
+    participants: z.array(z.string()),
+    messages: z.array(sequenceMessageSchema),
   }),
 ]);
 export type NarrativeSection = z.infer<typeof narrativeSectionSchema>;
