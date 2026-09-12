@@ -8,6 +8,7 @@ import { AppBar } from './components/AppBar';
 import { ClassicView } from './components/ClassicView';
 import { CommandCenter } from './components/CommandCenter';
 import { GeneratingScreen } from './components/GeneratingScreen';
+import { PrDescription } from './components/PrDescription';
 import { PRHeader } from './components/PRHeader';
 import { RecapView } from './components/RecapView';
 import { SettingsView } from './components/SettingsView';
@@ -174,6 +175,7 @@ export default function App() {
     <div className="min-h-screen bg-[var(--bg-page)] pb-20 text-[var(--fg-1)]">
       <AppBar onOpenActivity={() => setActivityOpen(true)} />
       <PRHeader />
+      <PrDescription />
       {/* Story/Recap need a narrative; without one, always show the Files diff. */}
       {!narrative ? (
         <ClassicView />

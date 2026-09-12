@@ -8,6 +8,7 @@ import { useComments } from '../hooks/useComments';
 import { AccentPicker } from './AccentPicker';
 import { ClassicView } from './ClassicView';
 import { DadMark } from './DadMark';
+import { PrDescription } from './PrDescription';
 import { ReviewProgress } from './ReviewProgress';
 import { ReviewViewTabs } from './ReviewViewTabs';
 import { ShortcutsHelp } from './ShortcutsHelp';
@@ -372,6 +373,8 @@ export function UnitReview() {
           {error}
         </div>
       )}
+
+      <PrDescription />
 
       {showStatus && (
         <div className="mx-auto mt-3 flex max-w-[1100px] flex-wrap items-center gap-x-5 gap-y-1 px-6 text-[12.5px]">
