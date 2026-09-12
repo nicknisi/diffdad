@@ -265,7 +265,16 @@ describe('pollOnce', () => {
       broadcast: () => {},
       fetchPr: async (unit) => {
         fetches.push(1);
-        return { ...mkMetadata('feat/widgets'), headSha: unit.metadata.headSha, title: 'Add widgets', body: 'edited description with an image', additions: 5, deletions: 2, changedFiles: 3, commits: 1 };
+        return {
+          ...mkMetadata('feat/widgets'),
+          headSha: unit.metadata.headSha,
+          title: 'Add widgets',
+          body: 'edited description with an image',
+          additions: 5,
+          deletions: 2,
+          changedFiles: 3,
+          commits: 1,
+        };
       },
     });
     expect(fetches.length).toBe(1);
