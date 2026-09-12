@@ -642,6 +642,7 @@ export class GitHubClient {
           repo,
           number: pr.number,
           title: pr.title,
+          body: pr.body,
           headBranch: pr.branch,
           headSha: pr.headSha,
           base: pr.base,

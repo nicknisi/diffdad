@@ -706,6 +706,7 @@ describe('GitHubClient.searchReviewRequested', () => {
       repo: 'repo',
       number: 7,
       title: 'pr title', // authoritative from the PR fetch
+      body: '', // getPR maps a null body to ''
       headBranch: 'feature-branch',
       headSha: 'headsha7',
       base: 'main', // real base ref from the PR fetch, not discarded

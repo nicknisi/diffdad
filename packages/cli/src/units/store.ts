@@ -223,24 +223,39 @@ export class UnitStore {
   }
 
   /**
-   * Patch a unit's diff/line counts (additions/deletions/changedFiles/commits) in place — the poller's
-   * heal for a unit whose stored counts drift from the live PR (minted before the counts rode along, or
-   * the author pushed since). Deliberately narrow: it touches ONLY these four metadata fields, never
-   * status / lastReviewedSha / headSha / taskLabel / narrative or any resurface semantics. Synchronous;
-   * persistence is best-effort via `save()`.
+   * Refresh the PR-derived metadata a live fetch carries (title/body/branch + the diff/line counts)
+   * in place — the poller's and hydrate's heal for units whose stored metadata drifted from GitHub
+   * (the poller mints with an empty body, authors edit descriptions, pushes move branches).
+   * Deliberately narrow: `headSha`/`diffContentKey`/status/`lastReviewedSha`/narrative and resurface
+   * semantics are untouched — advancing the head is `advanceHead`/`resurfaceForNewPush`'s job. A
+   * changed title updates `taskLabel` with it. Callers check drift first so an unchanged PR never
+   * bumps `updatedAt` (which would churn queue ordering and repaint the drill-in pointlessly).
+   * Synchronous; persistence is best-effort via `save()`.
    */
-  setMetadataCounts(
+  refreshMetadata(
     unitId: string,
-    counts: { additions: number; deletions: number; changedFiles: number; commits: number },
+    patch: {
+      title: string;
+      body: string;
+      branch: string;
+      additions: number;
+      deletions: number;
+      changedFiles: number;
+      commits: number;
+    },
   ): ReviewUnit {
     const unit = this.require(unitId);
     unit.metadata = {
       ...unit.metadata,
-      additions: counts.additions,
-      deletions: counts.deletions,
-      changedFiles: counts.changedFiles,
-      commits: counts.commits,
+      title: patch.title,
+      body: patch.body,
+      branch: patch.branch,
+      additions: patch.additions,
+      deletions: patch.deletions,
+      changedFiles: patch.changedFiles,
+      commits: patch.commits,
     };
+    unit.taskLabel = patch.title;
     unit.updatedAt = this.now();
     void this.save(unit);
     return unit;

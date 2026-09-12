@@ -210,3 +210,88 @@ describe('renderMarkdown: HTML handling', () => {
     expect(html).toContain('hello');
   });
 });
+
+// The `github` variant is the PR-description pipeline (GitHub's comment semantics): raw HTML parses,
+// newlines hard-wrap, bare URLs autolink, and repo refs/mentions become real links. DOMPurify still
+// gates the emitted HTML at the component boundary — these assertions are on the pre-sanitize string,
+// proving the parse produces the GitHub-like structure at all.
+describe('renderMarkdown: github variant', () => {
+  const opts = { variant: 'github' as const, repoUrl: 'https://github.com/owner/repo' };
+
+  it('parses raw HTML tags instead of escaping them', () => {
+    const { html } = renderMarkdown(
+      '<details>\n<summary>Screenshots</summary>\n<img width="600" alt="shot" src="https://x/y.png">\n</details>',
+      'light',
+      {},
+      opts,
+    );
+    expect(html).toContain('<details>');
+    expect(html).toContain('<summary>Screenshots</summary>');
+    expect(html).toContain('<img width="600"');
+    expect(html).not.toContain('&lt;details&gt;');
+  });
+
+  it('renders markdown images at block size, not narration inline chips', () => {
+    const { html } = renderMarkdown('![pic](https://x/y.png)', 'light', {}, opts);
+    expect(html).toContain('max-w-full');
+    expect(html).not.toContain('max-h-[1.4em]');
+  });
+
+  it('hard-wraps single newlines like GitHub comments', () => {
+    const { html } = renderMarkdown('line one\nline two', 'light', {}, opts);
+    expect(html).toContain('<br>');
+  });
+
+  it('autolinks bare URLs', () => {
+    const { html } = renderMarkdown('see https://example.com/x', 'light', {}, opts);
+    expect(html).toContain('<a href="https://example.com/x"');
+  });
+
+  it('links bare #N refs to the repo issues page', () => {
+    const { html } = renderMarkdown('Fixes #123', 'light', {}, opts);
+    expect(html).toContain('<a href="https://github.com/owner/repo/issues/123"');
+    expect(html).toContain('#123</a>');
+  });
+
+  it('leaves a bare #N ref as plain text when no repo URL is known', () => {
+    const { html } = renderMarkdown('Fixes #123', 'light', {}, { variant: 'github' });
+    expect(html).not.toContain('<a');
+    expect(html).toContain('Fixes #123');
+  });
+
+  it('links cross-repo refs and @mentions to github.com regardless of repoUrl', () => {
+    const { html } = renderMarkdown('ref foo/bar#7 and @octocat', 'light', {}, opts);
+    expect(html).toContain('<a href="https://github.com/foo/bar/issues/7"');
+    expect(html).toContain('<a href="https://github.com/octocat"');
+  });
+
+  it('does not link refs or autolink inside code spans', () => {
+    const { html } = renderMarkdown('`see #123` and `#456`', 'light', {}, opts);
+    expect(html).not.toContain('<a');
+  });
+
+  it('renders [!NOTE] blockquotes as a callout with a title bar and no marker text', () => {
+    const { html } = renderMarkdown('> [!NOTE]\n> Needs review.', 'light', {}, opts);
+    expect(html).toContain('background:var(--blue-2)');
+    expect(html).toContain('>Note</div>');
+    expect(html).toContain('Needs review.');
+    expect(html).not.toContain('[!NOTE]');
+  });
+
+  it('renders each alert type with its own color', () => {
+    expect(renderMarkdown('> [!CAUTION]\n> x', 'light', {}, opts).html).toContain('background:var(--red-2)');
+    expect(renderMarkdown('> [!TIP]\n> x', 'light', {}, opts).html).toContain('background:var(--green-2)');
+  });
+
+  it('leaves narration blockquotes plain — the alert rule is variant-gated', () => {
+    const { html } = renderMarkdown('> [!NOTE]\n> Needs review.', 'light', {});
+    expect(html).not.toContain('background:var(--blue-2)');
+    expect(html).toContain('[!NOTE]');
+  });
+
+  it('keeps narration refs byte-identical to the pre-variant renderer', () => {
+    expect(renderMarkdown('see foo/bar#123 now', 'light', {}).html).toContain(
+      '<a href="#" style="color:var(--brand);text-decoration:underline">foo/bar#123</a>',
+    );
+  });
+});

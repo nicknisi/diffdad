@@ -2,6 +2,7 @@ import { useReviewStore } from '../state/review-store';
 import { fileStats } from '../lib/file-tree';
 import { FileTree, fileAnchorId } from './FileTree';
 import { Hunk } from './Hunk';
+import { PrDescription } from './PrDescription';
 
 function editedAgo(mtime?: number): string | null {
   if (!mtime) return null;
@@ -93,11 +94,20 @@ export function ClassicView() {
   );
 
   if (!showTree) {
-    return <div className="mx-auto max-w-[1100px] px-6 pb-20 pt-[18px]">{list}</div>;
+    return (
+      <div className="mx-auto max-w-[1100px] px-6 pb-20 pt-[18px]">
+        <PrDescription />
+        {list}
+      </div>
+    );
   }
 
   return (
     <div className="mx-auto grid max-w-[1280px] grid-cols-[230px_minmax(0,1fr)] gap-6 px-6 pb-20 pt-[18px]">
+      <div className="col-span-full">
+        {/* Full width above the tree+list grid: the description is not a sidebar citizen. */}
+        <PrDescription />
+      </div>
       <FileTree files={files} />
       {list}
     </div>

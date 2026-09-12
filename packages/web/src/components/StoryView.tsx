@@ -21,6 +21,7 @@ import { Chapter } from './Chapter';
 import { Comment } from './Comment';
 import { Hunk } from './Hunk';
 import { Overview } from './Overview';
+import { PrDescription } from './PrDescription';
 import { ResolveStrip } from './ResolveStrip';
 import { IconChat } from './Icons';
 
@@ -436,6 +437,9 @@ export function StoryView() {
       <StalenessBanner />
       <TruncationBanner capStats={capStats} />
       <CollapseUnavailableNotice collapse={collapse} />
+      {/* The author's own words sit between Dad's banners and Dad's verdict — page-aligned with the
+          column below it, which the app-level mount it replaces could never be. */}
+      <PrDescription />
       <Overview />
       {narrative.chapters.map((ch, idx) => (
         <Fragment key={`ch-${idx}`}>

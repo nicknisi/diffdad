@@ -114,6 +114,8 @@ export type PolledPr = {
   repo: string;
   number: number;
   title: string;
+  /** The PR's body/description, from the per-item `getPR` the search already makes. */
+  body: string;
   headBranch: string;
   headSha: string;
   /** The PR's base branch (e.g. `main`/`develop`), straight from the PR fetch — not assumed. */

@@ -186,6 +186,12 @@ export function buildGitHubWiring(
         fetchPrState,
         missStreaks,
         fetchFileSummary: (pr) => client.getPRFileSummary(pr.owner, pr.repo, pr.number),
+        // Live metadata for pinned units — the search never lists them, so their stored body/title
+        // would be frozen at add time and a description edit would never reach the drill-in.
+        fetchPr: async (unit) => {
+          const [owner, repo] = unit.repo.split('/');
+          return client.getPR(owner!, repo!, unit.prNumber!);
+        },
         fetchReviews: async (unit) => {
           const [owner, repo] = unit.repo.split('/');
           const reviews = await client.getReviews(owner!, repo!, unit.prNumber!);
@@ -337,6 +343,21 @@ function makeHydrate(
     let target = unit;
     if (force) {
       target = store.advanceHead(unit.unitId, meta.headSha, meta);
+    } else if (meta.title !== unit.metadata.title || meta.body !== unit.metadata.body) {
+      // Persist what this fetch just saw even on the cached path: the description panel reads the
+      // unit's stored body, not GitHub's, so without this a body edited between mint and open never
+      // reaches the UI until the next poll — and a poller-minted unit shows no description at all on
+      // its first open if the poll that would carry one hasn't run yet.
+      store.refreshMetadata(unit.unitId, {
+        title: meta.title,
+        body: meta.body,
+        branch: meta.branch,
+        additions: meta.additions,
+        deletions: meta.deletions,
+        changedFiles: meta.changedFiles,
+        commits: meta.commits,
+      });
+      target = store.get(unit.unitId)!;
     }
     const config = await readConfig();
     const metaHash = computePromptMetaHash(meta);
