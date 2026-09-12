@@ -120,7 +120,22 @@ const SANITIZE_CONFIG: Config = {
   ],
   // The github variant parses raw PR-description HTML; DOMPurify with the html profile still allows
   // interactive/scripting elements this app never has a use for. Drop them like GitHub's sanitizer does.
-  FORBID_TAGS: ['iframe', 'video', 'audio', 'object', 'embed', 'form', 'input', 'button', 'select', 'textarea', 'base', 'frame', 'frameset', 'applet'],
+  FORBID_TAGS: [
+    'iframe',
+    'video',
+    'audio',
+    'object',
+    'embed',
+    'form',
+    'input',
+    'button',
+    'select',
+    'textarea',
+    'base',
+    'frame',
+    'frameset',
+    'applet',
+  ],
 } as const;
 
 // --- markdown-it inline helpers ---------------------------------------------
@@ -338,7 +353,8 @@ function gfmAlertsPlugin(md: MarkdownItInstance): void {
       if (bq.type !== 'blockquote_open') continue;
       const p = state.tokens[i + 1];
       const inline = state.tokens[i + 2];
-      if (!p || p.type !== 'paragraph_open' || !inline || inline.type !== 'inline' || !inline.children?.length) continue;
+      if (!p || p.type !== 'paragraph_open' || !inline || inline.type !== 'inline' || !inline.children?.length)
+        continue;
       const m = /^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*/.exec(inline.children[0]!.content);
       if (!m) continue;
       const kind = m[1]!.toLowerCase();
