@@ -17,7 +17,7 @@ export function PrDescription() {
   if (!body.trim()) return null;
   return (
     <section
-      className="overflow-hidden rounded-[10px] bg-[var(--bg-panel)]"
+      className="mb-7 overflow-hidden rounded-[10px] bg-[var(--bg-panel)]"
       style={{ boxShadow: 'inset 0 0 0 1px var(--gray-a5)' }}
     >
       <button
