@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.18.0](https://github.com/nicknisi/diffdad/compare/v0.17.0...v0.18.0) (2026-09-12)
+
+
+### Features
+
+* **web:** show the full PR description on review surfaces ([#82](https://github.com/nicknisi/diffdad/issues/82)) ([5630c3e](https://github.com/nicknisi/diffdad/commit/5630c3e8f363b24b96271f7da795b2993a723bbc))
+
+
+### Bug Fixes
+
+* **daemon:** heal pinned units first in the poll pass, with an immediate repaint ([#84](https://github.com/nicknisi/diffdad/issues/84)) ([3479a9e](https://github.com/nicknisi/diffdad/commit/3479a9eaac6281106733c1135eb49d64145fa4fc))
+* **settings:** show a stable AI connection-test success message ([#85](https://github.com/nicknisi/diffdad/issues/85)) ([4114de5](https://github.com/nicknisi/diffdad/commit/4114de5981e4696a1e21490e200b56d22448922e))
+
 ## [0.17.0](https://github.com/nicknisi/diffdad/compare/v0.16.0...v0.17.0) (2026-08-28)
 
 
