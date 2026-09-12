@@ -103,6 +103,9 @@ type ReviewState = {
   lastEventAt: number;
   shortcutsHelpOpen: boolean;
   submitOpen: boolean;
+  /** Whether the PR-description panel is expanded. Lives here (not component state) so a view switch
+   *  — which remounts every component below App — doesn't pop a collapsed panel back open. */
+  descriptionOpen: boolean;
   /** PR-mode settings mount: PR mode has no URL routing, so a full-screen settings view rides this flag. */
   settingsOpen: boolean;
   /** The redacted server config — the settings page's source of truth for field values (null until loaded). */
@@ -223,6 +226,7 @@ type ReviewState = {
   setReviewRound: (round: ReviewRound | null) => void;
   setShortcutsHelpOpen: (open: boolean) => void;
   setSubmitOpen: (open: boolean) => void;
+  setDescriptionOpen: (open: boolean) => void;
   setSettingsOpen: (open: boolean) => void;
   /**
    * The single funnel for applying server config to state — used by bootstrap, PUT responses, and the
@@ -508,6 +512,7 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
   lastEventAt: Date.now(),
   shortcutsHelpOpen: false,
   submitOpen: false,
+  descriptionOpen: true,
   settingsOpen: false,
   serverConfig: null,
   github: null,
@@ -743,6 +748,7 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
 
   setShortcutsHelpOpen: (shortcutsHelpOpen) => set({ shortcutsHelpOpen }),
   setSubmitOpen: (submitOpen) => set({ submitOpen }),
+  setDescriptionOpen: (descriptionOpen) => set({ descriptionOpen }),
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
 
   applyConfigResponse: (res) => {

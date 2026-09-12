@@ -11,7 +11,7 @@ import type { GitHubClient } from './github/client';
 import { mapCommentsToChapters } from './github/comments';
 import type { CheckRun, DiffFile, PRComment, PRMetadata, PRReview } from './github/types';
 import { cacheNarrative, computePromptMetaHash, getCachedNarrative, getLastGoodNarrative } from './narrative/cache';
-import { reanchorNarrative, reanchorNarrativeWithDrops } from './narrative/validator';
+import { reanchorNarrativeWithDrops } from './narrative/validator';
 import { chapterCallers, resolveCollapse } from './narrative/collapse';
 import { callAi, generateNarrative, resolveAiPath, resolveProviderKey } from './narrative/engine';
 import { buildChapterAiPrompt } from './narrative/chapter-ai';
