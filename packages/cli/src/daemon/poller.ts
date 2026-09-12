@@ -24,7 +24,7 @@ function metadataFromPr(pr: PolledPr): PRMetadata {
   return {
     number: pr.number,
     title: pr.title,
-    body: '',
+    body: pr.body,
     state: 'open',
     draft: false,
     author: { login: pr.author, avatarUrl: '' },
@@ -42,13 +42,30 @@ function metadataFromPr(pr: PolledPr): PRMetadata {
   };
 }
 
-/** Whether a unit's stored diff/line counts drift from the freshly-polled PR (so a heal is worth a write). */
-function countsDiffer(meta: PRMetadata, pr: PolledPr): boolean {
+/**
+ * Whether a unit's stored metadata drifted from a live fetch (so a heal is worth a write). Field set
+ * matches `refreshMetadata`'s patch exactly: title/body/branch + the diff/line counts. Takes the
+ * subset shape rather than `PolledPr` because the pinned-unit pass heals from a full `PRMetadata`.
+ */
+type MetadataPatch = {
+  title: string;
+  body: string;
+  branch: string;
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+  commits: number;
+};
+
+function metadataDrifts(meta: PRMetadata, fresh: MetadataPatch): boolean {
   return (
-    meta.additions !== pr.additions ||
-    meta.deletions !== pr.deletions ||
-    meta.changedFiles !== pr.changedFiles ||
-    meta.commits !== pr.commits
+    meta.title !== fresh.title ||
+    meta.body !== fresh.body ||
+    meta.branch !== fresh.branch ||
+    meta.additions !== fresh.additions ||
+    meta.deletions !== fresh.deletions ||
+    meta.changedFiles !== fresh.changedFiles ||
+    meta.commits !== fresh.commits
   );
 }
 
@@ -96,8 +113,13 @@ export async function pollOnce(deps: {
    * swallowed per-unit: a rollup is ordering information, and losing it must never fail a whole poll.
    */
   fetchReviews?: (unit: ReviewUnit) => Promise<{ approved: number; changesRequested: number }>;
+  /**
+   * Live `PRMetadata` for a unit whose PR the search does not list — the pinned units, whose stored
+   * metadata otherwise never refreshes. Best-effort: the caller (pollOnce) catches failures per unit.
+   */
+  fetchPr?: (unit: ReviewUnit) => Promise<PRMetadata>;
 }): Promise<{ minted: number; resurfaced: number; removed: number }> {
-  const { search, store, broadcast, fetchPrState, missStreaks, fetchFileSummary, fetchReviews } = deps;
+  const { search, store, broadcast, fetchPrState, missStreaks, fetchFileSummary, fetchReviews, fetchPr } = deps;
   const prs = await search();
 
   /** Fetch + classify a PR's files. `undefined` on any failure — never a fabricated empty summary,
@@ -181,15 +203,42 @@ export async function pollOnce(deps: {
         store.resurfaceForNewPush(c.unitId, pr.headSha);
         resurfaced++;
       }
-      // Heal a unit whose stored counts drift from the live PR — minted before the counts rode along,
-      // or the author pushed since. The search already fetched the PR, so this is free. Counts ONLY:
-      // never status / reviewedSha / headSha. Skip when equal so an unchanged PR isn't rewritten each poll.
-      if (unit && countsDiffer(unit.metadata, pr)) {
-        store.setMetadataCounts(unit.unitId, {
-          additions: pr.additions,
-          deletions: pr.deletions,
-          changedFiles: pr.changedFiles,
-          commits: pr.commits,
+      // Heal a unit whose stored metadata drifts from the live PR — minted before the counts rode
+      // along, the author edited the title/description, or a push moved the branch. The search already
+      // fetched the PR, so this is free. Metadata only: never status / reviewedSha / headSha. Skip when
+      // equal so an unchanged PR isn't rewritten each poll. The bump to `updatedAt` is what makes the
+      // SSE `units` snapshot repaint an open drill-in with the fresh description.
+      if (unit && metadataDrifts(unit.metadata, { ...pr, branch: pr.headBranch })) {
+        store.refreshMetadata(unit.unitId, { ...pr, branch: pr.headBranch });
+      }
+    }
+  }
+
+  // Pinned units are exempt from the reconcile and the search never lists them — so without this
+  // pass their stored metadata is frozen at add/hydrate time, and a description (or title) the author
+  // edits afterwards never reaches the drill-in. One best-effort fetch per pass per pinned unit, the
+  // same recurring cost class as the reviews rollup. A failure leaves the stored copy in place; the
+  // next pass tries again. PRs the search returned were already healed from their item above.
+  if (fetchPr) {
+    const searched = new Set(prs.map((pr) => `${pr.owner}/${pr.repo}#${pr.number}`));
+    for (const unit of store.list()) {
+      if (unit.source !== 'github' || unit.prNumber === undefined || !unit.pinned) continue;
+      if (searched.has(`${unit.repo}#${unit.prNumber}`)) continue;
+      let meta: PRMetadata;
+      try {
+        meta = await fetchPr(unit);
+      } catch {
+        continue; // transient failure ≠ staleness: keep the stored copy, retry next pass
+      }
+      if (metadataDrifts(unit.metadata, meta)) {
+        store.refreshMetadata(unit.unitId, {
+          title: meta.title,
+          body: meta.body,
+          branch: meta.branch,
+          additions: meta.additions,
+          deletions: meta.deletions,
+          changedFiles: meta.changedFiles,
+          commits: meta.commits,
         });
       }
     }

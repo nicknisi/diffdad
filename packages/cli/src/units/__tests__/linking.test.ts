@@ -53,6 +53,7 @@ function mkPr(o: Partial<PolledPr> = {}): PolledPr {
     repo: 'demo',
     number: 42,
     title: 'Add widgets',
+    body: '',
     headBranch: 'feat/widgets',
     headSha: 'deadbeef',
     base: 'main',

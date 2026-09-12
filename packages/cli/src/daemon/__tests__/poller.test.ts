@@ -45,6 +45,7 @@ function mkPr(o: Partial<PolledPr> = {}): PolledPr {
     repo: 'demo',
     number: 42,
     title: 'Add widgets',
+    body: 'PR body.',
     headBranch: 'feat/widgets',
     headSha: 'sha-1',
     base: 'main',
@@ -162,13 +163,15 @@ describe('pollOnce', () => {
       metadata: {
         ...mkMetadata('feat/widgets'),
         headSha: 'sha-1',
+        title: 'Add widgets',
+        body: 'PR body.',
         additions: 7,
         deletions: 1,
         changedFiles: 2,
         commits: 1,
       },
     });
-    const spy = vi.spyOn(store, 'setMetadataCounts');
+    const spy = vi.spyOn(store, 'refreshMetadata');
     try {
       await pollOnce({
         search: search([
@@ -177,7 +180,7 @@ describe('pollOnce', () => {
         store,
         broadcast: () => {},
       });
-      expect(spy).not.toHaveBeenCalled(); // equal counts → no heal write
+      expect(spy).not.toHaveBeenCalled(); // identical metadata → no heal write
     } finally {
       spy.mockRestore();
     }
@@ -226,6 +229,75 @@ describe('pollOnce', () => {
     const u = store.list()[0]!;
     expect(u.metadata.base).toBe('develop');
     expect(u.baseRef).toBe('develop');
+  });
+
+  it('an edited PR description heals into the unit without touching the head SHA', async () => {
+    const store = new UnitStore([], det());
+    await pollOnce({ search: search([mkPr({ body: 'original description' })]), store, broadcast: () => {} });
+    const u = store.list()[0]!;
+    expect(u.metadata.body).toBe('original description'); // mints carry the real body now
+
+    await pollOnce({ search: search([mkPr({ body: 'edited description' })]), store, broadcast: () => {} });
+    const after = store.get(u.unitId)!;
+    expect(after.metadata.body).toBe('edited description'); // healed — the drill-in repaints on the units SSE
+    expect(after.metadata.headSha).toBe('sha-1'); // a text edit is not a push
+    expect(after.diffContentKey).toBe('sha-1');
+  });
+
+  it('heals a PINNED unit from a live PR fetch — the search never lists it, so only this keeps its body fresh', async () => {
+    const store = new UnitStore([], det());
+    const u = store.addGithubUnit({
+      owner: 'octo',
+      repo: 'demo',
+      number: 42,
+      title: 'Add widgets',
+      headBranch: 'feat/widgets',
+      headSha: 'sha-1',
+      author: 'octocat',
+      url: 'https://github.com/octo/demo/pull/42',
+      metadata: { ...mkMetadata('feat/widgets'), headSha: 'sha-1', body: 'stale description' },
+    });
+    (store.get(u.unitId) as { pinned?: boolean }).pinned = true;
+    const fetches: number[] = [];
+    await pollOnce({
+      search: search([]), // nothing review-requested — the pinned unit must still heal
+      store,
+      broadcast: () => {},
+      fetchPr: async (unit) => {
+        fetches.push(1);
+        return { ...mkMetadata('feat/widgets'), headSha: unit.metadata.headSha, title: 'Add widgets', body: 'edited description with an image', additions: 5, deletions: 2, changedFiles: 3, commits: 1 };
+      },
+    });
+    expect(fetches.length).toBe(1);
+    const after = store.get(u.unitId)!;
+    expect(after.metadata.body).toBe('edited description with an image');
+    expect(after.metadata.headSha).toBe('sha-1'); // a text edit is not a push
+    expect(after.status).toBe('queued');
+  });
+
+  it('a pinned unit whose live fetch fails keeps its stored copy (best-effort, retries next pass)', async () => {
+    const store = new UnitStore([], det());
+    const u = store.addGithubUnit({
+      owner: 'octo',
+      repo: 'demo',
+      number: 42,
+      title: 'Add widgets',
+      headBranch: 'feat/widgets',
+      headSha: 'sha-1',
+      author: 'octocat',
+      url: 'https://github.com/octo/demo/pull/42',
+      metadata: { ...mkMetadata('feat/widgets'), headSha: 'sha-1', body: 'kept' },
+    });
+    (store.get(u.unitId) as { pinned?: boolean }).pinned = true;
+    await pollOnce({
+      search: search([]),
+      store,
+      broadcast: () => {},
+      fetchPr: async () => {
+        throw new Error('boom');
+      },
+    });
+    expect(store.get(u.unitId)!.metadata.body).toBe('kept');
   });
 
   it('is idempotent: re-polling the SAME unchanged PR mints/links/resurfaces nothing', async () => {
