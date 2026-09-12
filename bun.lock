@@ -12,7 +12,7 @@
     },
     "packages/cli": {
       "name": "@diffdad/cli",
-      "version": "0.15.2",
+      "version": "0.17.0",
       "bin": {
         "dad": "./src/cli.ts",
       },

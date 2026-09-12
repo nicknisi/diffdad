@@ -170,7 +170,7 @@ const defaultTestGitHub: NonNullable<ConfigRouteTesters['testGitHub']> = async (
 
 const defaultTestAi: NonNullable<ConfigRouteTesters['testAi']> = async (config) => {
   try {
-    const result = await Promise.race([
+    await Promise.race([
       callAi(config, 'Reply with the word ok.', 'ping', 16),
       new Promise<never>((_, reject) =>
         setTimeout(
@@ -179,8 +179,7 @@ const defaultTestAi: NonNullable<ConfigRouteTesters['testAi']> = async (config) 
         ),
       ),
     ]);
-    const detail = result.text.trim();
-    return { ok: true, detail: detail.length > 0 ? detail : 'ok' };
+    return { ok: true, detail: 'Connection successful.' };
   } catch (err) {
     return { ok: false, detail: err instanceof Error ? err.message : String(err) };
   }
