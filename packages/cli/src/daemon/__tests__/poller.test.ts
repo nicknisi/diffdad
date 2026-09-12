@@ -284,6 +284,40 @@ describe('pollOnce', () => {
     expect(after.status).toBe('queued');
   });
 
+  it('heals pinned units BEFORE the search grind and broadcasts immediately', async () => {
+    const store = new UnitStore([], det());
+    const u = store.addGithubUnit({
+      owner: 'octo',
+      repo: 'demo',
+      number: 42,
+      title: 'Add widgets',
+      headBranch: 'feat/widgets',
+      headSha: 'sha-1',
+      author: 'octocat',
+      url: 'https://github.com/octo/demo/pull/42',
+      metadata: { ...mkMetadata('feat/widgets'), headSha: 'sha-1', body: 'stale' },
+    });
+    (store.get(u.unitId) as { pinned?: boolean }).pinned = true;
+
+    const events: string[] = [];
+    await pollOnce({
+      // The search records that it ran; the heal must have completed and repainted BEFORE it was reached.
+      search: () => {
+        events.push('search');
+        return Promise.resolve([]);
+      },
+      store,
+      broadcast: () => events.push('broadcast'),
+      fetchPr: async (unit) => {
+        events.push('fetch');
+        return { ...mkMetadata('feat/widgets'), headSha: unit.metadata.headSha, body: 'fresh' };
+      },
+    });
+    // The heal + its immediate repaint both precede the search grind; the pass-end broadcast follows.
+    expect(events.slice(0, 3)).toEqual(['fetch', 'broadcast', 'search']);
+    expect(store.get(u.unitId)!.metadata.body).toBe('fresh');
+  });
+
   it('a pinned unit whose live fetch fails keeps its stored copy (best-effort, retries next pass)', async () => {
     const store = new UnitStore([], det());
     const u = store.addGithubUnit({
