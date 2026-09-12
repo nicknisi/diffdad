@@ -668,6 +668,13 @@ code {
   min-width: 0;
 }
 
+/* Description-scope images render at natural size, capped to the container — GitHub-like. Narration's
+   1.4em inline chips come from the image rule's inline style, which this overrides with !important. */
+.markdown-body img {
+  max-width: 100%;
+  height: auto;
+}
+
 .markdown-body pre {
   overflow-x: auto;
 }

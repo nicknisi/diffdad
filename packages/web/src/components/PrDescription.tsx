@@ -23,7 +23,7 @@ export function PrDescription() {
         </summary>
         {/* Height-capped so a long description can't push the verdict/story off screen; scrolls inside. */}
         <div className="max-h-[420px] overflow-y-auto px-5 pb-4 pt-1">
-          <Markdown source={body} />
+          <Markdown source={body} variant="github" />
         </div>
       </details>
     </div>
