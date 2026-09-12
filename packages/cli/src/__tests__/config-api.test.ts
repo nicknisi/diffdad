@@ -306,6 +306,44 @@ describe('POST /api/config/test', () => {
     expect(called).toBe(false);
   });
 
+  it('ai: reports connection success without displaying the model response', async () => {
+    const server = Bun.serve({
+      hostname: '127.0.0.1',
+      port: 0,
+      fetch() {
+        const chunk = JSON.stringify({
+          id: 'issue-81',
+          object: 'chat.completion.chunk',
+          created: 1,
+          model: 'deepseek-coder:6.7b',
+          choices: [
+            {
+              index: 0,
+              delta: { content: 'Sure, I can help with that. The `ping` command is' },
+              finish_reason: 'length',
+            },
+          ],
+        });
+        return new Response(`data: ${chunk}\n\ndata: [DONE]\n\n`, {
+          headers: { 'content-type': 'text/event-stream' },
+        });
+      },
+    });
+    try {
+      const { app } = makeApp();
+      const res = await post(app, {
+        kind: 'ai',
+        aiProvider: 'ollama',
+        aiModel: 'deepseek-coder:6.7b',
+        aiBaseUrl: `http://127.0.0.1:${server.port}/v1`,
+      });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, detail: 'Connection successful.' });
+    } finally {
+      server.stop(true);
+    }
+  });
+
   it('ai: overlays candidate fields on the saved config before the live call', async () => {
     await writeConfig({ aiProvider: 'anthropic', aiModel: 'saved-model' });
     const seen: DiffDadConfig[] = [];
